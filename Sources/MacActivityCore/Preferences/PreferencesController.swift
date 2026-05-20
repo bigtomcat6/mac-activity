@@ -35,4 +35,9 @@ public final class PreferencesController: ObservableObject {
         state.selectedSummaryMetrics = MetricKind.summaryOrder.filter { kinds.contains($0) }
         try? store.save(state)
     }
+
+    public func setTemperatureSource(_ source: TemperatureSource) {
+        state.temperatureSource = source
+        try? store.save(state)
+    }
 }

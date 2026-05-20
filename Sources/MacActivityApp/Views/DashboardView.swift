@@ -97,13 +97,9 @@ private struct MetricCard: View {
             }
 
             switch metric.style {
-            case .progress:
-                ProgressView(value: metric.progress ?? 0)
-                    .tint(color)
-                    .controlSize(.small)
-            case .sparkline:
-                NetworkSparkline(points: metric.trend, color: color)
-                    .frame(height: 44)
+            case .chart:
+                DashboardTrendChart(metric: metric, color: color)
+                    .frame(height: 132)
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -120,7 +116,7 @@ private struct MetricCard: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: metric.style == .sparkline ? 118 : 96, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: metric.style == .chart ? 210 : 96, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -147,70 +143,5 @@ private struct MetricCard: View {
         case .fan:
             return .indigo
         }
-    }
-}
-
-private struct NetworkSparkline: View {
-    let points: [NetworkTrendPoint]
-    let color: Color
-
-    var body: some View {
-        GeometryReader { proxy in
-            if points.count < 2 {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(color.opacity(0.35), lineWidth: 1)
-                    .overlay {
-                        Text("Collecting trend")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-            } else {
-                ZStack {
-                    linePath(
-                        in: proxy.size,
-                        values: points.map(\.downloadBytesPerSecond),
-                        maximum: maximumRate
-                    )
-                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    linePath(
-                        in: proxy.size,
-                        values: points.map(\.uploadBytesPerSecond),
-                        maximum: maximumRate
-                    )
-                    .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                }
-            }
-        }
-    }
-
-    private var maximumRate: Double {
-        max(
-            points.map(\.downloadBytesPerSecond).max() ?? 1,
-            points.map(\.uploadBytesPerSecond).max() ?? 1,
-            1
-        )
-    }
-
-    private func linePath(in size: CGSize, values: [Double], maximum: Double) -> Path {
-        var path = Path()
-        guard values.count > 1 else {
-            return path
-        }
-
-        for (index, value) in values.enumerated() {
-            let x = size.width * CGFloat(index) / CGFloat(values.count - 1)
-            let normalized = CGFloat(min(max(value / maximum, 0), 1))
-            let y = size.height - (size.height * normalized)
-            let point = CGPoint(x: x, y: y)
-
-            if index == 0 {
-                path.move(to: point)
-            } else {
-                path.addLine(to: point)
-            }
-        }
-
-        return path
     }
 }

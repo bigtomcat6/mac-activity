@@ -24,6 +24,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
         let dashboardModel = DashboardModel(store: metricsStore)
+        let temperatureSourceStore = TemperatureSourceSelectionStore(
+            initialSource: preferencesController.state.temperatureSource
+        )
         let preferencesWindowController = PreferencesWindowController(
             preferencesController: preferencesController,
             metricsStore: metricsStore
@@ -53,7 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 VRAMProvider(),
                 NetworkProvider(),
                 BatteryProvider(),
-                TemperatureProvider(),
+                TemperatureProvider(temperatureSourceStore: temperatureSourceStore),
                 FanProvider(),
             ],
             store: metricsStore
@@ -71,6 +74,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesController.state.launchAtLoginEnabled != launchService.currentStatus() {
             preferencesController.setLaunchAtLoginEnabled(preferencesController.state.launchAtLoginEnabled)
         }
+
+        preferencesController.$state
+            .map(\.temperatureSource)
+            .removeDuplicates()
+            .sink { source in
+                Task {
+                    await temperatureSourceStore.set(source)
+                }
+            }
+            .store(in: &cancellables)
 
         presentationCoordinator.configureInitialState()
 

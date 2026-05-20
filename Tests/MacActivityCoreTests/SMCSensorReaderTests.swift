@@ -2,6 +2,13 @@ import XCTest
 @testable import MacActivityCore
 
 final class SMCSensorReaderTests: XCTestCase {
+    func testServiceMatchingNamesSupportAppleSiliconAndLegacySMC() {
+        XCTAssertEqual(
+            SMCSensorReader.serviceMatchingNames,
+            ["AppleSMCKeysEndpoint", "AppleSMC"]
+        )
+    }
+
     func testSMCKeyDataMatchesAppleSMCOffsets() {
         XCTAssertEqual(MemoryLayout<SMCSensorReader.SMCKeyData>.stride, 80)
         XCTAssertEqual(MemoryLayout<SMCSensorReader.SMCKeyData>.offset(of: \.keyInfo), 28)

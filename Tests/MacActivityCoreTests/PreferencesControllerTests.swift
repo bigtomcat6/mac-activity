@@ -29,6 +29,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.launchAtLoginError, "Registration failed")
         XCTAssertEqual(store.savedValues.last?.launchAtLoginEnabled, true)
     }
+
+    func testTemperatureSourcePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setTemperatureSource(.battery)
+
+        XCTAssertEqual(controller.state.temperatureSource, .battery)
+        XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {

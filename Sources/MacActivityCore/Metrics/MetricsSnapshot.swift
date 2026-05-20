@@ -63,9 +63,11 @@ public struct BatteryReading: Equatable, Sendable {
 
 public struct TemperatureReading: Equatable, Sendable {
     public var celsius: Double
+    public var source: TemperatureSource
 
-    public init(celsius: Double) {
+    public init(celsius: Double, source: TemperatureSource = .smc) {
         self.celsius = celsius
+        self.source = source
     }
 }
 

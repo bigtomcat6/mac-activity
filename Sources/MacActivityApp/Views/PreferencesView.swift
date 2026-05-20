@@ -20,6 +20,29 @@ struct PreferencesView: View {
                     )
                 )
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Temperature source")
+                        .font(.headline)
+
+                    Picker(
+                        "Temperature source",
+                        selection: Binding(
+                            get: { preferencesController.state.temperatureSource },
+                            set: { preferencesController.setTemperatureSource($0) }
+                        )
+                    ) {
+                        ForEach(TemperatureSource.allCases, id: \.self) { source in
+                            Text(source.preferencesTitle)
+                                .tag(source)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("Controls the Temperature metric in the status bar and dashboard.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Text("Menu bar metrics")
                     .font(.headline)
 

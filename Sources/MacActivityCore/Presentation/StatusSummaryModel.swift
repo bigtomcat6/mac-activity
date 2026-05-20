@@ -14,11 +14,13 @@ public final class StatusSummaryModel: ObservableObject {
     ) {
         let initialSummaryText = formatter.render(
             snapshot: store.snapshot,
-            selectedMetrics: preferences.state.selectedSummaryMetrics
+            selectedMetrics: preferences.state.selectedSummaryMetrics,
+            preferredTemperatureSource: preferences.state.temperatureSource
         )
         let initialSummaryItems = formatter.renderStatusItems(
             snapshot: store.snapshot,
-            selectedMetrics: preferences.state.selectedSummaryMetrics
+            selectedMetrics: preferences.state.selectedSummaryMetrics,
+            preferredTemperatureSource: preferences.state.temperatureSource
         )
         self.summaryText = initialSummaryText
         self.summaryItems = initialSummaryItems
@@ -28,11 +30,13 @@ public final class StatusSummaryModel: ObservableObject {
                 StatusSummaryPresentation(
                     text: formatter.render(
                         snapshot: snapshot,
-                        selectedMetrics: state.selectedSummaryMetrics
+                        selectedMetrics: state.selectedSummaryMetrics,
+                        preferredTemperatureSource: state.temperatureSource
                     ),
                     items: formatter.renderStatusItems(
                         snapshot: snapshot,
-                        selectedMetrics: state.selectedSummaryMetrics
+                        selectedMetrics: state.selectedSummaryMetrics,
+                        preferredTemperatureSource: state.temperatureSource
                     )
                 )
             }

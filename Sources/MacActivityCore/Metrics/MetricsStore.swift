@@ -7,6 +7,8 @@ public struct MetricHistorySample: Equatable, Sendable {
     public var gpuUsagePercent: Double?
     public var memoryUsedPercent: Double?
     public var vramUsedPercent: Double?
+    public var temperatureCelsius: Double?
+    public var fanRPM: Int?
     public var downloadBytesPerSecond: Double?
     public var uploadBytesPerSecond: Double?
     public var batteryPercent: Double?
@@ -25,6 +27,8 @@ public struct MetricHistorySample: Equatable, Sendable {
         } else {
             self.vramUsedPercent = nil
         }
+        self.temperatureCelsius = snapshot.temperature?.celsius
+        self.fanRPM = snapshot.fan?.rpm
         self.downloadBytesPerSecond = snapshot.network?.downloadBytesPerSecond
         self.uploadBytesPerSecond = snapshot.network?.uploadBytesPerSecond
         self.batteryPercent = snapshot.battery?.percentage

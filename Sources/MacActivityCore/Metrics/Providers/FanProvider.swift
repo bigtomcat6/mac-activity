@@ -17,6 +17,8 @@ public struct FanProvider: MetricProvider {
 }
 
 enum SMCSensorReader {
+    static let serviceMatchingNames = ["AppleSMCKeysEndpoint", "AppleSMC"]
+
     static func readFanRPM() -> Int? {
         withConnection { connection in
             guard let fanCount = readUInt8(key: "FNum", connection: connection), fanCount > 0 else {
@@ -49,27 +51,33 @@ enum SMCSensorReader {
     }
 
     private static func withConnection<T>(_ body: (io_connect_t) -> T?) -> T? {
-        guard let matching = IOServiceMatching("AppleSMC") else {
-            return nil
+        for serviceName in serviceMatchingNames {
+            guard let matching = IOServiceMatching(serviceName) else {
+                continue
+            }
+
+            let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+            guard service != 0 else {
+                continue
+            }
+            defer {
+                IOObjectRelease(service)
+            }
+
+            var connection: io_connect_t = 0
+            guard IOServiceOpen(service, mach_task_self_, 0, &connection) == KERN_SUCCESS else {
+                continue
+            }
+            defer {
+                IOServiceClose(connection)
+            }
+
+            if let value = body(connection) {
+                return value
+            }
         }
 
-        let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
-        guard service != 0 else {
-            return nil
-        }
-        defer {
-            IOObjectRelease(service)
-        }
-
-        var connection: io_connect_t = 0
-        guard IOServiceOpen(service, mach_task_self_, 0, &connection) == KERN_SUCCESS else {
-            return nil
-        }
-        defer {
-            IOServiceClose(connection)
-        }
-
-        return body(connection)
+        return nil
     }
 
     private static func readUInt8(key: String, connection: io_connect_t) -> Int? {
@@ -301,8 +309,8 @@ enum SMCSensorReader {
     }
 }
 
-enum IORegistrySensorFallbackReader {
-    static func readBatteryTemperatureCelsius() -> Double? {
+enum BatteryTemperatureReader {
+    static func readTemperatureCelsius() -> Double? {
         guard let matching = IOServiceMatching("AppleSmartBattery") else {
             return nil
         }

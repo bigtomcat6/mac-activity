@@ -50,6 +50,25 @@ final class SummaryFormatterTests: XCTestCase {
         )
     }
 
+    func testRenderStatusItemsUsesBatteryLabelForBatteryTemperatureSource() {
+        let snapshot = MetricsSnapshot(
+            timestamp: Date(timeIntervalSince1970: 601),
+            temperature: TemperatureReading(celsius: 30.2, source: .battery)
+        )
+
+        let items = SummaryFormatter().renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: [.temperature]
+        )
+
+        XCTAssertEqual(
+            items,
+            [
+                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric),
+            ]
+        )
+    }
+
     func testRenderStatusItemsShowsPlaceholdersForUnavailableSelectedMetrics() {
         let items = SummaryFormatter().renderStatusItems(
             snapshot: MetricsSnapshot(timestamp: Date(timeIntervalSince1970: 700)),

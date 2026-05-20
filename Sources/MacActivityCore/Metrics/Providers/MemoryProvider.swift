@@ -34,14 +34,24 @@ public struct MemoryProvider: MetricProvider {
             return nil
         }
 
+        let totalBytes = ProcessInfo.processInfo.physicalMemory
+
+        return Self.makeReading(pageSize: pageSize, stats: info, totalBytes: totalBytes)
+    }
+
+    static func makeReading(
+        pageSize: vm_size_t,
+        stats: vm_statistics64_data_t,
+        totalBytes: UInt64
+    ) -> MemoryReading {
+        // Use anonymous, wired, and compressed pages so file-backed cached pages
+        // are not reported as "used memory".
         let usedPages = UInt64(
-            info.active_count +
-            info.inactive_count +
-            info.wire_count +
-            info.compressor_page_count
+            stats.internal_page_count +
+            stats.wire_count +
+            stats.compressor_page_count
         )
         let usedBytes = usedPages * UInt64(pageSize)
-        let totalBytes = ProcessInfo.processInfo.physicalMemory
 
         return MemoryReading(
             usedBytes: min(usedBytes, totalBytes),

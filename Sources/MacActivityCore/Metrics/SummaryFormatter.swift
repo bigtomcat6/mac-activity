@@ -1,8 +1,34 @@
 import Foundation
 
 public protocol SummaryFormatting: Sendable {
-    func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String
-    func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem]
+    func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> String
+    func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem]
+}
+
+public extension SummaryFormatting {
+    func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String {
+        render(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: .smc
+        )
+    }
+
+    func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem] {
+        renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: .smc
+        )
+    }
 }
 
 public enum StatusSummaryItemStyle: Equatable, Sendable {
@@ -33,7 +59,11 @@ public struct StatusSummaryItem: Equatable, Identifiable, Sendable {
 public struct SummaryFormatter: SummaryFormatting {
     public init() {}
 
-    public func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String {
+    public func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> String {
         let selectedSet = Set(selectedMetrics)
         let rendered = MetricKind.summaryOrder.compactMap { kind -> String? in
             guard selectedSet.contains(kind) else {
@@ -77,7 +107,7 @@ public struct SummaryFormatter: SummaryFormatting {
                 guard let temperature = snapshot.temperature else {
                     return nil
                 }
-                return "TMP \(Int(temperature.celsius.rounded()))C"
+                return "\(temperature.source.summaryPrefix) \(Int(temperature.celsius.rounded()))C"
             case .fan:
                 guard let fan = snapshot.fan else {
                     return nil
@@ -89,7 +119,11 @@ public struct SummaryFormatter: SummaryFormatting {
         return rendered.isEmpty ? "Metrics" : rendered.joined(separator: " | ")
     }
 
-    public func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem] {
+    public func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem] {
         let selectedSet = Set(selectedMetrics)
         return Self.statusDisplayOrder.compactMap { kind -> StatusSummaryItem? in
             guard selectedSet.contains(kind) else {
@@ -146,7 +180,7 @@ public struct SummaryFormatter: SummaryFormatting {
                 return StatusSummaryItem(
                     kind: .temperature,
                     primaryText: snapshot.temperature.map { "\(Int($0.celsius.rounded()))℃" } ?? "--",
-                    secondaryText: "SEN",
+                    secondaryText: snapshot.temperature?.source.statusLabel ?? preferredTemperatureSource.statusLabel,
                     style: .metric
                 )
             case .fan:

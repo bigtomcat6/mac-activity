@@ -11,7 +11,8 @@ final class PreferencesStoreTests: XCTestCase {
 
         let expected = AppPreferences(
             launchAtLoginEnabled: true,
-            selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu]
+            selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu],
+            temperatureSource: .battery
         )
 
         try store.save(expected)
@@ -42,5 +43,24 @@ final class PreferencesStoreTests: XCTestCase {
 
         XCTAssertEqual(loaded.selectedSummaryMetrics, AppPreferences.default.selectedSummaryMetrics)
         XCTAssertEqual(loaded.launchAtLoginEnabled, true)
+        XCTAssertEqual(loaded.temperatureSource, .smc)
+    }
+
+    func testLoadDefaultsTemperatureSourceWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let legacyData = Data(
+            #"{"selectedSummaryMetrics":["cpu","temperature"],"launchAtLoginEnabled":true}"#
+                .utf8
+        )
+        userDefaults.set(legacyData, forKey: "mac-activity.preferences")
+
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .temperature])
+        XCTAssertEqual(loaded.launchAtLoginEnabled, true)
+        XCTAssertEqual(loaded.temperatureSource, .smc)
     }
 }

@@ -2,18 +2,34 @@ import Combine
 import Foundation
 
 public enum DashboardMetricStyle: Equatable, Sendable {
-    case progress
-    case sparkline
+    case chart
     case value
 }
 
-public struct NetworkTrendPoint: Equatable, Sendable {
-    public var downloadBytesPerSecond: Double
-    public var uploadBytesPerSecond: Double
+public enum DashboardTrendScale: Equatable, Sendable {
+    case automatic
+    case fixed(lowerBound: Double, upperBound: Double)
+}
 
-    public init(downloadBytesPerSecond: Double, uploadBytesPerSecond: Double) {
-        self.downloadBytesPerSecond = downloadBytesPerSecond
-        self.uploadBytesPerSecond = uploadBytesPerSecond
+public struct DashboardTrendSample: Equatable, Sendable {
+    public var timestamp: Date
+    public var primaryValue: Double
+    public var secondaryValue: Double?
+
+    public init(timestamp: Date, primaryValue: Double, secondaryValue: Double? = nil) {
+        self.timestamp = timestamp
+        self.primaryValue = primaryValue
+        self.secondaryValue = secondaryValue
+    }
+}
+
+public struct DashboardTrend: Equatable, Sendable {
+    public var samples: [DashboardTrendSample]
+    public var scale: DashboardTrendScale
+
+    public init(samples: [DashboardTrendSample], scale: DashboardTrendScale) {
+        self.samples = samples
+        self.scale = scale
     }
 }
 
@@ -23,8 +39,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var value: String
     public var detail: String?
     public var style: DashboardMetricStyle
-    public var progress: Double?
-    public var trend: [NetworkTrendPoint]
+    public var trend: DashboardTrend?
 
     public var id: String {
         kind.rawValue
@@ -36,15 +51,13 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         value: String,
         detail: String? = nil,
         style: DashboardMetricStyle = .value,
-        progress: Double? = nil,
-        trend: [NetworkTrendPoint] = []
+        trend: DashboardTrend? = nil
     ) {
         self.kind = kind
         self.title = title
         self.value = value
         self.detail = detail
         self.style = style
-        self.progress = progress
         self.trend = trend
     }
 }
@@ -77,8 +90,20 @@ public final class DashboardModel: ObservableObject {
                     kind: .cpu,
                     title: MetricKind.cpu.title,
                     value: "\(Int(cpu.usagePercent.rounded()))%",
-                    style: .progress,
-                    progress: clamp(cpu.usagePercent / 100)
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .fixed(lowerBound: 0, upperBound: 100)
+                    ) { sample in
+                        guard let primaryValue = sample.cpuUsagePercent else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
@@ -89,40 +114,70 @@ public final class DashboardModel: ObservableObject {
                     kind: .gpu,
                     title: MetricKind.gpu.title,
                     value: "\(Int(gpu.usagePercent.rounded()))%",
-                    style: .progress,
-                    progress: clamp(gpu.usagePercent / 100)
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .fixed(lowerBound: 0, upperBound: 100)
+                    ) { sample in
+                        guard let primaryValue = sample.gpuUsagePercent else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
 
         if let memory = snapshot.memory {
-            let progress = memory.totalBytes > 0
-                ? clamp(Double(memory.usedBytes) / Double(memory.totalBytes))
-                : nil
             items.append(
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
                     value: formatBytes(memory.usedBytes),
                     detail: "of \(formatBytes(memory.totalBytes))",
-                    style: .progress,
-                    progress: progress
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .fixed(lowerBound: 0, upperBound: 100)
+                    ) { sample in
+                        guard let primaryValue = sample.memoryUsedPercent else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
 
         if let vram = snapshot.vram {
-            let progress = vram.totalBytes > 0
-                ? clamp(Double(vram.usedBytes) / Double(vram.totalBytes))
-                : nil
             items.append(
                 DashboardMetric(
                     kind: .vram,
                     title: MetricKind.vram.title,
                     value: formatBytes(vram.usedBytes),
                     detail: "of \(formatBytes(vram.totalBytes))",
-                    style: .progress,
-                    progress: progress
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .fixed(lowerBound: 0, upperBound: 100)
+                    ) { sample in
+                        guard let primaryValue = sample.vramUsedPercent else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
@@ -134,8 +189,22 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.network.title,
                     value: "Down \(formatRate(network.downloadBytesPerSecond))",
                     detail: "Up \(formatRate(network.uploadBytesPerSecond))",
-                    style: .sparkline,
-                    trend: networkTrend(from: history)
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .automatic
+                    ) { sample in
+                        guard let primaryValue = sample.downloadBytesPerSecond,
+                              let secondaryValue = sample.uploadBytesPerSecond else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: max(0, primaryValue),
+                            secondaryValue: max(0, secondaryValue)
+                        )
+                    }
                 )
             )
         }
@@ -147,8 +216,20 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.battery.title,
                     value: "\(Int(battery.percentage.rounded()))%",
                     detail: battery.isCharging ? "Charging" : "On Battery",
-                    style: .progress,
-                    progress: clamp(battery.percentage / 100)
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .fixed(lowerBound: 0, upperBound: 100)
+                    ) { sample in
+                        guard let primaryValue = sample.batteryPercent else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
@@ -157,8 +238,22 @@ public final class DashboardModel: ObservableObject {
             items.append(
                 DashboardMetric(
                     kind: .temperature,
-                    title: MetricKind.temperature.title,
-                    value: "\(Int(temperature.celsius.rounded()))C"
+                    title: temperature.source.dashboardTitle,
+                    value: formatTemperature(temperature.celsius),
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .automatic
+                    ) { sample in
+                        guard let primaryValue = sample.temperatureCelsius else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: primaryValue
+                        )
+                    }
                 )
             )
         }
@@ -168,7 +263,21 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .fan,
                     title: MetricKind.fan.title,
-                    value: "\(fan.rpm) RPM"
+                    value: "\(fan.rpm) RPM",
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        scale: .automatic
+                    ) { sample in
+                        guard let primaryValue = sample.fanRPM else {
+                            return nil
+                        }
+
+                        return DashboardTrendSample(
+                            timestamp: sample.timestamp,
+                            primaryValue: Double(primaryValue)
+                        )
+                    }
                 )
             )
         }
@@ -196,21 +305,18 @@ public final class DashboardModel: ObservableObject {
         return "\(formatter.string(fromByteCount: Int64(max(0, value))))/s"
     }
 
-    private static func networkTrend(from history: MetricsHistory) -> [NetworkTrendPoint] {
-        history.samples.compactMap { sample in
-            guard let download = sample.downloadBytesPerSecond,
-                  let upload = sample.uploadBytesPerSecond else {
-                return nil
-            }
-
-            return NetworkTrendPoint(
-                downloadBytesPerSecond: max(0, download),
-                uploadBytesPerSecond: max(0, upload)
-            )
-        }
+    private static func formatTemperature(_ value: Double) -> String {
+        String(format: "%.1f C", value)
     }
 
-    private static func clamp(_ value: Double) -> Double {
-        min(max(value, 0), 1)
+    private static func trend(
+        from history: MetricsHistory,
+        scale: DashboardTrendScale,
+        build: (MetricHistorySample) -> DashboardTrendSample?
+    ) -> DashboardTrend {
+        DashboardTrend(
+            samples: history.samples.compactMap(build),
+            scale: scale
+        )
     }
 }
