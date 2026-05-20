@@ -12,52 +12,47 @@ struct DashboardTrendChart: View {
         GeometryReader { proxy in
             if let trend = metric.trend, trend.samples.count >= 2 {
                 let domain = chartDomain(for: trend)
+                let isHovering = hoveredSampleIndex != nil
+                let basePlotRect = DashboardTrendChartGeometry.basePlotRect(in: proxy.size)
+                let plotRect = DashboardTrendChartGeometry.plotRect(
+                    in: proxy.size,
+                    isHovering: isHovering
+                )
+                let plotScale = CGSize(
+                    width: plotRect.width / basePlotRect.width,
+                    height: plotRect.height / basePlotRect.height
+                )
 
                 ZStack(alignment: .topLeading) {
-                    if metric.kind != .network {
-                        fillPath(
-                            in: proxy.size,
-                            samples: trend.samples,
-                            domain: domain
-                        )
-                        .fill(color.opacity(0.14))
-                    }
-
-                    linePath(
-                        in: proxy.size,
-                        samples: trend.samples,
-                        value: { $0.primaryValue },
+                    plotArea(
+                        in: basePlotRect.size,
+                        trend: trend,
                         domain: domain
                     )
-                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    if trend.samples.contains(where: { $0.secondaryValue != nil }) {
-                        linePath(
-                            in: proxy.size,
-                            samples: trend.samples,
-                            value: { $0.secondaryValue },
-                            domain: domain
-                        )
-                        .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                    }
+                    .frame(width: basePlotRect.width, height: basePlotRect.height)
+                    .scaleEffect(x: plotScale.width, y: plotScale.height, anchor: .topTrailing)
+                    .offset(x: basePlotRect.minX, y: basePlotRect.minY)
 
                     if let selectedSample = hoveredSample(in: trend) {
                         hoverOverlay(
                             in: proxy.size,
+                            plotRect: plotRect,
                             trend: trend,
                             domain: domain,
                             selectedSample: selectedSample
                         )
+                        .transition(.opacity.combined(with: .scale(scale: 0.98)))
                     }
                 }
                 .contentShape(Rectangle())
+                .animation(.easeInOut(duration: 0.16), value: isHovering)
                 .onContinuousHover(coordinateSpace: .local) { phase in
                     switch phase {
                     case .active(let location):
-                        hoveredSampleIndex = selectedIndex(
+                        hoveredSampleIndex = DashboardTrendChartGeometry.selectedIndex(
                             for: location.x,
                             sampleCount: trend.samples.count,
-                            width: proxy.size.width
+                            plotRect: plotRect
                         )
                     case .ended:
                         hoveredSampleIndex = nil
@@ -75,56 +70,109 @@ struct DashboardTrendChart: View {
         }
     }
 
+    @ViewBuilder
+    private func plotArea(
+        in size: CGSize,
+        trend: DashboardTrend,
+        domain: ClosedRange<Double>
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            if metric.kind != .network {
+                fillPath(
+                    in: size,
+                    samples: trend.samples,
+                    domain: domain
+                )
+                .fill(color.opacity(0.14))
+            }
+
+            linePath(
+                in: size,
+                samples: trend.samples,
+                value: { $0.primaryValue },
+                domain: domain
+            )
+            .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+
+            if trend.samples.contains(where: { $0.secondaryValue != nil }) {
+                linePath(
+                    in: size,
+                    samples: trend.samples,
+                    value: { $0.secondaryValue },
+                    domain: domain
+                )
+                .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+        }
+    }
+
     private func hoverOverlay(
         in size: CGSize,
+        plotRect: CGRect,
         trend: DashboardTrend,
         domain: ClosedRange<Double>,
         selectedSample: DashboardTrendSample
     ) -> some View {
-        ZStack(alignment: .topLeading) {
-            ForEach(axisEntries(for: size, domain: domain), id: \.label) { entry in
+        let selectedX = plotRect.minX + xPosition(
+            for: selectedSample,
+            in: trend.samples,
+            width: plotRect.width
+        )
+        let selectedY = plotRect.minY + yPosition(
+            for: selectedSample.primaryValue,
+            domain: domain,
+            height: plotRect.height
+        )
+        let axisLabelWidth = max(42, plotRect.minX - 8)
+
+        return ZStack(alignment: .topLeading) {
+            ForEach(axisEntries(for: plotRect, domain: domain)) { entry in
                 Path { path in
-                    path.move(to: CGPoint(x: 0, y: entry.y))
-                    path.addLine(to: CGPoint(x: size.width, y: entry.y))
+                    path.move(to: CGPoint(x: plotRect.minX, y: entry.y))
+                    path.addLine(to: CGPoint(x: plotRect.maxX, y: entry.y))
                 }
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
 
                 Text(entry.label)
                     .font(.caption2)
                     .foregroundStyle(.secondary)
-                    .position(x: 24, y: max(10, min(entry.y - 8, size.height - 10)))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+                    .frame(width: axisLabelWidth, alignment: .trailing)
+                    .position(x: axisLabelWidth / 2, y: entry.y)
             }
 
             Path { path in
-                let x = xPosition(for: selectedSample, in: trend.samples, width: size.width)
-                path.move(to: CGPoint(x: x, y: 0))
-                path.addLine(to: CGPoint(x: x, y: size.height))
+                path.move(to: CGPoint(x: selectedX, y: plotRect.minY))
+                path.addLine(to: CGPoint(x: selectedX, y: plotRect.maxY))
             }
             .stroke(Color.primary.opacity(0.14), lineWidth: 1)
 
             Circle()
                 .fill(color)
                 .frame(width: 10, height: 10)
-                .position(
-                    x: xPosition(for: selectedSample, in: trend.samples, width: size.width),
-                    y: yPosition(for: selectedSample.primaryValue, domain: domain, height: size.height)
-                )
+                .position(x: selectedX, y: selectedY)
 
             VStack(spacing: 2) {
                 Text(primaryReadout(for: selectedSample))
                     .font(.headline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
 
                 if let secondaryText = secondaryReadout(for: selectedSample) {
                     Text(secondaryText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.72)
                 }
 
                 Text(timestampLabel(for: selectedSample.timestamp))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity)
+            .frame(width: plotRect.width)
+            .position(x: plotRect.midX, y: max(18, plotRect.minY / 2 + 4))
 
             HStack {
                 Text(timestampLabel(for: trend.samples.first?.timestamp))
@@ -135,7 +183,10 @@ struct DashboardTrendChart: View {
             }
             .font(.caption2.monospacedDigit())
             .foregroundStyle(.secondary)
-            .frame(maxHeight: .infinity, alignment: .bottom)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+            .frame(width: plotRect.width)
+            .position(x: plotRect.midX, y: min(size.height - 8, plotRect.maxY + 14))
         }
     }
 
@@ -166,15 +217,6 @@ struct DashboardTrendChart: View {
             let padding = (upperBound - lowerBound) * 0.12
             return (lowerBound - padding)...(upperBound + padding)
         }
-    }
-
-    private func selectedIndex(for locationX: CGFloat, sampleCount: Int, width: CGFloat) -> Int {
-        guard sampleCount > 1, width > 0 else {
-            return 0
-        }
-
-        let normalized = min(max(locationX / width, 0), 1)
-        return min(max(Int(round(normalized * CGFloat(sampleCount - 1))), 0), sampleCount - 1)
     }
 
     private func linePath(
@@ -254,12 +296,12 @@ struct DashboardTrendChart: View {
         return height - CGFloat(min(max(normalized, 0), 1)) * height
     }
 
-    private func axisEntries(for size: CGSize, domain: ClosedRange<Double>) -> [AxisEntry] {
+    private func axisEntries(for plotRect: CGRect, domain: ClosedRange<Double>) -> [AxisEntry] {
         let midpoint = domain.lowerBound + (domain.upperBound - domain.lowerBound) / 2
         return [
-            AxisEntry(label: axisLabel(for: domain.upperBound), y: 14),
-            AxisEntry(label: axisLabel(for: midpoint), y: size.height / 2),
-            AxisEntry(label: axisLabel(for: domain.lowerBound), y: max(18, size.height - 22)),
+            AxisEntry(id: 0, label: axisLabel(for: domain.upperBound), y: plotRect.minY),
+            AxisEntry(id: 1, label: axisLabel(for: midpoint), y: plotRect.midY),
+            AxisEntry(id: 2, label: axisLabel(for: domain.lowerBound), y: plotRect.maxY),
         ]
     }
 
@@ -315,7 +357,63 @@ struct DashboardTrendChart: View {
     }
 }
 
-private struct AxisEntry {
+struct DashboardTrendChartGeometry {
+    private static let baseInsets = ChartInsets(top: 4, leading: 0, bottom: 4, trailing: 8)
+    private static let hoverReservedSpace = HoverReservedSpace(leading: 58, bottom: 24)
+
+    static func basePlotRect(in size: CGSize) -> CGRect {
+        let width = max(1, size.width - baseInsets.leading - baseInsets.trailing)
+        let height = max(1, size.height - baseInsets.top - baseInsets.bottom)
+
+        return CGRect(
+            x: baseInsets.leading,
+            y: baseInsets.top,
+            width: width,
+            height: height
+        )
+    }
+
+    static func plotRect(in size: CGSize, isHovering: Bool) -> CGRect {
+        let basePlotRect = basePlotRect(in: size)
+        guard isHovering else {
+            return basePlotRect
+        }
+
+        let width = max(1, basePlotRect.width - hoverReservedSpace.leading)
+        let height = max(1, basePlotRect.height - hoverReservedSpace.bottom)
+
+        return CGRect(
+            x: basePlotRect.maxX - width,
+            y: basePlotRect.minY,
+            width: width,
+            height: height
+        )
+    }
+
+    static func selectedIndex(for locationX: CGFloat, sampleCount: Int, plotRect: CGRect) -> Int {
+        guard sampleCount > 1, plotRect.width > 0 else {
+            return 0
+        }
+
+        let normalized = min(max((locationX - plotRect.minX) / plotRect.width, 0), 1)
+        return min(max(Int(round(normalized * CGFloat(sampleCount - 1))), 0), sampleCount - 1)
+    }
+}
+
+private struct ChartInsets {
+    let top: CGFloat
+    let leading: CGFloat
+    let bottom: CGFloat
+    let trailing: CGFloat
+}
+
+private struct HoverReservedSpace {
+    let leading: CGFloat
+    let bottom: CGFloat
+}
+
+private struct AxisEntry: Identifiable {
+    let id: Int
     let label: String
     let y: CGFloat
 }

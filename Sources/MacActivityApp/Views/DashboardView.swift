@@ -6,11 +6,6 @@ struct DashboardView: View {
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
-
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -23,7 +18,7 @@ struct DashboardView: View {
                 if dashboardModel.metrics.isEmpty {
                     emptyState
                 } else {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(dashboardModel.metrics) { metric in
                             MetricCard(metric: metric)
                         }
@@ -99,7 +94,7 @@ private struct MetricCard: View {
             switch metric.style {
             case .chart:
                 DashboardTrendChart(metric: metric, color: color)
-                    .frame(height: 132)
+                    .frame(height: 156)
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -116,7 +111,7 @@ private struct MetricCard: View {
             }
         }
         .padding(12)
-        .frame(maxWidth: .infinity, minHeight: metric.style == .chart ? 210 : 96, alignment: .topLeading)
+        .frame(maxWidth: .infinity, minHeight: metric.style == .chart ? 234 : 96, alignment: .topLeading)
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)

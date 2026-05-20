@@ -44,6 +44,7 @@
 		CC96AD1A721BD82A5462EF6A /* MemoryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC3E242AE71B79619755C0D /* MemoryProvider.swift */; };
 		CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */; };
 		D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */; };
+		D5B2E74AAD85F14306D38BB3 /* DashboardTrendChartGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */; };
 		D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */; };
 		D8142466738CAAAF7E09698E /* TemperatureProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49ECEEFF448A10DF483AD89 /* TemperatureProvider.swift */; };
 		D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */; };
@@ -110,6 +111,7 @@
 		15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentationCoordinator.swift; sourceTree = "<group>"; };
 		1E1651676B31A0F49FF03FBD /* MetricsScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsScheduler.swift; sourceTree = "<group>"; };
 		20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCSensorReaderTests.swift; sourceTree = "<group>"; };
+		2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChartGeometryTests.swift; sourceTree = "<group>"; };
 		2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryFormatterTests.swift; sourceTree = "<group>"; };
 		36396300E73F3D423CCDC77C /* MetricsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStore.swift; sourceTree = "<group>"; };
 		399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryProvider.swift; sourceTree = "<group>"; };
@@ -331,6 +333,7 @@
 			isa = PBXGroup;
 			children = (
 				70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */,
+				2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */,
 				54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */,
 			);
 			path = MacActivityAppTests;
@@ -485,6 +488,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */,
+				D5B2E74AAD85F14306D38BB3 /* DashboardTrendChartGeometryTests.swift in Sources */,
 				D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
