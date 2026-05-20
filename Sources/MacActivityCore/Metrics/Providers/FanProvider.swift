@@ -24,7 +24,7 @@ enum SMCSensorReader {
             }
 
             let speeds = (0..<fanCount).compactMap { index in
-                readFixedPoint(key: "F\(index)Ac", connection: connection)
+                readFanRPM(key: "F\(index)Ac", connection: connection)
             }
 
             guard !speeds.isEmpty else {
@@ -39,7 +39,7 @@ enum SMCSensorReader {
     static func readTemperatureCelsius() -> Double? {
         withConnection { connection in
             for key in ["TC0P", "TC0E", "TC0F", "TC0D", "TC0H", "TCXC", "TG0P"] {
-                if let celsius = readSP78(key: key, connection: connection) {
+                if let celsius = readTemperature(key: key, connection: connection) {
                     return celsius
                 }
             }
@@ -73,15 +73,63 @@ enum SMCSensorReader {
     }
 
     private static func readUInt8(key: String, connection: io_connect_t) -> Int? {
-        guard let bytes = readKey(key, connection: connection), let first = bytes.first else {
+        guard let reading = readKey(key, connection: connection), let first = reading.bytes.first else {
             return nil
         }
 
         return Int(first)
     }
 
-    private static func readFixedPoint(key: String, connection: io_connect_t) -> Double? {
-        guard let bytes = readKey(key, connection: connection), bytes.count >= 2 else {
+    static func readFanRPM(key: String, connection: io_connect_t) -> Double? {
+        guard let reading = readKey(key, connection: connection) else {
+            return nil
+        }
+
+        return decodeFanRPM(from: reading.bytes, dataType: reading.dataType)
+    }
+
+    static func readTemperature(key: String, connection: io_connect_t) -> Double? {
+        guard let reading = readKey(key, connection: connection) else {
+            return nil
+        }
+
+        return decodeTemperatureCelsius(from: reading.bytes, dataType: reading.dataType)
+    }
+
+    static func decodeFanRPM(from bytes: [UInt8], dataType: String) -> Double? {
+        switch normalizedDataType(dataType) {
+        case "flt":
+            return decodeFloat(bytes)
+        case "fpe2":
+            return decodeFixedPoint(bytes)
+        default:
+            if let value = decodeFloat(bytes), bytes.count >= 4 {
+                return value
+            }
+            return decodeFixedPoint(bytes)
+        }
+    }
+
+    static func decodeTemperatureCelsius(from bytes: [UInt8], dataType: String) -> Double? {
+        switch normalizedDataType(dataType) {
+        case "sp78":
+            return decodeSP78(bytes)
+        case "flt":
+            return decodeFloat(bytes)
+        default:
+            if let value = decodeFloat(bytes), bytes.count >= 4 {
+                return value
+            }
+            return decodeSP78(bytes)
+        }
+    }
+
+    static func normalizedDataType(_ dataType: String) -> String {
+        dataType.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    static func decodeFixedPoint(_ bytes: [UInt8]) -> Double? {
+        guard bytes.count >= 2 else {
             return nil
         }
 
@@ -89,8 +137,8 @@ enum SMCSensorReader {
         return Double(raw) / 4.0
     }
 
-    private static func readSP78(key: String, connection: io_connect_t) -> Double? {
-        guard let bytes = readKey(key, connection: connection), bytes.count >= 2 else {
+    static func decodeSP78(_ bytes: [UInt8]) -> Double? {
+        guard bytes.count >= 2 else {
             return nil
         }
 
@@ -98,7 +146,25 @@ enum SMCSensorReader {
         return Double(signed) + Double(bytes[1]) / 256.0
     }
 
-    private static func readKey(_ key: String, connection: io_connect_t) -> [UInt8]? {
+    static func decodeFloat(_ bytes: [UInt8]) -> Double? {
+        guard bytes.count >= 4 else {
+            return nil
+        }
+
+        let raw =
+            UInt32(bytes[0]) |
+            (UInt32(bytes[1]) << 8) |
+            (UInt32(bytes[2]) << 16) |
+            (UInt32(bytes[3]) << 24)
+        let value = Float(bitPattern: raw)
+        guard value.isFinite else {
+            return nil
+        }
+
+        return Double(value)
+    }
+
+    private static func readKey(_ key: String, connection: io_connect_t) -> SMCReading? {
         guard let keyCode = keyCode(key) else {
             return nil
         }
@@ -116,6 +182,7 @@ enum SMCSensorReader {
         guard dataSize > 0, dataSize <= 32 else {
             return nil
         }
+        let dataType = dataTypeString(output.keyInfo.dataType)
 
         input = SMCKeyData()
         output = SMCKeyData()
@@ -127,7 +194,10 @@ enum SMCSensorReader {
             return nil
         }
 
-        return output.bytes.array.prefix(dataSize).map { $0 }
+        return SMCReading(
+            bytes: Array(output.bytes.array.prefix(dataSize)),
+            dataType: dataType
+        )
     }
 
     private static func callSMC(connection: io_connect_t, input: inout SMCKeyData, output: inout SMCKeyData) -> Bool {
@@ -143,6 +213,12 @@ enum SMCSensorReader {
         )
 
         return result == KERN_SUCCESS && output.result == 0
+    }
+
+    private static func dataTypeString(_ rawType: UInt32) -> String {
+        withUnsafeBytes(of: rawType.bigEndian) { bytes in
+            String(bytes: bytes, encoding: .ascii) ?? ""
+        }
     }
 
     private static func keyCode(_ key: String) -> UInt32? {
@@ -164,7 +240,7 @@ enum SMCSensorReader {
         case open = 2
     }
 
-    private struct SMCVersion {
+    struct SMCVersion {
         var major: UInt8 = 0
         var minor: UInt8 = 0
         var build: UInt8 = 0
@@ -172,7 +248,7 @@ enum SMCSensorReader {
         var release: UInt16 = 0
     }
 
-    private struct SMCPowerLimitData {
+    struct SMCPowerLimitData {
         var version: UInt16 = 0
         var length: UInt16 = 0
         var cpuPLimit: UInt32 = 0
@@ -180,13 +256,13 @@ enum SMCSensorReader {
         var memPLimit: UInt32 = 0
     }
 
-    private struct SMCKeyInfo {
+    struct SMCKeyInfo {
         var dataSize: UInt32 = 0
         var dataType: UInt32 = 0
         var dataAttributes: UInt8 = 0
     }
 
-    private struct SMCBytes {
+    struct SMCBytes {
         var value: (
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
@@ -206,15 +282,52 @@ enum SMCSensorReader {
         }
     }
 
-    private struct SMCKeyData {
+    struct SMCKeyData {
         var key: UInt32 = 0
         var vers = SMCVersion()
         var pLimitData = SMCPowerLimitData()
         var keyInfo = SMCKeyInfo()
+        var padding: UInt16 = 0
         var result: UInt8 = 0
         var status: UInt8 = 0
         var data8: UInt8 = 0
         var data32: UInt32 = 0
         var bytes = SMCBytes()
+    }
+
+    struct SMCReading {
+        var bytes: [UInt8]
+        var dataType: String
+    }
+}
+
+enum IORegistrySensorFallbackReader {
+    static func readBatteryTemperatureCelsius() -> Double? {
+        guard let matching = IOServiceMatching("AppleSmartBattery") else {
+            return nil
+        }
+
+        let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
+        guard service != 0 else {
+            return nil
+        }
+        defer {
+            IOObjectRelease(service)
+        }
+
+        guard let rawValue = IORegistryEntryCreateCFProperty(
+            service,
+            "Temperature" as CFString,
+            kCFAllocatorDefault,
+            0
+        )?.takeRetainedValue() as? NSNumber else {
+            return nil
+        }
+
+        return celsius(fromBatteryTemperatureValue: rawValue.intValue)
+    }
+
+    static func celsius(fromBatteryTemperatureValue value: Int) -> Double {
+        Double(value) / 100.0
     }
 }

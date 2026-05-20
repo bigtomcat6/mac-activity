@@ -29,4 +29,12 @@ final class MetricsSnapshotTests: XCTestCase {
         XCTAssertEqual(updated.network, original.network)
         XCTAssertEqual(updated.issues[.temperature], .unsupported("Unsupported sensor"))
     }
+
+    func testBatteryTemperatureFallbackDecodesCentiCelsius() {
+        XCTAssertEqual(
+            IORegistrySensorFallbackReader.celsius(fromBatteryTemperatureValue: 3055),
+            30.55,
+            accuracy: 0.001
+        )
+    }
 }

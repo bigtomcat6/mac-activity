@@ -23,7 +23,12 @@ public final class UserDefaultsPreferencesStore: PreferencesStoring, @unchecked 
         }
 
         do {
-            return try JSONDecoder().decode(AppPreferences.self, from: data)
+            let decoded = try JSONDecoder().decode(AppPreferences.self, from: data)
+            let migrated = migrateLegacyDefaultsIfNeeded(decoded, rawData: data)
+            if migrated != decoded {
+                try? save(migrated)
+            }
+            return migrated
         } catch {
             return .default
         }
@@ -36,5 +41,24 @@ public final class UserDefaultsPreferencesStore: PreferencesStoring, @unchecked 
         } catch {
             throw PreferencesStoreError.saveFailed(error.localizedDescription)
         }
+    }
+
+    private func migrateLegacyDefaultsIfNeeded(_ preferences: AppPreferences, rawData: Data) -> AppPreferences {
+        guard isLegacyMenuBarPreferencePayload(rawData),
+              preferences.selectedSummaryMetrics == [.cpu, .memory, .network] else {
+            return preferences
+        }
+
+        var migrated = preferences
+        migrated.selectedSummaryMetrics = AppPreferences.default.selectedSummaryMetrics
+        return migrated
+    }
+
+    private func isLegacyMenuBarPreferencePayload(_ data: Data) -> Bool {
+        guard let json = String(data: data, encoding: .utf8) else {
+            return false
+        }
+
+        return json.contains(#""isMenuBarEnabled""#)
     }
 }
