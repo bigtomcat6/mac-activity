@@ -7,6 +7,7 @@ import MacActivityCore
 struct DashboardTrendChart: View {
     let metric: DashboardMetric
     let color: Color
+    let isCardHovered: Bool
 
     @State private var hoveredSampleIndex: Int?
     @State private var hoverLocation: CGPoint?
@@ -33,7 +34,8 @@ struct DashboardTrendChart: View {
     ) -> some View {
         let domain = chartDomain(for: trend)
         let xDomain = xDomain(for: trend)
-        let isHovering = hoveredSample(in: trend) != nil
+        let selectedSample = isCardHovered ? (hoveredSample(in: trend) ?? trend.samples.last) : nil
+        let isHovering = selectedSample != nil
         let isCompactHoverLayout = DashboardCardLayout.usesCompactHoverLayout(for: size.height)
         let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: trend.samples)
         let yAxisValues = DashboardTrendChartLayout.yAxisValues(for: domain)
@@ -109,7 +111,7 @@ struct DashboardTrendChart: View {
                     }
                 }
 
-                if let selectedSample = hoveredSample(in: trend) {
+                if let selectedSample {
                     RuleMark(x: .value("Selection", selectedSample.timestamp))
                         .foregroundStyle(Color.primary.opacity(0.18))
                         .lineStyle(StrokeStyle(lineWidth: 1))
@@ -168,11 +170,22 @@ struct DashboardTrendChart: View {
                     case .ended:
                         hoveredSampleIndex = nil
                         hoverLocation = nil
-                    }
                 }
+            }
 
-            if let selectedSample = hoveredSample(in: trend),
-               let hoverLocation {
+            if let selectedSample {
+                let annotationAnchor = hoverLocation ?? CGPoint(
+                    x: DashboardTrendChartLayout.xPosition(
+                        for: selectedSample.timestamp,
+                        domain: xDomain,
+                        plotFrame: plotFrame
+                    ),
+                    y: DashboardTrendChartLayout.yPosition(
+                        for: selectedSample.primaryValue,
+                        domain: domain,
+                        plotFrame: plotFrame
+                    )
+                )
                 let annotationSize = annotationSize(
                     for: selectedSample,
                     isCompact: isCompactHoverLayout
@@ -185,7 +198,7 @@ struct DashboardTrendChart: View {
                 .frame(width: annotationSize.width, height: annotationSize.height, alignment: .leading)
                 .position(
                     DashboardTrendChartLayout.annotationPosition(
-                        pointer: hoverLocation,
+                        pointer: annotationAnchor,
                         plotFrame: plotFrame,
                         annotationSize: annotationSize
                     )

@@ -88,6 +88,7 @@ struct DashboardView: View {
 
 private struct MetricCard: View {
     let metric: DashboardMetric
+    @State private var isCardHovered = false
 
     private var isCompactChartCard: Bool {
         metric.style == .chart
@@ -112,7 +113,11 @@ private struct MetricCard: View {
 
             switch metric.style {
             case .chart:
-                DashboardTrendChart(metric: metric, color: color)
+                DashboardTrendChart(
+                    metric: metric,
+                    color: color,
+                    isCardHovered: isCardHovered
+                )
                     .frame(height: DashboardCardLayout.compactChartHeight)
             case .value:
                 Rectangle()
@@ -135,10 +140,14 @@ private struct MetricCard: View {
             minHeight: metric.style == .chart ? DashboardCardLayout.compactChartMinHeight : 44,
             alignment: .topLeading
         )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.separator.opacity(0.45), lineWidth: 1)
+        }
+        .onHover { hovering in
+            isCardHovered = hovering
         }
     }
 
