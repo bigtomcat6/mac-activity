@@ -1,0 +1,91 @@
+import AppKit
+import XCTest
+@testable import MacActivityApp
+
+@MainActor
+final class AppPresentationCoordinatorTests: XCTestCase {
+    func testInitialEnabledLaunchInstallsStatusItemImmediately() {
+        let recorder = EventRecorder()
+        let coordinator = AppPresentationCoordinator(
+            statusItemController: RecordingStatusItemController(recorder: recorder),
+            activationController: RecordingActivationController(recorder: recorder),
+            showPreferences: {
+                recorder.record("showPreferences")
+            }
+        )
+
+        coordinator.configureInitialState(isMenuBarEnabled: true)
+
+        XCTAssertEqual(recorder.events, [
+            "install",
+            "activation:accessory",
+        ])
+    }
+
+    func testDisablingMenuBarPromotesAppToDockBeforeRemovingStatusItem() {
+        let recorder = EventRecorder()
+        let coordinator = AppPresentationCoordinator(
+            statusItemController: RecordingStatusItemController(recorder: recorder),
+            activationController: RecordingActivationController(recorder: recorder),
+            showPreferences: {
+                recorder.record("showPreferences")
+            }
+        )
+
+        coordinator.updateMenuBarVisibility(false)
+
+        XCTAssertEqual(recorder.events, [
+            "activation:regular",
+            "remove",
+            "showPreferences",
+        ])
+    }
+}
+
+@MainActor
+private final class EventRecorder {
+    private(set) var events: [String] = []
+
+    func record(_ event: String) {
+        events.append(event)
+    }
+}
+
+@MainActor
+private final class RecordingStatusItemController: StatusItemControlling {
+    private let recorder: EventRecorder
+
+    init(recorder: EventRecorder) {
+        self.recorder = recorder
+    }
+
+    func install() {
+        recorder.record("install")
+    }
+
+    func remove() {
+        recorder.record("remove")
+    }
+}
+
+@MainActor
+private final class RecordingActivationController: ApplicationActivationControlling {
+    private let recorder: EventRecorder
+
+    init(recorder: EventRecorder) {
+        self.recorder = recorder
+    }
+
+    func applyActivationPolicy(_ policy: NSApplication.ActivationPolicy) {
+        switch policy {
+        case .accessory:
+            recorder.record("activation:accessory")
+        case .regular:
+            recorder.record("activation:regular")
+        case .prohibited:
+            recorder.record("activation:prohibited")
+        @unknown default:
+            recorder.record("activation:unknown")
+        }
+    }
+}

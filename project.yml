@@ -1,0 +1,119 @@
+name: MacActivity
+options:
+  minimumXcodeGenVersion: 2.45.0
+  createIntermediateGroups: true
+  deploymentTarget:
+    macOS: "13.0"
+  developmentLanguage: en
+configs:
+  Debug: debug
+  Release: release
+settings:
+  base:
+    PRODUCT_NAME: "$(TARGET_NAME)"
+    PRODUCT_MODULE_NAME: "$(TARGET_NAME)"
+    CODE_SIGN_STYLE: Automatic
+    DEVELOPMENT_TEAM: ""
+    SWIFT_VERSION: 6.0
+    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      ENABLE_TESTABILITY: YES
+    Release:
+      SWIFT_COMPILATION_MODE: wholemodule
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      DEAD_CODE_STRIPPING: YES
+targets:
+  MacActivityCore:
+    type: framework
+    platform: macOS
+    deploymentTarget: "13.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Sources/MacActivityCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.core
+        INFOPLIST_FILE: Configuration/MacActivityCore-Info.plist
+        SKIP_INSTALL: YES
+  MacActivityApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Sources/MacActivityApp
+    dependencies:
+      - target: MacActivityCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity
+        PRODUCT_NAME: Mac Activity
+        PRODUCT_MODULE_NAME: MacActivityApp
+        INFOPLIST_FILE: Configuration/MacActivity-Info.plist
+        CODE_SIGN_ENTITLEMENTS: Configuration/MacActivity.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/../Frameworks"
+  MacActivityCoreTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Tests/MacActivityCoreTests
+    dependencies:
+      - target: MacActivityCore
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.core.tests
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
+  MacActivityAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "13.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Tests/MacActivityAppTests
+    dependencies:
+      - target: MacActivityApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.app.tests
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Mac Activity.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Mac Activity"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+schemes:
+  MacActivity:
+    build:
+      targets:
+        MacActivityApp: all
+        MacActivityCore: all
+    run:
+      config: Debug
+      executable: MacActivityApp
+      debugEnabled: true
+    test:
+      config: Debug
+      gatherCoverageData: true
+      targets:
+        - MacActivityCoreTests
+        - MacActivityAppTests
+    profile:
+      config: Release
+      executable: MacActivityApp
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+      revealArchiveInOrganizer: true

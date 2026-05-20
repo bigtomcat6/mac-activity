@@ -1,0 +1,16 @@
+# macOS
+.DS_Store
+
+# Swift Package Manager and Xcode build outputs
+/.build
+/Packages
+DerivedData/
+default.profraw
+*.profraw
+xcuserdata/
+*.xcuserstate
+.swiftpm/configuration/registries.json
+.swiftpm/xcode/package.xcworkspace/
+
+# Local machine config
+.netrc
