@@ -1,6 +1,17 @@
 import SwiftUI
 import MacActivityCore
 
+enum DashboardCardLayout {
+    static let compactChartHeight: CGFloat = 60
+    static let compactChartMinHeight: CGFloat = 98
+    static let compactChartInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8)
+    static let regularCardInsets = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+
+    static func usesCompactHoverLayout(for chartHeight: CGFloat) -> Bool {
+        chartHeight <= 64
+    }
+}
+
 struct DashboardView: View {
     @ObservedObject var dashboardModel: DashboardModel
     let openPreferences: () -> Void
@@ -78,15 +89,23 @@ struct DashboardView: View {
 private struct MetricCard: View {
     let metric: DashboardMetric
 
+    private var isCompactChartCard: Bool {
+        metric.style == .chart
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .firstTextBaseline) {
                 Text(metric.title)
-                    .font(.caption.weight(.semibold))
+                    .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
                 Text(metric.value)
-                    .font(.title3.monospacedDigit().weight(.semibold))
+                    .font(
+                        isCompactChartCard
+                        ? .subheadline.monospacedDigit().weight(.semibold)
+                        : .title3.monospacedDigit().weight(.semibold)
+                    )
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
@@ -94,7 +113,7 @@ private struct MetricCard: View {
             switch metric.style {
             case .chart:
                 DashboardTrendChart(metric: metric, color: color)
-                    .frame(height: 156)
+                    .frame(height: DashboardCardLayout.compactChartHeight)
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -102,7 +121,7 @@ private struct MetricCard: View {
                     .clipShape(Capsule())
             }
 
-            if let detail = metric.detail {
+            if let detail = metric.detail, !isCompactChartCard {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -110,8 +129,12 @@ private struct MetricCard: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: metric.style == .chart ? 234 : 96, alignment: .topLeading)
+        .padding(isCompactChartCard ? DashboardCardLayout.compactChartInsets : DashboardCardLayout.regularCardInsets)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: metric.style == .chart ? DashboardCardLayout.compactChartMinHeight : 44,
+            alignment: .topLeading
+        )
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
