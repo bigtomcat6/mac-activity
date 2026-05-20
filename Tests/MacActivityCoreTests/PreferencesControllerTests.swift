@@ -10,10 +10,10 @@ final class PreferencesControllerTests: XCTestCase {
             launchService: NoopLaunchAtLoginService()
         )
 
-        controller.setSummarySelection([.temperature, .cpu])
+        controller.setSummarySelection([.temperature, .vram, .cpu])
 
-        XCTAssertEqual(controller.state.selectedSummaryMetrics, [.cpu, .temperature])
-        XCTAssertEqual(store.savedValues.last?.selectedSummaryMetrics, [.cpu, .temperature])
+        XCTAssertEqual(controller.state.selectedSummaryMetrics, [.cpu, .vram, .temperature])
+        XCTAssertEqual(store.savedValues.last?.selectedSummaryMetrics, [.cpu, .vram, .temperature])
     }
 
     func testLaunchAtLoginFailureStaysInPreferencesState() {

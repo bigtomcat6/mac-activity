@@ -132,8 +132,12 @@ private struct MetricCard: View {
         switch metric.kind {
         case .cpu:
             return .orange
+        case .gpu:
+            return .purple
         case .memory:
             return .blue
+        case .vram:
+            return .cyan
         case .network:
             return .teal
         case .battery:

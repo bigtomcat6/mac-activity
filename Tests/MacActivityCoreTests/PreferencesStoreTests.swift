@@ -10,14 +10,20 @@ final class PreferencesStoreTests: XCTestCase {
         let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
 
         let expected = AppPreferences(
-            isMenuBarEnabled: false,
             launchAtLoginEnabled: true,
-            selectedSummaryMetrics: [.memory, .temperature, .cpu]
+            selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu]
         )
 
         try store.save(expected)
         let loaded = store.load()
 
         XCTAssertEqual(loaded, expected)
+    }
+
+    func testDefaultSummaryMetricsIncludeMenuBarHardwareMetrics() {
+        XCTAssertEqual(
+            AppPreferences.default.selectedSummaryMetrics,
+            [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network]
+        )
     }
 }

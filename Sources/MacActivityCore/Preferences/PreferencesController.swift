@@ -19,11 +19,6 @@ public final class PreferencesController: ObservableObject {
         self.launchAtLoginError = nil
     }
 
-    public func setMenuBarEnabled(_ enabled: Bool) {
-        state.isMenuBarEnabled = enabled
-        try? store.save(state)
-    }
-
     public func setLaunchAtLoginEnabled(_ enabled: Bool) {
         state.launchAtLoginEnabled = enabled
         do {

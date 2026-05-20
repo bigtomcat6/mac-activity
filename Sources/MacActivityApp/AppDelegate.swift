@@ -43,15 +43,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let presentationCoordinator = AppPresentationCoordinator(
             statusItemController: statusItemController,
-            activationController: SharedApplicationActivationController(),
-            showPreferences: { [weak self] in
-                self?.showPreferences()
-            }
+            activationController: SharedApplicationActivationController()
         )
         let scheduler = MetricsScheduler(
             providers: [
                 CPUProvider(),
+                GPUProvider(),
                 MemoryProvider(),
+                VRAMProvider(),
                 NetworkProvider(),
                 BatteryProvider(),
                 TemperatureProvider(),
@@ -73,17 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             preferencesController.setLaunchAtLoginEnabled(preferencesController.state.launchAtLoginEnabled)
         }
 
-        presentationCoordinator.configureInitialState(
-            isMenuBarEnabled: preferencesController.state.isMenuBarEnabled
-        )
-        preferencesController.$state
-            .map(\.isMenuBarEnabled)
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] isEnabled in
-                self?.presentationCoordinator?.updateMenuBarVisibility(isEnabled)
-            }
-            .store(in: &cancellables)
+        presentationCoordinator.configureInitialState()
 
         Task {
             await scheduler.start()

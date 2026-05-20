@@ -13,7 +13,25 @@ public struct CPUReading: Equatable, Sendable {
     }
 }
 
+public struct GPUReading: Equatable, Sendable {
+    public var usagePercent: Double
+
+    public init(usagePercent: Double) {
+        self.usagePercent = usagePercent
+    }
+}
+
 public struct MemoryReading: Equatable, Sendable {
+    public var usedBytes: UInt64
+    public var totalBytes: UInt64
+
+    public init(usedBytes: UInt64, totalBytes: UInt64) {
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+    }
+}
+
+public struct VRAMReading: Equatable, Sendable {
     public var usedBytes: UInt64
     public var totalBytes: UInt64
 
@@ -61,7 +79,9 @@ public struct FanReading: Equatable, Sendable {
 
 public enum MetricUpdate: Equatable, Sendable {
     case cpu(CPUReading)
+    case gpu(GPUReading)
     case memory(MemoryReading)
+    case vram(VRAMReading)
     case network(NetworkReading)
     case battery(BatteryReading)
     case temperature(TemperatureReading)
@@ -73,8 +93,12 @@ public enum MetricUpdate: Equatable, Sendable {
         switch self {
         case .cpu:
             return .cpu
+        case .gpu:
+            return .gpu
         case .memory:
             return .memory
+        case .vram:
+            return .vram
         case .network:
             return .network
         case .battery:
@@ -92,7 +116,9 @@ public enum MetricUpdate: Equatable, Sendable {
 public struct MetricsSnapshot: Equatable, Sendable {
     public var timestamp: Date
     public var cpu: CPUReading?
+    public var gpu: GPUReading?
     public var memory: MemoryReading?
+    public var vram: VRAMReading?
     public var network: NetworkReading?
     public var battery: BatteryReading?
     public var temperature: TemperatureReading?
@@ -102,7 +128,9 @@ public struct MetricsSnapshot: Equatable, Sendable {
     public init(
         timestamp: Date = .now,
         cpu: CPUReading? = nil,
+        gpu: GPUReading? = nil,
         memory: MemoryReading? = nil,
+        vram: VRAMReading? = nil,
         network: NetworkReading? = nil,
         battery: BatteryReading? = nil,
         temperature: TemperatureReading? = nil,
@@ -111,7 +139,9 @@ public struct MetricsSnapshot: Equatable, Sendable {
     ) {
         self.timestamp = timestamp
         self.cpu = cpu
+        self.gpu = gpu
         self.memory = memory
+        self.vram = vram
         self.network = network
         self.battery = battery
         self.temperature = temperature
@@ -127,9 +157,15 @@ public struct MetricsSnapshot: Equatable, Sendable {
             case .cpu(let reading):
                 next.cpu = reading
                 next.issues[.cpu] = nil
+            case .gpu(let reading):
+                next.gpu = reading
+                next.issues[.gpu] = nil
             case .memory(let reading):
                 next.memory = reading
                 next.issues[.memory] = nil
+            case .vram(let reading):
+                next.vram = reading
+                next.issues[.vram] = nil
             case .network(let reading):
                 next.network = reading
                 next.issues[.network] = nil
@@ -156,8 +192,12 @@ public struct MetricsSnapshot: Equatable, Sendable {
         switch kind {
         case .cpu:
             cpu = nil
+        case .gpu:
+            gpu = nil
         case .memory:
             memory = nil
+        case .vram:
+            vram = nil
         case .network:
             network = nil
         case .battery:

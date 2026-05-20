@@ -83,6 +83,18 @@ public final class DashboardModel: ObservableObject {
             )
         }
 
+        if let gpu = snapshot.gpu {
+            items.append(
+                DashboardMetric(
+                    kind: .gpu,
+                    title: MetricKind.gpu.title,
+                    value: "\(Int(gpu.usagePercent.rounded()))%",
+                    style: .progress,
+                    progress: clamp(gpu.usagePercent / 100)
+                )
+            )
+        }
+
         if let memory = snapshot.memory {
             let progress = memory.totalBytes > 0
                 ? clamp(Double(memory.usedBytes) / Double(memory.totalBytes))
@@ -93,6 +105,22 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.memory.title,
                     value: formatBytes(memory.usedBytes),
                     detail: "of \(formatBytes(memory.totalBytes))",
+                    style: .progress,
+                    progress: progress
+                )
+            )
+        }
+
+        if let vram = snapshot.vram {
+            let progress = vram.totalBytes > 0
+                ? clamp(Double(vram.usedBytes) / Double(vram.totalBytes))
+                : nil
+            items.append(
+                DashboardMetric(
+                    kind: .vram,
+                    title: MetricKind.vram.title,
+                    value: formatBytes(vram.usedBytes),
+                    detail: "of \(formatBytes(vram.totalBytes))",
                     style: .progress,
                     progress: progress
                 )

@@ -46,12 +46,23 @@ public struct SummaryFormatter: SummaryFormatting {
                     return nil
                 }
                 return "CPU \(Int(cpu.usagePercent.rounded()))%"
+            case .gpu:
+                guard let gpu = snapshot.gpu else {
+                    return nil
+                }
+                return "GPU \(Int(gpu.usagePercent.rounded()))%"
             case .memory:
                 guard let memory = snapshot.memory, memory.totalBytes > 0 else {
                     return nil
                 }
                 let percent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
                 return "MEM \(Int(percent.rounded()))%"
+            case .vram:
+                guard let vram = snapshot.vram, vram.totalBytes > 0 else {
+                    return nil
+                }
+                let percent = Double(vram.usedBytes) / Double(vram.totalBytes) * 100
+                return "VRAM \(Int(percent.rounded()))%"
             case .network:
                 guard let network = snapshot.network else {
                     return nil
@@ -87,34 +98,38 @@ public struct SummaryFormatter: SummaryFormatting {
 
             switch kind {
             case .cpu:
-                guard let cpu = snapshot.cpu else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .cpu,
-                    primaryText: "\(Int(cpu.usagePercent.rounded()))%",
+                    primaryText: formatPercent(snapshot.cpu?.usagePercent),
                     secondaryText: "CPU",
                     style: .metric
                 )
+            case .gpu:
+                return StatusSummaryItem(
+                    kind: .gpu,
+                    primaryText: formatPercent(snapshot.gpu?.usagePercent),
+                    secondaryText: "GPU",
+                    style: .metric
+                )
             case .memory:
-                guard let memory = snapshot.memory, memory.totalBytes > 0 else {
-                    return nil
-                }
-                let percent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
                 return StatusSummaryItem(
                     kind: .memory,
-                    primaryText: "\(Int(percent.rounded()))%",
+                    primaryText: formatPercent(usedPercent(used: snapshot.memory?.usedBytes, total: snapshot.memory?.totalBytes)),
                     secondaryText: "MEM",
                     style: .metric
                 )
+            case .vram:
+                return StatusSummaryItem(
+                    kind: .vram,
+                    primaryText: formatPercent(usedPercent(used: snapshot.vram?.usedBytes, total: snapshot.vram?.totalBytes)),
+                    secondaryText: "VRAM",
+                    style: .metric
+                )
             case .network:
-                guard let network = snapshot.network else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .network,
-                    primaryText: "↑\(formatStatusBytesPerSecond(network.uploadBytesPerSecond))",
-                    secondaryText: "↓\(formatStatusBytesPerSecond(network.downloadBytesPerSecond))",
+                    primaryText: "↑\(formatOptionalStatusBytesPerSecond(snapshot.network?.uploadBytesPerSecond))",
+                    secondaryText: "↓\(formatOptionalStatusBytesPerSecond(snapshot.network?.downloadBytesPerSecond))",
                     style: .network
                 )
             case .battery:
@@ -128,22 +143,16 @@ public struct SummaryFormatter: SummaryFormatting {
                     style: .metric
                 )
             case .temperature:
-                guard let temperature = snapshot.temperature else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .temperature,
-                    primaryText: "\(Int(temperature.celsius.rounded()))℃",
+                    primaryText: snapshot.temperature.map { "\(Int($0.celsius.rounded()))℃" } ?? "--",
                     secondaryText: "SEN",
                     style: .metric
                 )
             case .fan:
-                guard let fan = snapshot.fan else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .fan,
-                    primaryText: "\(fan.rpm)",
+                    primaryText: snapshot.fan.map { "\($0.rpm)" } ?? "--",
                     secondaryText: "RPM",
                     style: .metric
                 )
@@ -153,11 +162,13 @@ public struct SummaryFormatter: SummaryFormatting {
 
     private static let statusDisplayOrder: [MetricKind] = [
         .cpu,
+        .gpu,
         .memory,
-        .battery,
+        .vram,
         .temperature,
         .fan,
         .network,
+        .battery,
     ]
 
     private func formatBytesPerSecond(_ value: Double) -> String {
@@ -182,5 +193,29 @@ public struct SummaryFormatter: SummaryFormatting {
         default:
             return String(format: "%.0f B/s", absoluteValue)
         }
+    }
+
+    private func formatOptionalStatusBytesPerSecond(_ value: Double?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return formatStatusBytesPerSecond(value)
+    }
+
+    private func formatPercent(_ value: Double?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(Int(value.rounded()))%"
+    }
+
+    private func usedPercent(used: UInt64?, total: UInt64?) -> Double? {
+        guard let used, let total, total > 0 else {
+            return nil
+        }
+
+        return Double(used) / Double(total) * 100
     }
 }

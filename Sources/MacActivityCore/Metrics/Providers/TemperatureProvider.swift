@@ -7,9 +7,10 @@ public struct TemperatureProvider: MetricProvider {
     public init() {}
 
     public func sample() async -> MetricUpdate {
-        .unavailable(
-            kind: .temperature,
-            reason: "Temperature sensors are not available in the MVP build"
-        )
+        guard let celsius = SMCSensorReader.readTemperatureCelsius() else {
+            return .unavailable(kind: .temperature, reason: "Temperature sensors are not exposed by AppleSMC")
+        }
+
+        return .temperature(TemperatureReading(celsius: celsius))
     }
 }

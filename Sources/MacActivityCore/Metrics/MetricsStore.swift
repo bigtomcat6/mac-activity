@@ -4,7 +4,9 @@ import Foundation
 public struct MetricHistorySample: Equatable, Sendable {
     public var timestamp: Date
     public var cpuUsagePercent: Double?
+    public var gpuUsagePercent: Double?
     public var memoryUsedPercent: Double?
+    public var vramUsedPercent: Double?
     public var downloadBytesPerSecond: Double?
     public var uploadBytesPerSecond: Double?
     public var batteryPercent: Double?
@@ -12,10 +14,16 @@ public struct MetricHistorySample: Equatable, Sendable {
     public init(snapshot: MetricsSnapshot) {
         self.timestamp = snapshot.timestamp
         self.cpuUsagePercent = snapshot.cpu?.usagePercent
+        self.gpuUsagePercent = snapshot.gpu?.usagePercent
         if let memory = snapshot.memory, memory.totalBytes > 0 {
             self.memoryUsedPercent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
         } else {
             self.memoryUsedPercent = nil
+        }
+        if let vram = snapshot.vram, vram.totalBytes > 0 {
+            self.vramUsedPercent = Double(vram.usedBytes) / Double(vram.totalBytes) * 100
+        } else {
+            self.vramUsedPercent = nil
         }
         self.downloadBytesPerSecond = snapshot.network?.downloadBytesPerSecond
         self.uploadBytesPerSecond = snapshot.network?.uploadBytesPerSecond

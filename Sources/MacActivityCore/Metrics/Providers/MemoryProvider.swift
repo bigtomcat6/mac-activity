@@ -1,5 +1,6 @@
 import Darwin.Mach
 import Foundation
+import IOKit
 
 public struct MemoryProvider: MetricProvider {
     public let kind: MetricKind = .memory
@@ -46,5 +47,121 @@ public struct MemoryProvider: MetricProvider {
             usedBytes: min(usedBytes, totalBytes),
             totalBytes: totalBytes
         )
+    }
+}
+
+public struct GPUProvider: MetricProvider {
+    public let kind: MetricKind = .gpu
+    public let cadence: MetricCadenceLane = .fast
+
+    public init() {}
+
+    public func sample() async -> MetricUpdate {
+        guard let usagePercent = IOAcceleratorStatsReader.read().gpuUsagePercent else {
+            return .unavailable(kind: .gpu, reason: "GPU usage is not exposed by IOAccelerator")
+        }
+
+        return .gpu(GPUReading(usagePercent: usagePercent))
+    }
+}
+
+public struct VRAMProvider: MetricProvider {
+    public let kind: MetricKind = .vram
+    public let cadence: MetricCadenceLane = .medium
+
+    public init() {}
+
+    public func sample() async -> MetricUpdate {
+        guard let memory = IOAcceleratorStatsReader.read().memory,
+              memory.totalBytes > 0 else {
+            return .unavailable(kind: .vram, reason: "GPU memory usage is not exposed by IOAccelerator")
+        }
+
+        return .vram(VRAMReading(usedBytes: memory.usedBytes, totalBytes: memory.totalBytes))
+    }
+}
+
+private enum IOAcceleratorStatsReader {
+    struct Stats {
+        var gpuUsagePercent: Double?
+        var memory: VRAMReading?
+    }
+
+    static func read() -> Stats {
+        guard let matching = IOServiceMatching("IOAccelerator") else {
+            return Stats()
+        }
+
+        var iterator: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
+            return Stats()
+        }
+        defer {
+            IOObjectRelease(iterator)
+        }
+
+        var usageCandidates: [Double] = []
+        var usedBytes: UInt64 = 0
+        var totalBytes: UInt64 = 0
+
+        while true {
+            let service = IOIteratorNext(iterator)
+            guard service != 0 else {
+                break
+            }
+            defer {
+                IOObjectRelease(service)
+            }
+
+            guard let performanceStatistics = IORegistryEntryCreateCFProperty(
+                service,
+                "PerformanceStatistics" as CFString,
+                kCFAllocatorDefault,
+                0
+            )?.takeRetainedValue() as? [String: Any] else {
+                continue
+            }
+
+            if let utilization = firstNumber(
+                in: performanceStatistics,
+                keys: [
+                    "Device Utilization %",
+                    "GPU Core Utilization %",
+                    "Renderer Utilization %",
+                    "Tiler Utilization %",
+                ]
+            ) {
+                usageCandidates.append(utilization)
+            }
+
+            usedBytes += UInt64(firstNumber(in: performanceStatistics, keys: ["In use system memory"]) ?? 0)
+            totalBytes += UInt64(firstNumber(in: performanceStatistics, keys: ["Alloc system memory"]) ?? 0)
+        }
+
+        let usage = usageCandidates.max().map { clamp($0, min: 0, max: 100) }
+        let memory = totalBytes > 0 ? VRAMReading(usedBytes: min(usedBytes, totalBytes), totalBytes: totalBytes) : nil
+        return Stats(gpuUsagePercent: usage, memory: memory)
+    }
+
+    private static func firstNumber(in dictionary: [String: Any], keys: [String]) -> Double? {
+        for key in keys {
+            if let value = dictionary[key] as? NSNumber {
+                return value.doubleValue
+            }
+
+            if let value = dictionary[key] as? Double {
+                return value
+            }
+
+            if let value = dictionary[key] as? Int {
+                return Double(value)
+            }
+        }
+
+        return nil
+    }
+
+    private static func clamp(_ value: Double, min minimum: Double, max maximum: Double) -> Double {
+        Swift.min(Swift.max(value, minimum), maximum)
     }
 }
