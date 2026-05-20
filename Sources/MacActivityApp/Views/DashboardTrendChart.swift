@@ -132,46 +132,59 @@ struct DashboardTrendChart: View {
             .chartPlotStyle { plotArea in
                 plotArea.background(Color.clear)
             }
+            .chartOverlay { proxy in
+                GeometryReader { geometry in
+                    let plotAreaFrame = geometry[proxy.plotAreaFrame]
+
+                    Rectangle()
+                        .fill(.clear)
+                        .contentShape(Rectangle())
+                        .onContinuousHover(coordinateSpace: .local) { phase in
+                            switch phase {
+                            case .active(let location):
+                                guard !trend.samples.isEmpty else {
+                                    hoveredSampleIndex = nil
+                                    hoverLocation = nil
+                                    return
+                                }
+
+                                let clampedX = min(max(location.x, plotAreaFrame.minX), plotAreaFrame.maxX)
+                                let plotAreaX = clampedX - plotAreaFrame.minX
+
+                                guard let hoveredDate = proxy.value(atX: plotAreaX, as: Date.self) else {
+                                    hoveredSampleIndex = nil
+                                    hoverLocation = nil
+                                    return
+                                }
+
+                                let selectedIndex = nearestSampleIndex(
+                                    to: hoveredDate,
+                                    samples: trend.samples
+                                )
+                                hoveredSampleIndex = selectedIndex
+
+                                if trend.samples.indices.contains(selectedIndex) {
+                                    let selectedSample = trend.samples[selectedIndex]
+                                    let selectedX = proxy.position(forX: selectedSample.timestamp) ?? plotAreaX
+                                    let selectedY = proxy.position(forY: selectedSample.primaryValue) ?? plotAreaFrame.midY
+
+                                    hoverLocation = CGPoint(
+                                        x: plotFrame.minX + selectedX,
+                                        y: plotFrame.minY + selectedY
+                                    )
+                                } else {
+                                    hoverLocation = nil
+                                }
+                            case .ended:
+                                hoveredSampleIndex = nil
+                                hoverLocation = nil
+                            }
+                        }
+                }
+            }
             .frame(width: plotFrame.width, height: plotFrame.height)
             .clipped()
             .offset(x: plotFrame.minX, y: plotFrame.minY)
-
-            Rectangle()
-                .fill(.clear)
-                .contentShape(Rectangle())
-                .frame(width: plotFrame.width, height: plotFrame.height)
-                .offset(x: plotFrame.minX, y: plotFrame.minY)
-                .onContinuousHover(coordinateSpace: .local) { phase in
-                    switch phase {
-                    case .active(let location):
-                        guard !trend.samples.isEmpty else {
-                            hoveredSampleIndex = nil
-                            hoverLocation = nil
-                            return
-                        }
-
-                        let localFrame = CGRect(origin: .zero, size: plotFrame.size)
-                        let clampedLocalX = min(max(location.x, localFrame.minX), localFrame.maxX)
-                        let clampedLocalY = min(max(location.y, localFrame.minY), localFrame.maxY)
-                        let hoveredDate = DashboardTrendChartLayout.date(
-                            atX: clampedLocalX,
-                            plotFrame: localFrame,
-                            domain: xDomain
-                        )
-
-                        hoveredSampleIndex = nearestSampleIndex(
-                            to: hoveredDate,
-                            samples: trend.samples
-                        )
-                        hoverLocation = CGPoint(
-                            x: plotFrame.minX + clampedLocalX,
-                            y: plotFrame.minY + clampedLocalY
-                        )
-                    case .ended:
-                        hoveredSampleIndex = nil
-                        hoverLocation = nil
-                }
-            }
 
             if let selectedSample {
                 let annotationAnchor = hoverLocation ?? CGPoint(
