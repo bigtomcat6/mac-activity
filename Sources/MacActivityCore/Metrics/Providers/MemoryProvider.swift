@@ -44,12 +44,15 @@ public struct MemoryProvider: MetricProvider {
         stats: vm_statistics64_data_t,
         totalBytes: UInt64
     ) -> MemoryReading {
-        // Use anonymous, wired, and compressed pages so file-backed cached pages
-        // are not reported as "used memory".
+        // Keep reclaimable purgeable anonymous pages out of the "used" figure so
+        // cached or discardable memory does not inflate the dashboard reading.
+        let anonymousPages = UInt64(stats.internal_page_count)
+        let reclaimableAnonymousPages = UInt64(min(stats.purgeable_count, stats.internal_page_count))
         let usedPages = UInt64(
-            stats.internal_page_count +
-            stats.wire_count +
-            stats.compressor_page_count
+            anonymousPages -
+            reclaimableAnonymousPages +
+            UInt64(stats.wire_count) +
+            UInt64(stats.compressor_page_count)
         )
         let usedBytes = usedPages * UInt64(pageSize)
 

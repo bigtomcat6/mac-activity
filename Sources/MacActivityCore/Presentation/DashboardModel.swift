@@ -290,10 +290,10 @@ public final class DashboardModel: ObservableObject {
     private static func formatBytes(_ value: UInt64) -> String {
         let formatter = ByteCountFormatter()
         formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.countStyle = .binary
+        formatter.countStyle = .decimal
         formatter.includesUnit = true
         formatter.isAdaptive = true
-        return formatter.string(fromByteCount: Int64(value))
+        return normalizedFormatterOutput(formatter.string(fromByteCount: Int64(value)))
     }
 
     private static func formatRate(_ value: Double) -> String {
@@ -302,11 +302,17 @@ public final class DashboardModel: ObservableObject {
         formatter.countStyle = .decimal
         formatter.includesUnit = true
         formatter.isAdaptive = true
-        return "\(formatter.string(fromByteCount: Int64(max(0, value))))/s"
+        return "\(normalizedFormatterOutput(formatter.string(fromByteCount: Int64(max(0, value)))))/s"
     }
 
     private static func formatTemperature(_ value: Double) -> String {
         String(format: "%.1f C", value)
+    }
+
+    private static func normalizedFormatterOutput(_ value: String) -> String {
+        value
+            .replacingOccurrences(of: "\u{00A0}", with: " ")
+            .replacingOccurrences(of: "\u{2006}", with: " ")
     }
 
     private static func trend(

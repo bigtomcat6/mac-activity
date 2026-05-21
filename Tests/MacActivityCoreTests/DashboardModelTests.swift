@@ -90,4 +90,20 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(temperature.title, "Battery Temp")
         XCTAssertEqual(temperature.value, "30.2 C")
     }
+
+    func testModelFormatsMemoryValueUsingDecimalUnits() {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [
+                .memory(MemoryReading(usedBytes: 1_500_000_000, totalBytes: 3_000_000_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 4)
+        )
+
+        let memory = try! XCTUnwrap(model.metrics.first { $0.kind == .memory })
+
+        XCTAssertEqual(memory.value, "1.5 GB")
+    }
 }

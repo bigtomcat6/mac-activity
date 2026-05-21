@@ -3,12 +3,13 @@ import XCTest
 @testable import MacActivityCore
 
 final class MemoryProviderTests: XCTestCase {
-    func testMakeReadingExcludesFileBackedInactivePagesFromUsedMemory() {
+    func testMakeReadingExcludesReclaimablePagesFromUsedMemory() {
         var stats = vm_statistics64_data_t()
         stats.inactive_count = 7
+        stats.internal_page_count = 10
+        stats.purgeable_count = 4
         stats.wire_count = 3
         stats.compressor_page_count = 2
-        stats.internal_page_count = 4
 
         let reading = MemoryProvider.makeReading(
             pageSize: 1_024,
@@ -18,7 +19,7 @@ final class MemoryProviderTests: XCTestCase {
 
         XCTAssertEqual(
             reading,
-            MemoryReading(usedBytes: 9_216, totalBytes: 32_768)
+            MemoryReading(usedBytes: 11_264, totalBytes: 32_768)
         )
     }
 
