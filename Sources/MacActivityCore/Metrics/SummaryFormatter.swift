@@ -208,6 +208,8 @@ public struct SummaryFormatter: SummaryFormatting {
     private func formatBytesPerSecond(_ value: Double) -> String {
         let absoluteValue = max(0, value)
         switch absoluteValue {
+        case 1_000_000_000...:
+            return String(format: "%.1fG", absoluteValue / 1_000_000_000)
         case 1_000_000...:
             return String(format: "%.1fM", absoluteValue / 1_000_000)
         case 1_000...:
@@ -217,24 +219,12 @@ public struct SummaryFormatter: SummaryFormatting {
         }
     }
 
-    private func formatStatusBytesPerSecond(_ value: Double) -> String {
-        let absoluteValue = max(0, value)
-        switch absoluteValue {
-        case 1_000_000...:
-            return String(format: "%.1f M/s", absoluteValue / 1_000_000)
-        case 1_000...:
-            return String(format: "%.1f K/s", absoluteValue / 1_000)
-        default:
-            return String(format: "%.0f B/s", absoluteValue)
-        }
-    }
-
     private func formatOptionalStatusBytesPerSecond(_ value: Double?) -> String {
         guard let value else {
             return "--"
         }
 
-        return formatStatusBytesPerSecond(value)
+        return formatBytesPerSecond(value)
     }
 
     private func formatPercent(_ value: Double?) -> String {

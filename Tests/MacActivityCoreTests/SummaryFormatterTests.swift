@@ -45,7 +45,7 @@ final class SummaryFormatterTests: XCTestCase {
                 StatusSummaryItem(kind: .vram, primaryText: "25%", secondaryText: "VRAM", style: .metric),
                 StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "SEN", style: .metric),
                 StatusSummaryItem(kind: .fan, primaryText: "0", secondaryText: "RPM", style: .metric),
-                StatusSummaryItem(kind: .network, primaryText: "↑13.8 K/s", secondaryText: "↓15.4 K/s", style: .network),
+                StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
             ]
         )
     }
@@ -65,6 +65,25 @@ final class SummaryFormatterTests: XCTestCase {
             items,
             [
                 StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric),
+            ]
+        )
+    }
+
+    func testRenderStatusItemsUsesCompactGigabyteNetworkSuffixForMenuBar() {
+        let snapshot = MetricsSnapshot(
+            timestamp: Date(timeIntervalSince1970: 650),
+            network: NetworkReading(downloadBytesPerSecond: 1_500_000_000, uploadBytesPerSecond: 2_300_000_000)
+        )
+
+        let items = SummaryFormatter().renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: [.network]
+        )
+
+        XCTAssertEqual(
+            items,
+            [
+                StatusSummaryItem(kind: .network, primaryText: "↑2.3G", secondaryText: "↓1.5G", style: .network),
             ]
         )
     }
