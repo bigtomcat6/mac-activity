@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  pull_request:
+    branches: ["master"]
+  push:
+    branches: ["master"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: SwiftPM + Xcode Tests
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run SwiftPM tests
+        run: |
+          swift test \
+            --cache-path /tmp/swiftpm-cache \
+            --scratch-path /tmp/swiftpm-build
+
+      - name: Run Xcode tests
+        run: |
+          xcodebuild test \
+            -project MacActivity.xcodeproj \
+            -scheme MacActivity \
+            -destination "platform=macOS" \
+            -derivedDataPath /tmp/DerivedData \
+            -resultBundlePath /tmp/xcode-test-results \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
