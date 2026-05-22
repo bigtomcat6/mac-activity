@@ -40,4 +40,38 @@ final class MemoryProviderTests: XCTestCase {
             MemoryReading(usedBytes: 16_384, totalBytes: 16_384)
         )
     }
+
+    func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
+        let recorder = IOAcceleratorReadRecorder()
+        let cache = IOAcceleratorStatsCache(
+            ttl: .seconds(60),
+            readStats: {
+                await recorder.nextStats()
+            }
+        )
+        let gpuProvider = GPUProvider(cache: cache)
+        let vramProvider = VRAMProvider(cache: cache)
+
+        _ = await gpuProvider.sample()
+        _ = await vramProvider.sample()
+
+        let readCount = await recorder.currentReadCount()
+        XCTAssertEqual(readCount, 1)
+    }
+}
+
+private actor IOAcceleratorReadRecorder {
+    private var readCount = 0
+
+    func nextStats() -> IOAcceleratorStats {
+        readCount += 1
+        return IOAcceleratorStats(
+            gpuUsagePercent: 55,
+            memory: VRAMReading(usedBytes: 1_024, totalBytes: 2_048)
+        )
+    }
+
+    func currentReadCount() -> Int {
+        readCount
+    }
 }

@@ -132,55 +132,32 @@ struct DashboardTrendChart: View {
             .chartPlotStyle { plotArea in
                 plotArea.background(Color.clear)
             }
-            .chartOverlay { proxy in
-                GeometryReader { geometry in
-                    let plotAreaFrame = geometry[proxy.plotAreaFrame]
-
-                    Rectangle()
-                        .fill(.clear)
-                        .contentShape(Rectangle())
-                        .onContinuousHover(coordinateSpace: .local) { phase in
-                            switch phase {
-                            case .active(let location):
-                                guard !trend.samples.isEmpty else {
-                                    hoveredSampleIndex = nil
-                                    hoverLocation = nil
-                                    return
-                                }
-
-                                let clampedX = min(max(location.x, plotAreaFrame.minX), plotAreaFrame.maxX)
-                                let plotAreaX = clampedX - plotAreaFrame.minX
-
-                                guard let hoveredDate = proxy.value(atX: plotAreaX, as: Date.self) else {
-                                    hoveredSampleIndex = nil
-                                    hoverLocation = nil
-                                    return
-                                }
-
-                                let selectedIndex = nearestSampleIndex(
-                                    to: hoveredDate,
-                                    samples: trend.samples
-                                )
-                                hoveredSampleIndex = selectedIndex
-
-                                if trend.samples.indices.contains(selectedIndex) {
-                                    let selectedSample = trend.samples[selectedIndex]
-                                    let selectedX = proxy.position(forX: selectedSample.timestamp) ?? plotAreaX
-                                    let selectedY = proxy.position(forY: selectedSample.primaryValue) ?? plotAreaFrame.midY
-
-                                    hoverLocation = CGPoint(
-                                        x: plotFrame.minX + selectedX,
-                                        y: plotFrame.minY + selectedY
-                                    )
-                                } else {
-                                    hoverLocation = nil
-                                }
-                            case .ended:
+            .chartOverlay { _ in
+                Rectangle()
+                    .fill(.clear)
+                    .contentShape(Rectangle())
+                    .onContinuousHover(coordinateSpace: .local) { phase in
+                        switch phase {
+                        case .active(let location):
+                            guard let selection = DashboardTrendChartLayout.hoverSelection(
+                                localX: location.x,
+                                samples: trend.samples,
+                                xDomain: xDomain,
+                                yDomain: domain,
+                                plotFrame: plotFrame
+                            ) else {
                                 hoveredSampleIndex = nil
                                 hoverLocation = nil
+                                return
                             }
+
+                            hoveredSampleIndex = selection.sampleIndex
+                            hoverLocation = selection.location
+                        case .ended:
+                            hoveredSampleIndex = nil
+                            hoverLocation = nil
                         }
-                }
+                    }
             }
             .frame(width: plotFrame.width, height: plotFrame.height)
             .clipped()
@@ -405,15 +382,6 @@ struct DashboardTrendChart: View {
         return trend.samples[hoveredSampleIndex]
     }
 
-    private func nearestSampleIndex(
-        to date: Date,
-        samples: [DashboardTrendSample]
-    ) -> Int {
-        samples.enumerated().min { lhs, rhs in
-            abs(lhs.element.timestamp.timeIntervalSince(date)) < abs(rhs.element.timestamp.timeIntervalSince(date))
-        }?.offset ?? 0
-    }
-
     private func chartDomain(for trend: DashboardTrend) -> ClosedRange<Double> {
         switch trend.scale {
         case .fixed(let lowerBound, let upperBound):
@@ -449,37 +417,15 @@ struct DashboardTrendChart: View {
     }
 
     private func axisLabel(for value: Double) -> String {
-        switch metric.kind {
-        case .cpu, .gpu, .memory, .vram, .battery:
-            return "\(Int(value.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", value)
-        case .fan:
-            return "\(Int(value.rounded())) RPM"
-        case .network:
-            return formatRate(value)
-        }
+        DashboardTrendReadoutFormatter.axisLabel(for: metric.kind, value: value)
     }
 
     private func primaryReadout(for sample: DashboardTrendSample) -> String {
-        switch metric.kind {
-        case .cpu, .gpu, .memory, .vram, .battery:
-            return "\(Int(sample.primaryValue.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", sample.primaryValue)
-        case .fan:
-            return "\(Int(sample.primaryValue.rounded())) RPM"
-        case .network:
-            return "Down \(formatRate(sample.primaryValue))"
-        }
+        DashboardTrendReadoutFormatter.primaryReadout(for: metric.kind, sample: sample)
     }
 
     private func secondaryReadout(for sample: DashboardTrendSample) -> String? {
-        guard let secondaryValue = sample.secondaryValue, metric.kind == .network else {
-            return nil
-        }
-
-        return "Up \(formatRate(secondaryValue))"
+        DashboardTrendReadoutFormatter.secondaryReadout(for: metric.kind, sample: sample)
     }
 
     private func timestampLabel(for date: Date?) -> String {
@@ -490,14 +436,6 @@ struct DashboardTrendChart: View {
         return date.formatted(.dateTime.hour().minute())
     }
 
-    private func formatRate(_ value: Double) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.countStyle = .decimal
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        return "\(formatter.string(fromByteCount: Int64(max(0, value))))/s"
-    }
 }
 
 enum DashboardTrendLineSeries: String, Equatable, Sendable {
@@ -510,6 +448,11 @@ struct DashboardTrendLinePoint: Equatable, Identifiable, Sendable {
     let timestamp: Date
     let value: Double
     let series: DashboardTrendLineSeries
+}
+
+struct DashboardTrendHoverSelection: Equatable {
+    let sampleIndex: Int
+    let location: CGPoint
 }
 
 struct DashboardTrendChartLayout {
@@ -685,6 +628,55 @@ struct DashboardTrendChartLayout {
         return domain.lowerBound.addingTimeInterval(span * progress)
     }
 
+    static func hoverSelection(
+        localX: CGFloat,
+        samples: [DashboardTrendSample],
+        xDomain: ClosedRange<Date>,
+        yDomain: ClosedRange<Double>,
+        plotFrame: CGRect
+    ) -> DashboardTrendHoverSelection? {
+        guard !samples.isEmpty else {
+            return nil
+        }
+
+        let clampedLocalX = min(max(localX, 0), plotFrame.width)
+        let hoveredDate = date(
+            atX: plotFrame.minX + clampedLocalX,
+            plotFrame: plotFrame,
+            domain: xDomain
+        )
+        let selectedIndex = nearestSampleIndex(to: hoveredDate, samples: samples)
+        guard samples.indices.contains(selectedIndex) else {
+            return nil
+        }
+
+        let selectedSample = samples[selectedIndex]
+        return DashboardTrendHoverSelection(
+            sampleIndex: selectedIndex,
+            location: CGPoint(
+                x: xPosition(
+                    for: selectedSample.timestamp,
+                    domain: xDomain,
+                    plotFrame: plotFrame
+                ),
+                y: yPosition(
+                    for: selectedSample.primaryValue,
+                    domain: yDomain,
+                    plotFrame: plotFrame
+                )
+            )
+        )
+    }
+
+    private static func nearestSampleIndex(
+        to date: Date,
+        samples: [DashboardTrendSample]
+    ) -> Int {
+        samples.enumerated().min { lhs, rhs in
+            abs(lhs.element.timestamp.timeIntervalSince(date)) < abs(rhs.element.timestamp.timeIntervalSince(date))
+        }?.offset ?? 0
+    }
+
     static func yPosition(
         for value: Double,
         domain: ClosedRange<Double>,
@@ -781,34 +773,46 @@ struct DashboardTrendChartLayout {
         samples: [DashboardTrendSample],
         domain: ClosedRange<Double>
     ) -> Bool {
-        guard samples.count >= 2 else {
-            return false
-        }
-
-        let values = samples.map(\.primaryValue)
-        guard let minValue = values.min(),
-              let maxValue = values.max() else {
-            return false
-        }
-
-        let spread = maxValue - minValue
-        let domainSpan = max(domain.upperBound - domain.lowerBound, 0.001)
-
-        if spread <= 0.001 {
-            return false
-        }
-
-        switch kind {
-        case .battery, .temperature:
-            return spread / domainSpan >= 0.1
-        case .network:
-            return false
-        case .cpu, .gpu, .memory, .vram, .fan:
-            return spread / domainSpan >= 0.06
-        }
+        samples.count >= 2 && kind != .network
     }
 
     static func animatesSampleChanges(for kind: MetricKind) -> Bool {
         kind != .network
+    }
+}
+
+enum DashboardTrendReadoutFormatter {
+    static func axisLabel(for kind: MetricKind, value: Double) -> String {
+        switch kind {
+        case .cpu, .gpu, .memory, .vram, .battery:
+            return "\(Int(value.rounded()))%"
+        case .temperature:
+            return String(format: "%.1f C", value)
+        case .fan:
+            return "\(Int(value.rounded())) RPM"
+        case .network:
+            return DashboardMetricTextFormatter.formatRate(value)
+        }
+    }
+
+    static func primaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String {
+        switch kind {
+        case .cpu, .gpu, .memory, .vram, .battery:
+            return "\(Int(sample.primaryValue.rounded()))%"
+        case .temperature:
+            return String(format: "%.1f C", sample.primaryValue)
+        case .fan:
+            return "\(Int(sample.primaryValue.rounded())) RPM"
+        case .network:
+            return "↑ \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
+        }
+    }
+
+    static func secondaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String? {
+        guard kind == .network else {
+            return nil
+        }
+
+        return "↓ \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
     }
 }

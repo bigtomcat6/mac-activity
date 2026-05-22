@@ -12,7 +12,7 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
             StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
         ]
 
-        XCTAssertLessThanOrEqual(StatusBarSummaryLayout.preferredWidth(for: items), 108)
+        XCTAssertLessThanOrEqual(StatusBarSummaryLayout.preferredWidth(for: items), 154)
         XCTAssertEqual(StatusBarSummaryLayout.preferredWidth(for: []), 0)
     }
 
@@ -20,7 +20,7 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .metric).pointSize, 10)
         XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .metric).pointSize, 6)
         XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .network).pointSize, 8)
-        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 7)
+        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 8)
     }
 
     func testItemWidthIsStableForNetworkMetricAcrossDifferentValues() {
@@ -88,5 +88,47 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
             StatusBarSummaryLayout.preferredWidth(for: quieterItems),
             StatusBarSummaryLayout.preferredWidth(for: busierItems)
         )
+    }
+
+    func testSummaryViewReusesExistingMetricViewsAcrossValueUpdates() {
+        let view = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
+        let initialItems = [
+            StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
+        ]
+        let updatedItems = [
+            StatusSummaryItem(kind: .cpu, primaryText: "18%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "41%", secondaryText: "MEM", style: .metric),
+        ]
+
+        view.update(summaryText: "", items: initialItems)
+
+        let stackView = try! XCTUnwrap(view.subviews.first as? NSStackView)
+        let firstMetricView = stackView.arrangedSubviews[0]
+        let secondMetricView = stackView.arrangedSubviews[2]
+
+        view.update(summaryText: "", items: updatedItems)
+
+        XCTAssertTrue(firstMetricView === stackView.arrangedSubviews[0])
+        XCTAssertTrue(secondMetricView === stackView.arrangedSubviews[2])
+    }
+
+    func testNetworkSummaryViewUsesTwoLineVerticalLayoutWithUnifiedFonts() {
+        let view = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
+        let items = [
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
+        ]
+
+        view.update(summaryText: "", items: items)
+
+        let stackView = try! XCTUnwrap(view.subviews.first as? NSStackView)
+        let itemView = try! XCTUnwrap(stackView.arrangedSubviews.first as? NSStackView)
+        let primaryLabel = try! XCTUnwrap(itemView.arrangedSubviews.first as? NSTextField)
+        let secondaryLabel = try! XCTUnwrap(itemView.arrangedSubviews.last as? NSTextField)
+
+        XCTAssertEqual(itemView.orientation, .vertical)
+        XCTAssertEqual(primaryLabel.font?.pointSize, secondaryLabel.font?.pointSize)
+        XCTAssertEqual(primaryLabel.stringValue, "↑13.8K")
+        XCTAssertEqual(secondaryLabel.stringValue, "↓15.4K")
     }
 }

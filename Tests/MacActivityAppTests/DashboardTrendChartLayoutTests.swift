@@ -48,13 +48,13 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
-    func testAreaFillStaysDisabledForFlatFixedScaleTrend() {
+    func testAreaFillAppliesToFlatNonNetworkTrend() {
         let samples = [
             DashboardTrendSample(timestamp: .now, primaryValue: 45),
             DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 45),
         ]
 
-        XCTAssertFalse(
+        XCTAssertTrue(
             DashboardTrendChartLayout.showsAreaFill(
                 kind: .battery,
                 samples: samples,
@@ -63,7 +63,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
-    func testAreaFillReturnsForTrendWithMeaningfulVerticalSpread() {
+    func testAreaFillAppliesToNonNetworkTrendWithSpread() {
         let samples = [
             DashboardTrendSample(timestamp: .now, primaryValue: 20),
             DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 54),
@@ -263,6 +263,46 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertEqual(
             mappedDate.timeIntervalSinceReferenceDate,
             midpointDate.timeIntervalSinceReferenceDate,
+            accuracy: 0.001
+        )
+    }
+
+    func testHoverSelectionUsesChartLocalCoordinates() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let middle = start.addingTimeInterval(60)
+        let end = start.addingTimeInterval(120)
+        let samples = [
+            DashboardTrendSample(timestamp: start, primaryValue: 10),
+            DashboardTrendSample(timestamp: middle, primaryValue: 40),
+            DashboardTrendSample(timestamp: end, primaryValue: 20),
+        ]
+        let plotFrame = CGRect(x: 42, y: 4, width: 236, height: 38)
+
+        let selection = DashboardTrendChartLayout.hoverSelection(
+            localX: plotFrame.width / 2,
+            samples: samples,
+            xDomain: start...end,
+            yDomain: 0...100,
+            plotFrame: plotFrame
+        )
+
+        XCTAssertEqual(selection?.sampleIndex, 1)
+        XCTAssertEqual(
+            selection?.location.x ?? 0,
+            DashboardTrendChartLayout.xPosition(
+                for: middle,
+                domain: start...end,
+                plotFrame: plotFrame
+            ),
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            selection?.location.y ?? 0,
+            DashboardTrendChartLayout.yPosition(
+                for: 40,
+                domain: 0...100,
+                plotFrame: plotFrame
+            ),
             accuracy: 0.001
         )
     }

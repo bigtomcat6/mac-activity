@@ -66,11 +66,18 @@ public struct MemoryProvider: MetricProvider {
 public struct GPUProvider: MetricProvider {
     public let kind: MetricKind = .gpu
     public let cadence: MetricCadenceLane = .fast
+    private let cache: IOAcceleratorStatsCache
 
-    public init() {}
+    public init() {
+        self.init(cache: .shared)
+    }
+
+    init(cache: IOAcceleratorStatsCache) {
+        self.cache = cache
+    }
 
     public func sample() async -> MetricUpdate {
-        guard let usagePercent = IOAcceleratorStatsReader.read().gpuUsagePercent else {
+        guard let usagePercent = await cache.current().gpuUsagePercent else {
             return .unavailable(kind: .gpu, reason: "GPU usage is not exposed by IOAccelerator")
         }
 
@@ -81,11 +88,18 @@ public struct GPUProvider: MetricProvider {
 public struct VRAMProvider: MetricProvider {
     public let kind: MetricKind = .vram
     public let cadence: MetricCadenceLane = .medium
+    private let cache: IOAcceleratorStatsCache
 
-    public init() {}
+    public init() {
+        self.init(cache: .shared)
+    }
+
+    init(cache: IOAcceleratorStatsCache) {
+        self.cache = cache
+    }
 
     public func sample() async -> MetricUpdate {
-        guard let memory = IOAcceleratorStatsReader.read().memory,
+        guard let memory = await cache.current().memory,
               memory.totalBytes > 0 else {
             return .unavailable(kind: .vram, reason: "GPU memory usage is not exposed by IOAccelerator")
         }
@@ -94,20 +108,51 @@ public struct VRAMProvider: MetricProvider {
     }
 }
 
-private enum IOAcceleratorStatsReader {
-    struct Stats {
-        var gpuUsagePercent: Double?
-        var memory: VRAMReading?
+struct IOAcceleratorStats: Equatable, Sendable {
+    var gpuUsagePercent: Double?
+    var memory: VRAMReading?
+}
+
+actor IOAcceleratorStatsCache {
+    static let shared = IOAcceleratorStatsCache()
+
+    private let ttl: Duration
+    private let readStats: @Sendable () async -> IOAcceleratorStats
+    private let clock = ContinuousClock()
+    private var cachedStats: (stats: IOAcceleratorStats, timestamp: ContinuousClock.Instant)?
+
+    init(
+        ttl: Duration = .seconds(1),
+        readStats: @escaping @Sendable () async -> IOAcceleratorStats = {
+            IOAcceleratorStatsReader.read()
+        }
+    ) {
+        self.ttl = ttl
+        self.readStats = readStats
     }
 
-    static func read() -> Stats {
+    func current() async -> IOAcceleratorStats {
+        let now = clock.now
+        if let cachedStats,
+           cachedStats.timestamp.duration(to: now) < ttl {
+            return cachedStats.stats
+        }
+
+        let stats = await readStats()
+        cachedStats = (stats, now)
+        return stats
+    }
+}
+
+private enum IOAcceleratorStatsReader {
+    static func read() -> IOAcceleratorStats {
         guard let matching = IOServiceMatching("IOAccelerator") else {
-            return Stats()
+            return IOAcceleratorStats()
         }
 
         var iterator: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, matching, &iterator) == KERN_SUCCESS else {
-            return Stats()
+            return IOAcceleratorStats()
         }
         defer {
             IOObjectRelease(iterator)
@@ -153,7 +198,7 @@ private enum IOAcceleratorStatsReader {
 
         let usage = usageCandidates.max().map { clamp($0, min: 0, max: 100) }
         let memory = totalBytes > 0 ? VRAMReading(usedBytes: min(usedBytes, totalBytes), totalBytes: totalBytes) : nil
-        return Stats(gpuUsagePercent: usage, memory: memory)
+        return IOAcceleratorStats(gpuUsagePercent: usage, memory: memory)
     }
 
     private static func firstNumber(in dictionary: [String: Any], keys: [String]) -> Double? {

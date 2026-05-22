@@ -4,7 +4,7 @@ public struct TemperatureProvider: MetricProvider {
     public let kind: MetricKind = .temperature
     public let cadence: MetricCadenceLane = .slow
     private let readTemperatureSource: @Sendable () async -> TemperatureSource
-    private let readSMCTemperatureCelsius: @Sendable () -> Double?
+    private let readSMCTemperatureCelsius: @Sendable () async -> Double?
     private let readBatteryTemperatureCelsius: @Sendable () -> Double?
 
     public init() {
@@ -13,12 +13,20 @@ public struct TemperatureProvider: MetricProvider {
 
     public init(temperatureSourceStore: TemperatureSourceSelectionStore) {
         self.init(
+            temperatureSourceStore: temperatureSourceStore,
+            smcSnapshotCache: .shared
+        )
+    }
+
+    init(
+        temperatureSourceStore: TemperatureSourceSelectionStore,
+        smcSnapshotCache: SMCSensorSnapshotCache
+    ) {
+        self.init(
             readTemperatureSource: {
                 await temperatureSourceStore.read()
             },
-            readSMCTemperatureCelsius: {
-                SMCSensorReader.readTemperatureCelsius()
-            },
+            smcSnapshotCache: smcSnapshotCache,
             readBatteryTemperatureCelsius: {
                 BatteryTemperatureReader.readTemperatureCelsius()
             }
@@ -31,7 +39,21 @@ public struct TemperatureProvider: MetricProvider {
         readBatteryTemperatureCelsius: @escaping @Sendable () -> Double?
     ) {
         self.readTemperatureSource = readTemperatureSource
-        self.readSMCTemperatureCelsius = readSMCTemperatureCelsius
+        self.readSMCTemperatureCelsius = {
+            readSMCTemperatureCelsius()
+        }
+        self.readBatteryTemperatureCelsius = readBatteryTemperatureCelsius
+    }
+
+    init(
+        readTemperatureSource: @escaping @Sendable () async -> TemperatureSource,
+        smcSnapshotCache: SMCSensorSnapshotCache,
+        readBatteryTemperatureCelsius: @escaping @Sendable () -> Double?
+    ) {
+        self.readTemperatureSource = readTemperatureSource
+        self.readSMCTemperatureCelsius = {
+            await smcSnapshotCache.current().temperatureCelsius
+        }
         self.readBatteryTemperatureCelsius = readBatteryTemperatureCelsius
     }
 
@@ -43,7 +65,7 @@ public struct TemperatureProvider: MetricProvider {
 
         switch source {
         case .smc:
-            reading = readSMCTemperatureCelsius()
+            reading = await readSMCTemperatureCelsius()
             unavailableReason = "SMC temperature sensors are not available"
         case .battery:
             reading = readBatteryTemperatureCelsius()

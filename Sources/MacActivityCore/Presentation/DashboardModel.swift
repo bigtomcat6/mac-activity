@@ -37,6 +37,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var kind: MetricKind
     public var title: String
     public var value: String
+    public var secondaryText: String?
     public var detail: String?
     public var style: DashboardMetricStyle
     public var trend: DashboardTrend?
@@ -49,6 +50,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         kind: MetricKind,
         title: String,
         value: String,
+        secondaryText: String? = nil,
         detail: String? = nil,
         style: DashboardMetricStyle = .value,
         trend: DashboardTrend? = nil
@@ -56,6 +58,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         self.kind = kind
         self.title = title
         self.value = value
+        self.secondaryText = secondaryText
         self.detail = detail
         self.style = style
         self.trend = trend
@@ -65,23 +68,59 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
 @MainActor
 public final class DashboardModel: ObservableObject {
     @Published public private(set) var metrics: [DashboardMetric]
-    private var cancellables: Set<AnyCancellable> = []
+    private let store: MetricsStore
+    private let metricsBuilder: @Sendable (MetricsSnapshot, MetricsHistory) -> [DashboardMetric]
+    private var subscription: AnyCancellable?
+    private var refreshGeneration = 0
+    private var isActive: Bool
 
-    public init(store: MetricsStore) {
-        self.metrics = DashboardModel.buildMetrics(from: store.snapshot, history: store.history)
-
-        Publishers.CombineLatest(store.$snapshot, store.$history)
-            .map { snapshot, history in
-                DashboardModel.buildMetrics(from: snapshot, history: history)
-            }
-            .removeDuplicates()
-            .sink { [weak self] metrics in
-                self?.metrics = metrics
-            }
-            .store(in: &cancellables)
+    public convenience init(
+        store: MetricsStore,
+        isActive: Bool = true
+    ) {
+        self.init(
+            store: store,
+            isActive: isActive,
+            metricsBuilder: DashboardModel.buildMetrics
+        )
     }
 
-    private static func buildMetrics(from snapshot: MetricsSnapshot, history: MetricsHistory) -> [DashboardMetric] {
+    init(
+        store: MetricsStore,
+        isActive: Bool = true,
+        metricsBuilder: @escaping @Sendable (MetricsSnapshot, MetricsHistory) -> [DashboardMetric]
+    ) {
+        self.store = store
+        self.metricsBuilder = metricsBuilder
+        self.isActive = isActive
+        self.metrics = isActive ? metricsBuilder(store.snapshot, store.history) : []
+
+        if isActive {
+            startSubscription(skipCurrentValue: false)
+        }
+    }
+
+    public func setActive(_ isActive: Bool) {
+        guard self.isActive != isActive else {
+            if isActive {
+                refreshMetricsAsync()
+            }
+            return
+        }
+
+        self.isActive = isActive
+
+        if isActive {
+            startSubscription(skipCurrentValue: true)
+            refreshMetricsAsync()
+        } else {
+            subscription = nil
+            refreshGeneration += 1
+            metrics = []
+        }
+    }
+
+    nonisolated private static func buildMetrics(from snapshot: MetricsSnapshot, history: MetricsHistory) -> [DashboardMetric] {
         var items: [DashboardMetric] = []
 
         if let cpu = snapshot.cpu {
@@ -91,19 +130,7 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.cpu.title,
                     value: "\(Int(cpu.usagePercent.rounded()))%",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .fixed(lowerBound: 0, upperBound: 100)
-                    ) { sample in
-                        guard let primaryValue = sample.cpuUsagePercent else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -115,19 +142,7 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.gpu.title,
                     value: "\(Int(gpu.usagePercent.rounded()))%",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .fixed(lowerBound: 0, upperBound: 100)
-                    ) { sample in
-                        guard let primaryValue = sample.gpuUsagePercent else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -137,22 +152,9 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
-                    value: formatBytes(memory.usedBytes),
-                    detail: "of \(formatBytes(memory.totalBytes))",
+                    value: "\(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .fixed(lowerBound: 0, upperBound: 100)
-                    ) { sample in
-                        guard let primaryValue = sample.memoryUsedPercent else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -162,22 +164,10 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .vram,
                     title: MetricKind.vram.title,
-                    value: formatBytes(vram.usedBytes),
-                    detail: "of \(formatBytes(vram.totalBytes))",
+                    value: DashboardMetricTextFormatter.formatBytes(vram.usedBytes),
+                    detail: "of \(DashboardMetricTextFormatter.formatBytes(vram.totalBytes))",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .fixed(lowerBound: 0, upperBound: 100)
-                    ) { sample in
-                        guard let primaryValue = sample.vramUsedPercent else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .vram, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -187,24 +177,9 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .network,
                     title: MetricKind.network.title,
-                    value: "Down \(formatRate(network.downloadBytesPerSecond))",
-                    detail: "Up \(formatRate(network.uploadBytesPerSecond))",
+                    value: "↑ \(DashboardMetricTextFormatter.formatRate(network.uploadBytesPerSecond))  ↓ \(DashboardMetricTextFormatter.formatRate(network.downloadBytesPerSecond))",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .automatic
-                    ) { sample in
-                        guard let primaryValue = sample.downloadBytesPerSecond,
-                              let secondaryValue = sample.uploadBytesPerSecond else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: max(0, primaryValue),
-                            secondaryValue: max(0, secondaryValue)
-                        )
-                    }
+                    trend: trend(from: history, kind: .network, scale: .automatic)
                 )
             )
         }
@@ -217,19 +192,7 @@ public final class DashboardModel: ObservableObject {
                     value: "\(Int(battery.percentage.rounded()))%",
                     detail: battery.isCharging ? "Charging" : "On Battery",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .fixed(lowerBound: 0, upperBound: 100)
-                    ) { sample in
-                        guard let primaryValue = sample.batteryPercent else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .battery, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -241,19 +204,7 @@ public final class DashboardModel: ObservableObject {
                     title: temperature.source.dashboardTitle,
                     value: formatTemperature(temperature.celsius),
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .automatic
-                    ) { sample in
-                        guard let primaryValue = sample.temperatureCelsius else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: primaryValue
-                        )
-                    }
+                    trend: trend(from: history, kind: .temperature, scale: .automatic)
                 )
             )
         }
@@ -265,19 +216,7 @@ public final class DashboardModel: ObservableObject {
                     title: MetricKind.fan.title,
                     value: "\(fan.rpm) RPM",
                     style: .chart,
-                    trend: trend(
-                        from: history,
-                        scale: .automatic
-                    ) { sample in
-                        guard let primaryValue = sample.fanRPM else {
-                            return nil
-                        }
-
-                        return DashboardTrendSample(
-                            timestamp: sample.timestamp,
-                            primaryValue: Double(primaryValue)
-                        )
-                    }
+                    trend: trend(from: history, kind: .fan, scale: .automatic)
                 )
             )
         }
@@ -287,42 +226,99 @@ public final class DashboardModel: ObservableObject {
         }
     }
 
-    private static func formatBytes(_ value: UInt64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.countStyle = .decimal
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        return normalizedFormatterOutput(formatter.string(fromByteCount: Int64(value)))
-    }
-
-    private static func formatRate(_ value: Double) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.allowedUnits = [.useGB, .useMB, .useKB]
-        formatter.countStyle = .decimal
-        formatter.includesUnit = true
-        formatter.isAdaptive = true
-        return "\(normalizedFormatterOutput(formatter.string(fromByteCount: Int64(max(0, value)))))/s"
-    }
-
-    private static func formatTemperature(_ value: Double) -> String {
+    nonisolated private static func formatTemperature(_ value: Double) -> String {
         String(format: "%.1f C", value)
     }
 
-    private static func normalizedFormatterOutput(_ value: String) -> String {
-        value
-            .replacingOccurrences(of: "\u{00A0}", with: " ")
-            .replacingOccurrences(of: "\u{2006}", with: " ")
-    }
-
-    private static func trend(
+    nonisolated private static func trend(
         from history: MetricsHistory,
-        scale: DashboardTrendScale,
-        build: (MetricHistorySample) -> DashboardTrendSample?
+        kind: MetricKind,
+        scale: DashboardTrendScale
     ) -> DashboardTrend {
         DashboardTrend(
-            samples: history.samples.compactMap(build),
+            samples: history.samples(for: kind).map {
+                DashboardTrendSample(
+                    timestamp: $0.timestamp,
+                    primaryValue: $0.primaryValue,
+                    secondaryValue: $0.secondaryValue
+                )
+            },
             scale: scale
         )
+    }
+
+    private func startSubscription(skipCurrentValue: Bool) {
+        let basePublisher = Publishers.CombineLatest(store.$snapshot, store.$history)
+        let publisher: AnyPublisher<(MetricsSnapshot, MetricsHistory), Never> = skipCurrentValue
+            ? basePublisher.dropFirst().eraseToAnyPublisher()
+            : basePublisher.eraseToAnyPublisher()
+
+        subscription = publisher
+            .sink { [weak self] snapshot, history in
+                self?.refreshMetricsAsync(snapshot: snapshot, history: history)
+            }
+    }
+
+    private func refreshMetricsAsync() {
+        refreshMetricsAsync(snapshot: store.snapshot, history: store.history)
+    }
+
+    private func refreshMetricsAsync(snapshot: MetricsSnapshot, history: MetricsHistory) {
+        let metricsBuilder = self.metricsBuilder
+
+        refreshGeneration += 1
+        let refreshGeneration = refreshGeneration
+
+        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder] in
+            let metrics = metricsBuilder(snapshot, history)
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self,
+                      self.isActive,
+                      self.refreshGeneration == refreshGeneration,
+                      self.metrics != metrics else {
+                    return
+                }
+
+                self.metrics = metrics
+            }
+        }
+    }
+}
+
+public enum DashboardMetricTextFormatter {
+    public static func formatBytes(_ value: UInt64) -> String {
+        formatDecimalBytes(Double(value))
+    }
+
+    public static func formatRate(_ value: Double) -> String {
+        "\(formatDecimalBytes(max(0, value)))/s"
+    }
+
+    private static func formatDecimalBytes(_ value: Double) -> String {
+        if value == 0 {
+            return "0 KB"
+        }
+
+        let unit: (threshold: Double, suffix: String)
+        switch value {
+        case 1_000_000_000...:
+            unit = (1_000_000_000, "GB")
+        case 1_000_000...:
+            unit = (1_000_000, "MB")
+        case 1_000...:
+            unit = (1_000, "KB")
+        default:
+            return "\(Int(value.rounded())) B"
+        }
+
+        let tenths = Int((value / unit.threshold * 10).rounded())
+        let whole = tenths / 10
+        let fraction = tenths % 10
+        if fraction == 0 {
+            return "\(whole) \(unit.suffix)"
+        }
+
+        return "\(whole).\(fraction) \(unit.suffix)"
     }
 }

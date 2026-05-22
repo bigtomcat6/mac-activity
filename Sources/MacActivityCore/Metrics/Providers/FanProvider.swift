@@ -4,11 +4,20 @@ import IOKit
 public struct FanProvider: MetricProvider {
     public let kind: MetricKind = .fan
     public let cadence: MetricCadenceLane = .slow
+    private let readFanRPM: @Sendable () async -> Int?
 
-    public init() {}
+    public init() {
+        self.init(smcSnapshotCache: .shared)
+    }
+
+    init(smcSnapshotCache: SMCSensorSnapshotCache) {
+        self.readFanRPM = {
+            await smcSnapshotCache.current().fanRPM
+        }
+    }
 
     public func sample() async -> MetricUpdate {
-        guard let rpm = SMCSensorReader.readFanRPM() else {
+        guard let rpm = await readFanRPM() else {
             return .unavailable(kind: .fan, reason: "Fan speed is not exposed by AppleSMC")
         }
 
@@ -16,38 +25,70 @@ public struct FanProvider: MetricProvider {
     }
 }
 
+struct SMCSensorSnapshot: Equatable, Sendable {
+    var temperatureCelsius: Double? = nil
+    var fanRPM: Int? = nil
+
+    var hasReadings: Bool {
+        temperatureCelsius != nil || fanRPM != nil
+    }
+}
+
+actor SMCSensorSnapshotCache {
+    static let shared = SMCSensorSnapshotCache()
+
+    private let ttl: Duration
+    private let retryInterval: Duration
+    private let readSnapshot: @Sendable () async -> SMCSensorSnapshot
+    private let clock = ContinuousClock()
+    private var cachedSnapshot: (snapshot: SMCSensorSnapshot, timestamp: ContinuousClock.Instant)?
+
+    init(
+        ttl: Duration = .seconds(1),
+        retryInterval: Duration = .seconds(60),
+        readSnapshot: @escaping @Sendable () async -> SMCSensorSnapshot = {
+            SMCSensorReader.readSnapshot()
+        }
+    ) {
+        self.ttl = ttl
+        self.retryInterval = retryInterval
+        self.readSnapshot = readSnapshot
+    }
+
+    func current() async -> SMCSensorSnapshot {
+        let now = clock.now
+        if let cachedSnapshot {
+            let age = cachedSnapshot.timestamp.duration(to: now)
+            let maxAge = cachedSnapshot.snapshot.hasReadings ? ttl : retryInterval
+            if age < maxAge {
+                return cachedSnapshot.snapshot
+            }
+        }
+
+        let snapshot = await readSnapshot()
+        cachedSnapshot = (snapshot, now)
+        return snapshot
+    }
+}
+
 enum SMCSensorReader {
     static let serviceMatchingNames = ["AppleSMCKeysEndpoint", "AppleSMC"]
 
     static func readFanRPM() -> Int? {
-        withConnection { connection in
-            guard let fanCount = readUInt8(key: "FNum", connection: connection), fanCount > 0 else {
-                return nil
-            }
-
-            let speeds = (0..<fanCount).compactMap { index in
-                readFanRPM(key: "F\(index)Ac", connection: connection)
-            }
-
-            guard !speeds.isEmpty else {
-                return nil
-            }
-
-            let average = speeds.reduce(0, +) / Double(speeds.count)
-            return Int(average.rounded())
-        }
+        readSnapshot().fanRPM
     }
 
     static func readTemperatureCelsius() -> Double? {
-        withConnection { connection in
-            for key in ["TC0P", "TC0E", "TC0F", "TC0D", "TC0H", "TCXC", "TG0P"] {
-                if let celsius = readTemperature(key: key, connection: connection) {
-                    return celsius
-                }
-            }
+        readSnapshot().temperatureCelsius
+    }
 
-            return nil
-        }
+    static func readSnapshot() -> SMCSensorSnapshot {
+        withConnection { connection in
+            SMCSensorSnapshot(
+                temperatureCelsius: readTemperatureCelsius(connection: connection),
+                fanRPM: readAverageFanRPM(connection: connection)
+            )
+        } ?? SMCSensorSnapshot()
     }
 
     private static func withConnection<T>(_ body: (io_connect_t) -> T?) -> T? {
@@ -102,6 +143,33 @@ enum SMCSensorReader {
         }
 
         return decodeTemperatureCelsius(from: reading.bytes, dataType: reading.dataType)
+    }
+
+    private static func readAverageFanRPM(connection: io_connect_t) -> Int? {
+        guard let fanCount = readUInt8(key: "FNum", connection: connection), fanCount > 0 else {
+            return nil
+        }
+
+        let speeds = (0..<fanCount).compactMap { index in
+            readFanRPM(key: "F\(index)Ac", connection: connection)
+        }
+
+        guard !speeds.isEmpty else {
+            return nil
+        }
+
+        let average = speeds.reduce(0, +) / Double(speeds.count)
+        return Int(average.rounded())
+    }
+
+    private static func readTemperatureCelsius(connection: io_connect_t) -> Double? {
+        for key in ["TC0P", "TC0E", "TC0F", "TC0D", "TC0H", "TCXC", "TG0P"] {
+            if let celsius = readTemperature(key: key, connection: connection) {
+                return celsius
+            }
+        }
+
+        return nil
     }
 
     static func decodeFanRPM(from bytes: [UInt8], dataType: String) -> Double? {

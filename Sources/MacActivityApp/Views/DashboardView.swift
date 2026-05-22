@@ -96,19 +96,12 @@ private struct MetricCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .top) {
                 Text(metric.title)
                     .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                Text(metric.value)
-                    .font(
-                        isCompactChartCard
-                        ? .subheadline.monospacedDigit().weight(.semibold)
-                        : .title3.monospacedDigit().weight(.semibold)
-                    )
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                trailingValueView
             }
 
             switch metric.style {
@@ -169,6 +162,34 @@ private struct MetricCard: View {
             return .red
         case .fan:
             return .indigo
+        }
+    }
+
+    @ViewBuilder
+    private var trailingValueView: some View {
+        if isCompactChartCard, let secondaryText = metric.secondaryText {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(metric.value)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+
+                Text(secondaryText)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
+            }
+            .multilineTextAlignment(.trailing)
+        } else {
+            Text(metric.value)
+                .font(
+                    isCompactChartCard
+                    ? .subheadline.monospacedDigit().weight(.semibold)
+                    : .title3.monospacedDigit().weight(.semibold)
+                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
     }
 }
