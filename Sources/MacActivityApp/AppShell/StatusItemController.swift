@@ -102,8 +102,11 @@ private struct RenderedStatusSummary: Equatable {
     var items: [StatusSummaryItem]
 }
 
-private final class StatusBarSummaryView: NSView {
+final class StatusBarSummaryView: NSView {
     private let stackView: NSStackView
+    private var fallbackView: StatusBarFallbackSummaryView?
+    private var itemViewsByKind: [MetricKind: StatusBarSummaryItemView] = [:]
+    private var separatorViews: [StatusBarSummarySeparatorView] = []
     var mouseDownHandler: (() -> Void)?
 
     override init(frame frameRect: NSRect) {
@@ -135,13 +138,11 @@ private final class StatusBarSummaryView: NSView {
     }
 
     func update(summaryText: String, items: [StatusSummaryItem]) {
-        stackView.arrangedSubviews.forEach { view in
-            stackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
         if items.isEmpty {
-            stackView.addArrangedSubview(StatusBarFallbackSummaryView(text: summaryText))
+            let fallbackView = fallbackView ?? StatusBarFallbackSummaryView(text: summaryText)
+            fallbackView.update(text: summaryText)
+            self.fallbackView = fallbackView
+            setArrangedSubviews([fallbackView])
             frame.size = NSSize(
                 width: StatusBarSummaryLayout.fallbackWidth(for: summaryText),
                 height: 22
@@ -149,23 +150,62 @@ private final class StatusBarSummaryView: NSView {
             return
         }
 
+        fallbackView = nil
+        var arrangedSubviews: [NSView] = []
+
         for (index, item) in items.enumerated() {
-            stackView.addArrangedSubview(StatusBarSummaryItemView(item: item))
+            let itemView = itemViewsByKind[item.kind] ?? StatusBarSummaryItemView(item: item)
+            itemView.update(item: item)
+            itemViewsByKind[item.kind] = itemView
+            arrangedSubviews.append(itemView)
 
             if index < items.index(before: items.endIndex) {
-                stackView.addArrangedSubview(StatusBarSummarySeparatorView())
+                arrangedSubviews.append(separatorView(at: index))
             }
         }
+
+        setArrangedSubviews(arrangedSubviews)
         frame.size = NSSize(width: StatusBarSummaryLayout.preferredWidth(for: items), height: 22)
         invalidateIntrinsicContentSize()
+    }
+
+    private func separatorView(at index: Int) -> StatusBarSummarySeparatorView {
+        if index >= separatorViews.count {
+            separatorViews.append(StatusBarSummarySeparatorView())
+        }
+        return separatorViews[index]
+    }
+
+    private func setArrangedSubviews(_ views: [NSView]) {
+        let current = stackView.arrangedSubviews
+        let isSameLayout =
+            current.count == views.count &&
+            zip(current, views).allSatisfy { currentView, nextView in
+                currentView === nextView
+            }
+
+        guard !isSameLayout else {
+            return
+        }
+
+        current.forEach { view in
+            stackView.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        views.forEach { view in
+            stackView.addArrangedSubview(view)
+        }
     }
 }
 
 private final class StatusBarFallbackSummaryView: NSView {
+    private let label: NSTextField
+
     init(text: String) {
+        label = NSTextField(labelWithString: text)
         super.init(frame: .zero)
 
-        let label = NSTextField(labelWithString: text)
         label.font = StatusBarSummaryLayout.fallbackFont
         label.textColor = .controlTextColor
         label.alignment = .center
@@ -183,28 +223,30 @@ private final class StatusBarFallbackSummaryView: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    func update(text: String) {
+        label.stringValue = text
+    }
 }
 
 private final class StatusBarSummaryItemView: NSStackView {
+    private var widthConstraint: NSLayoutConstraint?
+    private let primaryLabel: NSTextField
+    private let secondaryLabel: NSTextField
+
     init(item: StatusSummaryItem) {
+        primaryLabel = NSTextField(labelWithString: item.primaryText)
+        secondaryLabel = NSTextField(labelWithString: item.secondaryText)
         super.init(frame: .zero)
 
-        orientation = .vertical
-        alignment = item.style == .network ? .leading : .centerX
         distribution = .gravityAreas
-        spacing = -1
-        edgeInsets = item.style == .network
-            ? NSEdgeInsets(top: 1, left: 2, bottom: 1, right: 2)
-            : NSEdgeInsets(top: 1, left: 0, bottom: 1, right: 0)
 
-        let primaryLabel = NSTextField(labelWithString: item.primaryText)
         primaryLabel.font = StatusBarSummaryLayout.primaryFont(for: item.style)
         primaryLabel.textColor = .controlTextColor
         primaryLabel.alignment = item.style == .network ? .left : .center
         primaryLabel.lineBreakMode = .byClipping
         primaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
 
-        let secondaryLabel = NSTextField(labelWithString: item.secondaryText)
         secondaryLabel.font = StatusBarSummaryLayout.secondaryFont(for: item.style)
         secondaryLabel.textColor = .controlTextColor
         secondaryLabel.alignment = item.style == .network ? .left : .center
@@ -214,7 +256,10 @@ private final class StatusBarSummaryItemView: NSStackView {
         addArrangedSubview(primaryLabel)
         addArrangedSubview(secondaryLabel)
 
-        widthAnchor.constraint(equalToConstant: StatusBarSummaryLayout.itemWidth(for: item)).isActive = true
+        applyLayout(for: item)
+        let widthConstraint = widthAnchor.constraint(equalToConstant: StatusBarSummaryLayout.itemWidth(for: item))
+        widthConstraint.isActive = true
+        self.widthConstraint = widthConstraint
         heightAnchor.constraint(equalToConstant: 22).isActive = true
     }
 
@@ -222,11 +267,31 @@ private final class StatusBarSummaryItemView: NSStackView {
     required init(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
+
+    func update(item: StatusSummaryItem) {
+        primaryLabel.stringValue = item.primaryText
+        primaryLabel.font = StatusBarSummaryLayout.primaryFont(for: item.style)
+        primaryLabel.alignment = item.style == .network ? .left : .center
+        secondaryLabel.stringValue = item.secondaryText
+        secondaryLabel.font = StatusBarSummaryLayout.secondaryFont(for: item.style)
+        secondaryLabel.alignment = item.style == .network ? .left : .center
+        applyLayout(for: item)
+        widthConstraint?.constant = StatusBarSummaryLayout.itemWidth(for: item)
+    }
+
+    private func applyLayout(for item: StatusSummaryItem) {
+        orientation = .vertical
+        alignment = item.style == .network ? .leading : .centerX
+        spacing = -1
+        edgeInsets = item.style == .network
+            ? NSEdgeInsets(top: 1, left: 1, bottom: 1, right: 1)
+            : NSEdgeInsets(top: 1, left: 0, bottom: 1, right: 0)
+    }
 }
 
 private final class StatusBarSummarySeparatorView: NSView {
     override var intrinsicContentSize: NSSize {
-        NSSize(width: 7, height: 22)
+        NSSize(width: StatusBarSummaryLayout.separatorWidth, height: 22)
     }
 
     override init(frame frameRect: NSRect) {
@@ -254,9 +319,9 @@ private final class StatusBarSummarySeparatorView: NSView {
 }
 
 enum StatusBarSummaryLayout {
-    static let metricMinimumWidth: CGFloat = 30
-    static let networkMinimumWidth: CGFloat = 40
-    static let separatorWidth: CGFloat = 7
+    static let metricMinimumWidth: CGFloat = 26
+    static let networkMinimumWidth: CGFloat = 34
+    static let separatorWidth: CGFloat = 2
     static var fallbackFont: NSFont {
         .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
     }
@@ -274,11 +339,13 @@ enum StatusBarSummaryLayout {
     }
 
     static func itemWidth(for item: StatusSummaryItem) -> CGFloat {
-        let minimumWidth = item.style == .network ? networkMinimumWidth : metricMinimumWidth
-        let horizontalPadding: CGFloat = item.style == .network ? 4 : 0
-        let primaryWidth = textWidth(item.primaryText, font: primaryFont(for: item.style))
-        let secondaryWidth = textWidth(item.secondaryText, font: secondaryFont(for: item.style))
-        return ceil(max(minimumWidth, max(primaryWidth, secondaryWidth) + horizontalPadding))
+        let sizingReference = sizingReference(for: item)
+        let minimumWidth = sizingReference.style == .network ? networkMinimumWidth : metricMinimumWidth
+        let horizontalPadding: CGFloat = sizingReference.style == .network ? 2 : 0
+        let primaryWidth = textWidth(sizingReference.primaryText, font: primaryFont(for: sizingReference.style))
+        let secondaryWidth = textWidth(sizingReference.secondaryText, font: secondaryFont(for: sizingReference.style))
+        let baseWidth = max(minimumWidth, max(primaryWidth, secondaryWidth) + horizontalPadding)
+        return ceil(baseWidth + additionalWidth(for: item))
     }
 
     static func fallbackWidth(for text: String) -> CGFloat {
@@ -286,11 +353,43 @@ enum StatusBarSummaryLayout {
     }
 
     static func primaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 9 : 11, weight: .semibold)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 10, weight: .semibold)
     }
 
     static func secondaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 9 : 7, weight: .semibold)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 6, weight: .semibold)
+    }
+
+    // Use representative max-width samples per metric so the status item width
+    // stays stable across live value changes.
+    private static func sizingReference(for item: StatusSummaryItem) -> StatusSummaryItem {
+        switch item.kind {
+        case .cpu:
+            return StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric)
+        case .gpu:
+            return StatusSummaryItem(kind: .gpu, primaryText: "100%", secondaryText: "GPU", style: .metric)
+        case .memory:
+            return StatusSummaryItem(kind: .memory, primaryText: "100%", secondaryText: "MEM", style: .metric)
+        case .vram:
+            return StatusSummaryItem(kind: .vram, primaryText: "100%", secondaryText: "VRAM", style: .metric)
+        case .network:
+            return StatusSummaryItem(kind: .network, primaryText: "↑999.9M", secondaryText: "↓999.9M", style: .network)
+        case .battery:
+            return StatusSummaryItem(kind: .battery, primaryText: "100%", secondaryText: "BAT", style: .metric)
+        case .temperature:
+            return StatusSummaryItem(kind: .temperature, primaryText: "100℃", secondaryText: "BAT", style: .metric)
+        case .fan:
+            return StatusSummaryItem(kind: .fan, primaryText: "9999", secondaryText: "RPM", style: .metric)
+        }
+    }
+
+    private static func additionalWidth(for item: StatusSummaryItem) -> CGFloat {
+        switch item.kind {
+        case .fan:
+            return ceil(textWidth("0", font: primaryFont(for: .metric)) / 2)
+        default:
+            return 0
+        }
     }
 
     private static func textWidth(_ text: String, font: NSFont) -> CGFloat {

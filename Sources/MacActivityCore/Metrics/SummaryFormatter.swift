@@ -1,8 +1,34 @@
 import Foundation
 
 public protocol SummaryFormatting: Sendable {
-    func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String
-    func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem]
+    func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> String
+    func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem]
+}
+
+public extension SummaryFormatting {
+    func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String {
+        render(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: .smc
+        )
+    }
+
+    func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem] {
+        renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: .smc
+        )
+    }
 }
 
 public enum StatusSummaryItemStyle: Equatable, Sendable {
@@ -33,7 +59,11 @@ public struct StatusSummaryItem: Equatable, Identifiable, Sendable {
 public struct SummaryFormatter: SummaryFormatting {
     public init() {}
 
-    public func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String {
+    public func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> String {
         let selectedSet = Set(selectedMetrics)
         let rendered = MetricKind.summaryOrder.compactMap { kind -> String? in
             guard selectedSet.contains(kind) else {
@@ -46,12 +76,23 @@ public struct SummaryFormatter: SummaryFormatting {
                     return nil
                 }
                 return "CPU \(Int(cpu.usagePercent.rounded()))%"
+            case .gpu:
+                guard let gpu = snapshot.gpu else {
+                    return nil
+                }
+                return "GPU \(Int(gpu.usagePercent.rounded()))%"
             case .memory:
                 guard let memory = snapshot.memory, memory.totalBytes > 0 else {
                     return nil
                 }
                 let percent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
                 return "MEM \(Int(percent.rounded()))%"
+            case .vram:
+                guard let vram = snapshot.vram, vram.totalBytes > 0 else {
+                    return nil
+                }
+                let percent = Double(vram.usedBytes) / Double(vram.totalBytes) * 100
+                return "VRAM \(Int(percent.rounded()))%"
             case .network:
                 guard let network = snapshot.network else {
                     return nil
@@ -66,7 +107,7 @@ public struct SummaryFormatter: SummaryFormatting {
                 guard let temperature = snapshot.temperature else {
                     return nil
                 }
-                return "TMP \(Int(temperature.celsius.rounded()))C"
+                return "\(temperature.source.summaryPrefix) \(Int(temperature.celsius.rounded()))C"
             case .fan:
                 guard let fan = snapshot.fan else {
                     return nil
@@ -78,7 +119,11 @@ public struct SummaryFormatter: SummaryFormatting {
         return rendered.isEmpty ? "Metrics" : rendered.joined(separator: " | ")
     }
 
-    public func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem] {
+    public func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem] {
         let selectedSet = Set(selectedMetrics)
         return Self.statusDisplayOrder.compactMap { kind -> StatusSummaryItem? in
             guard selectedSet.contains(kind) else {
@@ -87,34 +132,38 @@ public struct SummaryFormatter: SummaryFormatting {
 
             switch kind {
             case .cpu:
-                guard let cpu = snapshot.cpu else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .cpu,
-                    primaryText: "\(Int(cpu.usagePercent.rounded()))%",
+                    primaryText: formatPercent(snapshot.cpu?.usagePercent),
                     secondaryText: "CPU",
                     style: .metric
                 )
+            case .gpu:
+                return StatusSummaryItem(
+                    kind: .gpu,
+                    primaryText: formatPercent(snapshot.gpu?.usagePercent),
+                    secondaryText: "GPU",
+                    style: .metric
+                )
             case .memory:
-                guard let memory = snapshot.memory, memory.totalBytes > 0 else {
-                    return nil
-                }
-                let percent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
                 return StatusSummaryItem(
                     kind: .memory,
-                    primaryText: "\(Int(percent.rounded()))%",
+                    primaryText: formatPercent(usedPercent(used: snapshot.memory?.usedBytes, total: snapshot.memory?.totalBytes)),
                     secondaryText: "MEM",
                     style: .metric
                 )
+            case .vram:
+                return StatusSummaryItem(
+                    kind: .vram,
+                    primaryText: formatPercent(usedPercent(used: snapshot.vram?.usedBytes, total: snapshot.vram?.totalBytes)),
+                    secondaryText: "VRAM",
+                    style: .metric
+                )
             case .network:
-                guard let network = snapshot.network else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .network,
-                    primaryText: "↑\(formatStatusBytesPerSecond(network.uploadBytesPerSecond))",
-                    secondaryText: "↓\(formatStatusBytesPerSecond(network.downloadBytesPerSecond))",
+                    primaryText: "↑\(formatOptionalStatusBytesPerSecond(snapshot.network?.uploadBytesPerSecond))",
+                    secondaryText: "↓\(formatOptionalStatusBytesPerSecond(snapshot.network?.downloadBytesPerSecond))",
                     style: .network
                 )
             case .battery:
@@ -128,22 +177,16 @@ public struct SummaryFormatter: SummaryFormatting {
                     style: .metric
                 )
             case .temperature:
-                guard let temperature = snapshot.temperature else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .temperature,
-                    primaryText: "\(Int(temperature.celsius.rounded()))℃",
-                    secondaryText: "SEN",
+                    primaryText: snapshot.temperature.map { "\(Int($0.celsius.rounded()))℃" } ?? "--",
+                    secondaryText: snapshot.temperature?.source.statusLabel ?? preferredTemperatureSource.statusLabel,
                     style: .metric
                 )
             case .fan:
-                guard let fan = snapshot.fan else {
-                    return nil
-                }
                 return StatusSummaryItem(
                     kind: .fan,
-                    primaryText: "\(fan.rpm)",
+                    primaryText: snapshot.fan.map { "\($0.rpm)" } ?? "--",
                     secondaryText: "RPM",
                     style: .metric
                 )
@@ -153,16 +196,20 @@ public struct SummaryFormatter: SummaryFormatting {
 
     private static let statusDisplayOrder: [MetricKind] = [
         .cpu,
+        .gpu,
         .memory,
-        .battery,
+        .vram,
         .temperature,
         .fan,
         .network,
+        .battery,
     ]
 
     private func formatBytesPerSecond(_ value: Double) -> String {
         let absoluteValue = max(0, value)
         switch absoluteValue {
+        case 1_000_000_000...:
+            return String(format: "%.1fG", absoluteValue / 1_000_000_000)
         case 1_000_000...:
             return String(format: "%.1fM", absoluteValue / 1_000_000)
         case 1_000...:
@@ -172,15 +219,27 @@ public struct SummaryFormatter: SummaryFormatting {
         }
     }
 
-    private func formatStatusBytesPerSecond(_ value: Double) -> String {
-        let absoluteValue = max(0, value)
-        switch absoluteValue {
-        case 1_000_000...:
-            return String(format: "%.1f M/s", absoluteValue / 1_000_000)
-        case 1_000...:
-            return String(format: "%.1f K/s", absoluteValue / 1_000)
-        default:
-            return String(format: "%.0f B/s", absoluteValue)
+    private func formatOptionalStatusBytesPerSecond(_ value: Double?) -> String {
+        guard let value else {
+            return "--"
         }
+
+        return formatBytesPerSecond(value)
+    }
+
+    private func formatPercent(_ value: Double?) -> String {
+        guard let value else {
+            return "--"
+        }
+
+        return "\(Int(value.rounded()))%"
+    }
+
+    private func usedPercent(used: UInt64?, total: UInt64?) -> Double? {
+        guard let used, let total, total > 0 else {
+            return nil
+        }
+
+        return Double(used) / Double(total) * 100
     }
 }

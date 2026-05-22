@@ -4,40 +4,18 @@ import XCTest
 
 @MainActor
 final class AppPresentationCoordinatorTests: XCTestCase {
-    func testInitialEnabledLaunchInstallsStatusItemImmediately() {
+    func testInitialLaunchAlwaysInstallsStatusItemImmediately() {
         let recorder = EventRecorder()
         let coordinator = AppPresentationCoordinator(
             statusItemController: RecordingStatusItemController(recorder: recorder),
-            activationController: RecordingActivationController(recorder: recorder),
-            showPreferences: {
-                recorder.record("showPreferences")
-            }
+            activationController: RecordingActivationController(recorder: recorder)
         )
 
-        coordinator.configureInitialState(isMenuBarEnabled: true)
+        coordinator.configureInitialState()
 
         XCTAssertEqual(recorder.events, [
             "install",
             "activation:accessory",
-        ])
-    }
-
-    func testDisablingMenuBarPromotesAppToDockBeforeRemovingStatusItem() {
-        let recorder = EventRecorder()
-        let coordinator = AppPresentationCoordinator(
-            statusItemController: RecordingStatusItemController(recorder: recorder),
-            activationController: RecordingActivationController(recorder: recorder),
-            showPreferences: {
-                recorder.record("showPreferences")
-            }
-        )
-
-        coordinator.updateMenuBarVisibility(false)
-
-        XCTAssertEqual(recorder.events, [
-            "activation:regular",
-            "remove",
-            "showPreferences",
         ])
     }
 }
@@ -61,10 +39,6 @@ private final class RecordingStatusItemController: StatusItemControlling {
 
     func install() {
         recorder.record("install")
-    }
-
-    func remove() {
-        recorder.record("remove")
     }
 }
 

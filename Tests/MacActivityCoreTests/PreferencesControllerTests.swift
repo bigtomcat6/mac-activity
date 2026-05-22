@@ -10,10 +10,10 @@ final class PreferencesControllerTests: XCTestCase {
             launchService: NoopLaunchAtLoginService()
         )
 
-        controller.setSummarySelection([.temperature, .cpu])
+        controller.setSummarySelection([.temperature, .vram, .cpu])
 
-        XCTAssertEqual(controller.state.selectedSummaryMetrics, [.cpu, .temperature])
-        XCTAssertEqual(store.savedValues.last?.selectedSummaryMetrics, [.cpu, .temperature])
+        XCTAssertEqual(controller.state.selectedSummaryMetrics, [.cpu, .vram, .temperature])
+        XCTAssertEqual(store.savedValues.last?.selectedSummaryMetrics, [.cpu, .vram, .temperature])
     }
 
     func testLaunchAtLoginFailureStaysInPreferencesState() {
@@ -28,6 +28,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.launchAtLoginEnabled, true)
         XCTAssertEqual(controller.launchAtLoginError, "Registration failed")
         XCTAssertEqual(store.savedValues.last?.launchAtLoginEnabled, true)
+    }
+
+    func testTemperatureSourcePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setTemperatureSource(.battery)
+
+        XCTAssertEqual(controller.state.temperatureSource, .battery)
+        XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
     }
 }
 

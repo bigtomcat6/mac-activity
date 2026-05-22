@@ -3,7 +3,6 @@ import AppKit
 @MainActor
 protocol StatusItemControlling: AnyObject {
     func install()
-    func remove()
 }
 
 extension StatusItemController: StatusItemControlling {}
@@ -24,30 +23,17 @@ final class SharedApplicationActivationController: ApplicationActivationControll
 final class AppPresentationCoordinator {
     private let statusItemController: StatusItemControlling
     private let activationController: ApplicationActivationControlling
-    private let showPreferences: () -> Void
 
     init(
         statusItemController: StatusItemControlling,
-        activationController: ApplicationActivationControlling,
-        showPreferences: @escaping () -> Void
+        activationController: ApplicationActivationControlling
     ) {
         self.statusItemController = statusItemController
         self.activationController = activationController
-        self.showPreferences = showPreferences
     }
 
-    func configureInitialState(isMenuBarEnabled: Bool) {
-        updateMenuBarVisibility(isMenuBarEnabled)
-    }
-
-    func updateMenuBarVisibility(_ isEnabled: Bool) {
-        if isEnabled {
-            statusItemController.install()
-            activationController.applyActivationPolicy(.accessory)
-        } else {
-            activationController.applyActivationPolicy(.regular)
-            statusItemController.remove()
-            showPreferences()
-        }
+    func configureInitialState() {
+        statusItemController.install()
+        activationController.applyActivationPolicy(.accessory)
     }
 }

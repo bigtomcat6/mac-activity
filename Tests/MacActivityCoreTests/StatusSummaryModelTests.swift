@@ -16,7 +16,6 @@ final class StatusSummaryModelTests: XCTestCase {
         let preferences = PreferencesController(
             store: InMemoryPreferencesStore(
                 initial: AppPreferences(
-                    isMenuBarEnabled: true,
                     launchAtLoginEnabled: false,
                     selectedSummaryMetrics: [.temperature, .cpu]
                 )
@@ -39,7 +38,6 @@ final class StatusSummaryModelTests: XCTestCase {
         let preferences = PreferencesController(
             store: InMemoryPreferencesStore(
                 initial: AppPreferences(
-                    isMenuBarEnabled: true,
                     launchAtLoginEnabled: false,
                     selectedSummaryMetrics: [.cpu]
                 )

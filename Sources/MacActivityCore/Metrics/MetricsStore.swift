@@ -3,37 +3,238 @@ import Foundation
 
 public struct MetricHistorySample: Equatable, Sendable {
     public var timestamp: Date
-    public var cpuUsagePercent: Double?
-    public var memoryUsedPercent: Double?
-    public var downloadBytesPerSecond: Double?
-    public var uploadBytesPerSecond: Double?
-    public var batteryPercent: Double?
+    public var primaryValue: Double
+    public var secondaryValue: Double?
+    var sampleCount: Int
 
-    public init(snapshot: MetricsSnapshot) {
-        self.timestamp = snapshot.timestamp
-        self.cpuUsagePercent = snapshot.cpu?.usagePercent
-        if let memory = snapshot.memory, memory.totalBytes > 0 {
-            self.memoryUsedPercent = Double(memory.usedBytes) / Double(memory.totalBytes) * 100
-        } else {
-            self.memoryUsedPercent = nil
+    init(
+        timestamp: Date,
+        primaryValue: Double,
+        secondaryValue: Double? = nil,
+        sampleCount: Int = 1
+    ) {
+        self.timestamp = timestamp
+        self.primaryValue = primaryValue
+        self.secondaryValue = secondaryValue
+        self.sampleCount = max(1, sampleCount)
+    }
+
+    init?(
+        update: MetricUpdate,
+        timestamp: Date
+    ) {
+        self.timestamp = timestamp
+        self.sampleCount = 1
+
+        switch update {
+        case .cpu(let reading):
+            self.primaryValue = reading.usagePercent
+            self.secondaryValue = nil
+        case .gpu(let reading):
+            self.primaryValue = reading.usagePercent
+            self.secondaryValue = nil
+        case .memory(let reading):
+            guard reading.totalBytes > 0 else {
+                return nil
+            }
+            self.primaryValue = Double(reading.usedBytes) / Double(reading.totalBytes) * 100
+            self.secondaryValue = nil
+        case .vram(let reading):
+            guard reading.totalBytes > 0 else {
+                return nil
+            }
+            self.primaryValue = Double(reading.usedBytes) / Double(reading.totalBytes) * 100
+            self.secondaryValue = nil
+        case .network(let reading):
+            self.primaryValue = max(0, reading.downloadBytesPerSecond)
+            self.secondaryValue = max(0, reading.uploadBytesPerSecond)
+        case .battery(let reading):
+            self.primaryValue = reading.percentage
+            self.secondaryValue = nil
+        case .temperature(let reading):
+            self.primaryValue = reading.celsius
+            self.secondaryValue = nil
+        case .fan(let reading):
+            self.primaryValue = Double(reading.rpm)
+            self.secondaryValue = nil
+        case .unavailable, .stale:
+            return nil
         }
-        self.downloadBytesPerSecond = snapshot.network?.downloadBytesPerSecond
-        self.uploadBytesPerSecond = snapshot.network?.uploadBytesPerSecond
-        self.batteryPercent = snapshot.battery?.percentage
     }
 }
 
 public struct MetricsHistory: Equatable, Sendable {
-    public private(set) var samples: [MetricHistorySample]
-    public let capacity: Int
+    private struct RetentionPolicy: Equatable, Sendable {
+        let window: TimeInterval
+        let maxSamples: Int
+        let recentSamplesToPreserve: Int
 
-    public init(samples: [MetricHistorySample] = [], capacity: Int = 60) {
-        self.capacity = capacity
-        self.samples = Array(samples.suffix(capacity))
+        static func forKind(_ kind: MetricKind) -> RetentionPolicy {
+            switch kind {
+            case .network:
+                return RetentionPolicy(
+                    window: 30 * 60,
+                    maxSamples: 1_800,
+                    recentSamplesToPreserve: 300
+                )
+            case .cpu, .gpu, .memory, .vram, .battery, .temperature, .fan:
+                return RetentionPolicy(
+                    window: 24 * 60 * 60,
+                    maxSamples: 1_440,
+                    recentSamplesToPreserve: 300
+                )
+            }
+        }
     }
 
-    public func appending(_ sample: MetricHistorySample) -> MetricsHistory {
-        MetricsHistory(samples: samples + [sample], capacity: capacity)
+    private var samplesByKind: [MetricKind: [MetricHistorySample]]
+
+    public init(samplesByKind: [MetricKind: [MetricHistorySample]] = [:]) {
+        self.init(
+            samplesByKind: samplesByKind,
+            trimReferenceDates: samplesByKind.mapValues { $0.last?.timestamp ?? .now }
+        )
+    }
+
+    public func samples(for kind: MetricKind) -> [MetricHistorySample] {
+        samplesByKind[kind] ?? []
+    }
+
+    public func appending(
+        updates: [MetricUpdate],
+        timestamp: Date
+    ) -> MetricsHistory {
+        var nextSamplesByKind = samplesByKind
+
+        for update in updates {
+            guard let sample = MetricHistorySample(update: update, timestamp: timestamp) else {
+                continue
+            }
+
+            var samples = nextSamplesByKind[update.kind] ?? []
+            samples.append(sample)
+            nextSamplesByKind[update.kind] = samples
+        }
+
+        let trimReferenceDates = Dictionary(
+            uniqueKeysWithValues: nextSamplesByKind.keys.map { ($0, timestamp) }
+        )
+
+        return MetricsHistory(
+            samplesByKind: nextSamplesByKind,
+            trimReferenceDates: trimReferenceDates
+        )
+    }
+
+    private init(
+        samplesByKind: [MetricKind: [MetricHistorySample]],
+        trimReferenceDates: [MetricKind: Date]
+    ) {
+        var retainedSamplesByKind: [MetricKind: [MetricHistorySample]] = [:]
+
+        for (kind, samples) in samplesByKind {
+            let referenceDate = trimReferenceDates[kind] ?? samples.last?.timestamp ?? .now
+            retainedSamplesByKind[kind] = Self.retainedSamples(
+                from: samples,
+                kind: kind,
+                asOf: referenceDate
+            )
+        }
+
+        self.samplesByKind = retainedSamplesByKind
+    }
+
+    private static func retainedSamples(
+        from samples: [MetricHistorySample],
+        kind: MetricKind,
+        asOf referenceDate: Date
+    ) -> [MetricHistorySample] {
+        let policy = RetentionPolicy.forKind(kind)
+        let cutoff = referenceDate.addingTimeInterval(-policy.window)
+        let trimmed = samples.filter { $0.timestamp >= cutoff }
+
+        guard trimmed.count > policy.maxSamples else {
+            return trimmed
+        }
+
+        let recentCount = min(policy.recentSamplesToPreserve, policy.maxSamples, trimmed.count)
+        let recentSamples = Array(trimmed.suffix(recentCount))
+        let olderSamples = Array(trimmed.dropLast(recentCount))
+        let olderTargetCount = max(0, policy.maxSamples - recentSamples.count)
+
+        guard olderTargetCount > 0 else {
+            return recentSamples
+        }
+
+        return bucketAveragedSamples(olderSamples, targetCount: olderTargetCount) + recentSamples
+    }
+
+    static func bucketAveragedSamples(
+        _ samples: [MetricHistorySample],
+        targetCount: Int
+    ) -> [MetricHistorySample] {
+        guard targetCount > 0, !samples.isEmpty else {
+            return []
+        }
+
+        guard targetCount < samples.count else {
+            return samples
+        }
+
+        return contiguousBucketAverages(samples, targetCount: targetCount)
+    }
+
+    private static func contiguousBucketAverages(
+        _ samples: [MetricHistorySample],
+        targetCount: Int
+    ) -> [MetricHistorySample] {
+        return (0..<targetCount).compactMap { bucketIndex in
+            let startIndex = bucketIndex * samples.count / targetCount
+            let endIndex = min(samples.count, (bucketIndex + 1) * samples.count / targetCount)
+            guard startIndex < endIndex else {
+                return nil
+            }
+
+            return averageBucket(Array(samples[startIndex..<endIndex]))
+        }
+    }
+
+    private static func averageBucket(_ samples: [MetricHistorySample]) -> MetricHistorySample? {
+        guard let lastSample = samples.last else {
+            return nil
+        }
+
+        let totalSampleCount = samples.reduce(0) { partialResult, sample in
+            partialResult + sample.sampleCount
+        }
+        let primaryAverage = samples.reduce(0) { partialResult, sample in
+            partialResult + (sample.primaryValue * Double(sample.sampleCount))
+        } / Double(totalSampleCount)
+        let secondarySamples = samples.compactMap { sample -> (Double, Int)? in
+            guard let secondaryValue = sample.secondaryValue else {
+                return nil
+            }
+
+            return (secondaryValue, sample.sampleCount)
+        }
+        let secondaryAverage: Double?
+        if secondarySamples.isEmpty {
+            secondaryAverage = nil
+        } else {
+            let secondaryWeight = secondarySamples.reduce(0) { partialResult, sample in
+                partialResult + sample.1
+            }
+            secondaryAverage = secondarySamples.reduce(0) { partialResult, sample in
+                partialResult + (sample.0 * Double(sample.1))
+            } / Double(secondaryWeight)
+        }
+
+        return MetricHistorySample(
+            timestamp: lastSample.timestamp,
+            primaryValue: primaryAverage,
+            secondaryValue: secondaryAverage,
+            sampleCount: totalSampleCount
+        )
     }
 }
 
@@ -49,6 +250,6 @@ public final class MetricsStore: ObservableObject {
 
     public func apply(_ updates: [MetricUpdate], timestamp: Date = .now) {
         snapshot = snapshot.applying(updates, timestamp: timestamp)
-        history = history.appending(MetricHistorySample(snapshot: snapshot))
+        history = history.appending(updates: updates, timestamp: timestamp)
     }
 }

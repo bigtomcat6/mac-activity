@@ -6,25 +6,12 @@ struct PreferencesView: View {
     @ObservedObject var metricsStore: MetricsStore
 
     private var metricRows: [MetricKind] {
-        MetricKind.summaryOrder.filter(shouldDisplayMetric)
+        MetricKind.summaryOrder
     }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
-                Toggle(
-                    "Show menu bar item",
-                    isOn: Binding(
-                        get: { preferencesController.state.isMenuBarEnabled },
-                        set: { preferencesController.setMenuBarEnabled($0) }
-                    )
-                )
-
-                Text("If disabled, the app stays reachable from the Dock until you re-enable the menu bar item.")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-
                 Toggle(
                     "Launch at login",
                     isOn: Binding(
@@ -32,6 +19,29 @@ struct PreferencesView: View {
                         set: { preferencesController.setLaunchAtLoginEnabled($0) }
                     )
                 )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Temperature source")
+                        .font(.headline)
+
+                    Picker(
+                        "Temperature source",
+                        selection: Binding(
+                            get: { preferencesController.state.temperatureSource },
+                            set: { preferencesController.setTemperatureSource($0) }
+                        )
+                    ) {
+                        ForEach(TemperatureSource.allCases, id: \.self) { source in
+                            Text(source.preferencesTitle)
+                                .tag(source)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+
+                    Text("Controls the Temperature metric in the status bar and dashboard.")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
 
                 Text("Menu bar metrics")
                     .font(.headline)
@@ -71,16 +81,5 @@ struct PreferencesView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
-
-    private func shouldDisplayMetric(_ metric: MetricKind) -> Bool {
-        switch metric {
-        case .temperature:
-            return metricsStore.snapshot.temperature != nil
-        case .fan:
-            return metricsStore.snapshot.fan != nil
-        default:
-            return true
-        }
     }
 }

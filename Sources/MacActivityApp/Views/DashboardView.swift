@@ -1,15 +1,21 @@
 import SwiftUI
 import MacActivityCore
 
+enum DashboardCardLayout {
+    static let compactChartHeight: CGFloat = 60
+    static let compactChartMinHeight: CGFloat = 98
+    static let compactChartInsets = EdgeInsets(top: 8, leading: 8, bottom: 4, trailing: 8)
+    static let regularCardInsets = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+
+    static func usesCompactHoverLayout(for chartHeight: CGFloat) -> Bool {
+        chartHeight <= 64
+    }
+}
+
 struct DashboardView: View {
     @ObservedObject var dashboardModel: DashboardModel
     let openPreferences: () -> Void
     let quitApplication: () -> Void
-
-    private let columns = [
-        GridItem(.flexible(), spacing: 12),
-        GridItem(.flexible(), spacing: 12),
-    ]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -23,7 +29,7 @@ struct DashboardView: View {
                 if dashboardModel.metrics.isEmpty {
                     emptyState
                 } else {
-                    LazyVGrid(columns: columns, spacing: 12) {
+                    LazyVStack(alignment: .leading, spacing: 12) {
                         ForEach(dashboardModel.metrics) { metric in
                             MetricCard(metric: metric)
                         }
@@ -82,28 +88,30 @@ struct DashboardView: View {
 
 private struct MetricCard: View {
     let metric: DashboardMetric
+    @State private var isCardHovered = false
+
+    private var isCompactChartCard: Bool {
+        metric.style == .chart
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(alignment: .firstTextBaseline) {
+        VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
+            HStack(alignment: .top) {
                 Text(metric.title)
-                    .font(.caption.weight(.semibold))
+                    .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
-                Text(metric.value)
-                    .font(.title3.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.7)
+                trailingValueView
             }
 
             switch metric.style {
-            case .progress:
-                ProgressView(value: metric.progress ?? 0)
-                    .tint(color)
-                    .controlSize(.small)
-            case .sparkline:
-                NetworkSparkline(points: metric.trend, color: color)
-                    .frame(height: 44)
+            case .chart:
+                DashboardTrendChart(
+                    metric: metric,
+                    color: color,
+                    isCardHovered: isCardHovered
+                )
+                    .frame(height: DashboardCardLayout.compactChartHeight)
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -111,7 +119,7 @@ private struct MetricCard: View {
                     .clipShape(Capsule())
             }
 
-            if let detail = metric.detail {
+            if let detail = metric.detail, !isCompactChartCard {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -119,12 +127,20 @@ private struct MetricCard: View {
                     .minimumScaleFactor(0.8)
             }
         }
-        .padding(12)
-        .frame(maxWidth: .infinity, minHeight: metric.style == .sparkline ? 118 : 96, alignment: .topLeading)
+        .padding(isCompactChartCard ? DashboardCardLayout.compactChartInsets : DashboardCardLayout.regularCardInsets)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: metric.style == .chart ? DashboardCardLayout.compactChartMinHeight : 44,
+            alignment: .topLeading
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .stroke(.separator.opacity(0.45), lineWidth: 1)
+        }
+        .onHover { hovering in
+            isCardHovered = hovering
         }
     }
 
@@ -132,8 +148,12 @@ private struct MetricCard: View {
         switch metric.kind {
         case .cpu:
             return .orange
+        case .gpu:
+            return .purple
         case .memory:
             return .blue
+        case .vram:
+            return .cyan
         case .network:
             return .teal
         case .battery:
@@ -144,69 +164,32 @@ private struct MetricCard: View {
             return .indigo
         }
     }
-}
 
-private struct NetworkSparkline: View {
-    let points: [NetworkTrendPoint]
-    let color: Color
+    @ViewBuilder
+    private var trailingValueView: some View {
+        if isCompactChartCard, let secondaryText = metric.secondaryText {
+            VStack(alignment: .trailing, spacing: 1) {
+                Text(metric.value)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
 
-    var body: some View {
-        GeometryReader { proxy in
-            if points.count < 2 {
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .stroke(color.opacity(0.35), lineWidth: 1)
-                    .overlay {
-                        Text("Collecting trend")
-                            .font(.caption2)
-                            .foregroundStyle(.secondary)
-                    }
-            } else {
-                ZStack {
-                    linePath(
-                        in: proxy.size,
-                        values: points.map(\.downloadBytesPerSecond),
-                        maximum: maximumRate
-                    )
-                    .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-
-                    linePath(
-                        in: proxy.size,
-                        values: points.map(\.uploadBytesPerSecond),
-                        maximum: maximumRate
-                    )
-                    .stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                }
+                Text(secondaryText)
+                    .font(.caption2.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.72)
             }
+            .multilineTextAlignment(.trailing)
+        } else {
+            Text(metric.value)
+                .font(
+                    isCompactChartCard
+                    ? .subheadline.monospacedDigit().weight(.semibold)
+                    : .title3.monospacedDigit().weight(.semibold)
+                )
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
         }
-    }
-
-    private var maximumRate: Double {
-        max(
-            points.map(\.downloadBytesPerSecond).max() ?? 1,
-            points.map(\.uploadBytesPerSecond).max() ?? 1,
-            1
-        )
-    }
-
-    private func linePath(in size: CGSize, values: [Double], maximum: Double) -> Path {
-        var path = Path()
-        guard values.count > 1 else {
-            return path
-        }
-
-        for (index, value) in values.enumerated() {
-            let x = size.width * CGFloat(index) / CGFloat(values.count - 1)
-            let normalized = CGFloat(min(max(value / maximum, 0), 1))
-            let y = size.height - (size.height * normalized)
-            let point = CGPoint(x: x, y: y)
-
-            if index == 0 {
-                path.move(to: point)
-            } else {
-                path.addLine(to: point)
-            }
-        }
-
-        return path
     }
 }

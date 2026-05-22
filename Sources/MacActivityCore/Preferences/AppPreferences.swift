@@ -1,23 +1,77 @@
 import Foundation
 
+public enum TemperatureSource: String, CaseIterable, Codable, Sendable {
+    case smc
+    case battery
+
+    public var preferencesTitle: String {
+        switch self {
+        case .smc:
+            return "CPU/SMC"
+        case .battery:
+            return "Battery"
+        }
+    }
+
+    public var dashboardTitle: String {
+        switch self {
+        case .smc:
+            return "Sensor Temp"
+        case .battery:
+            return "Battery Temp"
+        }
+    }
+
+    public var summaryPrefix: String {
+        switch self {
+        case .smc:
+            return "TMP"
+        case .battery:
+            return "BTMP"
+        }
+    }
+
+    public var statusLabel: String {
+        switch self {
+        case .smc:
+            return "SEN"
+        case .battery:
+            return "BAT"
+        }
+    }
+}
+
 public struct AppPreferences: Equatable, Codable, Sendable {
-    public var isMenuBarEnabled: Bool
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]
+    public var temperatureSource: TemperatureSource
 
     public init(
-        isMenuBarEnabled: Bool,
         launchAtLoginEnabled: Bool,
-        selectedSummaryMetrics: [MetricKind]
+        selectedSummaryMetrics: [MetricKind],
+        temperatureSource: TemperatureSource = .smc
     ) {
-        self.isMenuBarEnabled = isMenuBarEnabled
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
+        self.temperatureSource = temperatureSource
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case launchAtLoginEnabled
+        case selectedSummaryMetrics
+        case temperatureSource
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.launchAtLoginEnabled = try container.decode(Bool.self, forKey: .launchAtLoginEnabled)
+        self.selectedSummaryMetrics = try container.decode([MetricKind].self, forKey: .selectedSummaryMetrics)
+        self.temperatureSource = try container.decodeIfPresent(TemperatureSource.self, forKey: .temperatureSource) ?? .smc
     }
 
     public static let `default` = AppPreferences(
-        isMenuBarEnabled: true,
         launchAtLoginEnabled: false,
-        selectedSummaryMetrics: [.cpu, .memory, .network]
+        selectedSummaryMetrics: [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network],
+        temperatureSource: .smc
     )
 }

@@ -86,6 +86,49 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertNil(snapshot.temperature)
         XCTAssertEqual(snapshot.issues[.temperature], .unsupported("Sensor unavailable"))
     }
+
+    func testSamplingProfileOverridesProviderCadence() async {
+        let store = await MainActor.run { MetricsStore() }
+        let cpuProvider = SequencedProvider(
+            kind: .cpu,
+            cadence: .fast,
+            updates: [
+                .cpu(CPUReading(usagePercent: 10)),
+                .cpu(CPUReading(usagePercent: 20)),
+                .cpu(CPUReading(usagePercent: 30)),
+            ]
+        )
+        let memoryProvider = SequencedProvider(
+            kind: .memory,
+            cadence: .medium,
+            updates: [
+                .memory(MemoryReading(usedBytes: 1_000, totalBytes: 2_000)),
+                .memory(MemoryReading(usedBytes: 1_500, totalBytes: 2_000)),
+            ]
+        )
+
+        let scheduler = MetricsScheduler(
+            providers: [cpuProvider, memoryProvider],
+            store: store,
+            samplingProfile: .custom([
+                .cpu: 3,
+                .memory: 5,
+            ])
+        )
+
+        await scheduler.runTick(0, timestamp: Date(timeIntervalSince1970: 300))
+        await scheduler.runTick(1, timestamp: Date(timeIntervalSince1970: 301))
+        await scheduler.runTick(2, timestamp: Date(timeIntervalSince1970: 302))
+        await scheduler.runTick(3, timestamp: Date(timeIntervalSince1970: 303))
+        await scheduler.runTick(4, timestamp: Date(timeIntervalSince1970: 304))
+        await scheduler.runTick(5, timestamp: Date(timeIntervalSince1970: 305))
+
+        let cpuCount = await cpuProvider.readCount()
+        let memoryCount = await memoryProvider.readCount()
+
+        XCTAssertEqual(cpuCount, 2)
+        XCTAssertEqual(memoryCount, 2)
+    }
 }
 
 private actor SequencedProvider: MetricProvider {

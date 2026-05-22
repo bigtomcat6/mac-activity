@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
+		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
 		0A4F50CC81A438D2B1EC4B28 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */; };
 		0F0F8EC373BBE78CFBA35CE0 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */; };
 		16ECB6A0AD84B607F511085E /* SummaryFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */; };
@@ -22,13 +23,16 @@
 		3F60AD2BBC32608CE8F87545 /* PreferencesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECAE9B17ED4BB6141029863B /* PreferencesController.swift */; };
 		4073C864AB0C5CFFC22AD0C9 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B87283E6D09D63E041FCDE7 /* main.swift */; };
 		4A5640B4C2F6695CF03B960A /* AppPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */; };
+		4F1AE1B7F44F2D9407FA4746 /* SMCSensorReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */; };
 		4FFC3DDFBB0B515A0097F021 /* MacActivityCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; };
+		5140176C2576A4D6D6811614 /* DashboardTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */; };
 		5A3A7F1C964BA2C6A4A8DB22 /* MacActivityCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; };
 		6D54144EB0A0E5918A23CFEF /* StatusSummaryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7280E98435B3B94E406813A /* StatusSummaryModel.swift */; };
 		6FE9479DD0E4F0DD7F88D79C /* PreferencesControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C815ADC2D07A903BFAD4C90B /* PreferencesControllerTests.swift */; };
 		75D742F910AE1AC2B65D75A8 /* MetricKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF6C7817370CFE146811438 /* MetricKind.swift */; };
 		92C61117E8F8715D08B902E3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */; };
 		973E3F49276C6903D1FD4C7A /* NetworkProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62CD05233387237992500A0 /* NetworkProvider.swift */; };
+		9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */; };
 		AD712FC4EBAA68F9349BACD3 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */; };
 		B1D58B1C23E57C4B2EFA43B2 /* FanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */; };
 		B3C6A01640BB5B354B59AF73 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFFA707E889556C69367275 /* LaunchAtLoginService.swift */; };
@@ -39,11 +43,14 @@
 		C77CC2A65843DFBB2B6BEE32 /* MacActivityCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CC96AD1A721BD82A5462EF6A /* MemoryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC3E242AE71B79619755C0D /* MemoryProvider.swift */; };
 		CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */; };
+		D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */; };
+		D5B2E74AAD85F14306D38BB3 /* DashboardTrendChartGeometryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */; };
 		D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */; };
 		D8142466738CAAAF7E09698E /* TemperatureProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49ECEEFF448A10DF483AD89 /* TemperatureProvider.swift */; };
 		D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */; };
 		DDE03109BB32E7B770459990 /* MetricProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC85A29241CC6F902A0531F /* MetricProvider.swift */; };
 		E22AB043F51E6D277BD26F51 /* MetricsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD8679864283C26574C3861 /* MetricsSnapshot.swift */; };
+		E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */; };
 		F2CDB29D41CEBB988A44BA7F /* DashboardPopoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D95C239D721596A4768CE46 /* DashboardPopoverController.swift */; };
 		F81BAEE13BCE464C6BC9FA92 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A8D20F98149046273836B /* StatusItemController.swift */; };
 /* End PBXBuildFile section */
@@ -103,6 +110,8 @@
 		091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSchedulerTests.swift; sourceTree = "<group>"; };
 		15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentationCoordinator.swift; sourceTree = "<group>"; };
 		1E1651676B31A0F49FF03FBD /* MetricsScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsScheduler.swift; sourceTree = "<group>"; };
+		20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SMCSensorReaderTests.swift; sourceTree = "<group>"; };
+		2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChartGeometryTests.swift; sourceTree = "<group>"; };
 		2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryFormatterTests.swift; sourceTree = "<group>"; };
 		36396300E73F3D423CCDC77C /* MetricsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStore.swift; sourceTree = "<group>"; };
 		399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryProvider.swift; sourceTree = "<group>"; };
@@ -113,6 +122,7 @@
 		4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
 		4C28EA386891B5D88473C012 /* DashboardModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModelTests.swift; sourceTree = "<group>"; };
 		4CC85A29241CC6F902A0531F /* MetricProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricProvider.swift; sourceTree = "<group>"; };
+		54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarSummaryLayoutTests.swift; sourceTree = "<group>"; };
 		5BF612FC0E3589FE46DFACD2 /* MacActivityApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacActivityApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F80A7CF6CB9E39D7858C692 /* CPUProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUProvider.swift; sourceTree = "<group>"; };
 		622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanProvider.swift; sourceTree = "<group>"; };
@@ -125,10 +135,14 @@
 		8428982312A6028D3AC20D1F /* MetricsStoreHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStoreHistoryTests.swift; sourceTree = "<group>"; };
 		A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModelTests.swift; sourceTree = "<group>"; };
 		A62CD05233387237992500A0 /* NetworkProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProvider.swift; sourceTree = "<group>"; };
+		B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryProviderTests.swift; sourceTree = "<group>"; };
+		C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChart.swift; sourceTree = "<group>"; };
 		C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesView.swift; sourceTree = "<group>"; };
 		C815ADC2D07A903BFAD4C90B /* PreferencesControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesControllerTests.swift; sourceTree = "<group>"; };
+		C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureSourceSelectionStore.swift; sourceTree = "<group>"; };
 		CC71A1F1843F39EF709F970B /* SummaryFormatter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryFormatter.swift; sourceTree = "<group>"; };
 		CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MacActivityCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
+		CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureProviderTests.swift; sourceTree = "<group>"; };
 		CE450D24F5288BB9804AC543 /* MacActivityAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		D22665B317ABFF0111743871 /* MacActivityCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -233,6 +247,7 @@
 				4CC85A29241CC6F902A0531F /* MetricProvider.swift */,
 				A62CD05233387237992500A0 /* NetworkProvider.swift */,
 				E49ECEEFF448A10DF483AD89 /* TemperatureProvider.swift */,
+				C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */,
 			);
 			path = Providers;
 			sourceTree = "<group>";
@@ -289,6 +304,7 @@
 		D882FE59508233A742C809A0 /* Views */ = {
 			isa = PBXGroup;
 			children = (
+				C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */,
 				80D21F3C01CE00EFD700E003 /* DashboardView.swift */,
 				C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */,
 			);
@@ -299,13 +315,16 @@
 			isa = PBXGroup;
 			children = (
 				4C28EA386891B5D88473C012 /* DashboardModelTests.swift */,
+				B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */,
 				091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */,
 				7215BA634217D46E3C2AFD25 /* MetricsSnapshotTests.swift */,
 				8428982312A6028D3AC20D1F /* MetricsStoreHistoryTests.swift */,
 				C815ADC2D07A903BFAD4C90B /* PreferencesControllerTests.swift */,
 				797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */,
+				20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */,
 				A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */,
 				2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */,
+				CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */,
 			);
 			path = MacActivityCoreTests;
 			sourceTree = "<group>";
@@ -314,6 +333,8 @@
 			isa = PBXGroup;
 			children = (
 				70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */,
+				2687C05BF177D1AACFFC5924 /* DashboardTrendChartGeometryTests.swift */,
+				54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */,
 			);
 			path = MacActivityAppTests;
 			sourceTree = "<group>";
@@ -467,6 +488,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */,
+				D5B2E74AAD85F14306D38BB3 /* DashboardTrendChartGeometryTests.swift in Sources */,
+				D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -475,13 +498,16 @@
 			buildActionMask = 2147483647;
 			files = (
 				29B0CBE169F75666C6DBB021 /* DashboardModelTests.swift in Sources */,
+				9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */,
 				2CEB231CDBBCDDF36F125107 /* MetricsSchedulerTests.swift in Sources */,
 				3A4477BDC23605E2899597CD /* MetricsSnapshotTests.swift in Sources */,
 				C758FD3134C4FC4F259D6C12 /* MetricsStoreHistoryTests.swift in Sources */,
 				6FE9479DD0E4F0DD7F88D79C /* PreferencesControllerTests.swift in Sources */,
 				D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */,
+				4F1AE1B7F44F2D9407FA4746 /* SMCSensorReaderTests.swift in Sources */,
 				03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */,
 				16ECB6A0AD84B607F511085E /* SummaryFormatterTests.swift in Sources */,
+				051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -507,6 +533,7 @@
 				6D54144EB0A0E5918A23CFEF /* StatusSummaryModel.swift in Sources */,
 				16F46C34538525E3E05606BF /* SummaryFormatter.swift in Sources */,
 				D8142466738CAAAF7E09698E /* TemperatureProvider.swift in Sources */,
+				E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -517,6 +544,7 @@
 				92C61117E8F8715D08B902E3 /* AppDelegate.swift in Sources */,
 				4A5640B4C2F6695CF03B960A /* AppPresentationCoordinator.swift in Sources */,
 				F2CDB29D41CEBB988A44BA7F /* DashboardPopoverController.swift in Sources */,
+				5140176C2576A4D6D6811614 /* DashboardTrendChart.swift in Sources */,
 				C2E14BE8D7854558592A0937 /* DashboardView.swift in Sources */,
 				0F0F8EC373BBE78CFBA35CE0 /* PreferencesView.swift in Sources */,
 				0A4F50CC81A438D2B1EC4B28 /* PreferencesWindowController.swift in Sources */,

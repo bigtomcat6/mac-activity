@@ -1,13 +1,64 @@
 import Foundation
 
+public struct MetricsSamplingProfile: Equatable, Sendable {
+    private let cadenceOverrides: [MetricKind: Int]
+
+    public init(cadenceOverrides: [MetricKind: Int] = [:]) {
+        self.cadenceOverrides = cadenceOverrides.mapValues { max(1, $0) }
+    }
+
+    public func interval(
+        for kind: MetricKind,
+        defaultCadence: MetricCadenceLane
+    ) -> Int {
+        cadenceOverrides[kind] ?? defaultCadence.seconds
+    }
+
+    public static func custom(_ cadenceOverrides: [MetricKind: Int]) -> MetricsSamplingProfile {
+        MetricsSamplingProfile(cadenceOverrides: cadenceOverrides)
+    }
+
+    public static let realtime = MetricsSamplingProfile()
+    public static let balanced = MetricsSamplingProfile(
+        cadenceOverrides: [
+            .cpu: 2,
+            .gpu: 2,
+            .memory: 5,
+            .vram: 5,
+            .network: 2,
+            .battery: 15,
+            .temperature: 15,
+            .fan: 15,
+        ]
+    )
+    public static let energySaver = MetricsSamplingProfile(
+        cadenceOverrides: [
+            .cpu: 5,
+            .gpu: 5,
+            .memory: 15,
+            .vram: 15,
+            .network: 5,
+            .battery: 30,
+            .temperature: 30,
+            .fan: 30,
+        ]
+    )
+}
+
 public actor MetricsScheduler {
     private let providers: [any MetricProvider]
     private let store: MetricsStore
+    private var samplingProfile: MetricsSamplingProfile
     private var loopTask: Task<Void, Never>?
 
-    public init(providers: [any MetricProvider], store: MetricsStore) {
+    public init(
+        providers: [any MetricProvider],
+        store: MetricsStore,
+        samplingProfile: MetricsSamplingProfile = .realtime
+    ) {
         self.providers = providers
         self.store = store
+        self.samplingProfile = samplingProfile
     }
 
     public func start() {
@@ -30,8 +81,20 @@ public actor MetricsScheduler {
         loopTask = nil
     }
 
+    public func setSamplingProfile(_ samplingProfile: MetricsSamplingProfile) {
+        self.samplingProfile = samplingProfile
+    }
+
     public func runTick(_ tick: Int, timestamp: Date = .now) async {
-        let dueProviders = providers.filter { tick.isMultiple(of: $0.cadence.seconds) }
+        let samplingProfile = self.samplingProfile
+        let dueProviders = providers.filter {
+            tick.isMultiple(
+                of: samplingProfile.interval(
+                    for: $0.kind,
+                    defaultCadence: $0.cadence
+                )
+            )
+        }
         guard !dueProviders.isEmpty else {
             return
         }

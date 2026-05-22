@@ -19,11 +19,6 @@ public final class PreferencesController: ObservableObject {
         self.launchAtLoginError = nil
     }
 
-    public func setMenuBarEnabled(_ enabled: Bool) {
-        state.isMenuBarEnabled = enabled
-        try? store.save(state)
-    }
-
     public func setLaunchAtLoginEnabled(_ enabled: Bool) {
         state.launchAtLoginEnabled = enabled
         do {
@@ -38,6 +33,11 @@ public final class PreferencesController: ObservableObject {
 
     public func setSummarySelection(_ kinds: Set<MetricKind>) {
         state.selectedSummaryMetrics = MetricKind.summaryOrder.filter { kinds.contains($0) }
+        try? store.save(state)
+    }
+
+    public func setTemperatureSource(_ source: TemperatureSource) {
+        state.temperatureSource = source
         try? store.save(state)
     }
 }
