@@ -12,9 +12,17 @@ enum DashboardCardLayout {
     }
 }
 
+private enum DashboardTab: String, CaseIterable, Identifiable {
+    case overview = "Overview"
+    case actives = "Actives"
+
+    var id: String { rawValue }
+}
+
 struct DashboardView: View {
     @ObservedObject var dashboardModel: DashboardModel
     @StateObject private var activeAppsModel = ActiveAppsModel()
+    @State private var selectedTab: DashboardTab = .overview
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
@@ -22,23 +30,21 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             header
                 .padding([.horizontal, .top], 18)
+                .padding(.bottom, 10)
+
+            tabPicker
+                .padding(.horizontal, 18)
                 .padding(.bottom, 12)
 
             Divider()
 
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if dashboardModel.metrics.isEmpty {
-                        emptyState
-                    } else {
-                        ForEach(dashboardModel.metrics) { metric in
-                            MetricCard(metric: metric)
-                        }
-                    }
-
-                    ActiveAppsMemoryCard(model: activeAppsModel)
+                switch selectedTab {
+                case .overview:
+                    overviewContent
+                case .actives:
+                    activesContent
                 }
-                .padding(18)
             }
 
             Divider()
@@ -54,6 +60,11 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             activeAppsModel.refresh()
+        }
+        .onChange(of: selectedTab) { tab in
+            if tab == .actives {
+                activeAppsModel.refresh()
+            }
         }
     }
 
@@ -74,6 +85,36 @@ struct DashboardView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
         }
+    }
+
+    private var tabPicker: some View {
+        Picker("Dashboard section", selection: $selectedTab) {
+            ForEach(DashboardTab.allCases) { tab in
+                Text(tab.rawValue).tag(tab)
+            }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+    }
+
+    private var overviewContent: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            if dashboardModel.metrics.isEmpty {
+                emptyState
+            } else {
+                ForEach(dashboardModel.metrics) { metric in
+                    MetricCard(metric: metric)
+                }
+            }
+        }
+        .padding(18)
+    }
+
+    private var activesContent: some View {
+        LazyVStack(alignment: .leading, spacing: 12) {
+            ActiveAppsMemoryCard(model: activeAppsModel)
+        }
+        .padding(18)
     }
 
     private var summaryText: String {
