@@ -138,12 +138,19 @@ struct DashboardView: View {
 private final class ActiveAppsModel: ObservableObject {
     @Published private(set) var apps: [ActiveAppMemoryEntry] = []
     @Published private(set) var lastActionMessage: String?
+    @Published private(set) var isCleaningMemory = false
 
     private let service: ActiveAppMemoryService
+    private let memoryCleaner: any MemoryCleaning
     private let limit: Int
 
-    init(service: ActiveAppMemoryService = ActiveAppMemoryService(), limit: Int = 8) {
+    init(
+        service: ActiveAppMemoryService = ActiveAppMemoryService(),
+        memoryCleaner: any MemoryCleaning = CleanMemoryService(),
+        limit: Int = 8
+    ) {
         self.service = service
+        self.memoryCleaner = memoryCleaner
         self.limit = limit
         refresh()
     }
@@ -152,7 +159,27 @@ private final class ActiveAppsModel: ObservableObject {
         apps = service.topApps(limit: limit)
     }
 
-    func clear(_ app: ActiveAppMemoryEntry) {
+    func cleanMemory() async {
+        guard !isCleaningMemory else { return }
+        isCleaningMemory = true
+        lastActionMessage = "Cleaning reclaimable memory…"
+
+        let result = await memoryCleaner.cleanMemory()
+
+        switch result {
+        case .succeeded:
+            lastActionMessage = "Cleaned reclaimable memory."
+        case .unavailable:
+            lastActionMessage = "Memory clean command is unavailable on this Mac."
+        case .failed(let exitCode):
+            lastActionMessage = "Memory clean failed with exit code \(exitCode)."
+        }
+
+        isCleaningMemory = false
+        refresh()
+    }
+
+    func quit(_ app: ActiveAppMemoryEntry) {
         switch service.requestTermination(processIdentifier: app.processIdentifier) {
         case .requested:
             lastActionMessage = "Requested \(app.name) to quit."
@@ -189,6 +216,8 @@ private struct ActiveAppsMemoryCard: View {
                 .font(.caption)
             }
 
+            cleanMemoryButton
+
             if model.apps.isEmpty {
                 Text("No foreground apps are reporting memory usage yet.")
                     .font(.caption)
@@ -199,7 +228,7 @@ private struct ActiveAppsMemoryCard: View {
                 VStack(spacing: 0) {
                     ForEach(model.apps) { app in
                         ActiveAppRow(app: app) {
-                            model.clear(app)
+                            model.quit(app)
                         }
 
                         if app.id != model.apps.last?.id {
@@ -225,11 +254,28 @@ private struct ActiveAppsMemoryCard: View {
                 .stroke(.separator.opacity(0.45), lineWidth: 1)
         }
     }
+
+    private var cleanMemoryButton: some View {
+        Button {
+            Task {
+                await model.cleanMemory()
+            }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "sparkles")
+                Text(model.isCleaningMemory ? "Cleaning Memory…" : "Clean Memory")
+            }
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.borderedProminent)
+        .disabled(model.isCleaningMemory)
+        .help("Release reclaimable system memory without deleting app data")
+    }
 }
 
 private struct ActiveAppRow: View {
     let app: ActiveAppMemoryEntry
-    let clear: () -> Void
+    let quit: () -> Void
 
     var body: some View {
         HStack(spacing: 8) {
@@ -256,7 +302,7 @@ private struct ActiveAppRow: View {
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
 
-            Button("Clear", action: clear)
+            Button("Quit", action: quit)
                 .buttonStyle(.borderless)
                 .font(.caption)
                 .disabled(!app.isTerminable)
