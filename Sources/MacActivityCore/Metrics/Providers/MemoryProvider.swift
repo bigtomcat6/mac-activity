@@ -177,6 +177,74 @@ public struct MachProcessResidentMemoryReader: ProcessResidentMemoryReading {
     }
 }
 
+public struct MemoryCleanCommand: Equatable, Sendable {
+    public let executableURL: URL
+    public let arguments: [String]
+
+    public init(executableURL: URL, arguments: [String] = []) {
+        self.executableURL = executableURL
+        self.arguments = arguments
+    }
+}
+
+public enum CleanMemoryResult: Equatable, Sendable {
+    case succeeded
+    case unavailable
+    case failed(exitCode: Int32)
+}
+
+public protocol MemoryCleaning: Sendable {
+    func cleanMemory() async -> CleanMemoryResult
+}
+
+public protocol MemoryCleanCommandRunning: Sendable {
+    func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult
+}
+
+public struct CleanMemoryService: MemoryCleaning {
+    public static let defaultCommand = MemoryCleanCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/purge")
+    )
+
+    private let command: MemoryCleanCommand
+    private let runner: any MemoryCleanCommandRunning
+
+    public init(
+        command: MemoryCleanCommand = Self.defaultCommand,
+        runner: any MemoryCleanCommandRunning = ProcessMemoryCleanCommandRunner()
+    ) {
+        self.command = command
+        self.runner = runner
+    }
+
+    public func cleanMemory() async -> CleanMemoryResult {
+        await runner.run(command)
+    }
+}
+
+public struct ProcessMemoryCleanCommandRunner: MemoryCleanCommandRunning {
+    public init() {}
+
+    public func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = command.executableURL
+            process.arguments = command.arguments
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                return .unavailable
+            }
+
+            return process.terminationStatus == 0
+                ? .succeeded
+                : .failed(exitCode: process.terminationStatus)
+        }.value
+    }
+}
+
 public struct GPUProvider: MetricProvider {
     public let kind: MetricKind = .gpu
     public let cadence: MetricCadenceLane = .fast
