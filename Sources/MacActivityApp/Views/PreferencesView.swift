@@ -3,7 +3,6 @@ import MacActivityCore
 
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
-    @ObservedObject var metricsStore: MetricsStore
 
     private var metricRows: [MetricKind] {
         MetricKind.summaryOrder

@@ -5,7 +5,7 @@ import MacActivityCore
 @MainActor
 final class StatusItemController {
     private let summaryModel: StatusSummaryModel
-    private let popoverController: DashboardPopoverController
+    private let popoverController: DashboardPopoverControlling
     private var statusItem: NSStatusItem?
     private var summaryView: StatusBarSummaryView?
     private var cancellables: Set<AnyCancellable> = []
@@ -13,7 +13,7 @@ final class StatusItemController {
 
     init(
         summaryModel: StatusSummaryModel,
-        popoverController: DashboardPopoverController
+        popoverController: DashboardPopoverControlling
     ) {
         self.summaryModel = summaryModel
         self.popoverController = popoverController

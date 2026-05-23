@@ -242,6 +242,11 @@ public struct MetricsHistory: Equatable, Sendable {
 public final class MetricsStore: ObservableObject {
     @Published public private(set) var snapshot: MetricsSnapshot
     @Published public private(set) var history: MetricsHistory
+    private let updatesSubject = PassthroughSubject<(MetricsSnapshot, MetricsHistory), Never>()
+
+    public var updatesPublisher: AnyPublisher<(MetricsSnapshot, MetricsHistory), Never> {
+        updatesSubject.eraseToAnyPublisher()
+    }
 
     public init(snapshot: MetricsSnapshot = MetricsSnapshot(), history: MetricsHistory = MetricsHistory()) {
         self.snapshot = snapshot
@@ -251,5 +256,6 @@ public final class MetricsStore: ObservableObject {
     public func apply(_ updates: [MetricUpdate], timestamp: Date = .now) {
         snapshot = snapshot.applying(updates, timestamp: timestamp)
         history = history.appending(updates: updates, timestamp: timestamp)
+        updatesSubject.send((snapshot, history))
     }
 }

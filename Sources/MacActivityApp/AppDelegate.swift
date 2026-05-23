@@ -12,8 +12,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var summaryModel: StatusSummaryModel?
     private var dashboardModel: DashboardModel?
     private var statusItemController: StatusItemController?
-    private var dashboardPopoverController: DashboardPopoverController?
-    private var preferencesWindowController: PreferencesWindowController?
+    private var dashboardPopoverController: LazyDashboardPopoverController?
+    private var preferencesWindowController: LazyPreferencesWindowController?
     private var presentationCoordinator: AppPresentationCoordinator?
     private var scheduler: MetricsScheduler?
     private var cancellables: Set<AnyCancellable> = []
@@ -24,29 +24,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             launchService: launchService
         )
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
-        let dashboardModel = DashboardModel(store: metricsStore, isActive: false)
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
         let temperatureSourceStore = TemperatureSourceSelectionStore(
             initialSource: preferencesController.state.temperatureSource
         )
-        let preferencesWindowController = PreferencesWindowController(
-            preferencesController: preferencesController,
-            metricsStore: metricsStore
-        )
-        let dashboardPopoverController = DashboardPopoverController(
-            dashboardModel: dashboardModel,
-            onVisibilityChange: { [weak self] isVisible in
-                self?.handleDashboardVisibilityChange(isVisible)
-            },
-            openPreferences: { [weak self] in
-                self?.showPreferences()
-            },
-            quitApplication: { [weak self] in
-                self?.terminateApplication()
+        let preferencesWindowController = LazyPreferencesWindowController { [preferencesController] in
+            return PreferencesWindowController(
+                preferencesController: preferencesController
+            )
+        }
+        let dashboardPopoverController = LazyDashboardPopoverController { [weak self] in
+            guard let self else {
+                fatalError("Dashboard popover requested after AppDelegate deallocation")
             }
-        )
+
+            return self.makeDashboardPopoverController()
+        }
         let statusItemController = StatusItemController(
             summaryModel: summaryModel,
             popoverController: dashboardPopoverController
@@ -73,7 +68,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.preferencesController = preferencesController
         self.samplingController = samplingController
         self.summaryModel = summaryModel
-        self.dashboardModel = dashboardModel
         self.preferencesWindowController = preferencesWindowController
         self.dashboardPopoverController = dashboardPopoverController
         self.statusItemController = statusItemController
@@ -155,6 +149,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleDashboardVisibilityChange(_ isVisible: Bool) {
         dashboardModel?.setActive(isVisible)
         samplingController?.setDashboardVisible(isVisible)
+
+        if !isVisible {
+            dashboardPopoverController?.reset()
+            dashboardModel = nil
+        }
+    }
+
+    private func makeDashboardPopoverController() -> DashboardPopoverController {
+        let dashboardModel = DashboardModel(store: metricsStore, isActive: false)
+        self.dashboardModel = dashboardModel
+
+        return DashboardPopoverController(
+            dashboardModel: dashboardModel,
+            onVisibilityChange: { [weak self] isVisible in
+                self?.handleDashboardVisibilityChange(isVisible)
+            },
+            openPreferences: { [weak self] in
+                self?.showPreferences()
+            },
+            quitApplication: { [weak self] in
+                self?.terminateApplication()
+            }
+        )
     }
 
     private static func makeLaunchService() -> LaunchAtLoginServicing {
