@@ -5,12 +5,10 @@ import MacActivityCore
 @MainActor
 final class PreferencesWindowController: NSWindowController {
     init(
-        preferencesController: PreferencesController,
-        metricsStore: MetricsStore
+        preferencesController: PreferencesController
     ) {
         let rootView = PreferencesView(
-            preferencesController: preferencesController,
-            metricsStore: metricsStore
+            preferencesController: preferencesController
         )
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)

@@ -96,22 +96,19 @@ public final class DashboardModel: ObservableObject {
         self.metrics = isActive ? metricsBuilder(store.snapshot, store.history) : []
 
         if isActive {
-            startSubscription(skipCurrentValue: false)
+            startSubscription()
         }
     }
 
     public func setActive(_ isActive: Bool) {
         guard self.isActive != isActive else {
-            if isActive {
-                refreshMetricsAsync()
-            }
             return
         }
 
         self.isActive = isActive
 
         if isActive {
-            startSubscription(skipCurrentValue: true)
+            startSubscription()
             refreshMetricsAsync()
         } else {
             subscription = nil
@@ -247,13 +244,8 @@ public final class DashboardModel: ObservableObject {
         )
     }
 
-    private func startSubscription(skipCurrentValue: Bool) {
-        let basePublisher = Publishers.CombineLatest(store.$snapshot, store.$history)
-        let publisher: AnyPublisher<(MetricsSnapshot, MetricsHistory), Never> = skipCurrentValue
-            ? basePublisher.dropFirst().eraseToAnyPublisher()
-            : basePublisher.eraseToAnyPublisher()
-
-        subscription = publisher
+    private func startSubscription() {
+        subscription = store.updatesPublisher
             .sink { [weak self] snapshot, history in
                 self?.refreshMetricsAsync(snapshot: snapshot, history: history)
             }

@@ -299,6 +299,54 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(cpu.value, "24%")
     }
 
+    func testSingleStoreApplyTriggersOneMetricsBuild() async {
+        let store = MetricsStore()
+        let counter = MetricsBuildCounter()
+        let model = DashboardModel(
+            store: store,
+            isActive: false,
+            metricsBuilder: { snapshot, _ in
+                counter.increment()
+                guard snapshot.cpu != nil else {
+                    return []
+                }
+
+                return [
+                    DashboardMetric(
+                        kind: .cpu,
+                        title: MetricKind.cpu.title,
+                        value: "33%"
+                    )
+                ]
+            }
+        )
+
+        model.setActive(true)
+        let activationDeadline = Date().addingTimeInterval(1)
+        while counter.currentValue != 1, Date() < activationDeadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        XCTAssertEqual(counter.currentValue, 1)
+        counter.reset()
+
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 33)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 42)
+        )
+
+        let deadline = Date().addingTimeInterval(1)
+        while model.metrics.isEmpty, Date() < deadline {
+            try? await Task.sleep(nanoseconds: 10_000_000)
+        }
+
+        try? await Task.sleep(nanoseconds: 100_000_000)
+
+        XCTAssertEqual(counter.currentValue, 1)
+    }
+
     private func waitForMetrics(
         in model: DashboardModel,
         timeout: TimeInterval = 1,
@@ -315,5 +363,28 @@ final class DashboardModelTests: XCTestCase {
         }
 
         return model.metrics
+    }
+}
+
+private final class MetricsBuildCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var currentValue: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func increment() {
+        lock.lock()
+        value += 1
+        lock.unlock()
+    }
+
+    func reset() {
+        lock.lock()
+        value = 0
+        lock.unlock()
     }
 }
