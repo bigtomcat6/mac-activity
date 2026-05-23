@@ -4,6 +4,113 @@ import MacActivityCore
 
 @MainActor
 final class DashboardTrendChartLayoutTests: XCTestCase {
+    func testDisplaySamplesReduceDenseNonNetworkSeriesWithinBudget() {
+        let samples = makeSamples(values: Array(0..<600).map(Double.init))
+        let containerSize = CGSize(width: 280, height: 60)
+
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .cpu,
+            containerSize: containerSize
+        )
+
+        XCTAssertLessThan(displaySamples.count, samples.count)
+        XCTAssertLessThanOrEqual(
+            displaySamples.count,
+            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
+        )
+        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
+        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
+    }
+
+    func testDisplaySamplesPreserveSpikeInOverviewSegment() {
+        let values = Array(repeating: 12.0, count: 320) + [95.0] + Array(repeating: 12.0, count: 279)
+        let samples = makeSamples(values: values)
+
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .cpu,
+            containerSize: CGSize(width: 280, height: 60)
+        )
+
+        XCTAssertTrue(displaySamples.contains { $0.primaryValue == 95.0 })
+    }
+
+    func testDisplaySamplesCompactFlatSeries() {
+        let samples = makeSamples(values: Array(repeating: 42.0, count: 600))
+
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .memory,
+            containerSize: CGSize(width: 280, height: 60)
+        )
+
+        XCTAssertLessThan(displaySamples.count, 20)
+        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
+        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
+    }
+
+    func testDisplaySamplesLeaveNetworkSeriesUnchanged() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = (0..<24).map { index in
+            DashboardTrendSample(
+                timestamp: base.addingTimeInterval(Double(index)),
+                primaryValue: Double(index * 2_000),
+                secondaryValue: Double(index * 750)
+            )
+        }
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.displaySamples(
+                for: samples,
+                kind: .network,
+                containerSize: CGSize(width: 280, height: 60)
+            ),
+            samples
+        )
+    }
+
+    func testDisplaySampleBudgetUsesRestPlotWidthNotHoverWidth() {
+        let containerSize = CGSize(width: 280, height: 60)
+        let hoverPlotWidth = DashboardTrendChartLayout.plotFrame(
+            in: containerSize,
+            isHovering: true,
+            yAxisLabelWidth: 54,
+            xAxisLabelHeight: 14
+        ).width
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.displayPlotWidth(for: containerSize),
+            DashboardTrendChartLayout.plotFrame(
+                in: containerSize,
+                isHovering: false
+            ).width,
+            accuracy: 0.001
+        )
+        XCTAssertNotEqual(
+            DashboardTrendChartLayout.displayPlotWidth(for: containerSize),
+            hoverPlotWidth,
+            accuracy: 0.001
+        )
+    }
+
+    func testDisplaySamplesRemainChronological() {
+        let values = (0..<600).map { index in
+            index.isMultiple(of: 17) ? 90.0 : Double(index % 13)
+        }
+        let samples = makeSamples(values: values)
+
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .temperature,
+            containerSize: CGSize(width: 280, height: 60)
+        )
+
+        for pair in zip(displaySamples, displaySamples.dropFirst()) {
+            XCTAssertLessThanOrEqual(pair.0.timestamp, pair.1.timestamp)
+        }
+    }
+
     func testAnnotationPositionTracksPointerYWithinPlotBounds() {
         let position = DashboardTrendChartLayout.annotationPosition(
             pointer: CGPoint(x: 80, y: 70),
@@ -318,5 +425,15 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
         XCTAssertGreaterThanOrEqual(y, 7)
         XCTAssertLessThanOrEqual(y, 53)
+    }
+
+    private func makeSamples(values: [Double]) -> [DashboardTrendSample] {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        return values.enumerated().map { index, value in
+            DashboardTrendSample(
+                timestamp: base.addingTimeInterval(Double(index)),
+                primaryValue: value
+            )
+        }
     }
 }
