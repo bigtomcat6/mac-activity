@@ -74,6 +74,43 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
+    func testCleanMemoryDefaultCommandUsesSystemPurgeWithoutArguments() {
+        XCTAssertEqual(
+            CleanMemoryService.defaultCommand,
+            MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge"))
+        )
+    }
+
+    func testCleanMemoryServiceRunsDefaultCommandAndReportsSuccess() async {
+        let runner = MemoryCleanCommandRecorder(result: .succeeded)
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+    }
+
+    func testCleanMemoryServicePropagatesUnavailableCommand() async {
+        let runner = MemoryCleanCommandRecorder(result: .unavailable)
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+
+        XCTAssertEqual(result, .unavailable)
+        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+    }
+
+    func testCleanMemoryServicePropagatesFailedExitCode() async {
+        let runner = MemoryCleanCommandRecorder(result: .failed(exitCode: 72))
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+
+        XCTAssertEqual(result, .failed(exitCode: 72))
+        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+    }
+
     func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
         let recorder = IOAcceleratorReadRecorder()
         let cache = IOAcceleratorStatsCache(
@@ -90,6 +127,24 @@ final class MemoryProviderTests: XCTestCase {
 
         let readCount = await recorder.currentReadCount()
         XCTAssertEqual(readCount, 1)
+    }
+}
+
+private actor MemoryCleanCommandRecorder: MemoryCleanCommandRunning {
+    private let result: CleanMemoryResult
+    private var commands: [MemoryCleanCommand] = []
+
+    init(result: CleanMemoryResult) {
+        self.result = result
+    }
+
+    func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult {
+        commands.append(command)
+        return result
+    }
+
+    func recordedCommands() -> [MemoryCleanCommand] {
+        commands
     }
 }
 
