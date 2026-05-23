@@ -41,6 +41,39 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
+    func testActiveAppMemoryRankingSortsDescendingAndUsesNameTieBreaker() {
+        let entries = [
+            ActiveAppMemoryEntry(
+                processIdentifier: 101,
+                name: "Notes",
+                bundleIdentifier: "com.apple.Notes",
+                residentMemoryBytes: 2_048,
+                isTerminable: true
+            ),
+            ActiveAppMemoryEntry(
+                processIdentifier: 102,
+                name: "Safari",
+                bundleIdentifier: "com.apple.Safari",
+                residentMemoryBytes: 4_096,
+                isTerminable: true
+            ),
+            ActiveAppMemoryEntry(
+                processIdentifier: 103,
+                name: "Calendar",
+                bundleIdentifier: "com.apple.iCal",
+                residentMemoryBytes: 2_048,
+                isTerminable: true
+            ),
+        ]
+
+        let ranked = ActiveAppMemoryService.sortedByMemory(entries, limit: 3)
+
+        XCTAssertEqual(
+            ranked.map(\.name),
+            ["Safari", "Calendar", "Notes"]
+        )
+    }
+
     func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
         let recorder = IOAcceleratorReadRecorder()
         let cache = IOAcceleratorStatsCache(
