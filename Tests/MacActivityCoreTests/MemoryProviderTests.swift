@@ -86,9 +86,10 @@ final class MemoryProviderTests: XCTestCase {
         let service = CleanMemoryService(runner: runner)
 
         let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .succeeded)
-        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
     }
 
     func testCleanMemoryServicePropagatesUnavailableCommand() async {
@@ -96,9 +97,10 @@ final class MemoryProviderTests: XCTestCase {
         let service = CleanMemoryService(runner: runner)
 
         let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .unavailable)
-        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
     }
 
     func testCleanMemoryServicePropagatesFailedExitCode() async {
@@ -106,9 +108,10 @@ final class MemoryProviderTests: XCTestCase {
         let service = CleanMemoryService(runner: runner)
 
         let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .failed(exitCode: 72))
-        XCTAssertEqual(await runner.recordedCommands(), [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
     }
 
     func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
