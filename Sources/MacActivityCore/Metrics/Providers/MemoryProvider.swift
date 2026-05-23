@@ -130,7 +130,7 @@ public final class ActiveAppMemoryService {
         return Self.sortedByMemory(entries, limit: limit)
     }
 
-    public static func sortedByMemory(_ entries: [ActiveAppMemoryEntry], limit: Int) -> [ActiveAppMemoryEntry] {
+    public nonisolated static func sortedByMemory(_ entries: [ActiveAppMemoryEntry], limit: Int) -> [ActiveAppMemoryEntry] {
         entries
             .sorted { lhs, rhs in
                 if lhs.residentMemoryBytes == rhs.residentMemoryBytes {
