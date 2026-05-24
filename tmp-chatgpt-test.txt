@@ -1,3 +1,11 @@
-GeometryReader { proxy in
-    Rectangle()
+private struct BarPreview: View {
+    var body: some View {
+        GeometryReader { proxy in
+            HStack(alignment: .bottom, spacing: 2) {
+                Rectangle().fill(.blue)
+                Rectangle().fill(.red)
+            }
+            .frame(width: proxy.size.width, height: proxy.size.height)
+        }
+    }
 }
