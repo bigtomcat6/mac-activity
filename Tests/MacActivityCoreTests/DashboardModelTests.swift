@@ -64,9 +64,10 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(try! XCTUnwrap(cpu.trend).scale, .fixed(lowerBound: 0, upperBound: 100))
         XCTAssertEqual(try! XCTUnwrap(cpu.trend).samples.map(\.primaryValue), [25, 40])
 
-        XCTAssertEqual(memory.style, .chart)
+        XCTAssertEqual(memory.style, .memoryStackedChart)
         XCTAssertEqual(try! XCTUnwrap(memory.trend).scale, .fixed(lowerBound: 0, upperBound: 100))
         XCTAssertEqual(try! XCTUnwrap(memory.trend).samples.map(\.primaryValue), [50, 75])
+        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.map(\.pressurePercent), [50, 75])
 
         XCTAssertEqual(battery.style, .chart)
         XCTAssertEqual(try! XCTUnwrap(battery.trend).scale, .fixed(lowerBound: 0, upperBound: 100))
@@ -82,6 +83,42 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(try! XCTUnwrap(network.trend).samples.map { $0.secondaryValue ?? -1 }, [500, 1_000])
         XCTAssertEqual(network.value, "↑ 1 KB/s  ↓ 2 KB/s")
         XCTAssertNil(network.secondaryText)
+    }
+
+    func testModelMergesVRAMIntoMemoryCardWhenBothAreAvailable() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [
+                .memory(
+                    MemoryReading(
+                        usedBytes: 6_000,
+                        totalBytes: 10_000,
+                        breakdown: MemoryBreakdown(
+                            wiredBytes: 1_000,
+                            activeBytes: 3_000,
+                            compressedBytes: 2_000,
+                            cachedBytes: 1_500,
+                            availableBytes: 4_000
+                        )
+                    )
+                ),
+                .vram(VRAMReading(usedBytes: 2_000, totalBytes: 4_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 6)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .memory }
+        }
+        let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
+
+        XCTAssertFalse(metrics.contains { $0.kind == .vram })
+        XCTAssertEqual(memory.value, "60%")
+        XCTAssertEqual(memory.secondaryText, "VRAM 2 KB")
+        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.vramUsedBytes, 2_000)
+        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.vramTotalBytes, 4_000)
     }
 
     func testModelUsesTemperatureSourceSpecificTitle() async {
@@ -120,8 +157,9 @@ final class DashboardModelTests: XCTestCase {
         }
         let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
 
-        XCTAssertEqual(memory.value, "1.5 GB / 3 GB")
-        XCTAssertNil(memory.detail)
+        XCTAssertEqual(memory.value, "50%")
+        XCTAssertEqual(memory.secondaryText, "RAM 1.5 GB / 3 GB")
+        XCTAssertEqual(memory.detail, "RAM 1.5 GB / 3 GB")
     }
 
     func testModelFormatsZeroRatesWithoutZeroWord() async {
