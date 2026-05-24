@@ -1,1 +1,4 @@
-struct MemoryHistorySample {}
+struct MemoryHistoryBreakdown: Equatable, Sendable {
+    var usedBytes: UInt64
+    var totalBytes: UInt64
+}
