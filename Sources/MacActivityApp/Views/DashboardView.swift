@@ -312,12 +312,113 @@ private struct ActiveAppRow: View {
     }
 }
 
+struct RAMSegmentBarsLayout {
+    static func displaySampleBudget(for containerSize: CGSize) -> Int {
+        guard containerSize.width > 0 else { return 1 }
+        return min(96, max(12, Int((containerSize.width / 5).rounded())))
+    }
+
+    static func displaySamples(for samples: [DashboardMemoryTrendSample], containerSize: CGSize) -> [DashboardMemoryTrendSample] {
+        let budget = displaySampleBudget(for: containerSize)
+        guard samples.count > budget, budget > 1 else { return samples }
+
+        let scale = Double(samples.count - 1) / Double(budget - 1)
+        return (0..<budget).reduce(into: []) { result, index in
+            let sampleIndex = Int((Double(index) * scale).rounded())
+            guard samples.indices.contains(sampleIndex), result.last?.timestamp != samples[sampleIndex].timestamp else { return }
+            result.append(samples[sampleIndex])
+        }
+    }
+
+    static func barWidth(sampleCount: Int, containerWidth: CGFloat) -> CGFloat {
+        guard sampleCount > 0 else { return 0 }
+        let spacing = spacing(sampleCount: sampleCount)
+        let rawWidth = (containerWidth - CGFloat(max(0, sampleCount - 1)) * spacing) / CGFloat(sampleCount)
+        return min(8, max(2, rawWidth))
+    }
+
+    static func spacing(sampleCount: Int) -> CGFloat {
+        sampleCount > 32 ? 2 : 3
+    }
+}
+
+private struct RAMSegmentBars: View {
+    let trend: DashboardMemoryTrend
+
+    var body: some View {
+        GeometryReader { proxy in
+            let samples = RAMSegmentBarsLayout.displaySamples(for: trend.samples, containerSize: proxy.size)
+            let barWidth = RAMSegmentBarsLayout.barWidth(sampleCount: samples.count, containerWidth: proxy.size.width)
+            let spacing = RAMSegmentBarsLayout.spacing(sampleCount: samples.count)
+
+            HStack(alignment: .bottom, spacing: spacing) {
+                ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
+                    RAMSegmentBar(sample: sample)
+                        .frame(width: barWidth, height: proxy.size.height)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel(for: samples.last))
+        }
+    }
+
+    private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
+        guard let sample else { return "Memory chart collecting samples" }
+        var parts = [
+            "Memory \(Int(sample.pressurePercent.rounded())) percent",
+            "wired \(DashboardMetricTextFormatter.formatBytes(sample.wiredBytes))",
+            "active \(DashboardMetricTextFormatter.formatBytes(sample.activeBytes))",
+            "compressed \(DashboardMetricTextFormatter.formatBytes(sample.compressedBytes))",
+        ]
+        if let vramUsedBytes = sample.vramUsedBytes {
+            parts.append("VRAM \(DashboardMetricTextFormatter.formatBytes(vramUsedBytes))")
+        }
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct RAMSegmentBar: View {
+    let sample: DashboardMemoryTrendSample
+
+    private var displayedTotal: UInt64 {
+        max(
+            sample.totalBytes,
+            sample.wiredBytes + sample.activeBytes + sample.compressedBytes + (sample.vramUsedBytes ?? 0)
+        )
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            VStack(spacing: 0) {
+                Spacer(minLength: 0)
+                segment(bytes: sample.vramUsedBytes ?? 0, color: .cyan, height: proxy.size.height)
+                segment(bytes: sample.compressedBytes, color: .purple, height: proxy.size.height)
+                segment(bytes: sample.activeBytes, color: .red, height: proxy.size.height)
+                segment(bytes: sample.wiredBytes, color: .blue, height: proxy.size.height)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+        }
+    }
+
+    @ViewBuilder
+    private func segment(bytes: UInt64, color: Color, height: CGFloat) -> some View {
+        if bytes > 0, displayedTotal > 0 {
+            Rectangle()
+                .fill(color.opacity(0.88))
+                .frame(height: max(1, CGFloat(bytes) / CGFloat(displayedTotal) * height))
+        }
+    }
+}
+
 private struct MetricCard: View {
     let metric: DashboardMetric
     @State private var isCardHovered = false
 
     private var isCompactChartCard: Bool {
-        metric.style == .chart
+        metric.style == .chart || metric.style == .memoryStackedChart
     }
 
     var body: some View {
@@ -332,12 +433,16 @@ private struct MetricCard: View {
 
             switch metric.style {
             case .chart:
-                DashboardTrendChart(
-                    metric: metric,
-                    color: color,
-                    isCardHovered: isCardHovered
-                )
+                DashboardTrendChart(metric: metric, color: color, isCardHovered: isCardHovered)
                     .frame(height: DashboardCardLayout.compactChartHeight)
+            case .memoryStackedChart:
+                if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
+                    RAMSegmentBars(trend: memoryTrend)
+                        .frame(height: DashboardCardLayout.compactChartHeight)
+                } else {
+                    DashboardTrendChart(metric: metric, color: color, isCardHovered: isCardHovered)
+                        .frame(height: DashboardCardLayout.compactChartHeight)
+                }
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -356,7 +461,7 @@ private struct MetricCard: View {
         .padding(isCompactChartCard ? DashboardCardLayout.compactChartInsets : DashboardCardLayout.regularCardInsets)
         .frame(
             maxWidth: .infinity,
-            minHeight: metric.style == .chart ? DashboardCardLayout.compactChartMinHeight : 44,
+            minHeight: isCompactChartCard ? DashboardCardLayout.compactChartMinHeight : 44,
             alignment: .topLeading
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
