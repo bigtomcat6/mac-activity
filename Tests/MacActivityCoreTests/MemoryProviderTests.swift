@@ -41,6 +41,79 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
+    func testActiveAppMemoryRankingSortsDescendingAndUsesNameTieBreaker() {
+        let entries = [
+            ActiveAppMemoryEntry(
+                processIdentifier: 101,
+                name: "Notes",
+                bundleIdentifier: "com.apple.Notes",
+                residentMemoryBytes: 2_048,
+                isTerminable: true
+            ),
+            ActiveAppMemoryEntry(
+                processIdentifier: 102,
+                name: "Safari",
+                bundleIdentifier: "com.apple.Safari",
+                residentMemoryBytes: 4_096,
+                isTerminable: true
+            ),
+            ActiveAppMemoryEntry(
+                processIdentifier: 103,
+                name: "Calendar",
+                bundleIdentifier: "com.apple.iCal",
+                residentMemoryBytes: 2_048,
+                isTerminable: true
+            ),
+        ]
+
+        let ranked = ActiveAppMemoryService.sortedByMemory(entries, limit: 3)
+
+        XCTAssertEqual(
+            ranked.map(\.name),
+            ["Safari", "Calendar", "Notes"]
+        )
+    }
+
+    func testCleanMemoryDefaultCommandUsesSystemPurgeWithoutArguments() {
+        XCTAssertEqual(
+            CleanMemoryService.defaultCommand,
+            MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge"))
+        )
+    }
+
+    func testCleanMemoryServiceRunsDefaultCommandAndReportsSuccess() async {
+        let runner = MemoryCleanCommandRecorder(result: .succeeded)
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+    }
+
+    func testCleanMemoryServicePropagatesUnavailableCommand() async {
+        let runner = MemoryCleanCommandRecorder(result: .unavailable)
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .unavailable)
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+    }
+
+    func testCleanMemoryServicePropagatesFailedExitCode() async {
+        let runner = MemoryCleanCommandRecorder(result: .failed(exitCode: 72))
+        let service = CleanMemoryService(runner: runner)
+
+        let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .failed(exitCode: 72))
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+    }
+
     func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
         let recorder = IOAcceleratorReadRecorder()
         let cache = IOAcceleratorStatsCache(
@@ -57,6 +130,24 @@ final class MemoryProviderTests: XCTestCase {
 
         let readCount = await recorder.currentReadCount()
         XCTAssertEqual(readCount, 1)
+    }
+}
+
+private actor MemoryCleanCommandRecorder: MemoryCleanCommandRunning {
+    private let result: CleanMemoryResult
+    private var commands: [MemoryCleanCommand] = []
+
+    init(result: CleanMemoryResult) {
+        self.result = result
+    }
+
+    func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult {
+        commands.append(command)
+        return result
+    }
+
+    func recordedCommands() -> [MemoryCleanCommand] {
+        commands
     }
 }
 

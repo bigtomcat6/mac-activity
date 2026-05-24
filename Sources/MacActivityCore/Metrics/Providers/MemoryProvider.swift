@@ -1,3 +1,5 @@
+import AppKit
+import Darwin
 import Darwin.Mach
 import Foundation
 import IOKit
@@ -60,6 +62,186 @@ public struct MemoryProvider: MetricProvider {
             usedBytes: min(usedBytes, totalBytes),
             totalBytes: totalBytes
         )
+    }
+}
+
+public struct ActiveAppMemoryEntry: Identifiable, Equatable, Sendable {
+    public let id: pid_t
+    public let processIdentifier: pid_t
+    public let name: String
+    public let bundleIdentifier: String?
+    public let residentMemoryBytes: UInt64
+    public let isTerminable: Bool
+
+    public init(
+        processIdentifier: pid_t,
+        name: String,
+        bundleIdentifier: String?,
+        residentMemoryBytes: UInt64,
+        isTerminable: Bool
+    ) {
+        self.id = processIdentifier
+        self.processIdentifier = processIdentifier
+        self.name = name
+        self.bundleIdentifier = bundleIdentifier
+        self.residentMemoryBytes = residentMemoryBytes
+        self.isTerminable = isTerminable
+    }
+
+    public var formattedResidentMemory: String {
+        ByteCountFormatter.string(fromByteCount: Int64(min(residentMemoryBytes, UInt64(Int64.max))), countStyle: .memory)
+    }
+}
+
+public enum ActiveAppTerminationResult: Equatable, Sendable {
+    case requested
+    case notFound
+    case notTerminable
+}
+
+@MainActor
+public final class ActiveAppMemoryService {
+    private let workspace: NSWorkspace
+    private let memoryReader: ProcessResidentMemoryReading
+
+    public init(
+        workspace: NSWorkspace = .shared,
+        memoryReader: ProcessResidentMemoryReading = MachProcessResidentMemoryReader()
+    ) {
+        self.workspace = workspace
+        self.memoryReader = memoryReader
+    }
+
+    public func topApps(limit: Int = 8) -> [ActiveAppMemoryEntry] {
+        let entries = workspace.runningApplications.compactMap { app -> ActiveAppMemoryEntry? in
+            guard app.activationPolicy == .regular else { return nil }
+            let pid = app.processIdentifier
+            guard let residentBytes = memoryReader.residentMemoryBytes(for: pid), residentBytes > 0 else { return nil }
+
+            return ActiveAppMemoryEntry(
+                processIdentifier: pid,
+                name: app.localizedName ?? app.bundleIdentifier ?? "Process \(pid)",
+                bundleIdentifier: app.bundleIdentifier,
+                residentMemoryBytes: residentBytes,
+                isTerminable: app.isTerminated == false
+            )
+        }
+
+        return Self.sortedByMemory(entries, limit: limit)
+    }
+
+    public nonisolated static func sortedByMemory(_ entries: [ActiveAppMemoryEntry], limit: Int) -> [ActiveAppMemoryEntry] {
+        entries
+            .sorted { lhs, rhs in
+                if lhs.residentMemoryBytes == rhs.residentMemoryBytes {
+                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
+                }
+                return lhs.residentMemoryBytes > rhs.residentMemoryBytes
+            }
+            .prefix(max(0, limit))
+            .map { $0 }
+    }
+
+    @discardableResult
+    public func requestTermination(processIdentifier: pid_t) -> ActiveAppTerminationResult {
+        guard let app = workspace.runningApplications.first(where: { $0.processIdentifier == processIdentifier }) else {
+            return .notFound
+        }
+        guard app.activationPolicy == .regular, app.isTerminated == false else {
+            return .notTerminable
+        }
+        return app.terminate() ? .requested : .notTerminable
+    }
+}
+
+public protocol ProcessResidentMemoryReading: Sendable {
+    func residentMemoryBytes(for processIdentifier: pid_t) -> UInt64?
+}
+
+public struct MachProcessResidentMemoryReader: ProcessResidentMemoryReading {
+    public init() {}
+
+    public func residentMemoryBytes(for processIdentifier: pid_t) -> UInt64? {
+        var info = proc_taskinfo()
+        let byteCount = proc_pidinfo(
+            processIdentifier,
+            PROC_PIDTASKINFO,
+            0,
+            &info,
+            Int32(MemoryLayout<proc_taskinfo>.size)
+        )
+        guard byteCount == Int32(MemoryLayout<proc_taskinfo>.size) else {
+            return nil
+        }
+        return UInt64(info.pti_resident_size)
+    }
+}
+
+public struct MemoryCleanCommand: Equatable, Sendable {
+    public let executableURL: URL
+    public let arguments: [String]
+
+    public init(executableURL: URL, arguments: [String] = []) {
+        self.executableURL = executableURL
+        self.arguments = arguments
+    }
+}
+
+public enum CleanMemoryResult: Equatable, Sendable {
+    case succeeded
+    case unavailable
+    case failed(exitCode: Int32)
+}
+
+public protocol MemoryCleaning: Sendable {
+    func cleanMemory() async -> CleanMemoryResult
+}
+
+public protocol MemoryCleanCommandRunning: Sendable {
+    func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult
+}
+
+public struct CleanMemoryService: MemoryCleaning {
+    public static let defaultCommand = MemoryCleanCommand(
+        executableURL: URL(fileURLWithPath: "/usr/bin/purge")
+    )
+
+    private let command: MemoryCleanCommand
+    private let runner: any MemoryCleanCommandRunning
+
+    public init(
+        command: MemoryCleanCommand = Self.defaultCommand,
+        runner: any MemoryCleanCommandRunning = ProcessMemoryCleanCommandRunner()
+    ) {
+        self.command = command
+        self.runner = runner
+    }
+
+    public func cleanMemory() async -> CleanMemoryResult {
+        await runner.run(command)
+    }
+}
+
+public struct ProcessMemoryCleanCommandRunner: MemoryCleanCommandRunning {
+    public init() {}
+
+    public func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult {
+        await Task.detached(priority: .utility) {
+            let process = Process()
+            process.executableURL = command.executableURL
+            process.arguments = command.arguments
+
+            do {
+                try process.run()
+                process.waitUntilExit()
+            } catch {
+                return .unavailable
+            }
+
+            return process.terminationStatus == 0
+                ? .succeeded
+                : .failed(exitCode: process.terminationStatus)
+        }.value
     }
 }
 
