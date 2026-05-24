@@ -21,13 +21,46 @@ public struct GPUReading: Equatable, Sendable {
     }
 }
 
+public struct MemoryBreakdown: Equatable, Sendable {
+    public var wiredBytes: UInt64
+    public var activeBytes: UInt64
+    public var compressedBytes: UInt64
+    public var cachedBytes: UInt64
+    public var availableBytes: UInt64
+
+    public init(
+        wiredBytes: UInt64 = 0,
+        activeBytes: UInt64 = 0,
+        compressedBytes: UInt64 = 0,
+        cachedBytes: UInt64 = 0,
+        availableBytes: UInt64 = 0
+    ) {
+        self.wiredBytes = wiredBytes
+        self.activeBytes = activeBytes
+        self.compressedBytes = compressedBytes
+        self.cachedBytes = cachedBytes
+        self.availableBytes = availableBytes
+    }
+}
+
 public struct MemoryReading: Equatable, Sendable {
     public var usedBytes: UInt64
     public var totalBytes: UInt64
+    public var breakdown: MemoryBreakdown
 
-    public init(usedBytes: UInt64, totalBytes: UInt64) {
+    public init(
+        usedBytes: UInt64,
+        totalBytes: UInt64,
+        breakdown: MemoryBreakdown = MemoryBreakdown()
+    ) {
         self.usedBytes = usedBytes
         self.totalBytes = totalBytes
+        self.breakdown = breakdown
+    }
+
+    public var pressurePercent: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(usedBytes) / Double(totalBytes) * 100
     }
 }
 
