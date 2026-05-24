@@ -127,16 +127,28 @@ public actor NetworkProvider: MetricProvider {
     }
 
     private static func primaryInterfaceNames() -> [String] {
+        guard let store = SCDynamicStoreCreate(
+            nil,
+            "MacActivity.NetworkProvider" as CFString,
+            nil,
+            nil
+        ) else {
+            return []
+        }
+
         let names = [
-            primaryInterfaceName(for: "State:/Network/Global/IPv4"),
-            primaryInterfaceName(for: "State:/Network/Global/IPv6"),
+            primaryInterfaceName(for: "State:/Network/Global/IPv4", store: store),
+            primaryInterfaceName(for: "State:/Network/Global/IPv6", store: store),
         ].compactMap { $0 }
 
         return uniqueInterfaceNames(names)
     }
 
-    private static func primaryInterfaceName(for dynamicStoreKey: String) -> String? {
-        guard let dictionary = SCDynamicStoreCopyValue(nil, dynamicStoreKey as CFString) as? [String: Any],
+    private static func primaryInterfaceName(
+        for dynamicStoreKey: String,
+        store: SCDynamicStore
+    ) -> String? {
+        guard let dictionary = SCDynamicStoreCopyValue(store, dynamicStoreKey as CFString) as? [String: Any],
               let interfaceName = dictionary["PrimaryInterface"] as? String,
               !interfaceName.isEmpty else {
             return nil
