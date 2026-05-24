@@ -1,4 +1,5 @@
 import XCTest
+import CoreGraphics
 import MacActivityCore
 @testable import MacActivityApp
 
