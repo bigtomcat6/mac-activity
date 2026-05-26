@@ -85,7 +85,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertNil(network.secondaryText)
     }
 
-    func testModelMergesVRAMIntoMemoryCardWhenBothAreAvailable() async {
+    func testModelKeepsVRAMSeparateFromMemoryCardWhenBothAreAvailable() async {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -114,11 +114,12 @@ final class DashboardModelTests: XCTestCase {
         }
         let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
 
-        XCTAssertFalse(metrics.contains { $0.kind == .vram })
+        let vram = try! XCTUnwrap(metrics.first { $0.kind == .vram })
         XCTAssertEqual(memory.value, "60%")
-        XCTAssertEqual(memory.secondaryText, "VRAM 2 KB")
-        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.vramUsedBytes, 2_000)
-        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.vramTotalBytes, 4_000)
+        XCTAssertEqual(memory.secondaryText, "RAM 6 KB / 10 KB")
+        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.usedBytes, 6_000)
+        XCTAssertEqual(vram.value, "2 KB")
+        XCTAssertEqual(vram.detail, "of 4 KB")
     }
 
     func testModelUsesTemperatureSourceSpecificTitle() async {

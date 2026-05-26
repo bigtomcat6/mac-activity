@@ -6,7 +6,7 @@ final class TemperatureProviderTests: XCTestCase {
         let provider = TemperatureProvider(
             readTemperatureSource: { .smc },
             readSMCTemperatureCelsius: { nil },
-            readBatteryTemperatureCelsius: { 30.17 }
+            readBatteryTemperatureCelsius: { nil }
         )
 
         let update = await provider.sample()
@@ -14,6 +14,21 @@ final class TemperatureProviderTests: XCTestCase {
         XCTAssertEqual(
             update,
             MetricUpdate.unavailable(kind: .temperature, reason: "SMC temperature sensors are not available")
+        )
+    }
+
+    func testFallsBackToBatteryTemperatureWhenSMCSourceIsUnavailable() async {
+        let provider = TemperatureProvider(
+            readTemperatureSource: { .smc },
+            readSMCTemperatureCelsius: { nil },
+            readBatteryTemperatureCelsius: { 30.17 }
+        )
+
+        let update = await provider.sample()
+
+        XCTAssertEqual(
+            update,
+            MetricUpdate.temperature(TemperatureReading(celsius: 30.17, source: .battery))
         )
     }
 
@@ -55,7 +70,7 @@ final class TemperatureProviderTests: XCTestCase {
         let provider = TemperatureProvider(
             readTemperatureSource: { .smc },
             smcSnapshotCache: cache,
-            readBatteryTemperatureCelsius: { 30.17 }
+            readBatteryTemperatureCelsius: { nil }
         )
 
         let first = await provider.sample()

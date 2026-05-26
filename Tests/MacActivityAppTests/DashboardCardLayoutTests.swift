@@ -36,22 +36,59 @@ final class DashboardCardLayoutTests: XCTestCase {
             DashboardMemoryTrendSample(
                 timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
                 pressurePercent: Double(index),
-                wiredBytes: UInt64(index),
-                activeBytes: UInt64(index),
-                compressedBytes: UInt64(index),
-                cachedBytes: 0,
-                availableBytes: 0,
+                usedBytes: UInt64(index),
                 totalBytes: 120
             )
         }
 
         let displayed = RAMSegmentBarsLayout.displaySamples(
             for: samples,
-            containerSize: CGSize(width: 60, height: 60)
+            containerSize: CGSize(width: 60, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 119)
         )
 
         XCTAssertEqual(displayed.count, 12)
         XCTAssertEqual(displayed.first?.timestamp, samples.first?.timestamp)
         XCTAssertEqual(displayed.last?.timestamp, samples.last?.timestamp)
+    }
+
+    func testRAMSegmentBarsLayoutFiltersToRecentRollingWindow() {
+        let samples = [0, 299, 300, 450, 600].map { offset in
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(offset)),
+                pressurePercent: Double(offset),
+                usedBytes: UInt64(offset),
+                totalBytes: 1_000
+            )
+        }
+
+        let displayed = RAMSegmentBarsLayout.displaySamples(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 600)
+        )
+
+        XCTAssertEqual(displayed.map(\.timestamp), samples.suffix(3).map(\.timestamp))
+    }
+
+    func testRAMSegmentBarsLayoutRightAnchorsSparseRecentSamplesInFixedSlots() {
+        let samples = [100, 160].map { offset in
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: TimeInterval(offset)),
+                pressurePercent: Double(offset),
+                usedBytes: UInt64(offset),
+                totalBytes: 1_000
+            )
+        }
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 60, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 160)
+        )
+
+        XCTAssertEqual(slots.count, 12)
+        XCTAssertEqual(slots.prefix(10).compactMap(\.sample).count, 0)
+        XCTAssertEqual(slots.suffix(2).compactMap(\.sample).map(\.timestamp), samples.map(\.timestamp))
     }
 }

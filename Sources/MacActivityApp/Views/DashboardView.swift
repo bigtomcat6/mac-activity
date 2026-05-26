@@ -313,33 +313,67 @@ private struct ActiveAppRow: View {
 }
 
 struct RAMSegmentBarsLayout {
+    static let rollingWindowDuration: TimeInterval = 5 * 60
+
     static func displaySampleBudget(for containerSize: CGSize) -> Int {
         guard containerSize.width > 0 else { return 1 }
         return min(96, max(12, Int((containerSize.width / 5).rounded())))
     }
 
-    static func displaySamples(for samples: [DashboardMemoryTrendSample], containerSize: CGSize) -> [DashboardMemoryTrendSample] {
+    static func displaySamples(
+        for samples: [DashboardMemoryTrendSample],
+        containerSize: CGSize,
+        referenceDate: Date
+    ) -> [DashboardMemoryTrendSample] {
         let budget = displaySampleBudget(for: containerSize)
-        guard samples.count > budget, budget > 1 else { return samples }
+        let windowStart = referenceDate.addingTimeInterval(-rollingWindowDuration)
+        let recentSamples = samples.filter {
+            $0.timestamp >= windowStart && $0.timestamp <= referenceDate
+        }
 
-        let scale = Double(samples.count - 1) / Double(budget - 1)
+        guard recentSamples.count > budget, budget > 1 else { return recentSamples }
+
+        let scale = Double(recentSamples.count - 1) / Double(budget - 1)
         return (0..<budget).reduce(into: []) { result, index in
             let sampleIndex = Int((Double(index) * scale).rounded())
-            guard samples.indices.contains(sampleIndex), result.last?.timestamp != samples[sampleIndex].timestamp else { return }
-            result.append(samples[sampleIndex])
+            guard recentSamples.indices.contains(sampleIndex),
+                  result.last?.timestamp != recentSamples[sampleIndex].timestamp else { return }
+            result.append(recentSamples[sampleIndex])
         }
     }
 
-    static func barWidth(sampleCount: Int, containerWidth: CGFloat) -> CGFloat {
-        guard sampleCount > 0 else { return 0 }
-        let spacing = spacing(sampleCount: sampleCount)
-        let rawWidth = (containerWidth - CGFloat(max(0, sampleCount - 1)) * spacing) / CGFloat(sampleCount)
+    static func displaySlots(
+        for samples: [DashboardMemoryTrendSample],
+        containerSize: CGSize,
+        referenceDate: Date
+    ) -> [RAMSegmentBarSlot] {
+        let budget = displaySampleBudget(for: containerSize)
+        let displayedSamples = displaySamples(
+            for: samples,
+            containerSize: containerSize,
+            referenceDate: referenceDate
+        )
+        let emptySlotCount = max(0, budget - displayedSamples.count)
+        let emptySlots = Array(repeating: RAMSegmentBarSlot(sample: nil), count: emptySlotCount)
+        let sampleSlots = displayedSamples.map { RAMSegmentBarSlot(sample: $0) }
+
+        return emptySlots + sampleSlots
+    }
+
+    static func barWidth(slotCount: Int, containerWidth: CGFloat) -> CGFloat {
+        guard slotCount > 0 else { return 0 }
+        let spacing = spacing(slotCount: slotCount)
+        let rawWidth = (containerWidth - CGFloat(max(0, slotCount - 1)) * spacing) / CGFloat(slotCount)
         return min(8, max(2, rawWidth))
     }
 
-    static func spacing(sampleCount: Int) -> CGFloat {
-        sampleCount > 32 ? 2 : 3
+    static func spacing(slotCount: Int) -> CGFloat {
+        slotCount > 32 ? 2 : 3
     }
+}
+
+struct RAMSegmentBarSlot: Equatable, Sendable {
+    var sample: DashboardMemoryTrendSample?
 }
 
 private struct RAMSegmentBars: View {
@@ -347,69 +381,60 @@ private struct RAMSegmentBars: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let samples = RAMSegmentBarsLayout.displaySamples(for: trend.samples, containerSize: proxy.size)
-            let barWidth = RAMSegmentBarsLayout.barWidth(sampleCount: samples.count, containerWidth: proxy.size.width)
-            let spacing = RAMSegmentBarsLayout.spacing(sampleCount: samples.count)
+            let referenceDate = trend.samples.last?.timestamp ?? .now
+            let slots = RAMSegmentBarsLayout.displaySlots(
+                for: trend.samples,
+                containerSize: proxy.size,
+                referenceDate: referenceDate
+            )
+            let barWidth = RAMSegmentBarsLayout.barWidth(slotCount: slots.count, containerWidth: proxy.size.width)
+            let spacing = RAMSegmentBarsLayout.spacing(slotCount: slots.count)
 
             HStack(alignment: .bottom, spacing: spacing) {
-                ForEach(Array(samples.enumerated()), id: \.offset) { _, sample in
-                    RAMSegmentBar(sample: sample)
+                ForEach(Array(slots.enumerated()), id: \.offset) { _, slot in
+                    RAMSegmentBar(sample: slot.sample)
                         .frame(width: barWidth, height: proxy.size.height)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel(for: samples.last))
+            .accessibilityLabel(accessibilityLabel(for: slots.compactMap(\.sample).last))
         }
     }
 
     private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
         guard let sample else { return "Memory chart collecting samples" }
-        var parts = [
+        let parts = [
             "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "wired \(DashboardMetricTextFormatter.formatBytes(sample.wiredBytes))",
-            "active \(DashboardMetricTextFormatter.formatBytes(sample.activeBytes))",
-            "compressed \(DashboardMetricTextFormatter.formatBytes(sample.compressedBytes))",
+            "used \(DashboardMetricTextFormatter.formatBytes(sample.usedBytes))",
+            "of \(DashboardMetricTextFormatter.formatBytes(sample.totalBytes))",
         ]
-        if let vramUsedBytes = sample.vramUsedBytes {
-            parts.append("VRAM \(DashboardMetricTextFormatter.formatBytes(vramUsedBytes))")
-        }
         return parts.joined(separator: ", ")
     }
 }
 
 private struct RAMSegmentBar: View {
-    let sample: DashboardMemoryTrendSample
-
-    private var displayedTotal: UInt64 {
-        max(
-            sample.totalBytes,
-            sample.wiredBytes + sample.activeBytes + sample.compressedBytes + (sample.vramUsedBytes ?? 0)
-        )
-    }
+    let sample: DashboardMemoryTrendSample?
 
     var body: some View {
         GeometryReader { proxy in
-            VStack(spacing: 0) {
-                Spacer(minLength: 0)
-                segment(bytes: sample.vramUsedBytes ?? 0, color: .cyan, height: proxy.size.height)
-                segment(bytes: sample.compressedBytes, color: .purple, height: proxy.size.height)
-                segment(bytes: sample.activeBytes, color: .red, height: proxy.size.height)
-                segment(bytes: sample.wiredBytes, color: .blue, height: proxy.size.height)
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
+
+                if let sample, sample.usedBytes > 0, sample.totalBytes > 0 {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(Color.blue.opacity(0.88))
+                        .frame(height: barHeight(for: sample, containerHeight: proxy.size.height))
+                }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
-            .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 2.5, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
         }
     }
 
-    @ViewBuilder
-    private func segment(bytes: UInt64, color: Color, height: CGFloat) -> some View {
-        if bytes > 0, displayedTotal > 0 {
-            Rectangle()
-                .fill(color.opacity(0.88))
-                .frame(height: max(1, CGFloat(bytes) / CGFloat(displayedTotal) * height))
-        }
+    private func barHeight(for sample: DashboardMemoryTrendSample, containerHeight: CGFloat) -> CGFloat {
+        let ratio = min(max(CGFloat(sample.pressurePercent / 100), 0), 1)
+        return max(1, ratio * containerHeight)
     }
 }
 

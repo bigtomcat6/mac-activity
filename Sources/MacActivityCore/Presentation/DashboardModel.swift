@@ -37,37 +37,19 @@ public struct DashboardTrend: Equatable, Sendable {
 public struct DashboardMemoryTrendSample: Equatable, Sendable {
     public var timestamp: Date
     public var pressurePercent: Double
-    public var wiredBytes: UInt64
-    public var activeBytes: UInt64
-    public var compressedBytes: UInt64
-    public var cachedBytes: UInt64
-    public var availableBytes: UInt64
+    public var usedBytes: UInt64
     public var totalBytes: UInt64
-    public var vramUsedBytes: UInt64?
-    public var vramTotalBytes: UInt64?
 
     public init(
         timestamp: Date,
         pressurePercent: Double,
-        wiredBytes: UInt64,
-        activeBytes: UInt64,
-        compressedBytes: UInt64,
-        cachedBytes: UInt64,
-        availableBytes: UInt64,
-        totalBytes: UInt64,
-        vramUsedBytes: UInt64? = nil,
-        vramTotalBytes: UInt64? = nil
+        usedBytes: UInt64,
+        totalBytes: UInt64
     ) {
         self.timestamp = timestamp
         self.pressurePercent = pressurePercent
-        self.wiredBytes = wiredBytes
-        self.activeBytes = activeBytes
-        self.compressedBytes = compressedBytes
-        self.cachedBytes = cachedBytes
-        self.availableBytes = availableBytes
+        self.usedBytes = usedBytes
         self.totalBytes = totalBytes
-        self.vramUsedBytes = vramUsedBytes
-        self.vramTotalBytes = vramTotalBytes
     }
 }
 
@@ -194,20 +176,21 @@ public final class DashboardModel: ObservableObject {
         }
 
         if let memory = snapshot.memory {
-            let vramText = snapshot.vram.map { "VRAM \(DashboardMetricTextFormatter.formatBytes($0.usedBytes))" }
             items.append(
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
                     value: "\(Int(memory.pressurePercent.rounded()))%",
-                    secondaryText: vramText ?? "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
+                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
                     detail: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
                     style: .memoryStackedChart,
                     trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
-                    memoryTrend: memoryTrend(from: history, memory: memory, vram: snapshot.vram)
+                    memoryTrend: memoryTrend(from: history, memory: memory)
                 )
             )
-        } else if let vram = snapshot.vram {
+        }
+
+        if let vram = snapshot.vram {
             items.append(
                 DashboardMetric(
                     kind: .vram,
@@ -297,11 +280,9 @@ public final class DashboardModel: ObservableObject {
 
     nonisolated private static func memoryTrend(
         from history: MetricsHistory,
-        memory: MemoryReading,
-        vram: VRAMReading?
+        memory: MemoryReading
     ) -> DashboardMemoryTrend {
         let memorySamples = history.samples(for: .memory)
-        let vramSamples = history.samples(for: .vram)
         let sourceSamples: [MetricHistorySample]
 
         if memorySamples.isEmpty {
@@ -316,62 +297,25 @@ public final class DashboardModel: ObservableObject {
         }
 
         return DashboardMemoryTrend(
-            samples: sourceSamples.enumerated().map { index, sample in
-                makeMemoryTrendSample(
-                    sample: sample,
-                    latestMemory: memory,
-                    vramSample: matchingVRAMSample(
-                        for: sample,
-                        index: index,
-                        vramSamples: vramSamples
-                    ),
-                    latestVRAM: vram
-                )
+            samples: sourceSamples.map { sample in
+                makeMemoryTrendSample(sample: sample, latestMemory: memory)
             }
         )
     }
 
-    nonisolated private static func matchingVRAMSample(
-        for memorySample: MetricHistorySample,
-        index: Int,
-        vramSamples: [MetricHistorySample]
-    ) -> MetricHistorySample? {
-        if vramSamples.indices.contains(index) {
-            return vramSamples[index]
-        }
-
-        return vramSamples.last { $0.timestamp <= memorySample.timestamp }
-    }
-
     nonisolated private static func makeMemoryTrendSample(
         sample: MetricHistorySample,
-        latestMemory: MemoryReading,
-        vramSample: MetricHistorySample?,
-        latestVRAM: VRAMReading?
+        latestMemory: MemoryReading
     ) -> DashboardMemoryTrendSample {
         let pressurePercent = min(max(sample.primaryValue, 0), 100)
         let totalBytes = latestMemory.totalBytes
         let usedBytes = UInt64((Double(totalBytes) * pressurePercent / 100).rounded())
-        let breakdown = latestMemory.breakdown
-        let segmentTotal = breakdown.wiredBytes + breakdown.activeBytes + breakdown.compressedBytes
-        let scale = segmentTotal > 0 ? Double(usedBytes) / Double(segmentTotal) : 0
-        let activeFallback = segmentTotal > 0 ? UInt64(0) : usedBytes
-        let vramUsedBytes = latestVRAM.map { latest in
-            let percent = vramSample?.primaryValue ?? (Double(latest.usedBytes) / Double(max(latest.totalBytes, 1)) * 100)
-            return UInt64((Double(latest.totalBytes) * min(max(percent, 0), 100) / 100).rounded())
-        }
 
         return DashboardMemoryTrendSample(
             timestamp: sample.timestamp,
             pressurePercent: pressurePercent,
-            wiredBytes: UInt64((Double(breakdown.wiredBytes) * scale).rounded()),
-            activeBytes: UInt64((Double(breakdown.activeBytes) * scale).rounded()) + activeFallback,
-            compressedBytes: UInt64((Double(breakdown.compressedBytes) * scale).rounded()),
-            cachedBytes: breakdown.cachedBytes,
-            availableBytes: totalBytes > usedBytes ? totalBytes - usedBytes : 0,
-            totalBytes: totalBytes,
-            vramUsedBytes: vramUsedBytes,
-            vramTotalBytes: latestVRAM?.totalBytes
+            usedBytes: usedBytes,
+            totalBytes: totalBytes
         )
     }
 

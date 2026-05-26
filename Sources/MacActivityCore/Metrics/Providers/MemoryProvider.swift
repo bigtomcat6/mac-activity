@@ -50,9 +50,9 @@ public struct MemoryProvider: MetricProvider {
 
         // Use the same non-reclaimable anonymous memory basis as the previous
         // dashboard reading, then split it into Activity Monitor-like buckets.
-        // Apple Silicon GPU memory is collected separately by VRAMProvider and
-        // rendered with this chart, but it is not added to pressurePercent to
-        // avoid double-counting unified memory.
+        // Apple Silicon GPU memory is collected separately by VRAMProvider,
+        // and is not added to pressurePercent to avoid double-counting unified
+        // memory.
         let anonymousPages = UInt64(stats.internal_page_count)
         let reclaimableAnonymousPages = UInt64(min(stats.purgeable_count, stats.internal_page_count))
         let appActivePages = anonymousPages - reclaimableAnonymousPages
