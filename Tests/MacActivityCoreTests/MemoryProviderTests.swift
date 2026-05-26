@@ -19,8 +19,19 @@ final class MemoryProviderTests: XCTestCase {
 
         XCTAssertEqual(
             reading,
-            MemoryReading(usedBytes: 11_264, totalBytes: 32_768)
+            MemoryReading(
+                usedBytes: 11_264,
+                totalBytes: 32_768,
+                breakdown: MemoryBreakdown(
+                    wiredBytes: 3_072,
+                    activeBytes: 6_144,
+                    compressedBytes: 2_048,
+                    cachedBytes: 4_096,
+                    availableBytes: 21_504
+                )
+            )
         )
+        XCTAssertEqual(reading.pressurePercent, 34.375, accuracy: 0.001)
     }
 
     func testMakeReadingClampsUsageToPhysicalMemory() {
@@ -37,7 +48,17 @@ final class MemoryProviderTests: XCTestCase {
 
         XCTAssertEqual(
             reading,
-            MemoryReading(usedBytes: 16_384, totalBytes: 16_384)
+            MemoryReading(
+                usedBytes: 16_384,
+                totalBytes: 16_384,
+                breakdown: MemoryBreakdown(
+                    wiredBytes: 8_192,
+                    activeBytes: 8_192,
+                    compressedBytes: 8_192,
+                    cachedBytes: 0,
+                    availableBytes: 0
+                )
+            )
         )
     }
 

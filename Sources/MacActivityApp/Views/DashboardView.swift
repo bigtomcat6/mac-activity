@@ -312,12 +312,138 @@ private struct ActiveAppRow: View {
     }
 }
 
+struct RAMSegmentBarsLayout {
+    static let rollingWindowDuration: TimeInterval = 5 * 60
+
+    static func displaySampleBudget(for containerSize: CGSize) -> Int {
+        guard containerSize.width > 0 else { return 1 }
+        return min(96, max(12, Int((containerSize.width / 5).rounded())))
+    }
+
+    static func displaySamples(
+        for samples: [DashboardMemoryTrendSample],
+        containerSize: CGSize,
+        referenceDate: Date
+    ) -> [DashboardMemoryTrendSample] {
+        let budget = displaySampleBudget(for: containerSize)
+        let windowStart = referenceDate.addingTimeInterval(-rollingWindowDuration)
+        let recentSamples = samples.filter {
+            $0.timestamp >= windowStart && $0.timestamp <= referenceDate
+        }
+
+        guard recentSamples.count > budget, budget > 1 else { return recentSamples }
+
+        let scale = Double(recentSamples.count - 1) / Double(budget - 1)
+        return (0..<budget).reduce(into: []) { result, index in
+            let sampleIndex = Int((Double(index) * scale).rounded())
+            guard recentSamples.indices.contains(sampleIndex),
+                  result.last?.timestamp != recentSamples[sampleIndex].timestamp else { return }
+            result.append(recentSamples[sampleIndex])
+        }
+    }
+
+    static func displaySlots(
+        for samples: [DashboardMemoryTrendSample],
+        containerSize: CGSize,
+        referenceDate: Date
+    ) -> [RAMSegmentBarSlot] {
+        let budget = displaySampleBudget(for: containerSize)
+        let displayedSamples = displaySamples(
+            for: samples,
+            containerSize: containerSize,
+            referenceDate: referenceDate
+        )
+        let emptySlotCount = max(0, budget - displayedSamples.count)
+        let emptySlots = Array(repeating: RAMSegmentBarSlot(sample: nil), count: emptySlotCount)
+        let sampleSlots = displayedSamples.map { RAMSegmentBarSlot(sample: $0) }
+
+        return emptySlots + sampleSlots
+    }
+
+    static func barWidth(slotCount: Int, containerWidth: CGFloat) -> CGFloat {
+        guard slotCount > 0 else { return 0 }
+        let spacing = spacing(slotCount: slotCount)
+        let rawWidth = (containerWidth - CGFloat(max(0, slotCount - 1)) * spacing) / CGFloat(slotCount)
+        return min(8, max(2, rawWidth))
+    }
+
+    static func spacing(slotCount: Int) -> CGFloat {
+        slotCount > 32 ? 2 : 3
+    }
+}
+
+struct RAMSegmentBarSlot: Equatable, Sendable {
+    var sample: DashboardMemoryTrendSample?
+}
+
+private struct RAMSegmentBars: View {
+    let trend: DashboardMemoryTrend
+
+    var body: some View {
+        GeometryReader { proxy in
+            let referenceDate = trend.samples.last?.timestamp ?? .now
+            let slots = RAMSegmentBarsLayout.displaySlots(
+                for: trend.samples,
+                containerSize: proxy.size,
+                referenceDate: referenceDate
+            )
+            let barWidth = RAMSegmentBarsLayout.barWidth(slotCount: slots.count, containerWidth: proxy.size.width)
+            let spacing = RAMSegmentBarsLayout.spacing(slotCount: slots.count)
+
+            HStack(alignment: .bottom, spacing: spacing) {
+                ForEach(Array(slots.enumerated()), id: \.offset) { _, slot in
+                    RAMSegmentBar(sample: slot.sample)
+                        .frame(width: barWidth, height: proxy.size.height)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(accessibilityLabel(for: slots.compactMap(\.sample).last))
+        }
+    }
+
+    private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
+        guard let sample else { return "Memory chart collecting samples" }
+        let parts = [
+            "Memory \(Int(sample.pressurePercent.rounded())) percent",
+            "used \(DashboardMetricTextFormatter.formatBytes(sample.usedBytes))",
+            "of \(DashboardMetricTextFormatter.formatBytes(sample.totalBytes))",
+        ]
+        return parts.joined(separator: ", ")
+    }
+}
+
+private struct RAMSegmentBar: View {
+    let sample: DashboardMemoryTrendSample?
+
+    var body: some View {
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                    .fill(Color.primary.opacity(0.08))
+
+                if let sample, sample.usedBytes > 0, sample.totalBytes > 0 {
+                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                        .fill(Color.blue.opacity(0.88))
+                        .frame(height: barHeight(for: sample, containerHeight: proxy.size.height))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+        }
+    }
+
+    private func barHeight(for sample: DashboardMemoryTrendSample, containerHeight: CGFloat) -> CGFloat {
+        let ratio = min(max(CGFloat(sample.pressurePercent / 100), 0), 1)
+        return max(1, ratio * containerHeight)
+    }
+}
+
 private struct MetricCard: View {
     let metric: DashboardMetric
     @State private var isCardHovered = false
 
     private var isCompactChartCard: Bool {
-        metric.style == .chart
+        metric.style == .chart || metric.style == .memoryStackedChart
     }
 
     var body: some View {
@@ -332,12 +458,16 @@ private struct MetricCard: View {
 
             switch metric.style {
             case .chart:
-                DashboardTrendChart(
-                    metric: metric,
-                    color: color,
-                    isCardHovered: isCardHovered
-                )
+                DashboardTrendChart(metric: metric, color: color, isCardHovered: isCardHovered)
                     .frame(height: DashboardCardLayout.compactChartHeight)
+            case .memoryStackedChart:
+                if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
+                    RAMSegmentBars(trend: memoryTrend)
+                        .frame(height: DashboardCardLayout.compactChartHeight)
+                } else {
+                    DashboardTrendChart(metric: metric, color: color, isCardHovered: isCardHovered)
+                        .frame(height: DashboardCardLayout.compactChartHeight)
+                }
             case .value:
                 Rectangle()
                     .fill(color.opacity(0.14))
@@ -356,7 +486,7 @@ private struct MetricCard: View {
         .padding(isCompactChartCard ? DashboardCardLayout.compactChartInsets : DashboardCardLayout.regularCardInsets)
         .frame(
             maxWidth: .infinity,
-            minHeight: metric.style == .chart ? DashboardCardLayout.compactChartMinHeight : 44,
+            minHeight: isCompactChartCard ? DashboardCardLayout.compactChartMinHeight : 44,
             alignment: .topLeading
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

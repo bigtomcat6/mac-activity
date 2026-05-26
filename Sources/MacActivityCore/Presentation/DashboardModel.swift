@@ -3,6 +3,7 @@ import Foundation
 
 public enum DashboardMetricStyle: Equatable, Sendable {
     case chart
+    case memoryStackedChart
     case value
 }
 
@@ -33,6 +34,33 @@ public struct DashboardTrend: Equatable, Sendable {
     }
 }
 
+public struct DashboardMemoryTrendSample: Equatable, Sendable {
+    public var timestamp: Date
+    public var pressurePercent: Double
+    public var usedBytes: UInt64
+    public var totalBytes: UInt64
+
+    public init(
+        timestamp: Date,
+        pressurePercent: Double,
+        usedBytes: UInt64,
+        totalBytes: UInt64
+    ) {
+        self.timestamp = timestamp
+        self.pressurePercent = pressurePercent
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+    }
+}
+
+public struct DashboardMemoryTrend: Equatable, Sendable {
+    public var samples: [DashboardMemoryTrendSample]
+
+    public init(samples: [DashboardMemoryTrendSample]) {
+        self.samples = samples
+    }
+}
+
 public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var kind: MetricKind
     public var title: String
@@ -41,6 +69,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var detail: String?
     public var style: DashboardMetricStyle
     public var trend: DashboardTrend?
+    public var memoryTrend: DashboardMemoryTrend?
 
     public var id: String {
         kind.rawValue
@@ -53,7 +82,8 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         secondaryText: String? = nil,
         detail: String? = nil,
         style: DashboardMetricStyle = .value,
-        trend: DashboardTrend? = nil
+        trend: DashboardTrend? = nil,
+        memoryTrend: DashboardMemoryTrend? = nil
     ) {
         self.kind = kind
         self.title = title
@@ -62,6 +92,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         self.detail = detail
         self.style = style
         self.trend = trend
+        self.memoryTrend = memoryTrend
     }
 }
 
@@ -149,9 +180,12 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
-                    value: "\(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
-                    style: .chart,
-                    trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100))
+                    value: "\(Int(memory.pressurePercent.rounded()))%",
+                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
+                    detail: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
+                    style: .memoryStackedChart,
+                    trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
+                    memoryTrend: memoryTrend(from: history, memory: memory)
                 )
             )
         }
@@ -241,6 +275,47 @@ public final class DashboardModel: ObservableObject {
                 )
             },
             scale: scale
+        )
+    }
+
+    nonisolated private static func memoryTrend(
+        from history: MetricsHistory,
+        memory: MemoryReading
+    ) -> DashboardMemoryTrend {
+        let memorySamples = history.samples(for: .memory)
+        let sourceSamples: [MetricHistorySample]
+
+        if memorySamples.isEmpty {
+            sourceSamples = [
+                MetricHistorySample(
+                    timestamp: .now,
+                    primaryValue: memory.pressurePercent
+                )
+            ]
+        } else {
+            sourceSamples = memorySamples
+        }
+
+        return DashboardMemoryTrend(
+            samples: sourceSamples.map { sample in
+                makeMemoryTrendSample(sample: sample, latestMemory: memory)
+            }
+        )
+    }
+
+    nonisolated private static func makeMemoryTrendSample(
+        sample: MetricHistorySample,
+        latestMemory: MemoryReading
+    ) -> DashboardMemoryTrendSample {
+        let pressurePercent = min(max(sample.primaryValue, 0), 100)
+        let totalBytes = latestMemory.totalBytes
+        let usedBytes = UInt64((Double(totalBytes) * pressurePercent / 100).rounded())
+
+        return DashboardMemoryTrendSample(
+            timestamp: sample.timestamp,
+            pressurePercent: pressurePercent,
+            usedBytes: usedBytes,
+            totalBytes: totalBytes
         )
     }
 

@@ -46,21 +46,34 @@ public struct MemoryProvider: MetricProvider {
         stats: vm_statistics64_data_t,
         totalBytes: UInt64
     ) -> MemoryReading {
-        // Keep reclaimable purgeable anonymous pages out of the "used" figure so
-        // cached or discardable memory does not inflate the dashboard reading.
+        let pageBytes = UInt64(pageSize)
+
+        // Use the same non-reclaimable anonymous memory basis as the previous
+        // dashboard reading, then split it into Activity Monitor-like buckets.
+        // Apple Silicon GPU memory is collected separately by VRAMProvider,
+        // and is not added to pressurePercent to avoid double-counting unified
+        // memory.
         let anonymousPages = UInt64(stats.internal_page_count)
         let reclaimableAnonymousPages = UInt64(min(stats.purgeable_count, stats.internal_page_count))
-        let usedPages = UInt64(
-            anonymousPages -
-            reclaimableAnonymousPages +
-            UInt64(stats.wire_count) +
-            UInt64(stats.compressor_page_count)
-        )
-        let usedBytes = usedPages * UInt64(pageSize)
+        let appActivePages = anonymousPages - reclaimableAnonymousPages
+        let wiredBytes = UInt64(stats.wire_count) * pageBytes
+        let activeBytes = appActivePages * pageBytes
+        let compressedBytes = UInt64(stats.compressor_page_count) * pageBytes
+        let cachedBytes = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * pageBytes
+        let rawUsedBytes = activeBytes + wiredBytes + compressedBytes
+        let usedBytes = min(rawUsedBytes, totalBytes)
+        let availableBytes = totalBytes > usedBytes ? totalBytes - usedBytes : 0
 
         return MemoryReading(
-            usedBytes: min(usedBytes, totalBytes),
-            totalBytes: totalBytes
+            usedBytes: usedBytes,
+            totalBytes: totalBytes,
+            breakdown: MemoryBreakdown(
+                wiredBytes: wiredBytes,
+                activeBytes: activeBytes,
+                compressedBytes: compressedBytes,
+                cachedBytes: min(cachedBytes, totalBytes),
+                availableBytes: availableBytes
+            )
         )
     }
 }

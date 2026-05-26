@@ -60,22 +60,23 @@ public struct TemperatureProvider: MetricProvider {
     public func sample() async -> MetricUpdate {
         let source = await readTemperatureSource()
 
-        let reading: Double?
-        let unavailableReason: String
-
         switch source {
         case .smc:
-            reading = await readSMCTemperatureCelsius()
-            unavailableReason = "SMC temperature sensors are not available"
+            if let celsius = await readSMCTemperatureCelsius() {
+                return .temperature(TemperatureReading(celsius: celsius, source: .smc))
+            }
+
+            if let celsius = readBatteryTemperatureCelsius() {
+                return .temperature(TemperatureReading(celsius: celsius, source: .battery))
+            }
+
+            return .unavailable(kind: .temperature, reason: "SMC temperature sensors are not available")
         case .battery:
-            reading = readBatteryTemperatureCelsius()
-            unavailableReason = "Battery temperature is not available"
-        }
+            guard let celsius = readBatteryTemperatureCelsius() else {
+                return .unavailable(kind: .temperature, reason: "Battery temperature is not available")
+            }
 
-        guard let celsius = reading else {
-            return .unavailable(kind: .temperature, reason: unavailableReason)
+            return .temperature(TemperatureReading(celsius: celsius, source: .battery))
         }
-
-        return .temperature(TemperatureReading(celsius: celsius, source: source))
     }
 }
