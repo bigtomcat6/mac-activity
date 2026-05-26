@@ -25,7 +25,7 @@ final class StatusSummaryModelTests: XCTestCase {
 
         let model = StatusSummaryModel(store: store, preferences: preferences)
 
-        XCTAssertEqual(model.summaryText, "CPU 42% | TMP 54C")
+        XCTAssertEqual(model.summaryText, "CPU 42% | CPU 54C")
     }
 
     func testModelPublishesOnlyWhenVisibleSummaryChanges() {

@@ -1,9 +1,10 @@
+import Darwin
 import Foundation
 import IOKit
 
 public struct FanProvider: MetricProvider {
     public let kind: MetricKind = .fan
-    public let cadence: MetricCadenceLane = .slow
+    public let cadence: MetricCadenceLane = .medium
     private let readFanRPM: @Sendable () async -> Int?
 
     public init() {
@@ -45,7 +46,7 @@ actor SMCSensorSnapshotCache {
 
     init(
         ttl: Duration = .seconds(1),
-        retryInterval: Duration = .seconds(60),
+        retryInterval: Duration = .seconds(2),
         readSnapshot: @escaping @Sendable () async -> SMCSensorSnapshot = {
             SMCSensorReader.readSnapshot()
         }
@@ -73,6 +74,9 @@ actor SMCSensorSnapshotCache {
 
 enum SMCSensorReader {
     static let serviceMatchingNames = ["AppleSMCKeysEndpoint", "AppleSMC"]
+    static let legacyCPUTemperatureKeys = ["TC0P", "TC0D", "TC0H", "TC0E", "TC0F", "TCAD"]
+    private static let maxTemperatureCelsius = 110.0
+    private static let minAppleSiliconCPUTemperatureCelsius = 20.0
 
     static func readFanRPM() -> Int? {
         readSnapshot().fanRPM
@@ -86,7 +90,7 @@ enum SMCSensorReader {
         withConnection { connection in
             SMCSensorSnapshot(
                 temperatureCelsius: readTemperatureCelsius(connection: connection),
-                fanRPM: readAverageFanRPM(connection: connection)
+                fanRPM: readVisibleFanRPM(connection: connection)
             )
         } ?? SMCSensorSnapshot()
     }
@@ -145,7 +149,7 @@ enum SMCSensorReader {
         return decodeTemperatureCelsius(from: reading.bytes, dataType: reading.dataType)
     }
 
-    private static func readAverageFanRPM(connection: io_connect_t) -> Int? {
+    private static func readVisibleFanRPM(connection: io_connect_t) -> Int? {
         guard let fanCount = readUInt8(key: "FNum", connection: connection), fanCount > 0 else {
             return nil
         }
@@ -154,22 +158,99 @@ enum SMCSensorReader {
             readFanRPM(key: "F\(index)Ac", connection: connection)
         }
 
-        guard !speeds.isEmpty else {
-            return nil
-        }
-
-        let average = speeds.reduce(0, +) / Double(speeds.count)
-        return Int(average.rounded())
+        return visibleFanRPM(from: speeds)
     }
 
     private static func readTemperatureCelsius(connection: io_connect_t) -> Double? {
-        for key in ["TC0P", "TC0E", "TC0F", "TC0D", "TC0H", "TCXC", "TG0P"] {
-            if let celsius = readTemperature(key: key, connection: connection) {
+        lemonCPUTemperature(
+            legacyReading: { key in
+                readTemperature(key: key, connection: connection)
+            },
+            appleSiliconKeys: appleSiliconCPUTemperatureKeys(forCPUBrand: currentCPUBrand()),
+            appleSiliconReading: { key in
+                readTemperature(key: key, connection: connection)
+            }
+        )
+    }
+
+    static func lemonCPUTemperature(
+        legacyReading: (String) -> Double?,
+        appleSiliconKeys: [String]?,
+        appleSiliconReading: (String) -> Double?
+    ) -> Double? {
+        for key in legacyCPUTemperatureKeys {
+            guard let celsius = legacyReading(key) else {
+                continue
+            }
+
+            if celsius > 0, celsius <= maxTemperatureCelsius {
                 return celsius
             }
         }
 
+        guard let appleSiliconKeys else {
+            return nil
+        }
+
+        let validTemperatures = appleSiliconKeys.compactMap { key -> Double? in
+            guard let celsius = appleSiliconReading(key),
+                  celsius > minAppleSiliconCPUTemperatureCelsius,
+                  celsius < maxTemperatureCelsius else {
+                return nil
+            }
+
+            return celsius
+        }
+
+        guard !validTemperatures.isEmpty else {
+            return nil
+        }
+
+        return validTemperatures.reduce(0, +) / Double(validTemperatures.count)
+    }
+
+    static func appleSiliconCPUTemperatureKeys(forCPUBrand brand: String) -> [String]? {
+        let normalized = brand
+            .replacingOccurrences(of: "\n", with: "")
+            .replacingOccurrences(of: " ", with: "")
+            .lowercased()
+
+        if normalized.contains("intel") {
+            return nil
+        }
+
+        if normalized.contains("m1") {
+            if normalized.contains("pro") || normalized.contains("max") || normalized.contains("ultra") {
+                return ["Tp09", "Tp0T", "Tp01", "Tp05", "Tp0D", "Tp0H", "Tp0L", "Tp0P", "Tp0X", "Tp0b", "Tg05", "Tg0D", "Tg0L", "Tg0T"]
+            }
+            return ["Tc0a", "Tc0b", "Tc0x", "Tc0z", "Tc7a", "Tc7b", "Tc7x", "Tc7z", "Tc8a", "Tc8b", "Tc9a", "Tc9b", "Tc9x", "Tc9z"]
+        }
+
+        if normalized.contains("m2") {
+            return ["Tp1h", "Tp1t", "Tp1p", "Tp1l", "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0X", "Tp0b", "Tp0f", "Tp0j", "Tg0f", "Tg0j"]
+        }
+
+        if normalized.contains("m3") {
+            return ["Te05", "Te0L", "Te0P", "Te0S", "Tf04", "Tf09", "Tf0A", "Tf0B", "Tf0D", "Tf0E", "Tf44", "Tf49", "Tf4A", "Tf4B", "Tf4D", "Tf4E", "Tf14", "Tf18", "Tf19", "Tf1A", "Tf24", "Tf28", "Tf29", "Tf2A"]
+        }
+
+        if normalized.contains("m4") {
+            return ["Te05", "Te09", "Te0H", "Te0S", "Tp01", "Tp05", "Tp09", "Tp0D", "Tp0V", "Tp0Y", "Tp0b", "Tp0e"]
+        }
+
+        if normalized.contains("m5") {
+            return ["Te04", "Te08", "Te0C", "Te0R", "Tp00", "Tp04", "Tp0C", "Tp0G", "Tp0O", "Tp0R", "Tp0X", "Tp0a", "Tp0p", "Tp0u", "Tp0y"]
+        }
+
         return nil
+    }
+
+    static func visibleFanRPM(from speeds: [Double]) -> Int? {
+        guard let maxSpeed = speeds.max() else {
+            return nil
+        }
+
+        return Int(maxSpeed)
     }
 
     static func decodeFanRPM(from bytes: [UInt8], dataType: String) -> Double? {
@@ -188,8 +269,53 @@ enum SMCSensorReader {
 
     static func decodeTemperatureCelsius(from bytes: [UInt8], dataType: String) -> Double? {
         switch normalizedDataType(dataType) {
+        case "ui8", "ui16", "ui32":
+            return decodeUInt(bytes)
+        case "fp1f":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 15)
+        case "fp4c":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 12)
+        case "fp5b":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 11)
+        case "fp6a":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 10)
+        case "fp79":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 9)
+        case "fp88":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 8)
+        case "fpa6":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 6)
+        case "fpc4":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 4)
+        case "fpe2":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 2)
+        case "sp1e":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 14)
+        case "sp3c":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 12)
+        case "sp4b":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 11)
+        case "sp5a":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 10)
+        case "sp69":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 9)
         case "sp78":
-            return decodeSP78(bytes)
+            return decodeSignedFixedPoint(bytes, fractionalBits: 8)
+        case "sp87":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 7)
+        case "sp96":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 6)
+        case "spb4":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 4)
+        case "spf0":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 0)
+        case "si8":
+            guard let first = bytes.first else { return nil }
+            return Double(Int8(bitPattern: first))
+        case "si16":
+            return decodeSignedFixedPoint(bytes, fractionalBits: 0)
+        case "pwm":
+            return decodeUnsignedFixedPoint(bytes, fractionalBits: 16).map { $0 * 100 }
         case "flt":
             return decodeFloat(bytes)
         default:
@@ -205,21 +331,39 @@ enum SMCSensorReader {
     }
 
     static func decodeFixedPoint(_ bytes: [UInt8]) -> Double? {
+        decodeUnsignedFixedPoint(bytes, fractionalBits: 2)
+    }
+
+    private static func decodeUnsignedFixedPoint(_ bytes: [UInt8], fractionalBits: Int) -> Double? {
         guard bytes.count >= 2 else {
             return nil
         }
 
         let raw = UInt16(bytes[0]) << 8 | UInt16(bytes[1])
-        return Double(raw) / 4.0
+        return Double(raw) / Double(1 << fractionalBits)
     }
 
     static func decodeSP78(_ bytes: [UInt8]) -> Double? {
+        decodeSignedFixedPoint(bytes, fractionalBits: 8)
+    }
+
+    private static func decodeSignedFixedPoint(_ bytes: [UInt8], fractionalBits: Int) -> Double? {
         guard bytes.count >= 2 else {
             return nil
         }
 
-        let signed = Int8(bitPattern: bytes[0])
-        return Double(signed) + Double(bytes[1]) / 256.0
+        let raw = UInt16(bytes[0]) << 8 | UInt16(bytes[1])
+        return Double(Int16(bitPattern: raw)) / Double(1 << fractionalBits)
+    }
+
+    private static func decodeUInt(_ bytes: [UInt8]) -> Double? {
+        guard !bytes.isEmpty else {
+            return nil
+        }
+
+        return Double(bytes.reduce(UInt32(0)) { value, byte in
+            (value << 8) | UInt32(byte)
+        })
     }
 
     static func decodeFloat(_ bytes: [UInt8]) -> Double? {
@@ -305,6 +449,21 @@ enum SMCSensorReader {
         return key.utf8.reduce(UInt32(0)) { partialResult, byte in
             (partialResult << 8) | UInt32(byte)
         }
+    }
+
+    private static func currentCPUBrand() -> String {
+        var size = 0
+        guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else {
+            return ""
+        }
+
+        var buffer = [CChar](repeating: 0, count: size)
+        guard sysctlbyname("machdep.cpu.brand_string", &buffer, &size, nil, 0) == 0 else {
+            return ""
+        }
+
+        let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
+        return String(decoding: bytes, as: UTF8.self)
     }
 
     private enum SMCCommand: UInt8 {

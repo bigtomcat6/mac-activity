@@ -16,7 +16,7 @@ final class SummaryFormatterTests: XCTestCase {
             selectedMetrics: [.temperature, .battery, .cpu]
         )
 
-        XCTAssertEqual(summary, "CPU 42% | TMP 54C | BAT 82%")
+        XCTAssertEqual(summary, "CPU 42% | CPU 54C | BAT 82%")
     }
 
     func testRenderStatusItemsUsesTwoLineMenuBarFormatting() {
@@ -43,7 +43,7 @@ final class SummaryFormatterTests: XCTestCase {
                 StatusSummaryItem(kind: .gpu, primaryText: "13%", secondaryText: "GPU", style: .metric),
                 StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
                 StatusSummaryItem(kind: .vram, primaryText: "25%", secondaryText: "VRAM", style: .metric),
-                StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "SEN", style: .metric),
+                StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
                 StatusSummaryItem(kind: .fan, primaryText: "0", secondaryText: "RPM", style: .metric),
                 StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
             ]
@@ -101,7 +101,7 @@ final class SummaryFormatterTests: XCTestCase {
                 StatusSummaryItem(kind: .gpu, primaryText: "--", secondaryText: "GPU", style: .metric),
                 StatusSummaryItem(kind: .memory, primaryText: "--", secondaryText: "MEM", style: .metric),
                 StatusSummaryItem(kind: .vram, primaryText: "--", secondaryText: "VRAM", style: .metric),
-                StatusSummaryItem(kind: .temperature, primaryText: "--", secondaryText: "SEN", style: .metric),
+                StatusSummaryItem(kind: .temperature, primaryText: "--", secondaryText: "CPU", style: .metric),
                 StatusSummaryItem(kind: .fan, primaryText: "--", secondaryText: "RPM", style: .metric),
                 StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network),
             ]
