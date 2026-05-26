@@ -75,12 +75,12 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
     func testPreferredWidthIsStableForSameMetricSelectionAcrossDifferentValues() {
         let quieterItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "SEN", style: .metric),
+            StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network),
         ]
         let busierItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .temperature, primaryText: "105℃", secondaryText: "SEN", style: .metric),
+            StatusSummaryItem(kind: .temperature, primaryText: "105℃", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network),
         ]
 

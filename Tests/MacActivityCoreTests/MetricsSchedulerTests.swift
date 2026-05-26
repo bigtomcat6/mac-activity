@@ -129,6 +129,27 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(cpuCount, 2)
         XCTAssertEqual(memoryCount, 2)
     }
+
+    func testTemperatureAndFanCadenceMatchLemonMonitorRefreshInterval() {
+        XCTAssertEqual(TemperatureProvider().cadence, .medium)
+        XCTAssertEqual(FanProvider().cadence, .medium)
+        XCTAssertEqual(
+            MetricsSamplingProfile.balanced.interval(for: .temperature, defaultCadence: .slow),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.balanced.interval(for: .fan, defaultCadence: .slow),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .temperature, defaultCadence: .slow),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .fan, defaultCadence: .slow),
+            2
+        )
+    }
 }
 
 private actor SequencedProvider: MetricProvider {

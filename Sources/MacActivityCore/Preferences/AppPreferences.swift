@@ -16,7 +16,7 @@ public enum TemperatureSource: String, CaseIterable, Codable, Sendable {
     public var dashboardTitle: String {
         switch self {
         case .smc:
-            return "Sensor Temp"
+            return "CPU Temp"
         case .battery:
             return "Battery Temp"
         }
@@ -25,7 +25,7 @@ public enum TemperatureSource: String, CaseIterable, Codable, Sendable {
     public var summaryPrefix: String {
         switch self {
         case .smc:
-            return "TMP"
+            return "CPU"
         case .battery:
             return "BTMP"
         }
@@ -34,7 +34,7 @@ public enum TemperatureSource: String, CaseIterable, Codable, Sendable {
     public var statusLabel: String {
         switch self {
         case .smc:
-            return "SEN"
+            return "CPU"
         case .battery:
             return "BAT"
         }

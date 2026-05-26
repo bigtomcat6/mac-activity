@@ -91,4 +91,48 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(slots.prefix(10).compactMap(\.sample).count, 0)
         XCTAssertEqual(slots.suffix(2).compactMap(\.sample).map(\.timestamp), samples.map(\.timestamp))
     }
+
+    func testRAMSegmentBarsLayoutBuildsStackedSegmentsFromMemoryBreakdown() {
+        let sample = DashboardMemoryTrendSample(
+            timestamp: Date(timeIntervalSince1970: 200),
+            pressurePercent: 50,
+            usedBytes: 500,
+            totalBytes: 1_000,
+            breakdown: MemoryBreakdown(
+                wiredBytes: 100,
+                activeBytes: 300,
+                compressedBytes: 100,
+                cachedBytes: 250,
+                availableBytes: 500
+            )
+        )
+
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.displaySegments(for: sample),
+            [
+                RAMSegmentBarComponent(kind: .active, bytes: 300),
+                RAMSegmentBarComponent(kind: .compressed, bytes: 100),
+                RAMSegmentBarComponent(kind: .wired, bytes: 100),
+            ]
+        )
+    }
+
+    func testRAMSegmentBarsLayoutCapsScaledSegmentsToUsedBytes() {
+        let sample = DashboardMemoryTrendSample(
+            timestamp: Date(timeIntervalSince1970: 201),
+            pressurePercent: 50,
+            usedBytes: 5,
+            totalBytes: 10,
+            breakdown: MemoryBreakdown(
+                wiredBytes: 2,
+                activeBytes: 2,
+                compressedBytes: 2
+            )
+        )
+
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.displaySegments(for: sample).reduce(UInt64(0)) { $0 + $1.bytes },
+            5
+        )
+    }
 }

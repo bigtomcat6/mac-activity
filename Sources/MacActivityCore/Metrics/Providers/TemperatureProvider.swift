@@ -2,7 +2,7 @@ import Foundation
 
 public struct TemperatureProvider: MetricProvider {
     public let kind: MetricKind = .temperature
-    public let cadence: MetricCadenceLane = .slow
+    public let cadence: MetricCadenceLane = .medium
     private let readTemperatureSource: @Sendable () async -> TemperatureSource
     private let readSMCTemperatureCelsius: @Sendable () async -> Double?
     private let readBatteryTemperatureCelsius: @Sendable () -> Double?
@@ -64,10 +64,6 @@ public struct TemperatureProvider: MetricProvider {
         case .smc:
             if let celsius = await readSMCTemperatureCelsius() {
                 return .temperature(TemperatureReading(celsius: celsius, source: .smc))
-            }
-
-            if let celsius = readBatteryTemperatureCelsius() {
-                return .temperature(TemperatureReading(celsius: celsius, source: .battery))
             }
 
             return .unavailable(kind: .temperature, reason: "SMC temperature sensors are not available")

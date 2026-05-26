@@ -360,6 +360,73 @@ struct RAMSegmentBarsLayout {
         return emptySlots + sampleSlots
     }
 
+    static func displaySegments(for sample: DashboardMemoryTrendSample) -> [RAMSegmentBarComponent] {
+        let usedBytes = min(sample.usedBytes, sample.totalBytes)
+        guard usedBytes > 0 else {
+            return []
+        }
+
+        let rawSegments = [
+            RAMSegmentBarComponent(kind: .active, bytes: sample.breakdown.activeBytes),
+            RAMSegmentBarComponent(kind: .compressed, bytes: sample.breakdown.compressedBytes),
+            RAMSegmentBarComponent(kind: .wired, bytes: sample.breakdown.wiredBytes),
+        ].filter { $0.bytes > 0 }
+
+        let rawTotal = rawSegments.reduce(UInt64(0)) { $0 + $1.bytes }
+        guard rawTotal > 0 else {
+            return [RAMSegmentBarComponent(kind: .active, bytes: usedBytes)]
+        }
+
+        let scaledSegments: [RAMSegmentBarComponent]
+        if rawTotal > usedBytes {
+            let scale = Double(usedBytes) / Double(rawTotal)
+            scaledSegments = rawSegments.compactMap { segment in
+                let scaledBytes = UInt64((Double(segment.bytes) * scale).rounded())
+                guard scaledBytes > 0 else { return nil }
+                return RAMSegmentBarComponent(kind: segment.kind, bytes: scaledBytes)
+            }
+        } else {
+            scaledSegments = rawSegments
+        }
+
+        let scaledTotal = scaledSegments.reduce(UInt64(0)) { $0 + $1.bytes }
+        if scaledTotal > usedBytes {
+            return cappedSegments(scaledSegments, to: usedBytes)
+        }
+
+        guard scaledTotal < usedBytes else {
+            return scaledSegments
+        }
+
+        return scaledSegments + [
+            RAMSegmentBarComponent(kind: .other, bytes: usedBytes - scaledTotal),
+        ]
+    }
+
+    private static func cappedSegments(
+        _ segments: [RAMSegmentBarComponent],
+        to usedBytes: UInt64
+    ) -> [RAMSegmentBarComponent] {
+        guard usedBytes > 0 else {
+            return []
+        }
+
+        var remainingBytes = usedBytes
+        var capped: [RAMSegmentBarComponent] = []
+
+        for segment in segments {
+            guard remainingBytes > 0 else {
+                break
+            }
+
+            let bytes = min(segment.bytes, remainingBytes)
+            capped.append(RAMSegmentBarComponent(kind: segment.kind, bytes: bytes))
+            remainingBytes -= bytes
+        }
+
+        return capped
+    }
+
     static func barWidth(slotCount: Int, containerWidth: CGFloat) -> CGFloat {
         guard slotCount > 0 else { return 0 }
         let spacing = spacing(slotCount: slotCount)
@@ -374,6 +441,22 @@ struct RAMSegmentBarsLayout {
 
 struct RAMSegmentBarSlot: Equatable, Sendable {
     var sample: DashboardMemoryTrendSample?
+}
+
+struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
+    enum Kind: String, Equatable, Sendable {
+        case active
+        case compressed
+        case wired
+        case other
+    }
+
+    var kind: Kind
+    var bytes: UInt64
+
+    var id: Kind {
+        kind
+    }
 }
 
 private struct RAMSegmentBars: View {
@@ -406,8 +489,8 @@ private struct RAMSegmentBars: View {
         guard let sample else { return "Memory chart collecting samples" }
         let parts = [
             "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "used \(DashboardMetricTextFormatter.formatBytes(sample.usedBytes))",
-            "of \(DashboardMetricTextFormatter.formatBytes(sample.totalBytes))",
+            "used \(DashboardMetricTextFormatter.formatMemoryBytes(sample.usedBytes))",
+            "of \(DashboardMetricTextFormatter.formatMemoryBytes(sample.totalBytes))",
         ]
         return parts.joined(separator: ", ")
     }
@@ -423,18 +506,46 @@ private struct RAMSegmentBar: View {
                     .fill(Color.primary.opacity(0.08))
 
                 if let sample, sample.usedBytes > 0, sample.totalBytes > 0 {
-                    RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                        .fill(Color.blue.opacity(0.88))
-                        .frame(height: barHeight(for: sample, containerHeight: proxy.size.height))
+                    let segments = RAMSegmentBarsLayout.displaySegments(for: sample)
+                    VStack(spacing: 0) {
+                        Spacer(minLength: 0)
+
+                        ForEach(Array(segments.reversed())) { segment in
+                            Rectangle()
+                                .fill(color(for: segment.kind))
+                                .frame(height: barHeight(
+                                    for: segment,
+                                    sample: sample,
+                                    containerHeight: proxy.size.height
+                                ))
+                        }
+                    }
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
         }
     }
 
-    private func barHeight(for sample: DashboardMemoryTrendSample, containerHeight: CGFloat) -> CGFloat {
-        let ratio = min(max(CGFloat(sample.pressurePercent / 100), 0), 1)
+    private func barHeight(
+        for segment: RAMSegmentBarComponent,
+        sample: DashboardMemoryTrendSample,
+        containerHeight: CGFloat
+    ) -> CGFloat {
+        let ratio = min(max(CGFloat(Double(segment.bytes) / Double(sample.totalBytes)), 0), 1)
         return max(1, ratio * containerHeight)
+    }
+
+    private func color(for kind: RAMSegmentBarComponent.Kind) -> Color {
+        switch kind {
+        case .active:
+            return Color.blue.opacity(0.88)
+        case .compressed:
+            return Color.purple.opacity(0.82)
+        case .wired:
+            return Color.teal.opacity(0.82)
+        case .other:
+            return Color.indigo.opacity(0.68)
+        }
     }
 }
 

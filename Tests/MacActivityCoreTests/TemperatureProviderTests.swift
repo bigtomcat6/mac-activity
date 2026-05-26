@@ -17,7 +17,7 @@ final class TemperatureProviderTests: XCTestCase {
         )
     }
 
-    func testFallsBackToBatteryTemperatureWhenSMCSourceIsUnavailable() async {
+    func testSMCSourceDoesNotFallbackToBatteryTemperature() async {
         let provider = TemperatureProvider(
             readTemperatureSource: { .smc },
             readSMCTemperatureCelsius: { nil },
@@ -28,7 +28,7 @@ final class TemperatureProviderTests: XCTestCase {
 
         XCTAssertEqual(
             update,
-            MetricUpdate.temperature(TemperatureReading(celsius: 30.17, source: .battery))
+            MetricUpdate.unavailable(kind: .temperature, reason: "SMC temperature sensors are not available")
         )
     }
 

@@ -3,9 +3,10 @@ import XCTest
 @testable import MacActivityCore
 
 final class MemoryProviderTests: XCTestCase {
-    func testMakeReadingExcludesReclaimablePagesFromUsedMemory() {
+    func testMakeReadingUsesActivityMonitorMemoryUsedSemantics() {
         var stats = vm_statistics64_data_t()
-        stats.inactive_count = 7
+        stats.free_count = 2
+        stats.external_page_count = 5
         stats.internal_page_count = 10
         stats.purgeable_count = 4
         stats.wire_count = 3
@@ -20,18 +21,18 @@ final class MemoryProviderTests: XCTestCase {
         XCTAssertEqual(
             reading,
             MemoryReading(
-                usedBytes: 11_264,
+                usedBytes: 25_600,
                 totalBytes: 32_768,
                 breakdown: MemoryBreakdown(
                     wiredBytes: 3_072,
-                    activeBytes: 6_144,
+                    activeBytes: 10_240,
                     compressedBytes: 2_048,
-                    cachedBytes: 4_096,
-                    availableBytes: 21_504
+                    cachedBytes: 5_120,
+                    availableBytes: 7_168
                 )
             )
         )
-        XCTAssertEqual(reading.pressurePercent, 34.375, accuracy: 0.001)
+        XCTAssertEqual(reading.pressurePercent, 78.125, accuracy: 0.001)
     }
 
     func testMakeReadingClampsUsageToPhysicalMemory() {
