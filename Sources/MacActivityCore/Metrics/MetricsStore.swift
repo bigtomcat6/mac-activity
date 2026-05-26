@@ -5,17 +5,26 @@ public struct MetricHistorySample: Equatable, Sendable {
     public var timestamp: Date
     public var primaryValue: Double
     public var secondaryValue: Double?
+    var memoryUsedBytes: UInt64?
+    var memoryTotalBytes: UInt64?
+    var memoryBreakdown: MemoryBreakdown?
     var sampleCount: Int
 
     init(
         timestamp: Date,
         primaryValue: Double,
         secondaryValue: Double? = nil,
+        memoryUsedBytes: UInt64? = nil,
+        memoryTotalBytes: UInt64? = nil,
+        memoryBreakdown: MemoryBreakdown? = nil,
         sampleCount: Int = 1
     ) {
         self.timestamp = timestamp
         self.primaryValue = primaryValue
         self.secondaryValue = secondaryValue
+        self.memoryUsedBytes = memoryUsedBytes
+        self.memoryTotalBytes = memoryTotalBytes
+        self.memoryBreakdown = memoryBreakdown
         self.sampleCount = max(1, sampleCount)
     }
 
@@ -25,6 +34,9 @@ public struct MetricHistorySample: Equatable, Sendable {
     ) {
         self.timestamp = timestamp
         self.sampleCount = 1
+        self.memoryUsedBytes = nil
+        self.memoryTotalBytes = nil
+        self.memoryBreakdown = nil
 
         switch update {
         case .cpu(let reading):
@@ -39,6 +51,9 @@ public struct MetricHistorySample: Equatable, Sendable {
             }
             self.primaryValue = Double(reading.usedBytes) / Double(reading.totalBytes) * 100
             self.secondaryValue = nil
+            self.memoryUsedBytes = reading.usedBytes
+            self.memoryTotalBytes = reading.totalBytes
+            self.memoryBreakdown = reading.breakdown
         case .vram(let reading):
             guard reading.totalBytes > 0 else {
                 return nil
@@ -233,8 +248,103 @@ public struct MetricsHistory: Equatable, Sendable {
             timestamp: lastSample.timestamp,
             primaryValue: primaryAverage,
             secondaryValue: secondaryAverage,
+            memoryUsedBytes: weightedMemoryBytes(
+                from: samples,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.memoryUsedBytes
+            ),
+            memoryTotalBytes: weightedMemoryBytes(
+                from: samples,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.memoryTotalBytes
+            ),
+            memoryBreakdown: weightedMemoryBreakdown(
+                from: samples,
+                totalSampleCount: totalSampleCount
+            ),
             sampleCount: totalSampleCount
         )
+    }
+
+    private static func weightedMemoryBytes(
+        from samples: [MetricHistorySample],
+        totalSampleCount: Int,
+        keyPath: KeyPath<MetricHistorySample, UInt64?>
+    ) -> UInt64? {
+        let values = samples.compactMap { sample -> (UInt64, Int)? in
+            guard let value = sample[keyPath: keyPath] else {
+                return nil
+            }
+
+            return (value, sample.sampleCount)
+        }
+
+        guard values.count == samples.count else {
+            return nil
+        }
+
+        let weightedSum = values.reduce(0) { partialResult, value in
+            partialResult + Double(value.0) * Double(value.1)
+        }
+
+        return UInt64((weightedSum / Double(totalSampleCount)).rounded())
+    }
+
+    private static func weightedMemoryBreakdown(
+        from samples: [MetricHistorySample],
+        totalSampleCount: Int
+    ) -> MemoryBreakdown? {
+        let values = samples.compactMap { sample -> (MemoryBreakdown, Int)? in
+            guard let breakdown = sample.memoryBreakdown else {
+                return nil
+            }
+
+            return (breakdown, sample.sampleCount)
+        }
+
+        guard values.count == samples.count else {
+            return nil
+        }
+
+        return MemoryBreakdown(
+            wiredBytes: weightedBreakdownBytes(
+                values,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.wiredBytes
+            ),
+            activeBytes: weightedBreakdownBytes(
+                values,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.activeBytes
+            ),
+            compressedBytes: weightedBreakdownBytes(
+                values,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.compressedBytes
+            ),
+            cachedBytes: weightedBreakdownBytes(
+                values,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.cachedBytes
+            ),
+            availableBytes: weightedBreakdownBytes(
+                values,
+                totalSampleCount: totalSampleCount,
+                keyPath: \.availableBytes
+            )
+        )
+    }
+
+    private static func weightedBreakdownBytes(
+        _ values: [(MemoryBreakdown, Int)],
+        totalSampleCount: Int,
+        keyPath: KeyPath<MemoryBreakdown, UInt64>
+    ) -> UInt64 {
+        let weightedSum = values.reduce(0) { partialResult, value in
+            partialResult + Double(value.0[keyPath: keyPath]) * Double(value.1)
+        }
+
+        return UInt64((weightedSum / Double(totalSampleCount)).rounded())
     }
 }
 

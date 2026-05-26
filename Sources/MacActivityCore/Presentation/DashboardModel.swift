@@ -39,17 +39,20 @@ public struct DashboardMemoryTrendSample: Equatable, Sendable {
     public var pressurePercent: Double
     public var usedBytes: UInt64
     public var totalBytes: UInt64
+    public var breakdown: MemoryBreakdown
 
     public init(
         timestamp: Date,
         pressurePercent: Double,
         usedBytes: UInt64,
-        totalBytes: UInt64
+        totalBytes: UInt64,
+        breakdown: MemoryBreakdown = MemoryBreakdown()
     ) {
         self.timestamp = timestamp
         self.pressurePercent = pressurePercent
         self.usedBytes = usedBytes
         self.totalBytes = totalBytes
+        self.breakdown = breakdown
     }
 }
 
@@ -283,21 +286,20 @@ public final class DashboardModel: ObservableObject {
         memory: MemoryReading
     ) -> DashboardMemoryTrend {
         let memorySamples = history.samples(for: .memory)
-        let sourceSamples: [MetricHistorySample]
 
         if memorySamples.isEmpty {
-            sourceSamples = [
-                MetricHistorySample(
-                    timestamp: .now,
-                    primaryValue: memory.pressurePercent
-                )
-            ]
-        } else {
-            sourceSamples = memorySamples
+            return DashboardMemoryTrend(
+                samples: [
+                    makeMemoryTrendSample(
+                        memory: memory,
+                        timestamp: .now
+                    ),
+                ]
+            )
         }
 
         return DashboardMemoryTrend(
-            samples: sourceSamples.map { sample in
+            samples: memorySamples.map { sample in
                 makeMemoryTrendSample(sample: sample, latestMemory: memory)
             }
         )
@@ -308,14 +310,28 @@ public final class DashboardModel: ObservableObject {
         latestMemory: MemoryReading
     ) -> DashboardMemoryTrendSample {
         let pressurePercent = min(max(sample.primaryValue, 0), 100)
-        let totalBytes = latestMemory.totalBytes
-        let usedBytes = UInt64((Double(totalBytes) * pressurePercent / 100).rounded())
+        let totalBytes = sample.memoryTotalBytes ?? latestMemory.totalBytes
+        let usedBytes = sample.memoryUsedBytes ?? UInt64((Double(totalBytes) * pressurePercent / 100).rounded())
 
         return DashboardMemoryTrendSample(
             timestamp: sample.timestamp,
             pressurePercent: pressurePercent,
             usedBytes: usedBytes,
-            totalBytes: totalBytes
+            totalBytes: totalBytes,
+            breakdown: sample.memoryBreakdown ?? MemoryBreakdown()
+        )
+    }
+
+    nonisolated private static func makeMemoryTrendSample(
+        memory: MemoryReading,
+        timestamp: Date
+    ) -> DashboardMemoryTrendSample {
+        DashboardMemoryTrendSample(
+            timestamp: timestamp,
+            pressurePercent: min(max(memory.pressurePercent, 0), 100),
+            usedBytes: memory.usedBytes,
+            totalBytes: memory.totalBytes,
+            breakdown: memory.breakdown
         )
     }
 

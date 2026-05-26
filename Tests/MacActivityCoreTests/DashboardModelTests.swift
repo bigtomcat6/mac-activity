@@ -122,6 +122,60 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(vram.detail, "of 4 KB")
     }
 
+    func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [
+                .memory(
+                    MemoryReading(
+                        usedBytes: 1_500,
+                        totalBytes: 3_000,
+                        breakdown: MemoryBreakdown(
+                            wiredBytes: 300,
+                            activeBytes: 900,
+                            compressedBytes: 300,
+                            cachedBytes: 200,
+                            availableBytes: 1_500
+                        )
+                    )
+                ),
+            ],
+            timestamp: Date(timeIntervalSince1970: 7)
+        )
+        store.apply(
+            [
+                .memory(
+                    MemoryReading(
+                        usedBytes: 3_900,
+                        totalBytes: 6_000,
+                        breakdown: MemoryBreakdown(
+                            wiredBytes: 600,
+                            activeBytes: 2_400,
+                            compressedBytes: 900,
+                            cachedBytes: 500,
+                            availableBytes: 2_100
+                        )
+                    )
+                ),
+            ],
+            timestamp: Date(timeIntervalSince1970: 8)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .memory }?.memoryTrend?.samples.count == 2
+        }
+        let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
+        let samples = try! XCTUnwrap(memory.memoryTrend).samples
+
+        XCTAssertEqual(samples.map(\.usedBytes), [1_500, 3_900])
+        XCTAssertEqual(samples.map(\.totalBytes), [3_000, 6_000])
+        XCTAssertEqual(samples.map(\.breakdown.wiredBytes), [300, 600])
+        XCTAssertEqual(samples.map(\.breakdown.activeBytes), [900, 2_400])
+        XCTAssertEqual(samples.map(\.breakdown.compressedBytes), [300, 900])
+    }
+
     func testModelUsesTemperatureSourceSpecificTitle() async {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
