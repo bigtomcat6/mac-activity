@@ -184,8 +184,8 @@ public final class DashboardModel: ObservableObject {
                     kind: .memory,
                     title: MetricKind.memory.title,
                     value: "\(Int(memory.pressurePercent.rounded()))%",
-                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
-                    detail: "RAM \(DashboardMetricTextFormatter.formatBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatBytes(memory.totalBytes))",
+                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
+                    detail: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
                     style: .memoryStackedChart,
                     trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
                     memoryTrend: memoryTrend(from: history, memory: memory)
@@ -374,6 +374,10 @@ public enum DashboardMetricTextFormatter {
         formatDecimalBytes(Double(value))
     }
 
+    public static func formatMemoryBytes(_ value: UInt64) -> String {
+        formatBinaryBytes(Double(value))
+    }
+
     public static func formatRate(_ value: Double) -> String {
         "\(formatDecimalBytes(max(0, value)))/s"
     }
@@ -391,6 +395,33 @@ public enum DashboardMetricTextFormatter {
             unit = (1_000_000, "MB")
         case 1_000...:
             unit = (1_000, "KB")
+        default:
+            return "\(Int(value.rounded())) B"
+        }
+
+        let tenths = Int((value / unit.threshold * 10).rounded())
+        let whole = tenths / 10
+        let fraction = tenths % 10
+        if fraction == 0 {
+            return "\(whole) \(unit.suffix)"
+        }
+
+        return "\(whole).\(fraction) \(unit.suffix)"
+    }
+
+    private static func formatBinaryBytes(_ value: Double) -> String {
+        if value == 0 {
+            return "0 KB"
+        }
+
+        let unit: (threshold: Double, suffix: String)
+        switch value {
+        case 1_073_741_824...:
+            unit = (1_073_741_824, "GB")
+        case 1_048_576...:
+            unit = (1_048_576, "MB")
+        case 1_024...:
+            unit = (1_024, "KB")
         default:
             return "\(Int(value.rounded())) B"
         }

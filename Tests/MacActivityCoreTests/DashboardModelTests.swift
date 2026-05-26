@@ -116,7 +116,7 @@ final class DashboardModelTests: XCTestCase {
 
         let vram = try! XCTUnwrap(metrics.first { $0.kind == .vram })
         XCTAssertEqual(memory.value, "60%")
-        XCTAssertEqual(memory.secondaryText, "RAM 6 KB / 10 KB")
+        XCTAssertEqual(memory.secondaryText, "RAM 5.9 KB / 9.8 KB")
         XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.usedBytes, 6_000)
         XCTAssertEqual(vram.value, "2 KB")
         XCTAssertEqual(vram.detail, "of 4 KB")
@@ -196,13 +196,13 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(temperature.value, "30.2 C")
     }
 
-    func testModelFormatsMemoryValueUsingDecimalUnits() async {
+    func testModelFormatsMemoryValueUsingActivityMonitorStyleUnits() async {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
         store.apply(
             [
-                .memory(MemoryReading(usedBytes: 1_500_000_000, totalBytes: 3_000_000_000)),
+                .memory(MemoryReading(usedBytes: 1_610_612_736, totalBytes: 3_221_225_472)),
             ],
             timestamp: Date(timeIntervalSince1970: 4)
         )
@@ -245,6 +245,8 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(DashboardMetricTextFormatter.formatBytes(1_500), "1.5 KB")
         XCTAssertEqual(DashboardMetricTextFormatter.formatBytes(1_500_000), "1.5 MB")
         XCTAssertEqual(DashboardMetricTextFormatter.formatBytes(1_500_000_000), "1.5 GB")
+        XCTAssertEqual(DashboardMetricTextFormatter.formatMemoryBytes(38_654_705_664), "36 GB")
+        XCTAssertEqual(DashboardMetricTextFormatter.formatMemoryBytes(29_465_886_720), "27.4 GB")
 
         XCTAssertEqual(DashboardMetricTextFormatter.formatRate(999), "999 B/s")
         XCTAssertEqual(DashboardMetricTextFormatter.formatRate(1_500), "1.5 KB/s")

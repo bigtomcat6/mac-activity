@@ -489,8 +489,8 @@ private struct RAMSegmentBars: View {
         guard let sample else { return "Memory chart collecting samples" }
         let parts = [
             "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "used \(DashboardMetricTextFormatter.formatBytes(sample.usedBytes))",
-            "of \(DashboardMetricTextFormatter.formatBytes(sample.totalBytes))",
+            "used \(DashboardMetricTextFormatter.formatMemoryBytes(sample.usedBytes))",
+            "of \(DashboardMetricTextFormatter.formatMemoryBytes(sample.totalBytes))",
         ]
         return parts.joined(separator: ", ")
     }

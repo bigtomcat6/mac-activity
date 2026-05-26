@@ -48,21 +48,21 @@ public struct MemoryProvider: MetricProvider {
     ) -> MemoryReading {
         let pageBytes = UInt64(pageSize)
 
-        // Use the same non-reclaimable anonymous memory basis as the previous
-        // dashboard reading, then split it into Activity Monitor-like buckets.
+        // Match Activity Monitor's visible "Memory Used" denominator: physical
+        // memory minus free pages and file-backed cached pages. Purgeable pages
+        // still count as used here; treating them as cached files undercounts
+        // the value shown by Activity Monitor.
         // Apple Silicon GPU memory is collected separately by VRAMProvider,
         // and is not added to pressurePercent to avoid double-counting unified
         // memory.
         let anonymousPages = UInt64(stats.internal_page_count)
-        let reclaimableAnonymousPages = UInt64(min(stats.purgeable_count, stats.internal_page_count))
-        let appActivePages = anonymousPages - reclaimableAnonymousPages
+        let freeBytes = UInt64(stats.free_count) * pageBytes
         let wiredBytes = UInt64(stats.wire_count) * pageBytes
-        let activeBytes = appActivePages * pageBytes
+        let activeBytes = anonymousPages * pageBytes
         let compressedBytes = UInt64(stats.compressor_page_count) * pageBytes
-        let cachedBytes = (UInt64(stats.external_page_count) + UInt64(stats.purgeable_count)) * pageBytes
-        let rawUsedBytes = activeBytes + wiredBytes + compressedBytes
-        let usedBytes = min(rawUsedBytes, totalBytes)
-        let availableBytes = totalBytes > usedBytes ? totalBytes - usedBytes : 0
+        let cachedBytes = UInt64(stats.external_page_count) * pageBytes
+        let availableBytes = min(freeBytes + cachedBytes, totalBytes)
+        let usedBytes = totalBytes - availableBytes
 
         return MemoryReading(
             usedBytes: usedBytes,
