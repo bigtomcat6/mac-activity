@@ -183,25 +183,14 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
-                    value: "\(Int(memory.pressurePercent.rounded()))%",
-                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
-                    detail: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
+                    value: DashboardMetricTextFormatter.formatMemorySummary(
+                        usedBytes: memory.usedBytes,
+                        totalBytes: memory.totalBytes,
+                        percent: memory.pressurePercent
+                    ),
                     style: .memoryStackedChart,
                     trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
                     memoryTrend: memoryTrend(from: history, memory: memory)
-                )
-            )
-        }
-
-        if let vram = snapshot.vram {
-            items.append(
-                DashboardMetric(
-                    kind: .vram,
-                    title: MetricKind.vram.title,
-                    value: DashboardMetricTextFormatter.formatBytes(vram.usedBytes),
-                    detail: "of \(DashboardMetricTextFormatter.formatBytes(vram.totalBytes))",
-                    style: .chart,
-                    trend: trend(from: history, kind: .vram, scale: .fixed(lowerBound: 0, upperBound: 100))
                 )
             )
         }
@@ -378,6 +367,22 @@ public enum DashboardMetricTextFormatter {
         formatBinaryBytes(Double(value))
     }
 
+    public static func formatMemorySummary(
+        usedBytes: UInt64,
+        totalBytes: UInt64,
+        percent: Double
+    ) -> String {
+        "\(formatOneDecimalGB(usedBytes))/\(formatOneDecimalGB(totalBytes)) (\(Int(percent.rounded()))%)"
+    }
+
+    public static func formatMemoryGB(_ value: UInt64) -> String {
+        formatOneDecimalGB(value)
+    }
+
+    public static func formatPercent(_ value: Double) -> String {
+        "\(Int(value.rounded()))%"
+    }
+
     public static func formatRate(_ value: Double) -> String {
         "\(formatDecimalBytes(max(0, value)))/s"
     }
@@ -434,5 +439,9 @@ public enum DashboardMetricTextFormatter {
         }
 
         return "\(whole).\(fraction) \(unit.suffix)"
+    }
+
+    private static func formatOneDecimalGB(_ value: UInt64) -> String {
+        String(format: "%.1fGB", Double(value) / 1_073_741_824)
     }
 }
