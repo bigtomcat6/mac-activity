@@ -74,9 +74,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var trend: DashboardTrend?
     public var memoryTrend: DashboardMemoryTrend?
 
-    public var id: String {
-        kind.rawValue
-    }
+    public var id: String { kind.rawValue }
 
     public init(
         kind: MetricKind,
@@ -121,16 +119,12 @@ public final class DashboardModel: ObservableObject {
         self.metricsBuilder = metricsBuilder
         self.isActive = isActive
         self.metrics = isActive ? metricsBuilder(store.snapshot, store.history) : []
-
-        if isActive {
-            startSubscription()
-        }
+        if isActive { startSubscription() }
     }
 
     public func setActive(_ isActive: Bool) {
         guard self.isActive != isActive else { return }
         self.isActive = isActive
-
         if isActive {
             startSubscription()
             refreshMetricsAsync()
@@ -146,25 +140,13 @@ public final class DashboardModel: ObservableObject {
 
         if let cpu = snapshot.cpu {
             items.append(
-                DashboardMetric(
-                    kind: .cpu,
-                    title: MetricKind.cpu.title,
-                    value: "\(Int(cpu.usagePercent.rounded()))%",
-                    style: .chart,
-                    trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100))
-                )
+                DashboardMetric(kind: .cpu, title: MetricKind.cpu.title, value: "\(Int(cpu.usagePercent.rounded()))%", style: .chart, trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100)))
             )
         }
 
         if let gpu = snapshot.gpu {
             items.append(
-                DashboardMetric(
-                    kind: .gpu,
-                    title: MetricKind.gpu.title,
-                    value: "\(Int(gpu.usagePercent.rounded()))%",
-                    style: .chart,
-                    trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100))
-                )
+                DashboardMetric(kind: .gpu, title: MetricKind.gpu.title, value: "\(Int(gpu.usagePercent.rounded()))%", style: .chart, trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100)))
             )
         }
 
@@ -173,9 +155,11 @@ public final class DashboardModel: ObservableObject {
                 DashboardMetric(
                     kind: .memory,
                     title: MetricKind.memory.title,
-                    value: "\(Int(memory.pressurePercent.rounded()))%",
-                    secondaryText: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
-                    detail: "RAM \(DashboardMetricTextFormatter.formatMemoryBytes(memory.usedBytes)) / \(DashboardMetricTextFormatter.formatMemoryBytes(memory.totalBytes))",
+                    value: DashboardMetricTextFormatter.formatMemorySummary(
+                        usedBytes: memory.usedBytes,
+                        totalBytes: memory.totalBytes,
+                        percent: memory.pressurePercent
+                    ),
                     style: .memoryStackedChart,
                     trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
                     memoryTrend: memoryTrend(from: history, memory: memory)
@@ -183,65 +167,27 @@ public final class DashboardModel: ObservableObject {
             )
         }
 
-        if let vram = snapshot.vram {
-            items.append(
-                DashboardMetric(
-                    kind: .vram,
-                    title: MetricKind.vram.title,
-                    value: DashboardMetricTextFormatter.formatBytes(vram.usedBytes),
-                    detail: "of \(DashboardMetricTextFormatter.formatBytes(vram.totalBytes))",
-                    style: .chart,
-                    trend: trend(from: history, kind: .vram, scale: .fixed(lowerBound: 0, upperBound: 100))
-                )
-            )
-        }
-
         if let network = snapshot.network {
             items.append(
-                DashboardMetric(
-                    kind: .network,
-                    title: MetricKind.network.title,
-                    value: "↑ \(DashboardMetricTextFormatter.formatRate(network.uploadBytesPerSecond))  ↓ \(DashboardMetricTextFormatter.formatRate(network.downloadBytesPerSecond))",
-                    style: .chart,
-                    trend: trend(from: history, kind: .network, scale: .automatic)
-                )
+                DashboardMetric(kind: .network, title: MetricKind.network.title, value: "↑ \(DashboardMetricTextFormatter.formatRate(network.uploadBytesPerSecond))  ↓ \(DashboardMetricTextFormatter.formatRate(network.downloadBytesPerSecond))", style: .chart, trend: trend(from: history, kind: .network, scale: .automatic))
             )
         }
 
         if let battery = snapshot.battery {
             items.append(
-                DashboardMetric(
-                    kind: .battery,
-                    title: MetricKind.battery.title,
-                    value: "\(Int(battery.percentage.rounded()))%",
-                    detail: battery.isCharging ? "Charging" : "On Battery",
-                    style: .chart,
-                    trend: trend(from: history, kind: .battery, scale: .fixed(lowerBound: 0, upperBound: 100))
-                )
+                DashboardMetric(kind: .battery, title: MetricKind.battery.title, value: "\(Int(battery.percentage.rounded()))%", detail: battery.isCharging ? "Charging" : "On Battery", style: .chart, trend: trend(from: history, kind: .battery, scale: .fixed(lowerBound: 0, upperBound: 100)))
             )
         }
 
         if let temperature = snapshot.temperature {
             items.append(
-                DashboardMetric(
-                    kind: .temperature,
-                    title: temperature.source.dashboardTitle,
-                    value: formatTemperature(temperature.celsius),
-                    style: .chart,
-                    trend: trend(from: history, kind: .temperature, scale: .automatic)
-                )
+                DashboardMetric(kind: .temperature, title: temperature.source.dashboardTitle, value: formatTemperature(temperature.celsius), style: .chart, trend: trend(from: history, kind: .temperature, scale: .automatic))
             )
         }
 
         if let fan = snapshot.fan {
             items.append(
-                DashboardMetric(
-                    kind: .fan,
-                    title: MetricKind.fan.title,
-                    value: "\(fan.rpm) RPM",
-                    style: .chart,
-                    trend: trend(from: history, kind: .fan, scale: .automatic)
-                )
+                DashboardMetric(kind: .fan, title: MetricKind.fan.title, value: "\(fan.rpm) RPM", style: .chart, trend: trend(from: history, kind: .fan, scale: .automatic))
             )
         }
 
@@ -250,9 +196,7 @@ public final class DashboardModel: ObservableObject {
         }
     }
 
-    nonisolated private static func formatTemperature(_ value: Double) -> String {
-        String(format: "%.1f C", value)
-    }
+    nonisolated private static func formatTemperature(_ value: Double) -> String { String(format: "%.1f C", value) }
 
     nonisolated private static func trend(from history: MetricsHistory, kind: MetricKind, scale: DashboardTrendScale) -> DashboardTrend {
         DashboardTrend(
@@ -265,10 +209,7 @@ public final class DashboardModel: ObservableObject {
 
     nonisolated private static func memoryTrend(from history: MetricsHistory, memory: MemoryReading) -> DashboardMemoryTrend {
         let memorySamples = history.samples(for: .memory)
-        guard !memorySamples.isEmpty else {
-            return DashboardMemoryTrend(samples: [makeMemoryTrendSample(memory: memory, timestamp: .now)])
-        }
-
+        guard !memorySamples.isEmpty else { return DashboardMemoryTrend(samples: [makeMemoryTrendSample(memory: memory, timestamp: .now)]) }
         return DashboardMemoryTrend(samples: memorySamples.map { makeMemoryTrendSample(sample: $0, latestMemory: memory) })
     }
 
@@ -276,46 +217,27 @@ public final class DashboardModel: ObservableObject {
         let pressurePercent = min(max(sample.primaryValue, 0), 100)
         let totalBytes = sample.memoryTotalBytes ?? latestMemory.totalBytes
         let usedBytes = sample.memoryUsedBytes ?? UInt64((Double(totalBytes) * pressurePercent / 100).rounded())
-        return DashboardMemoryTrendSample(
-            timestamp: sample.timestamp,
-            pressurePercent: pressurePercent,
-            usedBytes: usedBytes,
-            totalBytes: totalBytes,
-            breakdown: sample.memoryBreakdown ?? MemoryBreakdown()
-        )
+        return DashboardMemoryTrendSample(timestamp: sample.timestamp, pressurePercent: pressurePercent, usedBytes: usedBytes, totalBytes: totalBytes, breakdown: sample.memoryBreakdown ?? MemoryBreakdown())
     }
 
     nonisolated private static func makeMemoryTrendSample(memory: MemoryReading, timestamp: Date) -> DashboardMemoryTrendSample {
-        DashboardMemoryTrendSample(
-            timestamp: timestamp,
-            pressurePercent: min(max(memory.pressurePercent, 0), 100),
-            usedBytes: memory.usedBytes,
-            totalBytes: memory.totalBytes,
-            breakdown: memory.breakdown
-        )
+        DashboardMemoryTrendSample(timestamp: timestamp, pressurePercent: min(max(memory.pressurePercent, 0), 100), usedBytes: memory.usedBytes, totalBytes: memory.totalBytes, breakdown: memory.breakdown)
     }
 
     private func startSubscription() {
-        subscription = store.updatesPublisher.sink { [weak self] snapshot, history in
-            self?.refreshMetricsAsync(snapshot: snapshot, history: history)
-        }
+        subscription = store.updatesPublisher.sink { [weak self] snapshot, history in self?.refreshMetricsAsync(snapshot: snapshot, history: history) }
     }
 
-    private func refreshMetricsAsync() {
-        refreshMetricsAsync(snapshot: store.snapshot, history: store.history)
-    }
+    private func refreshMetricsAsync() { refreshMetricsAsync(snapshot: store.snapshot, history: store.history) }
 
     private func refreshMetricsAsync(snapshot: MetricsSnapshot, history: MetricsHistory) {
         let metricsBuilder = self.metricsBuilder
         refreshGeneration += 1
         let refreshGeneration = refreshGeneration
-
         DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder] in
             let metrics = metricsBuilder(snapshot, history)
             DispatchQueue.main.async { [weak self] in
-                guard let self, self.isActive, self.refreshGeneration == refreshGeneration, self.metrics != metrics else {
-                    return
-                }
+                guard let self, self.isActive, self.refreshGeneration == refreshGeneration, self.metrics != metrics else { return }
                 self.metrics = metrics
             }
         }
@@ -323,42 +245,23 @@ public final class DashboardModel: ObservableObject {
 }
 
 public enum DashboardMetricTextFormatter {
-    public static func formatBytes(_ value: UInt64) -> String {
-        formatDecimalBytes(Double(value))
-    }
-
-    public static func formatMemoryBytes(_ value: UInt64) -> String {
-        formatBinaryBytes(Double(value))
-    }
-
+    public static func formatBytes(_ value: UInt64) -> String { formatDecimalBytes(Double(value)) }
+    public static func formatMemoryBytes(_ value: UInt64) -> String { formatBinaryBytes(Double(value)) }
+    public static func formatMemoryGB(_ value: UInt64) -> String { String(format: "%.1fGB", Double(value) / 1_073_741_824) }
+    public static func formatPercent(_ value: Double) -> String { "\(Int(value.rounded()))%" }
     public static func formatMemorySummary(usedBytes: UInt64, totalBytes: UInt64, percent: Double) -> String {
         "\(formatMemoryGB(usedBytes))/\(formatMemoryGB(totalBytes)) (\(Int(percent.rounded()))%)"
     }
-
-    public static func formatMemoryGB(_ value: UInt64) -> String {
-        String(format: "%.1fGB", Double(value) / 1_073_741_824)
-    }
-
-    public static func formatPercent(_ value: Double) -> String {
-        "\(Int(value.rounded()))%"
-    }
-
-    public static func formatRate(_ value: Double) -> String {
-        "\(formatDecimalBytes(max(0, value)))/s"
-    }
+    public static func formatRate(_ value: Double) -> String { "\(formatDecimalBytes(max(0, value)))/s" }
 
     private static func formatDecimalBytes(_ value: Double) -> String {
         if value == 0 { return "0 KB" }
         let unit: (threshold: Double, suffix: String)
         switch value {
-        case 1_000_000_000...:
-            unit = (1_000_000_000, "GB")
-        case 1_000_000...:
-            unit = (1_000_000, "MB")
-        case 1_000...:
-            unit = (1_000, "KB")
-        default:
-            return "\(Int(value.rounded())) B"
+        case 1_000_000_000...: unit = (1_000_000_000, "GB")
+        case 1_000_000...: unit = (1_000_000, "MB")
+        case 1_000...: unit = (1_000, "KB")
+        default: return "\(Int(value.rounded())) B"
         }
         let tenths = Int((value / unit.threshold * 10).rounded())
         let whole = tenths / 10
@@ -370,14 +273,10 @@ public enum DashboardMetricTextFormatter {
         if value == 0 { return "0 KB" }
         let unit: (threshold: Double, suffix: String)
         switch value {
-        case 1_073_741_824...:
-            unit = (1_073_741_824, "GB")
-        case 1_048_576...:
-            unit = (1_048_576, "MB")
-        case 1_024...:
-            unit = (1_024, "KB")
-        default:
-            return "\(Int(value.rounded())) B"
+        case 1_073_741_824...: unit = (1_073_741_824, "GB")
+        case 1_048_576...: unit = (1_048_576, "MB")
+        case 1_024...: unit = (1_024, "KB")
+        default: return "\(Int(value.rounded())) B"
         }
         let tenths = Int((value / unit.threshold * 10).rounded())
         let whole = tenths / 10
