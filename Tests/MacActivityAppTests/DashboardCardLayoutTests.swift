@@ -7,7 +7,7 @@ import MacActivityCore
 final class DashboardCardLayoutTests: XCTestCase {
     func testCompactChartCardUsesSlightlyTallerHeights() {
         XCTAssertEqual(DashboardCardLayout.compactChartHeight, 60)
-        XCTAssertEqual(DashboardCardLayout.compactChartMinHeight, 98)
+        XCTAssertEqual(DashboardCardLayout.compactChartMinHeight, 116)
     }
 
     func testCompactHoverLayoutStillUsesCompactAnnotationSizing() {
@@ -17,7 +17,7 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testCompactChartCardUsesTighterBottomInsetThanTop() {
         XCTAssertEqual(DashboardCardLayout.compactChartInsets.top, 8)
-        XCTAssertEqual(DashboardCardLayout.compactChartInsets.bottom, 4)
+        XCTAssertEqual(DashboardCardLayout.compactChartInsets.bottom, 6)
     }
 
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
@@ -115,6 +115,19 @@ final class DashboardCardLayoutTests: XCTestCase {
                 RAMSegmentBarComponent(kind: .wired, bytes: 100),
             ]
         )
+    }
+
+    func testRAMSegmentBarsLayoutReportsSegmentPercentagesAgainstTotalMemory() {
+        let sample = DashboardMemoryTrendSample(
+            timestamp: Date(timeIntervalSince1970: 202),
+            pressurePercent: 50,
+            usedBytes: 500,
+            totalBytes: 1_000,
+            breakdown: MemoryBreakdown(wiredBytes: 100, activeBytes: 300, compressedBytes: 100)
+        )
+        let active = RAMSegmentBarComponent(kind: .active, bytes: 300)
+
+        XCTAssertEqual(RAMSegmentBarsLayout.percentage(for: active, in: sample), 30, accuracy: 0.001)
     }
 
     func testRAMSegmentBarsLayoutCapsScaledSegmentsToUsedBytes() {
