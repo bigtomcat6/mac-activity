@@ -27,6 +27,7 @@ The implementation will be original Swift code in MacActivity. Lemon Cleaner's r
 - Forced process termination.
 - Copying Lemon Cleaner assets or source code.
 - New long-running privileged helper or daemon.
+- Volume-specific Trash folders under other mounted volumes, such as `.Trashes`.
 
 ## Current Context
 
@@ -49,12 +50,13 @@ Add an Actives clean-release feature with small, focused units:
 
 - `TrashCleanupService`
   - Async service for scanning and emptying Trash.
+  - Targets only the current user's home Trash folder at `FileManager.default.homeDirectoryForCurrentUser/.Trash` for this iteration.
   - Uses injected filesystem operations for tests.
   - Reports explicit scan and cleanup results.
 
 - `MemoryReleaseService`
   - Wraps the existing `CleanMemoryService` behavior.
-  - Reads memory before and after release so the UI can show the amount or percent reclaimed.
+  - Reads memory before and after release using the same `MemoryProvider` semantics that drive the dashboard memory card.
   - Keeps command execution injectable.
 
 - `ActiveAppMemoryService`
@@ -110,21 +112,22 @@ On Actives appearance:
 On `Clean`:
 
 1. Present a confirmation dialog explaining that Trash contents will be deleted.
-2. If the user cancels, leave files untouched and show no success state.
+2. If the user cancels, leave files untouched and return to the previous Trash state. Cancellation is not an error state.
 3. If confirmed, run cleanup asynchronously.
 4. During cleanup, show the cleaning state and disable duplicate cleanup starts.
 5. On success, show cleaned state and refresh the computed size.
-6. On failure, show an error message and keep the action recoverable.
+6. On partial failure, report how many items could not be deleted, keep successfully deleted items deleted, and rescan Trash so the displayed size reflects what remains.
+7. On total failure, show an error message and keep the action recoverable.
 
-Trash cleanup should target the user's Trash contents. If later implementation discovers volume-specific Trash locations are necessary for parity, that should be handled by extending `TrashCleanupService`, not by adding UI complexity.
+Trash cleanup targets only the current user's home Trash contents at `~/.Trash`. It should delete the children of that directory, not the Trash directory itself. If later implementation needs mounted-volume Trash parity, that should be handled by extending `TrashCleanupService`, not by adding UI complexity.
 
 ## Memory Release Behavior
 
 The memory release action keeps the existing MacActivity command path and presents Lemon-like result semantics:
 
-1. Read memory usage before release.
+1. Read memory usage before release using `MemoryProvider`/`MemoryReading`, so `usedBytes` and `totalBytes` match the dashboard RAM definition.
 2. Run the existing cleaner.
-3. Read memory usage after release.
+3. Read memory usage after release using the same provider semantics.
 4. Compute reclaimed bytes as `max(0, beforeUsedBytes - afterUsedBytes)`.
 5. Compute reclaimed percent against total memory when total memory is available.
 6. Show success, unavailable, or failed result.
@@ -156,9 +159,9 @@ Sorting and row display rules:
 Error states should be local to the relevant section:
 
 - Trash scan failed.
-- Trash cleanup was cancelled.
 - Trash cleanup failed because a file could not be deleted.
 - Trash cleanup failed because of permissions.
+- Trash cleanup partially succeeded and left some items behind.
 - Memory release command is unavailable.
 - Memory release command failed with an exit code.
 - Process is no longer running.
@@ -175,12 +178,17 @@ Core tests:
 - Trash scan reports cleanable size.
 - Trash scan reports clean state for zero size.
 - Trash cleanup does not run before confirmation.
+- Trash cleanup confirmation is presented before deletion.
 - Confirmed trash cleanup deletes through the injected filesystem service.
-- Cancelled trash cleanup leaves files untouched.
+- Cancelled trash cleanup leaves files untouched and is not treated as an error.
 - Trash cleanup failure produces an error state.
+- Trash partial failure reports remaining failures and triggers a rescan.
+- Trash scan failure exposes a retry affordance.
 - Memory release records before and after readings.
+- Memory release uses `MemoryProvider`/dashboard memory semantics for before and after readings.
 - Memory release computes reclaimed bytes and percent with a nonnegative floor.
 - Unavailable and failed memory release results propagate to UI state.
+- Trash and memory actions are disabled while their respective work is already running.
 - Process ranking defaults to 20 rows for Actives.
 - Process rows are sorted by memory and tie-break by name.
 - Row bar progress is relative to the largest visible process.
@@ -191,6 +199,7 @@ UI/layout tests:
 - Actives page exposes trash, memory, and process-list zones in order.
 - Trash section, memory strip, and process row constants match the compact target sizes.
 - Row hover state swaps memory value for `Quit` without resizing the row.
+- Section-local errors render in the Trash or memory section that produced them.
 
 Verification commands should run from the Swift package root:
 
