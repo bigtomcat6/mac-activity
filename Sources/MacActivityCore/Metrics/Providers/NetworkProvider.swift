@@ -75,21 +75,30 @@ public actor NetworkProvider: MetricProvider {
             return nil
         }
 
+        let aggregateCounters = activeCounters.filter { counter in
+            !isVirtualOrAuxiliaryInterface(counter.name)
+        }
+
+        // Tunnel-style primary interfaces can mirror physical traffic, so keep them exclusive.
+        // Physical and local-direct interfaces should still be aggregated with other local links.
         for preferredInterfaceName in preferredInterfaceNames where !preferredInterfaceName.isEmpty {
             let preferredCounters = activeCounters.filter { counter in
                 counter.name == preferredInterfaceName
             }
 
-            if let sample = aggregate(preferredCounters, timestamp: timestamp) {
+            guard !preferredCounters.isEmpty else {
+                continue
+            }
+
+            if preferredCounters.contains(where: { isVirtualOrAuxiliaryInterface($0.name) }),
+               let sample = aggregate(preferredCounters, timestamp: timestamp) {
                 return sample
             }
+
+            break
         }
 
-        let physicalCounters = activeCounters.filter { counter in
-            !isVirtualOrAuxiliaryInterface(counter.name)
-        }
-
-        if let sample = aggregate(physicalCounters, timestamp: timestamp) {
+        if let sample = aggregate(aggregateCounters, timestamp: timestamp) {
             return sample
         }
 
@@ -107,10 +116,7 @@ public actor NetworkProvider: MetricProvider {
     static func isVirtualOrAuxiliaryInterface(_ name: String) -> Bool {
         let excludedPrefixes = [
             "utun",
-            "awdl",
-            "llw",
             "bridge",
-            "p2p",
             "gif",
             "stf",
             "anpi",
