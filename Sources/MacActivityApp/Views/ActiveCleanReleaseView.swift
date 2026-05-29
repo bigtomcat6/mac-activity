@@ -4,7 +4,7 @@ struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
 
     var body: some View {
-        VStack(spacing: ActiveCleanReleaseLayout.sectionSpacing) {
+        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
             TrashCleanupStatusView(model: model)
                 .accessibilityIdentifier("actives-clean-release-trash")
 
@@ -14,6 +14,7 @@ struct ActiveCleanReleaseView: View {
             ActiveProcessMemoryList(model: model)
                 .accessibilityIdentifier("actives-clean-release-processes")
         }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .confirmationDialog(
             "Empty Trash?",
             isPresented: $model.isTrashConfirmationPresented,

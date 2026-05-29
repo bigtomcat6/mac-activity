@@ -65,42 +65,47 @@ struct TrashCleanupStatusView: View {
             return "Scanning Trash"
         case .clean:
             return "Trash Is Clean"
-        case .cleanable:
-            return "Trash Cleanup"
+        case .cleanable(let bytes, _):
+            return "\(formattedBytes(bytes)) in Trash"
         case .cleaning:
             return "Cleaning Trash"
-        case .cleaned:
-            return "Trash Cleaned"
+        case .cleaned(let bytes, _):
+            return "Cleaned \(formattedBytes(bytes))"
         case .failed:
             return "Trash Cleanup Failed"
-        case .partial:
-            return "Trash Cleanup Incomplete"
+        case .partial(let bytes, _, _, _):
+            return "Cleaned \(formattedBytes(bytes))"
         }
     }
 
     static func subtitle(for state: TrashState) -> String {
         switch state {
-        case .idle:
-            return "Trash status is waiting to refresh."
-        case .scanning:
-            return "Checking the current user's Trash contents."
+        case .idle, .scanning:
+            return "Checking the current user's Trash."
         case .clean:
-            return "No removable Trash contents were found."
-        case .cleanable(let bytes, let itemCount):
-            return "\(itemCount) item\(itemCount == 1 ? "" : "s") using \(byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max)))))."
+            return "No cleanable Trash items found."
+        case .cleanable(_, let itemCount):
+            return "\(itemCount) \(itemLabel(for: itemCount)) can be removed after confirmation."
         case .cleaning:
-            return "Deleting the current user's Trash contents."
-        case .cleaned(let bytes, let itemCount):
-            return "Deleted \(itemCount) item\(itemCount == 1 ? "" : "s") and freed \(byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max)))))."
+            return "Deleting confirmed Trash contents."
+        case .cleaned(_, let itemCount):
+            return "Removed \(itemCount) \(itemLabel(for: itemCount))."
         case .failed(let message):
             return message
-        case .partial(let bytes, let deletedCount, let failedCount, let remainingBytes):
-            let freed = byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+        case .partial(_, let deletedCount, let failedCount, let remainingBytes):
+            var message = "Removed \(deletedCount) \(itemLabel(for: deletedCount)); \(failedCount) \(itemLabel(for: failedCount)) could not be deleted."
             if let remainingBytes {
-                let remaining = byteFormatter.string(fromByteCount: Int64(min(remainingBytes, UInt64(Int64.max))))
-                return "Deleted \(deletedCount), failed \(failedCount), freed \(freed), \(remaining) remaining."
+                message += " \(formattedBytes(remainingBytes)) remains."
             }
-            return "Deleted \(deletedCount), failed \(failedCount), freed \(freed)."
+            return message
         }
+    }
+
+    private static func formattedBytes(_ bytes: UInt64) -> String {
+        byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+    }
+
+    private static func itemLabel(for count: Int) -> String {
+        count == 1 ? "item" : "items"
     }
 }

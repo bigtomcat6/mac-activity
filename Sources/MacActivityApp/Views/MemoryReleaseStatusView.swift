@@ -9,13 +9,6 @@ struct MemoryReleaseStatusView: View {
         return formatter
     }()
 
-    static let percentFormatter: NumberFormatter = {
-        let formatter = NumberFormatter()
-        formatter.maximumFractionDigits = 0
-        formatter.minimumFractionDigits = 0
-        return formatter
-    }()
-
     var body: some View {
         HStack(spacing: 10) {
             Image(systemName: "memorychip")
@@ -58,42 +51,34 @@ struct MemoryReleaseStatusView: View {
     static func title(for state: MemoryState) -> String {
         switch state {
         case .idle:
-            return "Memory Release"
-        case .usage:
-            return "Memory Usage"
+            return "Memory"
+        case .usage(let percent):
+            return "Memory \(Int(percent.rounded()))%"
         case .releasing:
             return "Releasing Memory"
-        case .released:
-            return "Memory Released"
+        case .released(let bytes, _):
+            return "Released \(formattedBytes(bytes))"
         case .unavailable:
             return "Memory Release Unavailable"
         case .failed:
             return "Memory Release Failed"
         case .failedToReadMemory:
-            return "Memory Read Failed"
+            return "Memory Reading Failed"
         }
     }
 
     static func subtitle(for state: MemoryState) -> String {
         switch state {
-        case .idle:
-            return "Memory status is waiting to refresh."
-        case .usage(let percent):
-            return "\(formattedPercent(percent)) used."
-        case .releasing(let previousPercent):
-            guard let previousPercent else {
-                return "Running memory release."
-            }
-            return "Running memory release from \(formattedPercent(previousPercent)) used."
-        case .released(let bytes, let percentOfTotal):
-            let released = byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
-            return "Released \(released), \(formattedPercent(percentOfTotal)) of total memory."
+        case .released(_, let percentOfTotal):
+            return String(format: "%.1f%% of total memory", percentOfTotal)
         case .unavailable:
-            return "Memory release is not available on this Mac."
+            return "The clean command is unavailable on this Mac."
         case .failed(let message):
             return message
         case .failedToReadMemory:
-            return "Could not read memory usage before or after release."
+            return "Unable to compare before and after memory readings."
+        case .idle, .usage, .releasing:
+            return "Release reclaimable system memory."
         }
     }
 
@@ -104,8 +89,7 @@ struct MemoryReleaseStatusView: View {
         return false
     }
 
-    private static func formattedPercent(_ percent: Double) -> String {
-        let value = percentFormatter.string(from: NSNumber(value: percent)) ?? "\(Int(percent))"
-        return "\(value)%"
+    private static func formattedBytes(_ bytes: UInt64) -> String {
+        byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
 }

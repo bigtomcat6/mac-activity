@@ -46,6 +46,84 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertFalse(MemoryReleaseStatusView.showsProgressIndicator(for: .usage(percent: 44)))
     }
 
+    func testTrashHelperTextMatchesCleanReleasePlan() {
+        let cleanableBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
+        let cleanedBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 8_192)
+        let partialBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 12_288)
+        let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
+
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .idle), "Scanning Trash")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .idle), "Checking the current user's Trash.")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .scanning), "Scanning Trash")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .scanning), "Checking the current user's Trash.")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .clean), "Trash Is Clean")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .clean), "No cleanable Trash items found.")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleanable(bytes: 4_096, itemCount: 2)), "\(cleanableBytes) in Trash")
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2)),
+            "2 items can be removed after confirmation."
+        )
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleaning), "Cleaning Trash")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .cleaning), "Deleting confirmed Trash contents.")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleaned(bytes: 8_192, itemCount: 1)), "Cleaned \(cleanedBytes)")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .cleaned(bytes: 8_192, itemCount: 1)), "Removed 1 item.")
+        XCTAssertEqual(
+            TrashCleanupStatusView.title(
+                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048)
+            ),
+            "Cleaned \(partialBytes)"
+        )
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048)
+            ),
+            "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
+        )
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed("denied")), "Trash Cleanup Failed")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed("denied")), "denied")
+    }
+
+    func testMemoryHelperTextMatchesCleanReleasePlan() {
+        let releasedBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 65_536)
+
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .idle), "Memory")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .idle), "Release reclaimable system memory.")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .usage(percent: 44.4)), "Memory 44%")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .usage(percent: 44.4)), "Release reclaimable system memory.")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .releasing(previousPercent: 44)), "Releasing Memory")
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .releasing(previousPercent: 44)),
+            "Release reclaimable system memory."
+        )
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .released(bytes: 65_536, percentOfTotal: 2.5)), "Released \(releasedBytes)")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5)), "2.5% of total memory")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable), "Memory Release Unavailable")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable), "The clean command is unavailable on this Mac.")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed("boom")), "Memory Release Failed")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed("boom")), "boom")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failedToReadMemory), "Memory Reading Failed")
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .failedToReadMemory),
+            "Unable to compare before and after memory readings."
+        )
+    }
+
+    func testProcessActionMessagesMatchCleanReleasePlan() {
+        XCTAssertNil(ActiveProcessMemoryList.processActionMessage(for: .idle))
+        XCTAssertEqual(
+            ActiveProcessMemoryList.processActionMessage(for: .requested("Safari")),
+            "Requested Safari to quit."
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryList.processActionMessage(for: .notFound("Mail")),
+            "Mail is no longer running."
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryList.processActionMessage(for: .notTerminable("Finder")),
+            "Finder could not be quit safely."
+        )
+    }
+
     static func entries(count: Int) -> [ActiveAppMemoryEntry] {
         (0..<count).map { index in
             ActiveAppMemoryEntry(

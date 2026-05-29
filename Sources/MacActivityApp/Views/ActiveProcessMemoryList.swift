@@ -27,7 +27,7 @@ struct ActiveProcessMemoryList: View {
                 }
             }
 
-            if let message = processActionMessage {
+            if let message = Self.processActionMessage(for: model.processActionState) {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.secondary)
@@ -39,16 +39,16 @@ struct ActiveProcessMemoryList: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    private var processActionMessage: String? {
-        switch model.processActionState {
+    static func processActionMessage(for state: ProcessActionState) -> String? {
+        switch state {
         case .idle:
             return nil
         case .requested(let name):
-            return "Quit requested for \(name)."
+            return "Requested \(name) to quit."
         case .notFound(let name):
             return "\(name) is no longer running."
         case .notTerminable(let name):
-            return "\(name) cannot be quit from here."
+            return "\(name) could not be quit safely."
         }
     }
 }
