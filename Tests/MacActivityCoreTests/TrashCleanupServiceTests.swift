@@ -39,6 +39,38 @@ final class TrashCleanupServiceTests: XCTestCase {
         XCTAssertEqual(result, .failed("denied"))
     }
 
+    func testScanTreatsItemSizeFailureAsZeroAndPreservesItemCount() async {
+        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
+        let readable = trashURL.appendingPathComponent("readable.tmp")
+        let unreadable = trashURL.appendingPathComponent("unreadable.tmp")
+        let filesystem = TrashFilesystemRecorder(
+            contents: [trashURL: [readable, unreadable]],
+            allocatedSizes: [readable: 1_024],
+            allocatedSizeFailures: [unreadable: TestTrashError.denied]
+        )
+        let service = TrashCleanupService(trashDirectory: trashURL, filesystem: filesystem)
+
+        let result = await service.scan()
+
+        XCTAssertEqual(result, .cleanable(bytes: 1_024, itemCount: 2))
+    }
+
+    @MainActor
+    func testScanRunsFilesystemWorkOffMainThreadWhenCalledFromMainActor() async {
+        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
+        let child = trashURL.appendingPathComponent("old.log")
+        let filesystem = TrashFilesystemRecorder(
+            contents: [trashURL: [child]],
+            allocatedSizes: [child: 512]
+        )
+        let service = TrashCleanupService(trashDirectory: trashURL, filesystem: filesystem)
+
+        let result = await service.scan()
+
+        XCTAssertEqual(result, .cleanable(bytes: 512, itemCount: 1))
+        XCTAssertFalse(filesystem.filesystemWorkRanOnMainThread())
+    }
+
     func testCleanupDeletesChildrenButNotTrashDirectory() async {
         let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
         let child = trashURL.appendingPathComponent("old.log")
@@ -87,6 +119,22 @@ final class TrashCleanupServiceTests: XCTestCase {
         XCTAssertEqual(result, .failed("Unable to delete Trash items."))
         XCTAssertEqual(filesystem.removedItems(), [blocked])
     }
+
+    @MainActor
+    func testCleanupRunsFilesystemWorkOffMainThreadWhenCalledFromMainActor() async {
+        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
+        let child = trashURL.appendingPathComponent("old.log")
+        let filesystem = TrashFilesystemRecorder(
+            contents: [trashURL: [child]],
+            allocatedSizes: [child: 512]
+        )
+        let service = TrashCleanupService(trashDirectory: trashURL, filesystem: filesystem)
+
+        let result = await service.clean()
+
+        XCTAssertEqual(result, .cleaned(bytes: 512, itemCount: 1))
+        XCTAssertFalse(filesystem.filesystemWorkRanOnMainThread())
+    }
 }
 
 private enum TestTrashError: Error, LocalizedError {
@@ -98,38 +146,54 @@ private enum TestTrashError: Error, LocalizedError {
 private final class TrashFilesystemRecorder: TrashFilesystem, @unchecked Sendable {
     var contents: [URL: [URL]]
     var allocatedSizes: [URL: UInt64]
+    var allocatedSizeFailures: [URL: Error]
     var contentsFailures: [URL: Error]
     var removeFailures: [URL: Error]
 
     private var removed: [URL] = []
+    private var mainThreadObservations: [Bool] = []
 
     init(
         contents: [URL: [URL]] = [:],
         allocatedSizes: [URL: UInt64] = [:],
+        allocatedSizeFailures: [URL: Error] = [:],
         contentsFailures: [URL: Error] = [:],
         removeFailures: [URL: Error] = [:]
     ) {
         self.contents = contents
         self.allocatedSizes = allocatedSizes
+        self.allocatedSizeFailures = allocatedSizeFailures
         self.contentsFailures = contentsFailures
         self.removeFailures = removeFailures
     }
 
     func contentsOfDirectory(at url: URL) throws -> [URL] {
+        recordThread()
         if let error = contentsFailures[url] { throw error }
         return contents[url] ?? []
     }
 
     func allocatedSizeOfItem(at url: URL) throws -> UInt64 {
-        allocatedSizes[url] ?? 0
+        recordThread()
+        if let error = allocatedSizeFailures[url] { throw error }
+        return allocatedSizes[url] ?? 0
     }
 
     func removeItem(at url: URL) throws {
+        recordThread()
         removed.append(url)
         if let error = removeFailures[url] { throw error }
     }
 
     func removedItems() -> [URL] {
         removed
+    }
+
+    func filesystemWorkRanOnMainThread() -> Bool {
+        mainThreadObservations.contains(true)
+    }
+
+    private func recordThread() {
+        mainThreadObservations.append(Thread.isMainThread)
     }
 }

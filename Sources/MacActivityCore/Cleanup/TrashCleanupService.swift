@@ -84,14 +84,32 @@ public struct TrashCleanupService: Sendable {
     }
 
     public func scan() async -> TrashScanResult {
+        let trashDirectory = self.trashDirectory
+        let filesystem = self.filesystem
+
+        return await Task.detached(priority: .utility) {
+            Self.scan(trashDirectory: trashDirectory, filesystem: filesystem)
+        }.value
+    }
+
+    public func clean() async -> TrashCleanupResult {
+        let trashDirectory = self.trashDirectory
+        let filesystem = self.filesystem
+
+        return await Task.detached(priority: .utility) {
+            Self.clean(trashDirectory: trashDirectory, filesystem: filesystem)
+        }.value
+    }
+
+    private static func scan(trashDirectory: URL, filesystem: any TrashFilesystem) -> TrashScanResult {
         do {
             let children = try filesystem.contentsOfDirectory(at: trashDirectory)
             guard !children.isEmpty else {
                 return .clean
             }
 
-            let totalBytes = try children.reduce(UInt64(0)) { total, child in
-                total + (try filesystem.allocatedSizeOfItem(at: child))
+            let totalBytes = children.reduce(UInt64(0)) { total, child in
+                total + ((try? filesystem.allocatedSizeOfItem(at: child)) ?? 0)
             }
 
             return .cleanable(bytes: totalBytes, itemCount: children.count)
@@ -100,7 +118,7 @@ public struct TrashCleanupService: Sendable {
         }
     }
 
-    public func clean() async -> TrashCleanupResult {
+    private static func clean(trashDirectory: URL, filesystem: any TrashFilesystem) -> TrashCleanupResult {
         do {
             let children = try filesystem.contentsOfDirectory(at: trashDirectory)
             var deletedBytes: UInt64 = 0
