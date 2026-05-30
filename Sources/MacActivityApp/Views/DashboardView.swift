@@ -6,6 +6,7 @@ enum DashboardCardLayout {
     static let compactChartMinHeight: CGFloat = 116
     static let compactChartInsets = EdgeInsets(top: 8, leading: 8, bottom: 6, trailing: 8)
     static let regularCardInsets = EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12)
+    static let cardChromeMaxHeight = CGFloat.infinity
 
     static func usesCompactHoverLayout(for chartHeight: CGFloat) -> Bool {
         chartHeight <= 64
@@ -631,7 +632,12 @@ private struct CPUGPUUsageCard: View {
             }
         }
         .padding(DashboardCardLayout.regularCardInsets)
-        .frame(maxWidth: .infinity, minHeight: DashboardCardLayout.compactChartMinHeight, alignment: .topLeading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DashboardCardLayout.compactChartMinHeight,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
+            alignment: .topLeading
+        )
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -703,7 +709,12 @@ private struct CompactTrendMetricCard: View {
             .frame(maxWidth: .infinity)
         }
         .padding(DashboardCardLayout.compactChartInsets)
-        .frame(maxWidth: .infinity, minHeight: DashboardOverviewLayout.compactTrendCardHeight, alignment: .leading)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DashboardOverviewLayout.compactTrendCardHeight,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
+            alignment: .leading
+        )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
         .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay {
@@ -785,6 +796,7 @@ private struct MetricCard: View {
         .frame(
             maxWidth: .infinity,
             minHeight: isCompactChartCard ? DashboardCardLayout.compactChartMinHeight : 44,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .topLeading
         )
         .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))

@@ -20,6 +20,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardCardLayout.compactChartInsets.bottom, 6)
     }
 
+    func testCardChromeFillsExplicitOverviewRowFrames() {
+        XCTAssertTrue(DashboardCardLayout.cardChromeMaxHeight.isInfinite)
+    }
+
     func testOverviewLayoutUsesApprovedFixedSlots() {
         let metrics = DashboardCardLayoutTests.overviewMetrics([
             .cpu,
