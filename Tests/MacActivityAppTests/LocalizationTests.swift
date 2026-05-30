@@ -1,0 +1,70 @@
+import XCTest
+import MacActivityCore
+@testable import MacActivityApp
+
+@MainActor
+final class LocalizationTests: XCTestCase {
+    func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(AppLocalization.string(.preferences, bundle: english), "Preferences")
+        XCTAssertEqual(AppLocalization.string(.preferences, bundle: simplifiedChinese), "偏好设置")
+
+        XCTAssertEqual(AppLocalization.string(.live, bundle: english), "Live")
+        XCTAssertEqual(AppLocalization.string(.live, bundle: simplifiedChinese), "实时")
+
+        XCTAssertEqual(AppLocalization.metricTitle(for: .memory, bundle: english), "Memory")
+        XCTAssertEqual(AppLocalization.metricTitle(for: .memory, bundle: simplifiedChinese), "内存")
+
+        XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: english), "Battery")
+        XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: simplifiedChinese), "电池")
+    }
+
+    func testCleanReleaseStringsResolveWithArguments() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+        let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
+
+        XCTAssertEqual(
+            MemoryReleaseStatusView.title(for: .usage(percent: 44.4), bundle: simplifiedChinese),
+            "内存 44%"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: simplifiedChinese),
+            "占总内存的 2.5%"
+        )
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
+            "确认后可移除 2 个项目。"
+        )
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
+                bundle: simplifiedChinese
+            ),
+            "已移除 3 个项目；1 个项目无法删除。仍剩余 \(remainingBytes)。"
+        )
+    }
+
+    func testProcessAndDashboardStringsResolveWithArguments() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            ActiveProcessMemoryList.processActionMessage(for: .requested("Safari"), bundle: simplifiedChinese),
+            "已请求 Safari 退出。"
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.quitButtonConfiguration(for: .confirming, bundle: simplifiedChinese),
+            ActiveProcessQuitButtonConfiguration(title: "确认", isDestructive: true)
+        )
+        XCTAssertEqual(
+            AppLocalization.memoryChartAccessibilityLabel(
+                pressurePercent: 72,
+                usedMemory: "8.0GB",
+                totalMemory: "16.0GB",
+                bundle: simplifiedChinese
+            ),
+            "内存 72%，已用 8.0GB，共 16.0GB"
+        )
+    }
+}

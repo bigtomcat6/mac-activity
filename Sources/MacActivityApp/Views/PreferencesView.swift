@@ -12,7 +12,7 @@ struct PreferencesView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Toggle(
-                    "Launch at login",
+                    AppLocalization.string(.preferencesLaunchAtLogin),
                     isOn: Binding(
                         get: { preferencesController.state.launchAtLoginEnabled },
                         set: { preferencesController.setLaunchAtLoginEnabled($0) }
@@ -20,38 +20,38 @@ struct PreferencesView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Temperature source")
+                    Text(AppLocalization.string(.preferencesTemperatureSource))
                         .font(.headline)
 
                     Picker(
-                        "Temperature source",
+                        AppLocalization.string(.preferencesTemperatureSource),
                         selection: Binding(
                             get: { preferencesController.state.temperatureSource },
                             set: { preferencesController.setTemperatureSource($0) }
                         )
                     ) {
                         ForEach(TemperatureSource.allCases, id: \.self) { source in
-                            Text(source.preferencesTitle)
+                            Text(AppLocalization.temperatureSourceTitle(for: source))
                                 .tag(source)
                         }
                     }
                     .pickerStyle(.segmented)
 
-                    Text("Controls the Temperature metric in the status bar and dashboard.")
+                    Text(AppLocalization.string(.preferencesTemperatureHelp))
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Menu bar metrics")
+                Text(AppLocalization.string(.preferencesMenuBarMetrics))
                     .font(.headline)
 
-                Text("Metrics always render in the fixed MVP order.")
+                Text(AppLocalization.string(.preferencesMetricsFixedOrder))
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
                 ForEach(metricRows, id: \.self) { metric in
                     Toggle(
-                        metric.title,
+                        AppLocalization.metricTitle(for: metric),
                         isOn: Binding(
                             get: {
                                 preferencesController.state.selectedSummaryMetrics.contains(metric)

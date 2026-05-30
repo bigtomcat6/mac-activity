@@ -95,11 +95,20 @@ enum DashboardOverviewLayout {
     }
 }
 
-private enum DashboardTab: String, CaseIterable, Identifiable {
-    case overview = "Overview"
-    case actives = "Actives"
+private enum DashboardTab: CaseIterable, Identifiable {
+    case overview
+    case actives
 
-    var id: String { rawValue }
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .overview:
+            return AppLocalization.string(.dashboardTabOverview)
+        case .actives:
+            return AppLocalization.string(.dashboardTabActives)
+        }
+    }
 }
 
 struct DashboardView: View {
@@ -133,9 +142,9 @@ struct DashboardView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Button("Preferences", action: openPreferences)
+                Button(AppLocalization.string(.preferences), action: openPreferences)
                 Spacer(minLength: 12)
-                Button("Quit", action: quitApplication)
+                Button(AppLocalization.string(.quit), action: quitApplication)
             }
             .padding(14)
             .background(.bar)
@@ -146,7 +155,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Mac Activity")
+                Text(AppLocalization.string(.appName))
                     .font(.headline)
                 Text(summaryText)
                     .font(.caption)
@@ -156,16 +165,16 @@ struct DashboardView: View {
 
             Spacer()
 
-            Text("Live")
+            Text(AppLocalization.string(.live))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.green)
         }
     }
 
     private var tabPicker: some View {
-        Picker("Dashboard section", selection: $selectedTab) {
+        Picker(AppLocalization.string(.dashboardSection), selection: $selectedTab) {
             ForEach(DashboardTab.allCases) { tab in
-                Text(tab.rawValue).tag(tab)
+                Text(tab.title).tag(tab)
             }
         }
         .pickerStyle(.segmented)
@@ -184,9 +193,9 @@ struct DashboardView: View {
 
     private var summaryText: String {
         let visible = dashboardModel.metrics.prefix(3).map { metric in
-            "\(metric.title) \(metric.value)"
+            "\(AppLocalization.metricTitle(for: metric)) \(metric.value)"
         }
-        return visible.isEmpty ? "Waiting for the first sample" : visible.joined(separator: " · ")
+        return visible.isEmpty ? AppLocalization.string(.dashboardWaitingFirstSample) : visible.joined(separator: " · ")
     }
 }
 
@@ -269,7 +278,7 @@ private struct OverviewDashboardContent: View {
     }
 
     private var emptyState: some View {
-        Text("Waiting for the first metric sample.")
+        Text(AppLocalization.string(.dashboardWaitingFirstMetricSample))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
@@ -405,16 +414,7 @@ struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
         case other
 
         var title: String {
-            switch self {
-            case .active:
-                return "Active"
-            case .compressed:
-                return "Compressed"
-            case .wired:
-                return "Wired"
-            case .other:
-                return "Other"
-            }
+            AppLocalization.memorySegmentTitle(for: self)
         }
     }
 
@@ -493,13 +493,12 @@ private struct RAMSegmentBars: View {
     }
 
     private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
-        guard let sample else { return "Memory chart collecting samples" }
-        let parts = [
-            "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "used \(DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes))",
-            "of \(DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes))",
-        ]
-        return parts.joined(separator: ", ")
+        guard let sample else { return AppLocalization.string(.memoryChartCollectingSamples) }
+        return AppLocalization.memoryChartAccessibilityLabel(
+            pressurePercent: Int(sample.pressurePercent.rounded()),
+            usedMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes),
+            totalMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes)
+        )
     }
 }
 
@@ -566,7 +565,13 @@ private struct RAMSegmentTooltip: View {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
                         .fill(color(for: segment.kind))
                         .frame(width: 8, height: 8)
-                    Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
+                    Text(
+                        AppLocalization.memorySegmentTooltip(
+                            title: segment.kind.title,
+                            memory: DashboardMetricTextFormatter.formatMemoryGB(segment.bytes),
+                            percent: DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))
+                        )
+                    )
                         .font(.caption2.monospacedDigit())
                         .lineLimit(1)
                 }
@@ -625,7 +630,7 @@ private struct CPUGPUUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("CPU / GPU")
+            Text(AppLocalization.string(.dashboardCPUGPU))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
 
@@ -658,7 +663,7 @@ private struct UsageBarRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
-                Text(metric.title)
+                Text(AppLocalization.metricTitle(for: metric))
                     .font(.caption.monospacedDigit().weight(.semibold))
                 Spacer(minLength: 8)
                 Text(metric.value)
@@ -688,7 +693,7 @@ private struct CompactTrendMetricCard: View {
         HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendSpacing(isHovered: isCardHovered)) {
             if let textWidth = DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: isCardHovered) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(metric.title)
+                    Text(AppLocalization.metricTitle(for: metric))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -740,7 +745,7 @@ private struct SlimTrendMetricCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: 10) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(metric.title)
+                Text(AppLocalization.metricTitle(for: metric))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -793,7 +798,7 @@ private struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .top) {
-                Text(metric.title)
+                Text(AppLocalization.metricTitle(for: metric))
                     .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
@@ -839,7 +844,7 @@ private struct MetricCard: View {
             }
 
             if let detail = metric.detail, !isCompactChartCard {
-                Text(detail)
+                Text(AppLocalization.metricDetail(detail))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)

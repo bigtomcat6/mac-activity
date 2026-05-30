@@ -21,7 +21,7 @@ struct DashboardTrendChart: View {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
                     .stroke(color.opacity(0.35), lineWidth: 1)
                     .overlay {
-                        Text("Collecting trend")
+                        Text(AppLocalization.string(.dashboardTrendCollecting))
                             .font(.caption2)
                             .foregroundStyle(.secondary)
                     }

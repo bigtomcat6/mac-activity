@@ -46,11 +46,11 @@ struct TrashCleanupStatusView: View {
             ProgressView()
                 .controlSize(.small)
         case .failed:
-            Button("Retry") {
+            Button(AppLocalization.string(.trashActionRetry)) {
                 Task { await model.refreshTrash() }
             }
         case .cleanable:
-            Button("Clean") {
+            Button(AppLocalization.string(.trashActionClean)) {
                 model.requestTrashCleanupConfirmation()
             }
             .disabled(model.isCleaningTrash)
@@ -59,45 +59,59 @@ struct TrashCleanupStatusView: View {
         }
     }
 
-    static func title(for state: TrashState) -> String {
+    static func title(for state: TrashState, bundle: Bundle? = nil) -> String {
         switch state {
         case .idle, .scanning:
-            return "Scanning Trash"
+            return AppLocalization.string(.trashTitleScanning, bundle: bundle)
         case .clean:
-            return "Trash Is Clean"
+            return AppLocalization.string(.trashTitleClean, bundle: bundle)
         case .cleanable(let bytes, _):
-            return "\(formattedBytes(bytes)) in Trash"
+            return AppLocalization.string(.trashTitleCleanable, formattedBytes(bytes), bundle: bundle)
         case .cleaning:
-            return "Cleaning Trash"
+            return AppLocalization.string(.trashTitleCleaning, bundle: bundle)
         case .cleaned(let bytes, _):
-            return "Cleaned \(formattedBytes(bytes))"
+            return AppLocalization.string(.trashTitleCleaned, formattedBytes(bytes), bundle: bundle)
         case .failed:
-            return "Trash Cleanup Failed"
+            return AppLocalization.string(.trashTitleFailed, bundle: bundle)
         case .partial(let bytes, _, _, _):
-            return "Cleaned \(formattedBytes(bytes))"
+            return AppLocalization.string(.trashTitleCleaned, formattedBytes(bytes), bundle: bundle)
         }
     }
 
-    static func subtitle(for state: TrashState) -> String {
+    static func subtitle(for state: TrashState, bundle: Bundle? = nil) -> String {
         switch state {
         case .idle, .scanning:
-            return "Checking the current user's Trash."
+            return AppLocalization.string(.trashSubtitleScanning, bundle: bundle)
         case .clean:
-            return "No cleanable Trash items found."
+            return AppLocalization.string(.trashSubtitleClean, bundle: bundle)
         case .cleanable(_, let itemCount):
-            return "\(itemCount) \(itemLabel(for: itemCount)) can be removed after confirmation."
+            return AppLocalization.string(.trashSubtitleCleanable, itemCount, itemLabel(for: itemCount, bundle: bundle), bundle: bundle)
         case .cleaning:
-            return "Deleting confirmed Trash contents."
+            return AppLocalization.string(.trashSubtitleCleaning, bundle: bundle)
         case .cleaned(_, let itemCount):
-            return "Removed \(itemCount) \(itemLabel(for: itemCount))."
+            return AppLocalization.string(.trashSubtitleCleaned, itemCount, itemLabel(for: itemCount, bundle: bundle), bundle: bundle)
         case .failed(let message):
             return message
         case .partial(_, let deletedCount, let failedCount, let remainingBytes):
-            var message = "Removed \(deletedCount) \(itemLabel(for: deletedCount)); \(failedCount) \(itemLabel(for: failedCount)) could not be deleted."
             if let remainingBytes {
-                message += " \(formattedBytes(remainingBytes)) remains."
+                return AppLocalization.string(
+                    .trashSubtitlePartialWithRemaining,
+                    deletedCount,
+                    itemLabel(for: deletedCount, bundle: bundle),
+                    failedCount,
+                    itemLabel(for: failedCount, bundle: bundle),
+                    formattedBytes(remainingBytes),
+                    bundle: bundle
+                )
             }
-            return message
+            return AppLocalization.string(
+                .trashSubtitlePartial,
+                deletedCount,
+                itemLabel(for: deletedCount, bundle: bundle),
+                failedCount,
+                itemLabel(for: failedCount, bundle: bundle),
+                bundle: bundle
+            )
         }
     }
 
@@ -105,7 +119,7 @@ struct TrashCleanupStatusView: View {
         byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
 
-    private static func itemLabel(for count: Int) -> String {
-        count == 1 ? "item" : "items"
+    private static func itemLabel(for count: Int, bundle: Bundle? = nil) -> String {
+        AppLocalization.string(count == 1 ? .trashItemSingular : .trashItemPlural, bundle: bundle)
     }
 }

@@ -1,0 +1,81 @@
+"app.name" = "Mac Activity";
+"app.action.preferences" = "Preferences";
+"app.action.quit" = "Quit";
+
+"dashboard.status.live" = "Live";
+"dashboard.tab.overview" = "Overview";
+"dashboard.tab.actives" = "Actives";
+"dashboard.section.label" = "Dashboard section";
+"dashboard.waiting.firstSample" = "Waiting for the first sample";
+"dashboard.waiting.firstMetricSample" = "Waiting for the first metric sample.";
+"dashboard.cpuGpu" = "CPU / GPU";
+"dashboard.trend.collecting" = "Collecting trend";
+"dashboard.memory.chart.collectingSamples" = "Memory chart collecting samples";
+"dashboard.memory.chart.accessibility" = "Memory %d%%, used %@, of %@";
+"dashboard.memory.segment.active" = "Active";
+"dashboard.memory.segment.compressed" = "Compressed";
+"dashboard.memory.segment.wired" = "Wired";
+"dashboard.memory.segment.other" = "Other";
+"dashboard.memory.segment.tooltip" = "%@: %@ (%@)";
+
+"metric.cpu" = "CPU";
+"metric.gpu" = "GPU";
+"metric.memory" = "Memory";
+"metric.vram" = "VRAM";
+"metric.network" = "Network";
+"metric.battery" = "Battery";
+"metric.temperature" = "Temperature";
+"metric.fan" = "Fan";
+"metric.battery.charging" = "Charging";
+"metric.battery.onBattery" = "On Battery";
+
+"temperature.source.cpuSMC" = "CPU/SMC";
+"temperature.source.battery" = "Battery";
+"temperature.dashboard.cpu" = "CPU Temp";
+"temperature.dashboard.battery" = "Battery Temp";
+
+"preferences.launchAtLogin" = "Launch at login";
+"preferences.temperatureSource" = "Temperature source";
+"preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
+"preferences.menuBarMetrics" = "Menu bar metrics";
+"preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
+
+"memoryRelease.action.release" = "Release";
+"memoryRelease.action.releasing" = "Releasing";
+"memoryRelease.title.idle" = "Memory";
+"memoryRelease.title.usage" = "Memory %d%%";
+"memoryRelease.title.releasing" = "Releasing Memory";
+"memoryRelease.title.released" = "Released %@";
+"memoryRelease.title.unavailable" = "Memory Release Not Available";
+"memoryRelease.title.failed" = "Memory Release Failed";
+"memoryRelease.title.readFailed" = "Memory Reading Failed";
+"memoryRelease.subtitle.percentOfTotal" = "%.1f%% of total memory";
+"memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
+"memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";
+"memoryRelease.subtitle.default" = "Release reclaimable system memory.";
+
+"trash.action.retry" = "Retry";
+"trash.action.clean" = "Clean";
+"trash.title.scanning" = "Scanning Trash";
+"trash.title.clean" = "Trash Is Clean";
+"trash.title.cleanable" = "%@ in Trash";
+"trash.title.cleaning" = "Cleaning Trash";
+"trash.title.cleaned" = "Cleaned %@";
+"trash.title.failed" = "Trash Cleanup Failed";
+"trash.subtitle.scanning" = "Checking the current user's Trash.";
+"trash.subtitle.clean" = "No cleanable Trash items found.";
+"trash.subtitle.cleanable" = "%d %@ can be removed after confirmation.";
+"trash.subtitle.cleaning" = "Deleting confirmed Trash contents.";
+"trash.subtitle.cleaned" = "Removed %d %@.";
+"trash.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
+"trash.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"trash.item.singular" = "item";
+"trash.item.plural" = "items";
+
+"process.empty" = "No foreground apps are reporting memory usage.";
+"process.fallbackName" = "Process %d";
+"process.action.requested" = "Requested %@ to quit.";
+"process.action.notFound" = "%@ is no longer running.";
+"process.action.notTerminable" = "%@ could not be quit safely.";
+"process.action.quit" = "Quit";
+"process.action.confirm" = "Confirm";

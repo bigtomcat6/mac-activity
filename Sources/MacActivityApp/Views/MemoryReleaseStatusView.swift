@@ -34,7 +34,7 @@ struct MemoryReleaseStatusView: View {
                     .controlSize(.small)
             }
 
-            Button(model.isReleasingMemory ? "Releasing" : "Release") {
+            Button(AppLocalization.string(model.isReleasingMemory ? .memoryReleaseActionReleasing : .memoryReleaseActionRelease)) {
                 Task { await model.releaseMemory() }
             }
             .disabled(model.isReleasingMemory)
@@ -48,37 +48,37 @@ struct MemoryReleaseStatusView: View {
         )
     }
 
-    static func title(for state: MemoryState) -> String {
+    static func title(for state: MemoryState, bundle: Bundle? = nil) -> String {
         switch state {
         case .idle:
-            return "Memory"
+            return AppLocalization.string(.memoryReleaseTitleIdle, bundle: bundle)
         case .usage(let percent):
-            return "Memory \(Int(percent.rounded()))%"
+            return AppLocalization.string(.memoryReleaseTitleUsage, Int(percent.rounded()), bundle: bundle)
         case .releasing:
-            return "Releasing Memory"
+            return AppLocalization.string(.memoryReleaseTitleReleasing, bundle: bundle)
         case .released(let bytes, _):
-            return "Released \(formattedBytes(bytes))"
+            return AppLocalization.string(.memoryReleaseTitleReleased, formattedBytes(bytes), bundle: bundle)
         case .unavailable:
-            return "Memory Release Not Available"
+            return AppLocalization.string(.memoryReleaseTitleUnavailable, bundle: bundle)
         case .failed:
-            return "Memory Release Failed"
+            return AppLocalization.string(.memoryReleaseTitleFailed, bundle: bundle)
         case .failedToReadMemory:
-            return "Memory Reading Failed"
+            return AppLocalization.string(.memoryReleaseTitleReadFailed, bundle: bundle)
         }
     }
 
-    static func subtitle(for state: MemoryState) -> String {
+    static func subtitle(for state: MemoryState, bundle: Bundle? = nil) -> String {
         switch state {
         case .released(_, let percentOfTotal):
-            return String(format: "%.1f%% of total memory", percentOfTotal)
+            return AppLocalization.string(.memoryReleaseSubtitlePercentOfTotal, percentOfTotal, bundle: bundle)
         case .unavailable:
-            return "No supported memory release method is available on this Mac."
+            return AppLocalization.string(.memoryReleaseSubtitleUnavailable, bundle: bundle)
         case .failed(let message):
             return message
         case .failedToReadMemory:
-            return "Unable to compare before and after memory readings."
+            return AppLocalization.string(.memoryReleaseSubtitleReadFailed, bundle: bundle)
         case .idle, .usage, .releasing:
-            return "Release reclaimable system memory."
+            return AppLocalization.string(.memoryReleaseSubtitleDefault, bundle: bundle)
         }
     }
 

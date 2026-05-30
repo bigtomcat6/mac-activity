@@ -12,7 +12,7 @@ final class PreferencesWindowController: NSWindowController {
         )
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = "Preferences"
+        window.title = AppLocalization.string(.preferences)
         window.setContentSize(NSSize(width: 460, height: 520))
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
