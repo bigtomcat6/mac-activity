@@ -89,7 +89,17 @@ final class DashboardCardLayoutTests: XCTestCase {
             DashboardOverviewLayout.secondRowHeight,
             DashboardOverviewLayout.compactTrendCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
         )
-        XCTAssertEqual(DashboardOverviewLayout.batteryRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(DashboardOverviewLayout.slimTrendCardHeight, 74)
+        XCTAssertEqual(DashboardOverviewLayout.batteryRowHeight, DashboardOverviewLayout.slimTrendCardHeight)
+    }
+
+    func testOverviewBatteryRowHeightFitsCurrentChartHeightOnly() {
+        XCTAssertEqual(
+            DashboardOverviewLayout.batteryRowHeight,
+            DashboardCardLayout.compactChartHeight
+            + DashboardCardLayout.compactChartInsets.top
+            + DashboardCardLayout.compactChartInsets.bottom
+        )
     }
 
     func testCompactTrendTextCollapsesOnHoverSoChartCanFillCardWidth() {

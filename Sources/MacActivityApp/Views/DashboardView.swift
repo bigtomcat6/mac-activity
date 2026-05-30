@@ -30,7 +30,12 @@ enum DashboardOverviewLayout {
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendCardHeight: CGFloat = 64
     static let secondRowHeight = compactTrendCardHeight * 2 + sectionSpacing
-    static let batteryRowHeight = DashboardCardLayout.compactChartMinHeight
+    static let slimTrendCardHeight = (
+        DashboardCardLayout.compactChartHeight
+        + DashboardCardLayout.compactChartInsets.top
+        + DashboardCardLayout.compactChartInsets.bottom
+    )
+    static let batteryRowHeight = slimTrendCardHeight
 
     static func metricsByKind(_ metrics: [DashboardMetric]) -> [MetricKind: DashboardMetric] {
         Dictionary(uniqueKeysWithValues: metrics.map { ($0.kind, $0) })
@@ -258,7 +263,7 @@ private struct OverviewDashboardContent: View {
     @ViewBuilder
     private var batteryRegion: some View {
         if let battery = metricsByKind[.battery] {
-            MetricCard(metric: battery)
+            SlimTrendMetricCard(metric: battery)
                 .frame(height: DashboardOverviewLayout.batteryRowHeight)
         }
     }
@@ -725,6 +730,55 @@ private struct CompactTrendMetricCard: View {
             isCardHovered = hovering
         }
         .animation(.easeInOut(duration: 0.14), value: isCardHovered)
+    }
+}
+
+private struct SlimTrendMetricCard: View {
+    let metric: DashboardMetric
+    @State private var isCardHovered = false
+
+    var body: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(metric.title)
+                    .font(.caption2.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                Text(metric.value)
+                    .font(.subheadline.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+            }
+            .frame(width: DashboardOverviewLayout.compactTrendTextWidth, alignment: .leading)
+
+            DashboardTrendChart(
+                metric: metric,
+                color: DashboardMetricColor.color(for: metric.kind),
+                isCardHovered: isCardHovered,
+                showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
+                    for: metric.kind,
+                    isCompactOverviewChart: false
+                )
+            )
+            .frame(height: DashboardCardLayout.compactChartHeight)
+            .frame(maxWidth: .infinity)
+        }
+        .padding(DashboardCardLayout.compactChartInsets)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DashboardOverviewLayout.slimTrendCardHeight,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
+            alignment: .leading
+        )
+        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.separator.opacity(0.45), lineWidth: 1)
+        }
+        .onHover { hovering in
+            isCardHovered = hovering
+        }
     }
 }
 
