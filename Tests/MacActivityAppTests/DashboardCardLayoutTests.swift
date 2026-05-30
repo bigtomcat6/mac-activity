@@ -82,6 +82,25 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
     }
 
+    func testNetworkMetricCardChartFillsRemainingCardHeight() {
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .network),
+            .fillsRemainingHeight
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .temperature),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .fan),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .battery),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
+    }
+
     func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
         XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)

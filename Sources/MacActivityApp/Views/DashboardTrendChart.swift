@@ -64,10 +64,12 @@ struct DashboardTrendChart: View {
         let usesDisplaySampling = displaySamples.count < trend.samples.count
         let primaryLinePoints = DashboardTrendChartLayout.linePoints(
             for: displaySamples,
+            kind: metric.kind,
             series: .primary
         )
         let secondaryLinePoints = DashboardTrendChartLayout.linePoints(
             for: displaySamples,
+            kind: metric.kind,
             series: .secondary
         )
 
@@ -116,7 +118,7 @@ struct DashboardTrendChart: View {
                         )
                         .interpolationMethod(secondaryInterpolationMethod)
                         .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                        .foregroundStyle(color.opacity(0.45))
+                        .foregroundStyle(secondaryLineColor)
                     }
                 }
 
@@ -127,10 +129,16 @@ struct DashboardTrendChart: View {
 
                     PointMark(
                         x: .value("Selection Time", selectedSample.timestamp),
-                        y: .value("Selection Value", selectedSample.primaryValue)
+                        y: .value(
+                            "Selection Value",
+                            DashboardTrendChartLayout.selectionValue(
+                                for: selectedSample,
+                                kind: metric.kind
+                            )
+                        )
                     )
                     .symbolSize(isCompactHoverLayout ? 28 : 40)
-                    .foregroundStyle(color)
+                    .foregroundStyle(selectionPointColor)
                 }
             }
             .chartLegend(.hidden)
@@ -151,6 +159,7 @@ struct DashboardTrendChart: View {
                             guard let selection = DashboardTrendChartLayout.hoverSelection(
                                 localX: location.x,
                                 samples: trend.samples,
+                                kind: metric.kind,
                                 xDomain: xDomain,
                                 yDomain: domain,
                                 plotFrame: plotFrame
@@ -180,7 +189,10 @@ struct DashboardTrendChart: View {
                         plotFrame: plotFrame
                     ),
                     y: DashboardTrendChartLayout.yPosition(
-                        for: selectedSample.primaryValue,
+                        for: DashboardTrendChartLayout.selectionValue(
+                            for: selectedSample,
+                            kind: metric.kind
+                        ),
                         domain: domain,
                         plotFrame: plotFrame
                     )
@@ -322,6 +334,14 @@ struct DashboardTrendChart: View {
         )
     }
 
+    private var secondaryLineColor: Color {
+        metric.kind == .network ? .red.opacity(0.9) : color.opacity(0.45)
+    }
+
+    private var selectionPointColor: Color {
+        metric.kind == .network ? .red.opacity(0.95) : color
+    }
+
     private func primaryInterpolationMethod(usesDisplaySampling: Bool) -> InterpolationMethod {
         if metric.kind == .fan {
             return .stepEnd
@@ -396,23 +416,11 @@ struct DashboardTrendChart: View {
     }
 
     private func chartDomain(for trend: DashboardTrend) -> ClosedRange<Double> {
-        switch trend.scale {
-        case .fixed(let lowerBound, let upperBound):
-            return lowerBound...upperBound
-        case .automatic:
-            let values = trend.samples.flatMap { sample in
-                [sample.primaryValue, sample.secondaryValue].compactMap { $0 }
-            }
-            let lowerBound = values.min() ?? 0
-            let upperBound = values.max() ?? 1
-
-            if upperBound - lowerBound < 0.001 {
-                return (lowerBound - 1)...(upperBound + 1)
-            }
-
-            let padding = (upperBound - lowerBound) * 0.12
-            return (lowerBound - padding)...(upperBound + padding)
-        }
+        DashboardTrendChartLayout.valueDomain(
+            for: trend.samples,
+            kind: metric.kind,
+            scale: trend.scale
+        )
     }
 
     private func xDomain(for trend: DashboardTrend) -> ClosedRange<Date> {
@@ -539,14 +547,24 @@ struct DashboardTrendChartLayout {
         for samples: [DashboardTrendSample],
         series: DashboardTrendLineSeries
     ) -> [DashboardTrendLinePoint] {
+        linePoints(for: samples, kind: .cpu, series: series)
+    }
+
+    static func linePoints(
+        for samples: [DashboardTrendSample],
+        kind: MetricKind,
+        series: DashboardTrendLineSeries
+    ) -> [DashboardTrendLinePoint] {
         samples.compactMap { sample in
             let value: Double?
 
             switch series {
             case .primary:
-                value = sample.primaryValue
+                value = plottedValue(sample.primaryValue, kind: kind, series: .primary)
             case .secondary:
-                value = sample.secondaryValue
+                value = sample.secondaryValue.map {
+                    plottedValue($0, kind: kind, series: .secondary)
+                }
             }
 
             guard let value else {
@@ -559,6 +577,64 @@ struct DashboardTrendChartLayout {
                 value: value,
                 series: series
             )
+        }
+    }
+
+    static func valueDomain(
+        for samples: [DashboardTrendSample],
+        kind: MetricKind,
+        scale: DashboardTrendScale
+    ) -> ClosedRange<Double> {
+        switch scale {
+        case .fixed(let lowerBound, let upperBound):
+            return lowerBound...upperBound
+        case .automatic:
+            let values = linePoints(for: samples, kind: kind, series: .primary).map(\.value)
+                + linePoints(for: samples, kind: kind, series: .secondary).map(\.value)
+
+            if kind == .network {
+                let maximumMagnitude = max(values.map(abs).max() ?? 0, 1)
+                let paddedMagnitude = maximumMagnitude * 1.12
+                return -paddedMagnitude...paddedMagnitude
+            }
+
+            let lowerBound = values.min() ?? 0
+            let upperBound = values.max() ?? 1
+
+            if upperBound - lowerBound < 0.001 {
+                return (lowerBound - 1)...(upperBound + 1)
+            }
+
+            let padding = (upperBound - lowerBound) * 0.12
+            return (lowerBound - padding)...(upperBound + padding)
+        }
+    }
+
+    static func selectionValue(
+        for sample: DashboardTrendSample,
+        kind: MetricKind
+    ) -> Double {
+        if kind == .network, let uploadValue = sample.secondaryValue {
+            return plottedValue(uploadValue, kind: kind, series: .secondary)
+        }
+
+        return plottedValue(sample.primaryValue, kind: kind, series: .primary)
+    }
+
+    private static func plottedValue(
+        _ value: Double,
+        kind: MetricKind,
+        series: DashboardTrendLineSeries
+    ) -> Double {
+        guard kind == .network else {
+            return value
+        }
+
+        switch series {
+        case .primary:
+            return -abs(value)
+        case .secondary:
+            return abs(value)
         }
     }
 
@@ -839,6 +915,7 @@ struct DashboardTrendChartLayout {
     static func hoverSelection(
         localX: CGFloat,
         samples: [DashboardTrendSample],
+        kind: MetricKind = .cpu,
         xDomain: ClosedRange<Date>,
         yDomain: ClosedRange<Double>,
         plotFrame: CGRect
@@ -868,7 +945,10 @@ struct DashboardTrendChartLayout {
                     plotFrame: plotFrame
                 ),
                 y: yPosition(
-                    for: selectedSample.primaryValue,
+                    for: selectionValue(
+                        for: selectedSample,
+                        kind: kind
+                    ),
                     domain: yDomain,
                     plotFrame: plotFrame
                 )
@@ -1006,7 +1086,7 @@ enum DashboardTrendReadoutFormatter {
         case .fan:
             return "\(Int(value.rounded())) RPM"
         case .network:
-            return DashboardMetricTextFormatter.formatRate(value)
+            return DashboardMetricTextFormatter.formatRate(abs(value))
         }
     }
 

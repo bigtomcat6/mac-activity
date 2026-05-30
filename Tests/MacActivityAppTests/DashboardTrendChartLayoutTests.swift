@@ -234,6 +234,47 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
+    func testNetworkLinePointsMirrorDownloadBelowUploadAboveBaseline() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+        ]
+
+        let downloadPoints = DashboardTrendChartLayout.linePoints(
+            for: samples,
+            kind: .network,
+            series: .primary
+        )
+        let uploadPoints = DashboardTrendChartLayout.linePoints(
+            for: samples,
+            kind: .network,
+            series: .secondary
+        )
+
+        XCTAssertEqual(downloadPoints.map(\.value), [-2_000, -4_000])
+        XCTAssertEqual(uploadPoints.map(\.value), [500, 750])
+    }
+
+    func testNetworkAutomaticDomainMirrorsAroundZero() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+        ]
+
+        let domain = DashboardTrendChartLayout.valueDomain(
+            for: samples,
+            kind: .network,
+            scale: .automatic
+        )
+
+        XCTAssertLessThan(domain.lowerBound, 0)
+        XCTAssertGreaterThan(domain.upperBound, 0)
+        XCTAssertEqual(abs(domain.lowerBound), domain.upperBound, accuracy: 0.001)
+        XCTAssertGreaterThan(domain.upperBound, 4_000)
+    }
+
     func testLinePointIDsStayStableForSamplesThatRemainAfterHistoryRolls() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let initialSamples = (0..<60).map { index in

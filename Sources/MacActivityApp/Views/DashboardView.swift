@@ -11,6 +11,15 @@ enum DashboardCardLayout {
     static func usesCompactHoverLayout(for chartHeight: CGFloat) -> Bool {
         chartHeight <= 64
     }
+
+    static func chartHeightBehavior(for kind: MetricKind) -> DashboardChartHeightBehavior {
+        kind == .network ? .fillsRemainingHeight : .fixed(compactChartHeight)
+    }
+}
+
+enum DashboardChartHeightBehavior: Equatable {
+    case fixed(CGFloat)
+    case fillsRemainingHeight
 }
 
 enum DashboardOverviewSlot: Equatable {
@@ -802,16 +811,7 @@ private struct MetricCard: View {
 
             switch metric.style {
             case .chart:
-                DashboardTrendChart(
-                    metric: metric,
-                    color: color,
-                    isCardHovered: isCardHovered,
-                    showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                        for: metric.kind,
-                        isCompactOverviewChart: false
-                    )
-                )
-                    .frame(height: DashboardCardLayout.compactChartHeight)
+                trendChart
             case .memoryStackedChart:
                 if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
                     RAMSegmentBars(trend: memoryTrend)
@@ -866,6 +866,28 @@ private struct MetricCard: View {
 
     private var color: Color {
         DashboardMetricColor.color(for: metric.kind)
+    }
+
+    @ViewBuilder
+    private var trendChart: some View {
+        let chart = DashboardTrendChart(
+            metric: metric,
+            color: color,
+            isCardHovered: isCardHovered,
+            showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
+                for: metric.kind,
+                isCompactOverviewChart: false
+            )
+        )
+
+        switch DashboardCardLayout.chartHeightBehavior(for: metric.kind) {
+        case .fixed(let height):
+            chart.frame(height: height)
+        case .fillsRemainingHeight:
+            chart
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+        }
     }
 
     @ViewBuilder
