@@ -69,6 +69,7 @@ final class MemoryProviderTests: XCTestCase {
                 processIdentifier: 101,
                 name: "Notes",
                 bundleIdentifier: "com.apple.Notes",
+                bundleURL: URL(fileURLWithPath: "/Applications/Notes.app"),
                 residentMemoryBytes: 2_048,
                 isTerminable: true
             ),
@@ -76,6 +77,7 @@ final class MemoryProviderTests: XCTestCase {
                 processIdentifier: 102,
                 name: "Safari",
                 bundleIdentifier: "com.apple.Safari",
+                bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"),
                 residentMemoryBytes: 4_096,
                 isTerminable: true
             ),
@@ -83,6 +85,7 @@ final class MemoryProviderTests: XCTestCase {
                 processIdentifier: 103,
                 name: "Calendar",
                 bundleIdentifier: "com.apple.iCal",
+                bundleURL: URL(fileURLWithPath: "/System/Applications/Calendar.app"),
                 residentMemoryBytes: 2_048,
                 isTerminable: true
             ),
@@ -96,44 +99,151 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
-    func testCleanMemoryDefaultCommandUsesSystemPurgeWithoutArguments() {
+    func testActiveAppMemoryEntryCarriesBundleURLForIconRendering() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(entry.bundleURL, bundleURL)
+    }
+
+    func testCleanMemoryDefaultCommandsPreferSystemSbinPurgeThenLegacyUsrBinPurge() {
         XCTAssertEqual(
-            CleanMemoryService.defaultCommand,
-            MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge"))
+            CleanMemoryService.defaultCommands,
+            [
+                MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/sbin/purge")),
+                MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge")),
+            ]
         )
     }
 
-    func testCleanMemoryServiceRunsDefaultCommandAndReportsSuccess() async {
-        let runner = MemoryCleanCommandRecorder(result: .succeeded)
-        let service = CleanMemoryService(runner: runner)
+    func testCleanMemoryServiceUsesLocalReclaimerBeforePurgeCommand() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [true])
+        let runner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 1)])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
+
+        let result = await service.cleanMemory()
+        let localCallCount = await localReclaimer.currentCallCount()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(localCallCount, 1)
+        XCTAssertEqual(commands, [])
+    }
+
+    func testCleanMemoryServiceRunsDefaultCommandWhenLocalReclaimerFails() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
+        let runner = MemoryCleanCommandRecorder(results: [.succeeded])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
         let result = await service.cleanMemory()
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .succeeded)
-        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommands[0]])
     }
 
-    func testCleanMemoryServicePropagatesUnavailableCommand() async {
-        let runner = MemoryCleanCommandRecorder(result: .unavailable)
-        let service = CleanMemoryService(runner: runner)
+    func testCleanMemoryServiceFallsBackWhenPreferredPurgeCommandIsUnavailable() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
+        let runner = MemoryCleanCommandRecorder(results: [.unavailable, .succeeded])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
+
+        let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
+    }
+
+    func testCleanMemoryServiceTreatsFailedPurgeCommandsAsCompletedFallback() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
+        let runner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 1), .failed(exitCode: 1)])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
+
+        let result = await service.cleanMemory()
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
+    }
+
+    func testCleanMemoryServiceReportsUnavailableWhenAllCommandsAreUnavailable() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
+        let runner = MemoryCleanCommandRecorder(results: [.unavailable, .unavailable])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
         let result = await service.cleanMemory()
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .unavailable)
-        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
     }
 
-    func testCleanMemoryServicePropagatesFailedExitCode() async {
-        let runner = MemoryCleanCommandRecorder(result: .failed(exitCode: 72))
-        let service = CleanMemoryService(runner: runner)
+    func testSystemLocalMemoryReclaimerCapsAndBatchesPressureBytes() async {
+        let pressureReclaimer = MemoryPressureReclaimerRecorder(results: [true, true, true])
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 10 * 1_024 * 1_024 * 1_024 },
+            pressureReclaimer: pressureReclaimer
+        )
 
-        let result = await service.cleanMemory()
-        let commands = await runner.recordedCommands()
+        let result = await reclaimer.reclaimMemory()
+        let byteCounts = await pressureReclaimer.recordedByteCounts()
 
-        XCTAssertEqual(result, .failed(exitCode: 72))
-        XCTAssertEqual(commands, [CleanMemoryService.defaultCommand])
+        XCTAssertEqual(result, true)
+        XCTAssertEqual(
+            byteCounts,
+            [
+                256 * 1_024 * 1_024,
+                256 * 1_024 * 1_024,
+                256 * 1_024 * 1_024,
+            ]
+        )
+    }
+
+    func testSystemLocalMemoryReclaimerUsesSmallerFinalBatch() async {
+        let pressureReclaimer = MemoryPressureReclaimerRecorder(results: [true, true])
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 384 * 1_024 * 1_024 },
+            pressureReclaimer: pressureReclaimer
+        )
+
+        let result = await reclaimer.reclaimMemory()
+        let byteCounts = await pressureReclaimer.recordedByteCounts()
+
+        XCTAssertEqual(result, true)
+        XCTAssertEqual(
+            byteCounts,
+            [
+                256 * 1_024 * 1_024,
+                128 * 1_024 * 1_024,
+            ]
+        )
+    }
+
+    func testSystemLocalMemoryReclaimerReturnsFalseWhenFirstBatchFails() async {
+        let pressureReclaimer = MemoryPressureReclaimerRecorder(results: [false])
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 512 * 1_024 * 1_024 },
+            pressureReclaimer: pressureReclaimer
+        )
+
+        let result = await reclaimer.reclaimMemory()
+        let byteCounts = await pressureReclaimer.recordedByteCounts()
+
+        XCTAssertEqual(result, false)
+        XCTAssertEqual(byteCounts, [256 * 1_024 * 1_024])
     }
 
     func testIOAcceleratorCacheReusesFreshStatsAcrossProviders() async {
@@ -155,17 +265,56 @@ final class MemoryProviderTests: XCTestCase {
     }
 }
 
+private actor MemoryPressureReclaimerRecorder: MemoryPressureReclaiming {
+    private var results: [Bool]
+    private var byteCounts: [Int] = []
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func reclaim(byteCount: Int) async -> Bool {
+        byteCounts.append(byteCount)
+        guard results.isEmpty == false else { return false }
+        return results.removeFirst()
+    }
+
+    func recordedByteCounts() -> [Int] {
+        byteCounts
+    }
+}
+
+private actor MemoryLocalReclaimerRecorder: LocalMemoryReclaiming {
+    private var results: [Bool]
+    private var callCount = 0
+
+    init(results: [Bool]) {
+        self.results = results
+    }
+
+    func reclaimMemory() async -> Bool {
+        callCount += 1
+        guard results.isEmpty == false else { return false }
+        return results.removeFirst()
+    }
+
+    func currentCallCount() -> Int {
+        callCount
+    }
+}
+
 private actor MemoryCleanCommandRecorder: MemoryCleanCommandRunning {
-    private let result: CleanMemoryResult
+    private var results: [CleanMemoryResult]
     private var commands: [MemoryCleanCommand] = []
 
-    init(result: CleanMemoryResult) {
-        self.result = result
+    init(results: [CleanMemoryResult]) {
+        self.results = results
     }
 
     func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult {
         commands.append(command)
-        return result
+        guard results.isEmpty == false else { return .unavailable }
+        return results.removeFirst()
     }
 
     func recordedCommands() -> [MemoryCleanCommand] {

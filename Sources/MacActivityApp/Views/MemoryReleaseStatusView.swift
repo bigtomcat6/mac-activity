@@ -59,7 +59,7 @@ struct MemoryReleaseStatusView: View {
         case .released(let bytes, _):
             return "Released \(formattedBytes(bytes))"
         case .unavailable:
-            return "Memory Release Unavailable"
+            return "Memory Release Not Available"
         case .failed:
             return "Memory Release Failed"
         case .failedToReadMemory:
@@ -72,7 +72,7 @@ struct MemoryReleaseStatusView: View {
         case .released(_, let percentOfTotal):
             return String(format: "%.1f%% of total memory", percentOfTotal)
         case .unavailable:
-            return "The clean command is unavailable on this Mac."
+            return "No supported memory release method is available on this Mac."
         case .failed(let message):
             return message
         case .failedToReadMemory:

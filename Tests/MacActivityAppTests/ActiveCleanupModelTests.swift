@@ -17,6 +17,20 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(model.apps.count, 20)
     }
 
+    func testRefreshVisibleCleanReleaseSectionsSkipsHiddenTrash() async {
+        let trash = TrashCleanupServiceRecorder(scanResults: [.cleanable(bytes: 4_096, itemCount: 2)])
+        let memory = MemoryReleaseServiceRecorder(currentReadings: [MemoryReading(usedBytes: 6, totalBytes: 10)])
+        let apps = ActiveAppProviderRecorder(entries: Self.entries(count: 2))
+        let model = ActiveCleanupModel(trashService: trash, memoryService: memory, appProvider: apps)
+
+        await model.refreshVisibleCleanReleaseSections()
+
+        XCTAssertEqual(model.trashState, .idle)
+        XCTAssertEqual(trash.scanCallCount, 0)
+        XCTAssertEqual(model.memoryState, .usage(percent: 60))
+        XCTAssertEqual(model.apps.count, 2)
+    }
+
     func testRequestingTrashCleanupOnlyShowsConfirmation() {
         let trash = TrashCleanupServiceRecorder()
         let model = ActiveCleanupModel(
@@ -169,6 +183,7 @@ final class ActiveCleanupModelTests: XCTestCase {
 private final class TrashCleanupServiceRecorder: TrashCleanupServicing {
     var scanResults: [TrashScanResult]
     var cleanResults: [TrashCleanupResult]
+    private(set) var scanCallCount = 0
     private(set) var cleanCallCount = 0
 
     init(
@@ -180,6 +195,7 @@ private final class TrashCleanupServiceRecorder: TrashCleanupServicing {
     }
 
     func scan() async -> TrashScanResult {
+        scanCallCount += 1
         guard scanResults.isEmpty == false else { return .clean }
         return scanResults.removeFirst()
     }

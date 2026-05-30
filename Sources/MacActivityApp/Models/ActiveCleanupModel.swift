@@ -79,6 +79,11 @@ final class ActiveCleanupModel: ObservableObject {
         refreshApps()
     }
 
+    func refreshVisibleCleanReleaseSections() async {
+        await refreshMemoryUsage()
+        refreshApps()
+    }
+
     func refreshTrash() async {
         trashState = .scanning
         trashState = mapScan(await trashService.scan())

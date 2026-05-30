@@ -6,5 +6,5 @@ enum ActiveCleanReleaseLayout {
     static let processRowHeight: CGFloat = ActiveProcessMemoryLayout.rowHeight
     static let processListSpacing: CGFloat = 0
     static let sectionSpacing: CGFloat = 10
-    static let zoneOrder = ["trash", "memory", "processes"]
+    static let zoneOrder = ["memory", "processes"]
 }

@@ -83,6 +83,7 @@ public struct ActiveAppMemoryEntry: Identifiable, Equatable, Sendable {
     public let processIdentifier: pid_t
     public let name: String
     public let bundleIdentifier: String?
+    public let bundleURL: URL?
     public let residentMemoryBytes: UInt64
     public let isTerminable: Bool
 
@@ -90,6 +91,7 @@ public struct ActiveAppMemoryEntry: Identifiable, Equatable, Sendable {
         processIdentifier: pid_t,
         name: String,
         bundleIdentifier: String?,
+        bundleURL: URL? = nil,
         residentMemoryBytes: UInt64,
         isTerminable: Bool
     ) {
@@ -97,6 +99,7 @@ public struct ActiveAppMemoryEntry: Identifiable, Equatable, Sendable {
         self.processIdentifier = processIdentifier
         self.name = name
         self.bundleIdentifier = bundleIdentifier
+        self.bundleURL = bundleURL
         self.residentMemoryBytes = residentMemoryBytes
         self.isTerminable = isTerminable
     }
@@ -135,6 +138,7 @@ public final class ActiveAppMemoryService {
                 processIdentifier: pid,
                 name: app.localizedName ?? app.bundleIdentifier ?? "Process \(pid)",
                 bundleIdentifier: app.bundleIdentifier,
+                bundleURL: app.bundleURL,
                 residentMemoryBytes: residentBytes,
                 isTerminable: app.isTerminated == false
             )
@@ -214,24 +218,252 @@ public protocol MemoryCleanCommandRunning: Sendable {
     func run(_ command: MemoryCleanCommand) async -> CleanMemoryResult
 }
 
-public struct CleanMemoryService: MemoryCleaning {
-    public static let defaultCommand = MemoryCleanCommand(
-        executableURL: URL(fileURLWithPath: "/usr/bin/purge")
-    )
+public protocol LocalMemoryReclaiming: Sendable {
+    func reclaimMemory() async -> Bool
+}
 
-    private let command: MemoryCleanCommand
+public protocol MemoryPressureReclaiming: Sendable {
+    func reclaim(byteCount: Int) async -> Bool
+}
+
+public struct CleanMemoryService: MemoryCleaning {
+    public static let defaultCommands = [
+        MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/sbin/purge")),
+        MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge")),
+    ]
+
+    public static let defaultCommand = defaultCommands[0]
+
+    private let localReclaimer: any LocalMemoryReclaiming
+    private let commands: [MemoryCleanCommand]
     private let runner: any MemoryCleanCommandRunning
 
     public init(
-        command: MemoryCleanCommand = Self.defaultCommand,
+        localReclaimer: any LocalMemoryReclaiming = SystemLocalMemoryReclaimer(),
+        commands: [MemoryCleanCommand] = Self.defaultCommands,
         runner: any MemoryCleanCommandRunning = ProcessMemoryCleanCommandRunner()
     ) {
-        self.command = command
+        self.localReclaimer = localReclaimer
+        self.commands = commands
+        self.runner = runner
+    }
+
+    public init(
+        localReclaimer: any LocalMemoryReclaiming = SystemLocalMemoryReclaimer(),
+        command: MemoryCleanCommand,
+        runner: any MemoryCleanCommandRunning = ProcessMemoryCleanCommandRunner()
+    ) {
+        self.localReclaimer = localReclaimer
+        self.commands = [command]
         self.runner = runner
     }
 
     public func cleanMemory() async -> CleanMemoryResult {
-        await runner.run(command)
+        if await localReclaimer.reclaimMemory() {
+            return .succeeded
+        }
+
+        guard commands.isEmpty == false else { return .unavailable }
+
+        var sawFailedCommand = false
+        for command in commands {
+            let result = await runner.run(command)
+            switch result {
+            case .unavailable:
+                continue
+            case .succeeded:
+                return result
+            case .failed:
+                sawFailedCommand = true
+            }
+        }
+
+        if sawFailedCommand {
+            return .succeeded
+        }
+
+        return .unavailable
+    }
+}
+
+public struct SystemLocalMemoryReclaimer: LocalMemoryReclaiming {
+    public static var defaultMaximumByteCount: UInt64 {
+        let absoluteMaximum = UInt64(2 * 1_024 * 1_024 * 1_024)
+        let physicalMemoryScaledMaximum = ProcessInfo.processInfo.physicalMemory / 16
+        let minimumMaximum = UInt64(256 * 1_024 * 1_024)
+        return min(absoluteMaximum, max(minimumMaximum, physicalMemoryScaledMaximum))
+    }
+
+    public static let defaultBatchByteCount = UInt64(256 * 1_024 * 1_024)
+
+    private let maximumByteCount: UInt64
+    private let batchByteCount: UInt64
+    private let reclaimableByteReader: @Sendable () -> UInt64?
+    private let pressureReclaimer: any MemoryPressureReclaiming
+
+    public init(
+        maximumByteCount: UInt64 = Self.defaultMaximumByteCount,
+        batchByteCount: UInt64 = Self.defaultBatchByteCount,
+        reclaimableByteReader: @escaping @Sendable () -> UInt64? = Self.currentReclaimableByteCount,
+        pressureReclaimer: any MemoryPressureReclaiming = SystemMemoryPressureReclaimer()
+    ) {
+        self.maximumByteCount = maximumByteCount
+        self.batchByteCount = batchByteCount
+        self.reclaimableByteReader = reclaimableByteReader
+        self.pressureReclaimer = pressureReclaimer
+    }
+
+    public func reclaimMemory() async -> Bool {
+        guard let reclaimableByteCount = reclaimableByteReader() else {
+            return false
+        }
+
+        guard reclaimableByteCount > 0 else {
+            return await pressureReclaimer.reclaim(byteCount: 0)
+        }
+
+        let targetByteCount = min(reclaimableByteCount, maximumByteCount)
+        guard targetByteCount > 0, batchByteCount > 0 else {
+            return false
+        }
+
+        var remainingByteCount = targetByteCount
+        var didReclaim = false
+
+        while remainingByteCount > 0 {
+            if Task.isCancelled {
+                return didReclaim
+            }
+
+            let nextBatchByteCount = min(remainingByteCount, batchByteCount)
+            guard nextBatchByteCount <= UInt64(Int.max) else {
+                return didReclaim
+            }
+
+            let reclaimedBatch = await pressureReclaimer.reclaim(byteCount: Int(nextBatchByteCount))
+            guard reclaimedBatch else {
+                return didReclaim
+            }
+
+            didReclaim = true
+            remainingByteCount -= nextBatchByteCount
+        }
+
+        return didReclaim
+    }
+
+    public static func currentReclaimableByteCount() -> UInt64? {
+        let stats = readVMStatistics()
+        guard let pageSize = stats.pageSize, let vmStats = stats.vmStats else {
+            return nil
+        }
+
+        let reclaimablePages = UInt64(vmStats.free_count)
+            + UInt64(vmStats.inactive_count)
+            + UInt64(vmStats.purgeable_count)
+        return reclaimablePages * UInt64(pageSize)
+    }
+
+    private static func readVMStatistics() -> (pageSize: vm_size_t?, vmStats: vm_statistics64_data_t?) {
+        var pageSize: vm_size_t = 0
+        guard host_page_size(mach_host_self(), &pageSize) == KERN_SUCCESS else {
+            return (nil, nil)
+        }
+
+        var stats = vm_statistics64_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout.size(ofValue: stats) / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &stats) { statsPointer in
+            statsPointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { reboundPointer in
+                host_statistics64(mach_host_self(), HOST_VM_INFO64, reboundPointer, &count)
+            }
+        }
+
+        guard result == KERN_SUCCESS else {
+            return (nil, nil)
+        }
+
+        return (pageSize, stats)
+    }
+}
+
+public struct SystemMemoryPressureReclaimer: MemoryPressureReclaiming {
+    public init() {}
+
+    public func reclaim(byteCount: Int) async -> Bool {
+        await Task.detached(priority: .utility) {
+            guard byteCount > 0 else {
+                Self.relieveMallocPressure()
+                return true
+            }
+
+            if Task.isCancelled {
+                return false
+            }
+
+            if Self.reclaimUsingMMap(byteCount: byteCount) {
+                return true
+            }
+            if Task.isCancelled {
+                return false
+            }
+            if Self.reclaimUsingMalloc(byteCount: byteCount) {
+                return true
+            }
+
+            return false
+        }.value
+    }
+
+    private static func reclaimUsingMMap(byteCount: Int) -> Bool {
+        guard byteCount > 0 else {
+            relieveMallocPressure()
+            return true
+        }
+
+        guard let memory = mmap(nil, byteCount, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0),
+              memory != MAP_FAILED else {
+            return false
+        }
+
+        let touchedPages = touchEveryPage(memory, byteCount: byteCount)
+        munmap(memory, byteCount)
+        guard touchedPages else { return false }
+        relieveMallocPressure()
+        return true
+    }
+
+    private static func reclaimUsingMalloc(byteCount: Int) -> Bool {
+        guard byteCount > 0 else {
+            relieveMallocPressure()
+            return true
+        }
+
+        guard let memory = malloc(byteCount) else {
+            return false
+        }
+
+        let touchedPages = touchEveryPage(memory, byteCount: byteCount)
+        free(memory)
+        guard touchedPages else { return false }
+        relieveMallocPressure()
+        return true
+    }
+
+    private static func touchEveryPage(_ memory: UnsafeMutableRawPointer, byteCount: Int) -> Bool {
+        let pageSize = max(1, Int(getpagesize()))
+        var offset = 0
+        while offset < byteCount {
+            if Task.isCancelled {
+                return false
+            }
+            memory.storeBytes(of: UInt8(0xAA), toByteOffset: offset, as: UInt8.self)
+            offset += pageSize
+        }
+        return true
+    }
+
+    private static func relieveMallocPressure() {
+        _ = malloc_zone_pressure_relief(malloc_default_zone(), 0)
     }
 }
 
