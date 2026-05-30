@@ -31,6 +31,78 @@ final class NetworkProviderTests: XCTestCase {
         )
     }
 
+    func testCounterSampleIncludesLocalPhysicalTrafficOutsidePreferredInterface() {
+        let timestamp = Date(timeIntervalSince1970: 1_000.5)
+        let sample = NetworkProvider.makeCounterSample(
+            from: [
+                NetworkInterfaceCounter(
+                    name: "en0",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 1_000,
+                    sentBytes: 2_000
+                ),
+                NetworkInterfaceCounter(
+                    name: "en7",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 5_000,
+                    sentBytes: 7_000
+                ),
+                NetworkInterfaceCounter(
+                    name: "utun4",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 20_000,
+                    sentBytes: 30_000
+                ),
+            ],
+            preferredInterfaceNames: ["en0"],
+            timestamp: timestamp
+        )
+
+        XCTAssertEqual(
+            sample,
+            NetworkCounterSample(received: 6_000, sent: 9_000, timestamp: timestamp)
+        )
+    }
+
+    func testCounterSampleIncludesAppleWirelessDirectLinkTraffic() {
+        let timestamp = Date(timeIntervalSince1970: 1_000.75)
+        let sample = NetworkProvider.makeCounterSample(
+            from: [
+                NetworkInterfaceCounter(
+                    name: "en0",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 1_000,
+                    sentBytes: 2_000
+                ),
+                NetworkInterfaceCounter(
+                    name: "awdl0",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 7_000,
+                    sentBytes: 11_000
+                ),
+                NetworkInterfaceCounter(
+                    name: "utun4",
+                    isUp: true,
+                    isLoopback: false,
+                    receivedBytes: 20_000,
+                    sentBytes: 30_000
+                ),
+            ],
+            preferredInterfaceNames: ["en0"],
+            timestamp: timestamp
+        )
+
+        XCTAssertEqual(
+            sample,
+            NetworkCounterSample(received: 8_000, sent: 13_000, timestamp: timestamp)
+        )
+    }
+
     func testCounterSampleFallsBackToPhysicalInterfacesWhenPreferredInterfaceIsUnavailable() {
         let timestamp = Date(timeIntervalSince1970: 1_001)
         let sample = NetworkProvider.makeCounterSample(
@@ -164,10 +236,7 @@ final class NetworkProviderTests: XCTestCase {
     func testVirtualOrAuxiliaryInterfaceClassifierRecognizesCommonMacInterfaces() {
         let virtualNames = [
             "utun0",
-            "awdl0",
-            "llw0",
             "bridge100",
-            "p2p0",
             "gif0",
             "stf0",
             "anpi0",
@@ -187,6 +256,9 @@ final class NetworkProviderTests: XCTestCase {
 
         XCTAssertFalse(NetworkProvider.isVirtualOrAuxiliaryInterface("en0"))
         XCTAssertFalse(NetworkProvider.isVirtualOrAuxiliaryInterface("en10"))
+        XCTAssertFalse(NetworkProvider.isVirtualOrAuxiliaryInterface("awdl0"))
+        XCTAssertFalse(NetworkProvider.isVirtualOrAuxiliaryInterface("llw0"))
+        XCTAssertFalse(NetworkProvider.isVirtualOrAuxiliaryInterface("p2p0"))
     }
 
     func testByteDeltaClampsCounterResetsToZero() {
