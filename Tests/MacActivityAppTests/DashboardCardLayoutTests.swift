@@ -72,6 +72,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "Collecting"), 0.0, accuracy: 0.001)
     }
 
+    func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextWidth, 84)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
+        XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
+    }
+
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
