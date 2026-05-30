@@ -20,6 +20,50 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardCardLayout.compactChartInsets.bottom, 6)
     }
 
+    func testOverviewLayoutUsesApprovedFixedSlots() {
+        let metrics = DashboardCardLayoutTests.overviewMetrics([
+            .cpu,
+            .gpu,
+            .memory,
+            .network,
+            .temperature,
+            .fan,
+            .battery,
+        ])
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: metrics),
+            [.usage, .metric(.memory)]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
+            .metric(.network)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowTrailingSlots(for: metrics),
+            [.metric(.temperature), .metric(.fan)]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.thirdRowSlots(for: metrics),
+            [.metric(.battery)]
+        )
+    }
+
+    func testOverviewLayoutOmitsUnavailableSlotsAndKeepsBatteryOnlyThirdRegion() {
+        let metrics = DashboardCardLayoutTests.overviewMetrics([.cpu, .memory, .fan, .vram])
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: metrics),
+            [.usage, .metric(.memory)]
+        )
+        XCTAssertNil(DashboardOverviewLayout.secondRowLeadingSlot(for: metrics))
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowTrailingSlots(for: metrics),
+            [.metric(.fan)]
+        )
+        XCTAssertEqual(DashboardOverviewLayout.thirdRowSlots(for: metrics), [])
+    }
+
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
@@ -147,5 +191,16 @@ final class DashboardCardLayoutTests: XCTestCase {
             RAMSegmentBarsLayout.displaySegments(for: sample).reduce(UInt64(0)) { $0 + $1.bytes },
             5
         )
+    }
+
+    private static func overviewMetrics(_ kinds: [MetricKind]) -> [DashboardMetric] {
+        kinds.map { kind in
+            DashboardMetric(
+                kind: kind,
+                title: kind.title,
+                value: kind == .fan ? "1800 RPM" : "42%",
+                style: kind == .memory ? .memoryStackedChart : .chart
+            )
+        }
     }
 }

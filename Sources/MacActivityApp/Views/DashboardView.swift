@@ -12,6 +12,44 @@ enum DashboardCardLayout {
     }
 }
 
+enum DashboardOverviewSlot: Equatable {
+    case usage
+    case metric(MetricKind)
+}
+
+enum DashboardOverviewLayout {
+    static func metricsByKind(_ metrics: [DashboardMetric]) -> [MetricKind: DashboardMetric] {
+        Dictionary(uniqueKeysWithValues: metrics.map { ($0.kind, $0) })
+    }
+
+    static func topRowSlots(for metrics: [DashboardMetric]) -> [DashboardOverviewSlot] {
+        let byKind = metricsByKind(metrics)
+        var slots: [DashboardOverviewSlot] = []
+        if hasUsageMetric(in: byKind) { slots.append(.usage) }
+        if byKind[.memory] != nil { slots.append(.metric(.memory)) }
+        return slots
+    }
+
+    static func secondRowLeadingSlot(for metrics: [DashboardMetric]) -> DashboardOverviewSlot? {
+        metricsByKind(metrics)[.network] == nil ? nil : .metric(.network)
+    }
+
+    static func secondRowTrailingSlots(for metrics: [DashboardMetric]) -> [DashboardOverviewSlot] {
+        let byKind = metricsByKind(metrics)
+        return [MetricKind.temperature, .fan].compactMap { kind in
+            byKind[kind] == nil ? nil : .metric(kind)
+        }
+    }
+
+    static func thirdRowSlots(for metrics: [DashboardMetric]) -> [DashboardOverviewSlot] {
+        metricsByKind(metrics)[.battery] == nil ? [] : [.metric(.battery)]
+    }
+
+    static func hasUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
+        metricsByKind[.cpu] != nil || metricsByKind[.gpu] != nil
+    }
+}
+
 private enum DashboardTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case actives = "Actives"
