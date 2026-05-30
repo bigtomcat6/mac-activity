@@ -78,6 +78,31 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
     }
 
+    func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
+        XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowHeight,
+            DashboardOverviewLayout.compactTrendCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
+        XCTAssertEqual(DashboardOverviewLayout.batteryRowHeight, DashboardCardLayout.compactChartMinHeight)
+    }
+
+    func testCompactTrendTextCollapsesOnHoverSoChartCanFillCardWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: false), 84)
+        XCTAssertNil(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: true))
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: false), 10)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: true), 0)
+    }
+
+    func testOverviewSuppressesLeftYAxisLabelsForNetworkAndCompactTrendCharts() {
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .network, isCompactOverviewChart: false))
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .temperature, isCompactOverviewChart: true))
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .fan, isCompactOverviewChart: true))
+        XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .memory, isCompactOverviewChart: false))
+        XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
+    }
+
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
