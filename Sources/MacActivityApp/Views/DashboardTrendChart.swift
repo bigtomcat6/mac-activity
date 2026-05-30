@@ -123,22 +123,32 @@ struct DashboardTrendChart: View {
                 }
 
                 if let selectedSample {
-                    RuleMark(x: .value("Selection", selectedSample.timestamp))
-                        .foregroundStyle(Color.primary.opacity(0.18))
-                        .lineStyle(StrokeStyle(lineWidth: 1))
+                    if let baselineValue = DashboardTrendChartLayout.hoverBaselineValue(for: metric.kind) {
+                        RuleMark(y: .value("Baseline", baselineValue))
+                            .foregroundStyle(Color.primary.opacity(0.28))
+                            .lineStyle(StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [4, 3]))
+                    }
 
-                    PointMark(
-                        x: .value("Selection Time", selectedSample.timestamp),
-                        y: .value(
-                            "Selection Value",
-                            DashboardTrendChartLayout.selectionValue(
-                                for: selectedSample,
-                                kind: metric.kind
+                    RuleMark(x: .value("Selection", selectedSample.timestamp))
+                        .foregroundStyle(hoverRuleColor)
+                        .lineStyle(hoverRuleStyle)
+
+                    ForEach(
+                        DashboardTrendChartLayout.hoverIndicatorPoints(
+                            for: selectedSample,
+                            kind: metric.kind
+                        )
+                    ) { point in
+                        PointMark(
+                            x: .value("Selection Time", point.timestamp),
+                            y: .value(
+                                "Selection Value",
+                                point.value
                             )
                         )
-                    )
-                    .symbolSize(isCompactHoverLayout ? 28 : 40)
-                    .foregroundStyle(selectionPointColor)
+                        .symbolSize(hoverIndicatorSymbolSize(isCompact: isCompactHoverLayout))
+                        .foregroundStyle(hoverIndicatorColor(for: point.series))
+                    }
                 }
             }
             .chartLegend(.hidden)
@@ -342,6 +352,38 @@ struct DashboardTrendChart: View {
         metric.kind == .network ? .red.opacity(0.95) : color
     }
 
+    private var hoverRuleColor: Color {
+        metric.kind == .network ? Color.primary.opacity(0.34) : Color.primary.opacity(0.18)
+    }
+
+    private var hoverRuleStyle: StrokeStyle {
+        StrokeStyle(
+            lineWidth: metric.kind == .network ? 1.25 : 1,
+            lineCap: .round
+        )
+    }
+
+    private func hoverIndicatorColor(for series: DashboardTrendLineSeries) -> Color {
+        guard metric.kind == .network else {
+            return selectionPointColor
+        }
+
+        switch series {
+        case .primary:
+            return color.opacity(0.98)
+        case .secondary:
+            return .red.opacity(0.98)
+        }
+    }
+
+    private func hoverIndicatorSymbolSize(isCompact: Bool) -> CGFloat {
+        if metric.kind == .network {
+            return isCompact ? 44 : 60
+        }
+
+        return isCompact ? 28 : 40
+    }
+
     private func primaryInterpolationMethod(usesDisplaySampling: Bool) -> InterpolationMethod {
         if metric.kind == .fan {
             return .stepEnd
@@ -474,6 +516,13 @@ struct DashboardTrendLinePoint: Equatable, Identifiable, Sendable {
 struct DashboardTrendHoverSelection: Equatable {
     let sampleIndex: Int
     let location: CGPoint
+}
+
+struct DashboardTrendHoverIndicatorPoint: Equatable, Identifiable, Sendable {
+    let id: String
+    let timestamp: Date
+    let value: Double
+    let series: DashboardTrendLineSeries
 }
 
 struct DashboardTrendChartLayout {
@@ -619,6 +668,43 @@ struct DashboardTrendChartLayout {
         }
 
         return plottedValue(sample.primaryValue, kind: kind, series: .primary)
+    }
+
+    static func hoverBaselineValue(for kind: MetricKind) -> Double? {
+        kind == .network ? 0 : nil
+    }
+
+    static func hoverIndicatorPoints(
+        for sample: DashboardTrendSample,
+        kind: MetricKind
+    ) -> [DashboardTrendHoverIndicatorPoint] {
+        if kind == .network {
+            return [
+                hoverIndicatorPoint(for: sample, kind: kind, series: .primary, value: sample.primaryValue),
+                sample.secondaryValue.map {
+                    hoverIndicatorPoint(for: sample, kind: kind, series: .secondary, value: $0)
+                },
+            ].compactMap { $0 }
+        }
+
+        return [
+            hoverIndicatorPoint(for: sample, kind: kind, series: .primary, value: sample.primaryValue)
+        ]
+    }
+
+    private static func hoverIndicatorPoint(
+        for sample: DashboardTrendSample,
+        kind: MetricKind,
+        series: DashboardTrendLineSeries,
+        value: Double
+    ) -> DashboardTrendHoverIndicatorPoint {
+        let plotted = plottedValue(value, kind: kind, series: series)
+        return DashboardTrendHoverIndicatorPoint(
+            id: "hover-\(series.rawValue)-\(sample.timestamp.timeIntervalSinceReferenceDate.bitPattern)-\(plotted.bitPattern)",
+            timestamp: sample.timestamp,
+            value: plotted,
+            series: series
+        )
     }
 
     private static func plottedValue(

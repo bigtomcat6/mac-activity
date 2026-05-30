@@ -275,6 +275,41 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertGreaterThan(domain.upperBound, 4_000)
     }
 
+    func testNetworkHoverIndicatorsIncludeBaselineAndBothMirroredSeriesPoints() {
+        let sample = DashboardTrendSample(
+            timestamp: Date(timeIntervalSinceReferenceDate: 1_000),
+            primaryValue: 2_000,
+            secondaryValue: 500
+        )
+
+        let points = DashboardTrendChartLayout.hoverIndicatorPoints(
+            for: sample,
+            kind: .network
+        )
+
+        XCTAssertEqual(DashboardTrendChartLayout.hoverBaselineValue(for: .network), 0)
+        XCTAssertEqual(points.map(\.series), [.primary, .secondary])
+        XCTAssertEqual(points.map(\.value), [-2_000, 500])
+        XCTAssertTrue(points.allSatisfy { $0.timestamp == sample.timestamp })
+    }
+
+    func testNonNetworkHoverIndicatorsUseSinglePrimaryPointAndNoBaseline() {
+        let sample = DashboardTrendSample(
+            timestamp: Date(timeIntervalSinceReferenceDate: 1_000),
+            primaryValue: 42,
+            secondaryValue: 7
+        )
+
+        let points = DashboardTrendChartLayout.hoverIndicatorPoints(
+            for: sample,
+            kind: .cpu
+        )
+
+        XCTAssertNil(DashboardTrendChartLayout.hoverBaselineValue(for: .cpu))
+        XCTAssertEqual(points.map(\.series), [.primary])
+        XCTAssertEqual(points.map(\.value), [42])
+    }
+
     func testLinePointIDsStayStableForSamplesThatRemainAfterHistoryRolls() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let initialSamples = (0..<60).map { index in
