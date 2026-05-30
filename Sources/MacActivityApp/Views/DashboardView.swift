@@ -48,6 +48,13 @@ enum DashboardOverviewLayout {
     static func hasUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
         metricsByKind[.cpu] != nil || metricsByKind[.gpu] != nil
     }
+
+    static func usageProgress(for value: String) -> Double {
+        let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "%", with: "")
+        guard let percent = Double(percentText) else { return 0 }
+        return min(max(percent / 100, 0), 1)
+    }
 }
 
 private enum DashboardTab: String, CaseIterable, Identifiable {
@@ -480,6 +487,85 @@ private func color(for kind: RAMSegmentBarComponent.Kind) -> Color {
     }
 }
 
+enum DashboardMetricColor {
+    static func color(for kind: MetricKind) -> Color {
+        switch kind {
+        case .cpu:
+            return .orange
+        case .gpu:
+            return .purple
+        case .memory:
+            return .blue
+        case .vram:
+            return .cyan
+        case .network:
+            return .teal
+        case .battery:
+            return .green
+        case .temperature:
+            return .red
+        case .fan:
+            return .indigo
+        }
+    }
+}
+
+private struct CPUGPUUsageCard: View {
+    let cpu: DashboardMetric?
+    let gpu: DashboardMetric?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("CPU / GPU")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+
+            if let cpu {
+                UsageBarRow(metric: cpu, color: DashboardMetricColor.color(for: .cpu))
+            }
+            if let gpu {
+                UsageBarRow(metric: gpu, color: DashboardMetricColor.color(for: .gpu))
+            }
+        }
+        .padding(DashboardCardLayout.regularCardInsets)
+        .frame(maxWidth: .infinity, minHeight: DashboardCardLayout.compactChartMinHeight, alignment: .topLeading)
+        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.separator.opacity(0.45), lineWidth: 1)
+        }
+    }
+}
+
+private struct UsageBarRow: View {
+    let metric: DashboardMetric
+    let color: Color
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(spacing: 8) {
+                Text(metric.title)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                Spacer(minLength: 8)
+                Text(metric.value)
+                    .font(.caption.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.75)
+            }
+
+            GeometryReader { proxy in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.primary.opacity(0.08))
+                    Capsule()
+                        .fill(color.opacity(0.82))
+                        .frame(width: proxy.size.width * DashboardOverviewLayout.usageProgress(for: metric.value))
+                }
+            }
+            .frame(height: 8)
+        }
+    }
+}
+
 private struct MetricCard: View {
     let metric: DashboardMetric
     @State private var isCardHovered = false
@@ -546,24 +632,7 @@ private struct MetricCard: View {
     }
 
     private var color: Color {
-        switch metric.kind {
-        case .cpu:
-            return .orange
-        case .gpu:
-            return .purple
-        case .memory:
-            return .blue
-        case .vram:
-            return .cyan
-        case .network:
-            return .teal
-        case .battery:
-            return .green
-        case .temperature:
-            return .red
-        case .fan:
-            return .indigo
-        }
+        DashboardMetricColor.color(for: metric.kind)
     }
 
     @ViewBuilder
