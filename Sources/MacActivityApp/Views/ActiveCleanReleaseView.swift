@@ -2,33 +2,26 @@ import SwiftUI
 
 struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
+    @State private var confirmingQuitProcessIdentifier: pid_t?
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
-            TrashCleanupStatusView(model: model)
-                .accessibilityIdentifier("actives-clean-release-trash")
-
             MemoryReleaseStatusView(model: model)
                 .accessibilityIdentifier("actives-clean-release-memory")
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    confirmingQuitProcessIdentifier = nil
+                }
 
-            ActiveProcessMemoryList(model: model)
+            ActiveProcessMemoryList(
+                model: model,
+                confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
+            )
                 .accessibilityIdentifier("actives-clean-release-processes")
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .confirmationDialog(
-            "Empty Trash?",
-            isPresented: $model.isTrashConfirmationPresented,
-            titleVisibility: .visible
-        ) {
-            Button("Empty Trash", role: .destructive) {
-                Task { await model.confirmTrashCleanup() }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This deletes the current user's Trash contents.")
-        }
         .task {
-            await model.refresh()
+            await model.refreshVisibleCleanReleaseSections()
         }
     }
 }

@@ -7,12 +7,11 @@ import MacActivityCore
 @MainActor
 final class ActiveCleanReleaseViewTests: XCTestCase {
     func testLayoutConstantsMatchCompactCleanReleaseShape() {
-        XCTAssertEqual(ActiveCleanReleaseLayout.trashSectionHeight, 103)
         XCTAssertEqual(ActiveCleanReleaseLayout.memoryStripHeight, 44)
         XCTAssertEqual(ActiveCleanReleaseLayout.processRowHeight, ActiveProcessMemoryLayout.rowHeight)
     }
 
-    func testPageCanHostTrashMemoryAndProcessZones() {
+    func testPageCanHostMemoryAndProcessZones() {
         let model = ActiveCleanupModel(
             trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
             memoryService: ViewMemoryReleaseServiceRecorder(
@@ -24,13 +23,96 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         let hostingView = NSHostingView(rootView: ActiveCleanReleaseView(model: model))
 
         XCTAssertNotNil(hostingView)
-        XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["trash", "memory", "processes"])
+        XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["memory", "processes"])
     }
 
     func testRowHoverSwapsTrailingContentWithoutChangingWidth() {
-        XCTAssertEqual(ActiveProcessMemoryRow.trailingContent(isHovered: false), .memory)
-        XCTAssertEqual(ActiveProcessMemoryRow.trailingContent(isHovered: true), .quit)
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContent(isHovered: false, quitConfirmationState: .inactive),
+            .memory
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContent(isHovered: true, quitConfirmationState: .inactive),
+            .quit
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContent(isHovered: false, quitConfirmationState: .confirming),
+            .confirmQuit
+        )
         XCTAssertEqual(ActiveProcessMemoryLayout.trailingActionWidth, 72)
+    }
+
+    func testQuitButtonRequiresSecondClickToRequestTermination() {
+        let firstClick = ActiveProcessQuitConfirmationReducer.reduce(.inactive, event: .quitButtonClicked)
+
+        XCTAssertEqual(firstClick.state, .confirming)
+        XCTAssertFalse(firstClick.shouldQuit)
+
+        let secondClick = ActiveProcessQuitConfirmationReducer.reduce(.confirming, event: .quitButtonClicked)
+
+        XCTAssertEqual(secondClick.state, .inactive)
+        XCTAssertTrue(secondClick.shouldQuit)
+    }
+
+    func testQuitConfirmationCancelsFromOutsideClickOrTimeout() {
+        let outsideClick = ActiveProcessQuitConfirmationReducer.reduce(.confirming, event: .outsideClicked)
+        let timeout = ActiveProcessQuitConfirmationReducer.reduce(.confirming, event: .timedOut)
+
+        XCTAssertEqual(outsideClick.state, .inactive)
+        XCTAssertFalse(outsideClick.shouldQuit)
+        XCTAssertEqual(timeout.state, .inactive)
+        XCTAssertFalse(timeout.shouldQuit)
+    }
+
+    func testQuitButtonConfigurationTurnsDestructiveWhileConfirming() {
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.quitButtonConfiguration(for: .inactive),
+            ActiveProcessQuitButtonConfiguration(title: "Quit", isDestructive: false)
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.quitButtonConfiguration(for: .confirming),
+            ActiveProcessQuitButtonConfiguration(title: "Confirm", isDestructive: true)
+        )
+    }
+
+    func testProcessRowUsesBundleURLWhenChoosingIconSource() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        let appWithBundle = ActiveAppMemoryEntry(
+            processIdentifier: 2_101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL,
+            residentMemoryBytes: 1_024,
+            isTerminable: true
+        )
+        let appWithoutBundle = ActiveAppMemoryEntry(
+            processIdentifier: 2_102,
+            name: "Helper",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            residentMemoryBytes: 512,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(ActiveProcessMemoryRow.iconSource(for: appWithBundle), .bundle(bundleURL))
+        XCTAssertEqual(ActiveProcessMemoryRow.iconSource(for: appWithoutBundle), .fallbackSystemSymbol)
+    }
+
+    func testProcessRowFallsBackWhenBundleURLDoesNotExist() {
+        let missingBundle = URL(fileURLWithPath: "/Applications/Missing.app")
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_103,
+            name: "Missing",
+            bundleIdentifier: "com.example.missing",
+            bundleURL: missingBundle,
+            residentMemoryBytes: 1_024,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.iconSource(for: app, fileExists: { _ in false }),
+            .fallbackSystemSymbol
+        )
     }
 
     func testSectionLocalErrorTextComesFromProducingSection() {
@@ -38,7 +120,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed("denied")), "denied")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed("boom")), "Memory Release Failed")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed("boom")), "boom")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable), "Memory Release Unavailable")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable), "Memory Release Not Available")
     }
 
     func testMemoryReleasingStateShowsProgressIndicator() {
@@ -97,8 +179,8 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .released(bytes: 65_536, percentOfTotal: 2.5)), "Released \(releasedBytes)")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5)), "2.5% of total memory")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable), "Memory Release Unavailable")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable), "The clean command is unavailable on this Mac.")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable), "Memory Release Not Available")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable), "No supported memory release method is available on this Mac.")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed("boom")), "Memory Release Failed")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed("boom")), "boom")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failedToReadMemory), "Memory Reading Failed")
@@ -130,6 +212,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
                 processIdentifier: pid_t(2_000 + index),
                 name: "View App \(index)",
                 bundleIdentifier: "com.example.view-app-\(index)",
+                bundleURL: URL(fileURLWithPath: "/Applications/View App \(index).app"),
                 residentMemoryBytes: UInt64((count - index) * 1_000),
                 isTerminable: true
             )
