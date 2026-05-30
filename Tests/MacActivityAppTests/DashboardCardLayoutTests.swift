@@ -20,6 +20,103 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardCardLayout.compactChartInsets.bottom, 6)
     }
 
+    func testCardChromeFillsExplicitOverviewRowFrames() {
+        XCTAssertTrue(DashboardCardLayout.cardChromeMaxHeight.isInfinite)
+    }
+
+    func testOverviewLayoutUsesApprovedFixedSlots() {
+        let metrics = DashboardCardLayoutTests.overviewMetrics([
+            .cpu,
+            .gpu,
+            .memory,
+            .network,
+            .temperature,
+            .fan,
+            .battery,
+        ])
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: metrics),
+            [.usage, .metric(.memory)]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
+            .metric(.network)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowTrailingSlots(for: metrics),
+            [.metric(.temperature), .metric(.fan)]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.thirdRowSlots(for: metrics),
+            [.metric(.battery)]
+        )
+    }
+
+    func testOverviewLayoutOmitsUnavailableSlotsAndKeepsBatteryOnlyThirdRegion() {
+        let metrics = DashboardCardLayoutTests.overviewMetrics([.cpu, .memory, .fan, .vram])
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: metrics),
+            [.usage, .metric(.memory)]
+        )
+        XCTAssertNil(DashboardOverviewLayout.secondRowLeadingSlot(for: metrics))
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowTrailingSlots(for: metrics),
+            [.metric(.fan)]
+        )
+        XCTAssertEqual(DashboardOverviewLayout.thirdRowSlots(for: metrics), [])
+    }
+
+    func testOverviewUsageProgressParsesPercentTextAndClamps() {
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "38%"), 0.38, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "0%"), 0.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "147%"), 1.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "-7%"), 0.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "Collecting"), 0.0, accuracy: 0.001)
+    }
+
+    func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextWidth, 84)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
+        XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
+    }
+
+    func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
+        XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+        XCTAssertEqual(
+            DashboardOverviewLayout.secondRowHeight,
+            DashboardOverviewLayout.compactTrendCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
+        XCTAssertEqual(DashboardOverviewLayout.slimTrendCardHeight, 74)
+        XCTAssertEqual(DashboardOverviewLayout.batteryRowHeight, DashboardOverviewLayout.slimTrendCardHeight)
+    }
+
+    func testOverviewBatteryRowHeightFitsCurrentChartHeightOnly() {
+        XCTAssertEqual(
+            DashboardOverviewLayout.batteryRowHeight,
+            DashboardCardLayout.compactChartHeight
+            + DashboardCardLayout.compactChartInsets.top
+            + DashboardCardLayout.compactChartInsets.bottom
+        )
+    }
+
+    func testCompactTrendTextCollapsesOnHoverSoChartCanFillCardWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: false), 84)
+        XCTAssertNil(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: true))
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: false), 10)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: true), 0)
+    }
+
+    func testOverviewSuppressesLeftYAxisLabelsForNetworkAndCompactTrendCharts() {
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .network, isCompactOverviewChart: false))
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .temperature, isCompactOverviewChart: true))
+        XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .fan, isCompactOverviewChart: true))
+        XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .memory, isCompactOverviewChart: false))
+        XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
+    }
+
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
@@ -147,5 +244,16 @@ final class DashboardCardLayoutTests: XCTestCase {
             RAMSegmentBarsLayout.displaySegments(for: sample).reduce(UInt64(0)) { $0 + $1.bytes },
             5
         )
+    }
+
+    private static func overviewMetrics(_ kinds: [MetricKind]) -> [DashboardMetric] {
+        kinds.map { kind in
+            DashboardMetric(
+                kind: kind,
+                title: kind.title,
+                value: kind == .fan ? "1800 RPM" : "42%",
+                style: kind == .memory ? .memoryStackedChart : .chart
+            )
+        }
     }
 }

@@ -317,6 +317,35 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertLessThan(expandedAxisFrame.maxY, compactAxisFrame.maxY)
     }
 
+    func testYAxisLabelReservationCanBeSuppressedForChartsWithoutLeftAxisText() {
+        let visibleWidth = DashboardTrendChartLayout.yAxisLabelWidth(
+            for: ["100%", "50%", "0%"],
+            showsLabels: true
+        )
+        let hiddenWidth = DashboardTrendChartLayout.yAxisLabelWidth(
+            for: ["100%", "50%", "0%"],
+            showsLabels: false
+        )
+
+        XCTAssertGreaterThan(visibleWidth, 0)
+        XCTAssertEqual(hiddenWidth, 0)
+    }
+
+    func testHiddenYAxisLabelsDoNotReserveExtraLeadingHoverSpace() {
+        let restFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 60),
+            isHovering: false
+        )
+        let hiddenYAxisFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 60),
+            isHovering: true,
+            yAxisLabelWidth: 0,
+            xAxisLabelHeight: 14
+        )
+
+        XCTAssertEqual(hiddenYAxisFrame.minX, restFrame.minX, accuracy: 0.001)
+    }
+
     func testYAxisLabelFrameTouchesContainerLeadingEdge() {
         let plotFrame = DashboardTrendChartLayout.plotFrame(
             in: CGSize(width: 280, height: 60),

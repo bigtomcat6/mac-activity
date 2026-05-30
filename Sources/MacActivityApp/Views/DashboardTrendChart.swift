@@ -8,6 +8,7 @@ struct DashboardTrendChart: View {
     let metric: DashboardMetric
     let color: Color
     let isCardHovered: Bool
+    let showsYAxisLabels: Bool
 
     @State private var hoveredSampleIndex: Int?
     @State private var hoverLocation: CGPoint?
@@ -45,7 +46,8 @@ struct DashboardTrendChart: View {
         let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
         let yAxisValues = DashboardTrendChartLayout.yAxisValues(for: domain)
         let yAxisLabelWidth = DashboardTrendChartLayout.yAxisLabelWidth(
-            for: yAxisValues.map(axisLabel(for:))
+            for: yAxisValues.map(axisLabel(for:)),
+            showsLabels: showsYAxisLabels
         )
         let plotFrame = DashboardTrendChartLayout.plotFrame(
             in: size,
@@ -77,7 +79,8 @@ struct DashboardTrendChart: View {
                     xDomain: xDomain,
                     domain: domain,
                     xAxisDates: xAxisDates,
-                    yAxisValues: yAxisValues
+                    yAxisValues: yAxisValues,
+                    showsYAxisLabels: showsYAxisLabels
                 )
             }
 
@@ -213,7 +216,8 @@ struct DashboardTrendChart: View {
         xDomain: ClosedRange<Date>,
         domain: ClosedRange<Double>,
         xAxisDates: [Date],
-        yAxisValues: [Double]
+        yAxisValues: [Double],
+        showsYAxisLabels: Bool
     ) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(yAxisValues, id: \.self) { value in
@@ -235,19 +239,21 @@ struct DashboardTrendChart: View {
                 }
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
 
-                Text(axisLabel(for: value))
-                    .font(.caption2.monospacedDigit())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.68)
-                    .frame(
-                        width: DashboardTrendChartLayout.yAxisLabelWidth(for: plotFrame),
-                        alignment: .trailing
-                    )
-                    .position(
-                        x: DashboardTrendChartLayout.yAxisLabelCenterX(for: plotFrame),
-                        y: labelY
-                    )
+                if showsYAxisLabels {
+                    Text(axisLabel(for: value))
+                        .font(.caption2.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.68)
+                        .frame(
+                            width: DashboardTrendChartLayout.yAxisLabelWidth(for: plotFrame),
+                            alignment: .trailing
+                        )
+                        .position(
+                            x: DashboardTrendChartLayout.yAxisLabelCenterX(for: plotFrame),
+                            y: labelY
+                        )
+                }
             }
 
             ForEach(Array(xAxisDates.enumerated()), id: \.offset) { entry in
@@ -784,7 +790,12 @@ struct DashboardTrendChartLayout {
     ) -> EdgeInsets {
         let maximumLeading = max(axisLabelPlotGap, containerSize.width * maximumHoverLeadingWidthRatio)
         let maximumBottom = max(xAxisLabelPlotGap, containerSize.height * maximumHoverBottomHeightRatio)
-        let leading = min(max(0, yAxisLabelWidth) + axisLabelPlotGap, maximumLeading)
+        let leading: CGFloat
+        if yAxisLabelWidth > 0 {
+            leading = min(yAxisLabelWidth + axisLabelPlotGap, maximumLeading)
+        } else {
+            leading = restInsets.leading
+        }
         let bottom = min(max(0, xAxisLabelHeight) + xAxisLabelPlotGap, maximumBottom)
 
         return EdgeInsets(
@@ -907,6 +918,13 @@ struct DashboardTrendChartLayout {
         }
 
         return measuredWidth
+    }
+
+    static func yAxisLabelWidth(
+        for labels: [String],
+        showsLabels: Bool
+    ) -> CGFloat {
+        showsLabels ? yAxisLabelWidth(for: labels) : 0
     }
 
     static func yAxisLabelCenterX(for plotFrame: CGRect) -> CGFloat {
