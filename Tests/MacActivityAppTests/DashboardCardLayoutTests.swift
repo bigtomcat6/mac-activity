@@ -24,6 +24,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardCardLayout.cardChromeMaxHeight.isInfinite)
     }
 
+    func testOverviewMotionDurationsStayResponsiveButVisible() {
+        XCTAssertEqual(DashboardMotion.sampleDuration, 0.32, accuracy: 0.001)
+        XCTAssertEqual(DashboardMotion.domainDuration, 0.38, accuracy: 0.001)
+        XCTAssertEqual(DashboardMotion.valueDuration, 0.42, accuracy: 0.001)
+    }
+
     func testOverviewLayoutUsesApprovedFixedSlots() {
         let metrics = DashboardCardLayoutTests.overviewMetrics([
             .cpu,

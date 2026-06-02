@@ -1,6 +1,18 @@
 import SwiftUI
 import MacActivityCore
 
+enum DashboardMotion {
+    static let hoverDuration: Double = 0.14
+    static let sampleDuration: Double = 0.32
+    static let domainDuration: Double = 0.38
+    static let valueDuration: Double = 0.42
+
+    static var hoverAnimation: Animation { .easeInOut(duration: hoverDuration) }
+    static var sampleAnimation: Animation { .smooth(duration: sampleDuration) }
+    static var domainAnimation: Animation { .smooth(duration: domainDuration) }
+    static var valueAnimation: Animation { .easeOut(duration: valueDuration) }
+}
+
 enum DashboardCardLayout {
     static let compactChartHeight: CGFloat = 60
     static let compactChartMinHeight: CGFloat = 116
@@ -466,6 +478,7 @@ private struct RAMSegmentBars: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .animation(DashboardMotion.valueAnimation, value: slots)
 
                 if let hoveredSample, let hoveredSlotIndex {
                     RAMSegmentTooltip(sample: hoveredSample)
@@ -534,6 +547,7 @@ private struct RAMSegmentBar: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+            .animation(DashboardMotion.valueAnimation, value: sample)
         }
     }
 
@@ -663,8 +677,11 @@ private struct CPUGPUUsageCard: View {
 private struct UsageBarRow: View {
     let metric: DashboardMetric
     let color: Color
+    @State private var displayedProgress: Double?
 
     var body: some View {
+        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric.value)
+
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 Text(metric.title)
@@ -677,14 +694,23 @@ private struct UsageBarRow: View {
             }
 
             GeometryReader { proxy in
+                let progress = displayedProgress ?? targetProgress
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.08))
                     Capsule()
                         .fill(color.opacity(0.82))
-                        .frame(width: proxy.size.width * DashboardOverviewLayout.usageProgress(for: metric.value))
+                        .frame(width: proxy.size.width * progress)
                 }
             }
             .frame(height: 8)
+        }
+        .onAppear {
+            displayedProgress = targetProgress
+        }
+        .onChange(of: targetProgress) { progress in
+            withAnimation(DashboardMotion.valueAnimation) {
+                displayedProgress = progress
+            }
         }
     }
 }
@@ -738,7 +764,7 @@ private struct CompactTrendMetricCard: View {
         .onHover { hovering in
             isCardHovered = hovering
         }
-        .animation(.easeInOut(duration: 0.14), value: isCardHovered)
+        .animation(DashboardMotion.hoverAnimation, value: isCardHovered)
     }
 }
 
