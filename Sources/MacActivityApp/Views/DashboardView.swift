@@ -47,8 +47,8 @@ enum DashboardOverviewLayout {
         GridItem(.flexible(minimum: 0), spacing: 12),
     ]
     static let topRowHeight = DashboardCardLayout.compactChartMinHeight
-    static let compactTrendTextWidth: CGFloat = 84
     static let compactTrendChartHeight: CGFloat = 44
+    static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
     static let secondRowHeight = compactTrendCardHeight * 2 + sectionSpacing
     static let slimTrendCardHeight = (
@@ -96,12 +96,36 @@ enum DashboardOverviewLayout {
         return min(max(percent / 100, 0), 1)
     }
 
-    static func compactTrendTextColumnWidth(isHovered: Bool) -> CGFloat? {
-        isHovered ? nil : compactTrendTextWidth
+    static let usageHeaderTitle: String? = nil
+
+    static func trendReadoutUsesIntrinsicWidth(for kind: MetricKind) -> Bool {
+        switch kind {
+        case .temperature, .fan, .battery:
+            return true
+        default:
+            return false
+        }
     }
 
-    static func compactTrendSpacing(isHovered: Bool) -> CGFloat {
-        isHovered ? 0 : 10
+    static func compactTrendShowsReadout(
+        for kind: MetricKind,
+        isHovered: Bool
+    ) -> Bool {
+        switch kind {
+        case .temperature, .fan:
+            return !isHovered
+        default:
+            return true
+        }
+    }
+
+    static func compactTrendTextChartSpacing(
+        for kind: MetricKind,
+        isHovered: Bool
+    ) -> CGFloat {
+        compactTrendShowsReadout(for: kind, isHovered: isHovered)
+        ? compactTrendRestTextChartSpacing
+        : 0
     }
 
     static func showsTrendYAxisLabels(
@@ -648,10 +672,11 @@ private struct CPUGPUUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("CPU / GPU")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+            if let title = DashboardOverviewLayout.usageHeaderTitle {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             if let cpu {
                 UsageBarRow(metric: cpu, color: DashboardMetricColor.color(for: .cpu))
             }
@@ -720,8 +745,18 @@ private struct CompactTrendMetricCard: View {
     @State private var isCardHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendSpacing(isHovered: isCardHovered)) {
-            if let textWidth = DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: isCardHovered) {
+        HStack(
+            alignment: .center,
+            spacing: DashboardOverviewLayout.compactTrendTextChartSpacing(
+                for: metric.kind,
+                isHovered: isCardHovered
+            )
+        ) {
+            if DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: metric.kind)
+                && DashboardOverviewLayout.compactTrendShowsReadout(
+                    for: metric.kind,
+                    isHovered: isCardHovered
+                ) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(metric.title)
                         .font(.caption2.weight(.semibold))
@@ -732,8 +767,7 @@ private struct CompactTrendMetricCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(width: textWidth, alignment: .leading)
-                .transition(.opacity)
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             DashboardTrendChart(
@@ -773,7 +807,7 @@ private struct SlimTrendMetricCard: View {
     @State private var isCardHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(metric.title)
                     .font(.caption2.weight(.semibold))
@@ -784,7 +818,7 @@ private struct SlimTrendMetricCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .frame(width: DashboardOverviewLayout.compactTrendTextWidth, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
 
             DashboardTrendChart(
                 metric: metric,
