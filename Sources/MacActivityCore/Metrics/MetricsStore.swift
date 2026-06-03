@@ -83,6 +83,7 @@ public struct MetricsHistory: Equatable, Sendable {
         let window: TimeInterval
         let maxSamples: Int
         let recentSamplesToPreserve: Int
+        let maximumContinuousSampleGap: TimeInterval
 
         static func forKind(_ kind: MetricKind) -> RetentionPolicy {
             switch kind {
@@ -90,13 +91,15 @@ public struct MetricsHistory: Equatable, Sendable {
                 return RetentionPolicy(
                     window: 30 * 60,
                     maxSamples: 1_800,
-                    recentSamplesToPreserve: 300
+                    recentSamplesToPreserve: 300,
+                    maximumContinuousSampleGap: 10 * 60
                 )
             case .cpu, .gpu, .memory, .vram, .battery, .temperature, .fan:
                 return RetentionPolicy(
                     window: 24 * 60 * 60,
                     maxSamples: 1_440,
-                    recentSamplesToPreserve: 300
+                    recentSamplesToPreserve: 300,
+                    maximumContinuousSampleGap: 10 * 60
                 )
             }
         }
@@ -127,7 +130,11 @@ public struct MetricsHistory: Equatable, Sendable {
             }
 
             var samples = nextSamplesByKind[update.kind] ?? []
-            samples.append(sample)
+            if Self.startsNewContinuousSegment(sample, after: samples.last, kind: update.kind) {
+                samples = [sample]
+            } else {
+                samples.append(sample)
+            }
             nextSamplesByKind[update.kind] = samples
         }
 
@@ -182,6 +189,19 @@ public struct MetricsHistory: Equatable, Sendable {
         }
 
         return bucketAveragedSamples(olderSamples, targetCount: olderTargetCount) + recentSamples
+    }
+
+    private static func startsNewContinuousSegment(
+        _ sample: MetricHistorySample,
+        after previousSample: MetricHistorySample?,
+        kind: MetricKind
+    ) -> Bool {
+        guard let previousSample else {
+            return false
+        }
+
+        let policy = RetentionPolicy.forKind(kind)
+        return sample.timestamp.timeIntervalSince(previousSample.timestamp) > policy.maximumContinuousSampleGap
     }
 
     static func bucketAveragedSamples(

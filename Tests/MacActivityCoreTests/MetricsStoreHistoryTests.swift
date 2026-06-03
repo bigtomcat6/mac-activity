@@ -53,32 +53,68 @@ final class MetricsStoreHistoryTests: XCTestCase {
     func testHistoryRetainsOneDayForMostMetricsAndThirtyMinutesForNetwork() {
         let store = MetricsStore()
         let start = Date(timeIntervalSince1970: 0)
+        let sampleInterval: TimeInterval = 5 * 60
+        let finalSampleIndex = 25 * 12
 
-        for hour in 0...25 {
+        for sampleIndex in 0...finalSampleIndex {
             store.apply(
                 [
-                    .cpu(CPUReading(usagePercent: Double(hour))),
-                    .temperature(TemperatureReading(celsius: 40 + Double(hour) * 0.5)),
-                    .fan(FanReading(rpm: 1_800 + hour * 10)),
+                    .cpu(CPUReading(usagePercent: Double(sampleIndex))),
+                    .temperature(TemperatureReading(celsius: 40 + Double(sampleIndex) * 0.5)),
+                    .fan(FanReading(rpm: 1_800 + sampleIndex * 10)),
                     .network(
                         NetworkReading(
-                            downloadBytesPerSecond: Double(hour * 1_000),
-                            uploadBytesPerSecond: Double(hour * 500)
+                            downloadBytesPerSecond: Double(sampleIndex * 1_000),
+                            uploadBytesPerSecond: Double(sampleIndex * 500)
                         )
                     ),
                 ],
-                timestamp: start.addingTimeInterval(Double(hour) * 3_600)
+                timestamp: start.addingTimeInterval(Double(sampleIndex) * sampleInterval)
             )
         }
 
-        XCTAssertEqual(store.history.samples(for: .cpu).count, 25)
+        XCTAssertEqual(store.history.samples(for: .cpu).count, 289)
         XCTAssertEqual(store.history.samples(for: .cpu).first?.timestamp, start.addingTimeInterval(3_600))
-        XCTAssertEqual(store.history.samples(for: .cpu).last?.primaryValue, 25)
-        XCTAssertEqual(store.history.samples(for: .temperature).last?.primaryValue, 52.5)
-        XCTAssertEqual(store.history.samples(for: .fan).last?.primaryValue, 2_050)
-        XCTAssertEqual(store.history.samples(for: .network).count, 1)
-        XCTAssertEqual(store.history.samples(for: .network).last?.primaryValue, 25_000)
-        XCTAssertEqual(store.history.samples(for: .network).last?.secondaryValue, 12_500)
+        XCTAssertEqual(store.history.samples(for: .cpu).last?.primaryValue, 300)
+        XCTAssertEqual(store.history.samples(for: .temperature).last?.primaryValue, 190)
+        XCTAssertEqual(store.history.samples(for: .fan).last?.primaryValue, 4_800)
+        XCTAssertEqual(store.history.samples(for: .network).count, 7)
+        XCTAssertEqual(store.history.samples(for: .network).last?.primaryValue, 300_000)
+        XCTAssertEqual(store.history.samples(for: .network).last?.secondaryValue, 150_000)
+    }
+
+    func testHistoryDropsPreviousSegmentAfterLargeSamplingGap() {
+        let store = MetricsStore()
+        let start = Date(timeIntervalSince1970: 0)
+
+        store.apply(
+            [
+                .temperature(TemperatureReading(celsius: 48)),
+                .fan(FanReading(rpm: 1_800)),
+                .battery(BatteryReading(percentage: 91, isCharging: false)),
+            ],
+            timestamp: start
+        )
+        store.apply(
+            [
+                .temperature(TemperatureReading(celsius: 49)),
+                .fan(FanReading(rpm: 1_850)),
+                .battery(BatteryReading(percentage: 92, isCharging: false)),
+            ],
+            timestamp: start.addingTimeInterval(2)
+        )
+        store.apply(
+            [
+                .temperature(TemperatureReading(celsius: 57)),
+                .fan(FanReading(rpm: 0)),
+                .battery(BatteryReading(percentage: 93, isCharging: false)),
+            ],
+            timestamp: start.addingTimeInterval(12 * 60 * 60)
+        )
+
+        XCTAssertEqual(store.history.samples(for: .temperature).map(\.primaryValue), [57])
+        XCTAssertEqual(store.history.samples(for: .fan).map(\.primaryValue), [0])
+        XCTAssertEqual(store.history.samples(for: .battery).map(\.primaryValue), [93])
     }
 
     func testHistoryAggregatesOlderDenseSeriesWhileKeepingRecentRawSamples() {
