@@ -140,6 +140,10 @@ enum DashboardOverviewLayout {
     }
 }
 
+enum DashboardFooterChrome {
+    static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
+}
+
 private enum DashboardTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case actives = "Actives"
@@ -182,8 +186,9 @@ struct DashboardView: View {
                 Spacer(minLength: 12)
                 Button("Quit", action: quitApplication)
             }
+            .frame(maxWidth: .infinity)
             .padding(14)
-            .background(.bar)
+            .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }

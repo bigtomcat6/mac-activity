@@ -1,5 +1,7 @@
-import XCTest
 import CoreGraphics
+import AppKit
+import SwiftUI
+import XCTest
 import MacActivityCore
 @testable import MacActivityApp
 
@@ -99,6 +101,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
     }
 
+    func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
+        XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
+    }
+
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
         XCTAssertEqual(
             DashboardCardLayout.chartHeightBehavior(for: .network),
@@ -185,6 +191,33 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .fan, isCompactOverviewChart: true))
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .memory, isCompactOverviewChart: false))
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
+    }
+
+    func testRenderedFooterUsesOverviewGrayBackgroundTone() throws {
+        let model = DashboardModel(store: MetricsStore())
+        let content = DashboardView(
+            dashboardModel: model,
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 260)
+
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
+                    .frame(width: 360, height: 60),
+                atTopLeft: CGPoint(x: 180, y: 30)
+            )
+        )
+        let footerColor = try XCTUnwrap(
+            Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 236))
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
+            "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
+        )
     }
 
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
@@ -325,5 +358,53 @@ final class DashboardCardLayoutTests: XCTestCase {
                 style: kind == .memory ? .memoryStackedChart : .chart
             )
         }
+    }
+
+    private static func renderedColor<Content: View>(
+        of view: Content,
+        atTopLeft point: CGPoint
+    ) -> NSColor? {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+
+        guard let image = renderer.nsImage,
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff)
+        else {
+            return nil
+        }
+
+        let x = Int(point.x.rounded(.down))
+        let y = Int(point.y.rounded(.down))
+        let pixelY = bitmap.pixelsHigh - y - 1
+
+        guard (0..<bitmap.pixelsWide).contains(x),
+              (0..<bitmap.pixelsHigh).contains(pixelY)
+        else {
+            return nil
+        }
+
+        return bitmap.colorAt(x: x, y: pixelY)?.usingColorSpace(.deviceRGB)
+    }
+
+    private static func colorsApproximatelyEqual(
+        _ lhs: NSColor,
+        _ rhs: NSColor,
+        tolerance: CGFloat
+    ) -> Bool {
+        abs(lhs.redComponent - rhs.redComponent) <= tolerance
+        && abs(lhs.greenComponent - rhs.greenComponent) <= tolerance
+        && abs(lhs.blueComponent - rhs.blueComponent) <= tolerance
+        && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
+    }
+
+    private static func debugColor(_ color: NSColor) -> String {
+        String(
+            format: "(r: %.3f g: %.3f b: %.3f a: %.3f)",
+            color.redComponent,
+            color.greenComponent,
+            color.blueComponent,
+            color.alphaComponent
+        )
     }
 }
