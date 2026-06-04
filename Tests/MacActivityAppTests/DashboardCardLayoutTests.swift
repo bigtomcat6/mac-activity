@@ -24,6 +24,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardCardLayout.cardChromeMaxHeight.isInfinite)
     }
 
+    func testOverviewMotionDurationsStayResponsiveButVisible() {
+        XCTAssertEqual(DashboardMotion.sampleDuration, 0.32, accuracy: 0.001)
+        XCTAssertEqual(DashboardMotion.domainDuration, 0.38, accuracy: 0.001)
+        XCTAssertEqual(DashboardMotion.valueDuration, 0.42, accuracy: 0.001)
+    }
+
     func testOverviewLayoutUsesApprovedFixedSlots() {
         let metrics = DashboardCardLayoutTests.overviewMetrics([
             .cpu,
@@ -77,9 +83,39 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
-        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextWidth, 84)
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendRestTextChartSpacing, 12)
+    }
+
+    func testOverviewUsageCardHeaderIsHidden() {
+        XCTAssertNil(DashboardOverviewLayout.usageHeaderTitle)
+    }
+
+    func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
+        XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .temperature))
+        XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .fan))
+        XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .battery))
+        XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
+    }
+
+    func testNetworkMetricCardChartFillsRemainingCardHeight() {
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .network),
+            .fillsRemainingHeight
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .temperature),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .fan),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
+        XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .battery),
+            .fixed(DashboardCardLayout.compactChartHeight)
+        )
     }
 
     func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
@@ -102,11 +138,45 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testCompactTrendTextCollapsesOnHoverSoChartCanFillCardWidth() {
-        XCTAssertEqual(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: false), 84)
-        XCTAssertNil(DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: true))
-        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: false), 10)
-        XCTAssertEqual(DashboardOverviewLayout.compactTrendSpacing(isHovered: true), 0)
+    func testCompactTrendCardsKeepCharacterSizedGapBeforeChart() {
+        XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .temperature))
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendRestTextChartSpacing, 12)
+    }
+
+    func testCompactTrendCardsCollapseReadoutAndGapOnHover() {
+        XCTAssertTrue(
+            DashboardOverviewLayout.compactTrendShowsReadout(
+                for: .temperature,
+                isHovered: false
+            )
+        )
+        XCTAssertFalse(
+            DashboardOverviewLayout.compactTrendShowsReadout(
+                for: .temperature,
+                isHovered: true
+            )
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendTextChartSpacing(
+                for: .temperature,
+                isHovered: false
+            ),
+            12
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendTextChartSpacing(
+                for: .temperature,
+                isHovered: true
+            ),
+            0
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendTextChartSpacing(
+                for: .battery,
+                isHovered: true
+            ),
+            12
+        )
     }
 
     func testOverviewSuppressesLeftYAxisLabelsForNetworkAndCompactTrendCharts() {

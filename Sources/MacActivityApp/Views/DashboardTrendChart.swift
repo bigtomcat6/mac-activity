@@ -12,6 +12,7 @@ struct DashboardTrendChart: View {
 
     @State private var hoveredSampleIndex: Int?
     @State private var hoverLocation: CGPoint?
+    @State private var displayedDomain: ClosedRange<Double>?
 
     var body: some View {
         GeometryReader { proxy in
@@ -38,7 +39,8 @@ struct DashboardTrendChart: View {
             kind: metric.kind,
             containerSize: size
         )
-        let domain = chartDomain(for: trend)
+        let rawDomain = chartDomain(for: trend)
+        let domain = displayedDomain ?? rawDomain
         let xDomain = xDomain(for: trend)
         let selectedSample = isCardHovered ? (hoveredSample(in: trend) ?? trend.samples.last) : nil
         let isHovering = selectedSample != nil
@@ -64,10 +66,12 @@ struct DashboardTrendChart: View {
         let usesDisplaySampling = displaySamples.count < trend.samples.count
         let primaryLinePoints = DashboardTrendChartLayout.linePoints(
             for: displaySamples,
+            kind: metric.kind,
             series: .primary
         )
         let secondaryLinePoints = DashboardTrendChartLayout.linePoints(
             for: displaySamples,
+            kind: metric.kind,
             series: .secondary
         )
 
@@ -84,93 +88,19 @@ struct DashboardTrendChart: View {
                 )
             }
 
-            Chart {
-                if showsAreaFill {
-                    ForEach(displaySamples, id: \.timestamp) { sample in
-                        AreaMark(
-                            x: .value("Time", sample.timestamp),
-                            y: .value("Primary", sample.primaryValue)
-                        )
-                        .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
-                        .foregroundStyle(areaGradient)
-                    }
-                }
-
-                ForEach(primaryLinePoints) { point in
-                    LineMark(
-                        x: .value("Time", point.timestamp),
-                        y: .value("Primary", point.value),
-                        series: .value("Series", point.series.rawValue)
-                    )
-                    .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
-                    .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
-                    .foregroundStyle(primaryLineGradient)
-                }
-
-                if !secondaryLinePoints.isEmpty {
-                    ForEach(secondaryLinePoints) { point in
-                        LineMark(
-                            x: .value("Time", point.timestamp),
-                            y: .value("Secondary", point.value),
-                            series: .value("Series", point.series.rawValue)
-                        )
-                        .interpolationMethod(secondaryInterpolationMethod)
-                        .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
-                        .foregroundStyle(color.opacity(0.45))
-                    }
-                }
-
-                if let selectedSample {
-                    RuleMark(x: .value("Selection", selectedSample.timestamp))
-                        .foregroundStyle(Color.primary.opacity(0.18))
-                        .lineStyle(StrokeStyle(lineWidth: 1))
-
-                    PointMark(
-                        x: .value("Selection Time", selectedSample.timestamp),
-                        y: .value("Selection Value", selectedSample.primaryValue)
-                    )
-                    .symbolSize(isCompactHoverLayout ? 28 : 40)
-                    .foregroundStyle(color)
-                }
-            }
-            .chartLegend(.hidden)
-            .chartXScale(domain: xDomain)
-            .chartYScale(domain: domain)
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .chartPlotStyle { plotArea in
-                plotArea.background(Color.clear)
-            }
-            .chartOverlay { _ in
-                Rectangle()
-                    .fill(.clear)
-                    .contentShape(Rectangle())
-                    .onContinuousHover(coordinateSpace: .local) { phase in
-                        switch phase {
-                        case .active(let location):
-                            guard let selection = DashboardTrendChartLayout.hoverSelection(
-                                localX: location.x,
-                                samples: trend.samples,
-                                xDomain: xDomain,
-                                yDomain: domain,
-                                plotFrame: plotFrame
-                            ) else {
-                                hoveredSampleIndex = nil
-                                hoverLocation = nil
-                                return
-                            }
-
-                            hoveredSampleIndex = selection.sampleIndex
-                            hoverLocation = selection.location
-                        case .ended:
-                            hoveredSampleIndex = nil
-                            hoverLocation = nil
-                        }
-                    }
-            }
-            .frame(width: plotFrame.width, height: plotFrame.height)
-            .clipped()
-            .offset(x: plotFrame.minX, y: plotFrame.minY)
+            chartPlotView(
+                trendSamples: trend.samples,
+                displaySamples: displaySamples,
+                primaryLinePoints: primaryLinePoints,
+                secondaryLinePoints: secondaryLinePoints,
+                selectedSample: selectedSample,
+                domain: domain,
+                xDomain: xDomain,
+                plotFrame: plotFrame,
+                showsAreaFill: showsAreaFill,
+                usesDisplaySampling: usesDisplaySampling,
+                isCompactHoverLayout: isCompactHoverLayout
+            )
 
             if let selectedSample {
                 let annotationAnchor = hoverLocation ?? CGPoint(
@@ -180,7 +110,10 @@ struct DashboardTrendChart: View {
                         plotFrame: plotFrame
                     ),
                     y: DashboardTrendChartLayout.yPosition(
-                        for: selectedSample.primaryValue,
+                        for: DashboardTrendChartLayout.selectionValue(
+                            for: selectedSample,
+                            kind: metric.kind
+                        ),
                         domain: domain,
                         plotFrame: plotFrame
                     )
@@ -205,8 +138,170 @@ struct DashboardTrendChart: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.14), value: isHovering)
-        .animation(sampleAnimation ? .smooth(duration: 0.24) : nil, value: trend.samples)
+        .onAppear {
+            updateDisplayedDomain(to: rawDomain, animated: false)
+        }
+        .onChange(of: metric.kind) { _ in
+            updateDisplayedDomain(to: rawDomain, animated: false)
+        }
+        .onChange(of: trend.samples) { _ in
+            updateDisplayedDomain(to: rawDomain, animated: true)
+        }
+        .animation(DashboardMotion.hoverAnimation, value: isHovering)
+        .animation(sampleAnimation ? DashboardMotion.sampleAnimation : nil, value: trend.samples)
+        .animation(DashboardMotion.domainAnimation, value: displayedDomain)
+    }
+
+    private func updateDisplayedDomain(to rawDomain: ClosedRange<Double>, animated: Bool) {
+        let nextDomain = DashboardTrendChartLayout.smoothedDomain(
+            previous: displayedDomain,
+            next: rawDomain,
+            kind: metric.kind
+        )
+        guard displayedDomain != nextDomain else { return }
+
+        if animated {
+            withAnimation(DashboardMotion.domainAnimation) {
+                displayedDomain = nextDomain
+            }
+        } else {
+            displayedDomain = nextDomain
+        }
+    }
+
+    private func chartPlotView(
+        trendSamples: [DashboardTrendSample],
+        displaySamples: [DashboardTrendSample],
+        primaryLinePoints: [DashboardTrendLinePoint],
+        secondaryLinePoints: [DashboardTrendLinePoint],
+        selectedSample: DashboardTrendSample?,
+        domain: ClosedRange<Double>,
+        xDomain: ClosedRange<Date>,
+        plotFrame: CGRect,
+        showsAreaFill: Bool,
+        usesDisplaySampling: Bool,
+        isCompactHoverLayout: Bool
+    ) -> some View {
+        Chart {
+            if showsAreaFill {
+                ForEach(displaySamples, id: \.timestamp) { sample in
+                    AreaMark(
+                        x: .value("Time", sample.timestamp),
+                        y: .value("Primary", sample.primaryValue)
+                    )
+                    .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
+                    .foregroundStyle(areaGradient)
+                }
+            }
+
+            ForEach(primaryLinePoints) { point in
+                LineMark(
+                    x: .value("Time", point.timestamp),
+                    y: .value("Primary", point.value),
+                    series: .value("Series", point.series.rawValue)
+                )
+                .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
+                .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
+                .foregroundStyle(primaryLineGradient)
+            }
+
+            if !secondaryLinePoints.isEmpty {
+                ForEach(secondaryLinePoints) { point in
+                    LineMark(
+                        x: .value("Time", point.timestamp),
+                        y: .value("Secondary", point.value),
+                        series: .value("Series", point.series.rawValue)
+                    )
+                    .interpolationMethod(secondaryInterpolationMethod)
+                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+                    .foregroundStyle(secondaryLineColor)
+                }
+            }
+
+            if let selectedSample {
+                if let baselineValue = DashboardTrendChartLayout.hoverBaselineValue(for: metric.kind) {
+                    RuleMark(y: .value("Baseline", baselineValue))
+                        .foregroundStyle(Color.primary.opacity(0.28))
+                        .lineStyle(StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [4, 3]))
+                }
+
+                RuleMark(x: .value("Selection", selectedSample.timestamp))
+                    .foregroundStyle(hoverRuleColor)
+                    .lineStyle(hoverRuleStyle)
+
+                ForEach(
+                    DashboardTrendChartLayout.hoverIndicatorPoints(
+                        for: selectedSample,
+                        kind: metric.kind
+                    )
+                ) { point in
+                    PointMark(
+                        x: .value("Selection Time", point.timestamp),
+                        y: .value(
+                            "Selection Value",
+                            point.value
+                        )
+                    )
+                    .symbolSize(hoverIndicatorSymbolSize(isCompact: isCompactHoverLayout))
+                    .foregroundStyle(hoverIndicatorColor(for: point.series))
+                }
+            }
+        }
+        .chartLegend(.hidden)
+        .chartXScale(domain: xDomain)
+        .chartYScale(domain: domain)
+        .chartXAxis(.hidden)
+        .chartYAxis(.hidden)
+        .chartPlotStyle { plotArea in
+            plotArea.background(Color.clear)
+        }
+        .chartOverlay { _ in
+            Rectangle()
+                .fill(.clear)
+                .contentShape(Rectangle())
+                .onContinuousHover(coordinateSpace: .local) { phase in
+                    switch phase {
+                    case .active(let location):
+                        updateHoverSelection(
+                            location: location,
+                            samples: trendSamples,
+                            xDomain: xDomain,
+                            yDomain: domain,
+                            plotFrame: plotFrame
+                        )
+                    case .ended:
+                        hoveredSampleIndex = nil
+                        hoverLocation = nil
+                    }
+                }
+        }
+        .frame(width: plotFrame.width, height: plotFrame.height)
+        .clipped()
+        .offset(x: plotFrame.minX, y: plotFrame.minY)
+    }
+
+    private func updateHoverSelection(
+        location: CGPoint,
+        samples: [DashboardTrendSample],
+        xDomain: ClosedRange<Date>,
+        yDomain: ClosedRange<Double>,
+        plotFrame: CGRect
+    ) {
+        guard let selection = DashboardTrendChartLayout.hoverSelection(
+            localX: location.x,
+            samples: samples,
+            kind: metric.kind,
+            xDomain: xDomain,
+            yDomain: yDomain,
+            plotFrame: plotFrame
+        ) else {
+            hoveredSampleIndex = nil
+            hoverLocation = nil
+            return
+        }
+
+        hoveredSampleIndex = selection.sampleIndex
+        hoverLocation = selection.location
     }
 
     @ViewBuilder
@@ -322,6 +417,46 @@ struct DashboardTrendChart: View {
         )
     }
 
+    private var secondaryLineColor: Color {
+        metric.kind == .network ? .red.opacity(0.9) : color.opacity(0.45)
+    }
+
+    private var selectionPointColor: Color {
+        metric.kind == .network ? .red.opacity(0.95) : color
+    }
+
+    private var hoverRuleColor: Color {
+        metric.kind == .network ? Color.primary.opacity(0.34) : Color.primary.opacity(0.18)
+    }
+
+    private var hoverRuleStyle: StrokeStyle {
+        StrokeStyle(
+            lineWidth: metric.kind == .network ? 1.25 : 1,
+            lineCap: .round
+        )
+    }
+
+    private func hoverIndicatorColor(for series: DashboardTrendLineSeries) -> Color {
+        guard metric.kind == .network else {
+            return selectionPointColor
+        }
+
+        switch series {
+        case .primary:
+            return color.opacity(0.98)
+        case .secondary:
+            return .red.opacity(0.98)
+        }
+    }
+
+    private func hoverIndicatorSymbolSize(isCompact: Bool) -> CGFloat {
+        if metric.kind == .network {
+            return isCompact ? 44 : 60
+        }
+
+        return isCompact ? 28 : 40
+    }
+
     private func primaryInterpolationMethod(usesDisplaySampling: Bool) -> InterpolationMethod {
         if metric.kind == .fan {
             return .stepEnd
@@ -396,23 +531,11 @@ struct DashboardTrendChart: View {
     }
 
     private func chartDomain(for trend: DashboardTrend) -> ClosedRange<Double> {
-        switch trend.scale {
-        case .fixed(let lowerBound, let upperBound):
-            return lowerBound...upperBound
-        case .automatic:
-            let values = trend.samples.flatMap { sample in
-                [sample.primaryValue, sample.secondaryValue].compactMap { $0 }
-            }
-            let lowerBound = values.min() ?? 0
-            let upperBound = values.max() ?? 1
-
-            if upperBound - lowerBound < 0.001 {
-                return (lowerBound - 1)...(upperBound + 1)
-            }
-
-            let padding = (upperBound - lowerBound) * 0.12
-            return (lowerBound - padding)...(upperBound + padding)
-        }
+        DashboardTrendChartLayout.valueDomain(
+            for: trend.samples,
+            kind: metric.kind,
+            scale: trend.scale
+        )
     }
 
     private func xDomain(for trend: DashboardTrend) -> ClosedRange<Date> {
@@ -468,6 +591,13 @@ struct DashboardTrendHoverSelection: Equatable {
     let location: CGPoint
 }
 
+struct DashboardTrendHoverIndicatorPoint: Equatable, Identifiable, Sendable {
+    let id: String
+    let timestamp: Date
+    let value: Double
+    let series: DashboardTrendLineSeries
+}
+
 struct DashboardTrendChartLayout {
     static let restInsets = EdgeInsets(top: 2, leading: 2, bottom: 1, trailing: 2)
     static let xAxisLabelWidth: CGFloat = 52
@@ -483,6 +613,7 @@ struct DashboardTrendChartLayout {
     private static let recentDetailBudgetCap = 120
     private static let flatPrimaryTolerance = 0.001
     private static let flatSecondaryTolerance = 0.001
+    private static let domainContractionStep = 0.35
 
     static func annotationPosition(
         pointer: CGPoint,
@@ -539,14 +670,24 @@ struct DashboardTrendChartLayout {
         for samples: [DashboardTrendSample],
         series: DashboardTrendLineSeries
     ) -> [DashboardTrendLinePoint] {
+        linePoints(for: samples, kind: .cpu, series: series)
+    }
+
+    static func linePoints(
+        for samples: [DashboardTrendSample],
+        kind: MetricKind,
+        series: DashboardTrendLineSeries
+    ) -> [DashboardTrendLinePoint] {
         samples.compactMap { sample in
             let value: Double?
 
             switch series {
             case .primary:
-                value = sample.primaryValue
+                value = plottedValue(sample.primaryValue, kind: kind, series: .primary)
             case .secondary:
-                value = sample.secondaryValue
+                value = sample.secondaryValue.map {
+                    plottedValue($0, kind: kind, series: .secondary)
+                }
             }
 
             guard let value else {
@@ -559,6 +700,164 @@ struct DashboardTrendChartLayout {
                 value: value,
                 series: series
             )
+        }
+    }
+
+    static func valueDomain(
+        for samples: [DashboardTrendSample],
+        kind: MetricKind,
+        scale: DashboardTrendScale
+    ) -> ClosedRange<Double> {
+        switch scale {
+        case .fixed(let lowerBound, let upperBound):
+            return lowerBound...upperBound
+        case .automatic:
+            let values = linePoints(for: samples, kind: kind, series: .primary).map(\.value)
+                + linePoints(for: samples, kind: kind, series: .secondary).map(\.value)
+
+            if kind == .network {
+                let maximumMagnitude = max(values.map(abs).max() ?? 0, 1)
+                let paddedMagnitude = maximumMagnitude * 1.12
+                return -paddedMagnitude...paddedMagnitude
+            }
+
+            let lowerBound = values.min() ?? 0
+            let upperBound = values.max() ?? 1
+
+            if upperBound - lowerBound < 0.001 {
+                return (lowerBound - 1)...(upperBound + 1)
+            }
+
+            let padding = (upperBound - lowerBound) * 0.12
+            return (lowerBound - padding)...(upperBound + padding)
+        }
+    }
+
+    static func smoothedDomain(
+        previous: ClosedRange<Double>?,
+        next: ClosedRange<Double>,
+        kind: MetricKind
+    ) -> ClosedRange<Double> {
+        guard let previous, smoothsDomainChanges(for: kind) else {
+            return next
+        }
+
+        if kind == .network {
+            return smoothedSymmetricDomain(previous: previous, next: next)
+        }
+
+        let lowerBound = smoothedLowerBound(previous: previous.lowerBound, next: next.lowerBound)
+        let upperBound = smoothedUpperBound(previous: previous.upperBound, next: next.upperBound)
+        guard lowerBound < upperBound else {
+            return next
+        }
+
+        return lowerBound...upperBound
+    }
+
+    private static func smoothsDomainChanges(for kind: MetricKind) -> Bool {
+        switch kind {
+        case .network, .temperature, .fan:
+            return true
+        case .cpu, .gpu, .memory, .vram, .battery:
+            return false
+        }
+    }
+
+    private static func smoothedSymmetricDomain(
+        previous: ClosedRange<Double>,
+        next: ClosedRange<Double>
+    ) -> ClosedRange<Double> {
+        let previousMagnitude = max(max(abs(previous.lowerBound), abs(previous.upperBound)), 1)
+        let nextMagnitude = max(max(abs(next.lowerBound), abs(next.upperBound)), 1)
+        let magnitude: Double
+        if nextMagnitude >= previousMagnitude {
+            magnitude = nextMagnitude
+        } else {
+            magnitude = previousMagnitude + (nextMagnitude - previousMagnitude) * domainContractionStep
+        }
+
+        return -magnitude...magnitude
+    }
+
+    private static func smoothedLowerBound(previous: Double, next: Double) -> Double {
+        if next < previous {
+            return next
+        }
+
+        return previous + (next - previous) * domainContractionStep
+    }
+
+    private static func smoothedUpperBound(previous: Double, next: Double) -> Double {
+        if next > previous {
+            return next
+        }
+
+        return previous + (next - previous) * domainContractionStep
+    }
+
+    static func selectionValue(
+        for sample: DashboardTrendSample,
+        kind: MetricKind
+    ) -> Double {
+        if kind == .network, let uploadValue = sample.secondaryValue {
+            return plottedValue(uploadValue, kind: kind, series: .secondary)
+        }
+
+        return plottedValue(sample.primaryValue, kind: kind, series: .primary)
+    }
+
+    static func hoverBaselineValue(for kind: MetricKind) -> Double? {
+        kind == .network ? 0 : nil
+    }
+
+    static func hoverIndicatorPoints(
+        for sample: DashboardTrendSample,
+        kind: MetricKind
+    ) -> [DashboardTrendHoverIndicatorPoint] {
+        if kind == .network {
+            return [
+                hoverIndicatorPoint(for: sample, kind: kind, series: .primary, value: sample.primaryValue),
+                sample.secondaryValue.map {
+                    hoverIndicatorPoint(for: sample, kind: kind, series: .secondary, value: $0)
+                },
+            ].compactMap { $0 }
+        }
+
+        return [
+            hoverIndicatorPoint(for: sample, kind: kind, series: .primary, value: sample.primaryValue)
+        ]
+    }
+
+    private static func hoverIndicatorPoint(
+        for sample: DashboardTrendSample,
+        kind: MetricKind,
+        series: DashboardTrendLineSeries,
+        value: Double
+    ) -> DashboardTrendHoverIndicatorPoint {
+        let plotted = plottedValue(value, kind: kind, series: series)
+        return DashboardTrendHoverIndicatorPoint(
+            id: "hover-\(series.rawValue)-\(sample.timestamp.timeIntervalSinceReferenceDate.bitPattern)-\(plotted.bitPattern)",
+            timestamp: sample.timestamp,
+            value: plotted,
+            series: series
+        )
+    }
+
+    private static func plottedValue(
+        _ value: Double,
+        kind: MetricKind,
+        series: DashboardTrendLineSeries
+    ) -> Double {
+        guard kind == .network else {
+            return value
+        }
+
+        switch series {
+        case .primary:
+            return -abs(value)
+        case .secondary:
+            return abs(value)
         }
     }
 
@@ -603,7 +902,7 @@ struct DashboardTrendChartLayout {
             Array(samples.prefix(olderCount)),
             budget: overviewBudget
         )
-        var displaySamples = deduplicatedChronologicalSamples(overviewSamples + recentSamples)
+        var displaySamples = deduplicatedTimestamps(overviewSamples + recentSamples)
 
         if displaySamples.first?.timestamp != samples.first?.timestamp, let firstSample = samples.first {
             displaySamples.insert(firstSample, at: 0)
@@ -613,7 +912,7 @@ struct DashboardTrendChartLayout {
             displaySamples.append(lastSample)
         }
 
-        return deduplicatedChronologicalSamples(displaySamples)
+        return deduplicatedTimestamps(displaySamples)
     }
 
     private static func sampledOverviewSamples(
@@ -671,41 +970,21 @@ struct DashboardTrendChartLayout {
             .map { bucket[$0] }
     }
 
-    private static func deduplicatedChronologicalSamples(
+    private static func deduplicatedTimestamps(
         _ samples: [DashboardTrendSample]
     ) -> [DashboardTrendSample] {
-        guard samples.count > 2 else {
+        guard samples.count > 1 else {
             return samples
         }
 
         var result: [DashboardTrendSample] = []
         result.reserveCapacity(samples.count)
+        var seenTimestamps = Set<Date>()
 
-        for index in samples.indices {
-            let current = samples[index]
-            if index == samples.startIndex || index == samples.index(before: samples.endIndex) {
-                result.append(current)
-                continue
+        for sample in samples {
+            if seenTimestamps.insert(sample.timestamp).inserted {
+                result.append(sample)
             }
-
-            let previous = samples[samples.index(before: index)]
-            let next = samples[samples.index(after: index)]
-            let matchesPrevious = equivalentValue(previous, current)
-            let matchesNext = equivalentValue(current, next)
-
-            if matchesPrevious && matchesNext {
-                continue
-            }
-
-            result.append(current)
-        }
-
-        if result.first?.timestamp != samples.first?.timestamp, let firstSample = samples.first {
-            result.insert(firstSample, at: 0)
-        }
-
-        if result.last?.timestamp != samples.last?.timestamp, let lastSample = samples.last {
-            result.append(lastSample)
         }
 
         return result
@@ -723,28 +1002,6 @@ struct DashboardTrendChartLayout {
         }
 
         return primaryRange < flatPrimaryTolerance && secondaryRange < flatSecondaryTolerance
-    }
-
-    private static func equivalentValue(
-        _ lhs: DashboardTrendSample,
-        _ rhs: DashboardTrendSample
-    ) -> Bool {
-        abs(lhs.primaryValue - rhs.primaryValue) < flatPrimaryTolerance
-        && equivalentSecondaryValue(lhs.secondaryValue, rhs.secondaryValue)
-    }
-
-    private static func equivalentSecondaryValue(
-        _ lhs: Double?,
-        _ rhs: Double?
-    ) -> Bool {
-        switch (lhs, rhs) {
-        case (.none, .none):
-            return true
-        case let (.some(left), .some(right)):
-            return abs(left - right) < flatSecondaryTolerance
-        default:
-            return false
-        }
     }
 
     static func plotFrame(
@@ -839,6 +1096,7 @@ struct DashboardTrendChartLayout {
     static func hoverSelection(
         localX: CGFloat,
         samples: [DashboardTrendSample],
+        kind: MetricKind = .cpu,
         xDomain: ClosedRange<Date>,
         yDomain: ClosedRange<Double>,
         plotFrame: CGRect
@@ -868,7 +1126,10 @@ struct DashboardTrendChartLayout {
                     plotFrame: plotFrame
                 ),
                 y: yPosition(
-                    for: selectedSample.primaryValue,
+                    for: selectionValue(
+                        for: selectedSample,
+                        kind: kind
+                    ),
                     domain: yDomain,
                     plotFrame: plotFrame
                 )
@@ -992,7 +1253,7 @@ struct DashboardTrendChartLayout {
     }
 
     static func animatesSampleChanges(for kind: MetricKind) -> Bool {
-        kind != .network
+        true
     }
 }
 
@@ -1006,7 +1267,7 @@ enum DashboardTrendReadoutFormatter {
         case .fan:
             return "\(Int(value.rounded())) RPM"
         case .network:
-            return DashboardMetricTextFormatter.formatRate(value)
+            return DashboardMetricTextFormatter.formatRate(abs(value))
         }
     }
 
