@@ -90,7 +90,7 @@ struct ActiveProcessMemoryRow: View {
                                 .font(.caption.weight(.semibold))
                                 .lineLimit(1)
 
-                            Text(app.bundleIdentifier ?? "Process \(app.processIdentifier)")
+                            Text(app.bundleIdentifier ?? AppLocalization.string(.processFallbackName, Int(app.processIdentifier)))
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
@@ -220,13 +220,20 @@ struct ActiveProcessMemoryRow: View {
     }
 
     static func quitButtonConfiguration(
-        for state: ActiveProcessQuitConfirmationState
+        for state: ActiveProcessQuitConfirmationState,
+        bundle: Bundle? = nil
     ) -> ActiveProcessQuitButtonConfiguration {
         switch state {
         case .inactive:
-            return ActiveProcessQuitButtonConfiguration(title: "Quit", isDestructive: false)
+            return ActiveProcessQuitButtonConfiguration(
+                title: AppLocalization.string(.processActionQuit, bundle: bundle),
+                isDestructive: false
+            )
         case .confirming:
-            return ActiveProcessQuitButtonConfiguration(title: "Confirm", isDestructive: true)
+            return ActiveProcessQuitButtonConfiguration(
+                title: AppLocalization.string(.processActionConfirm, bundle: bundle),
+                isDestructive: true
+            )
         }
     }
 

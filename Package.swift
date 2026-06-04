@@ -5,6 +5,7 @@ import PackageDescription
 
 let package = Package(
     name: "MacActivity",
+    defaultLocalization: "en",
     platforms: [
         .macOS(.v13),
     ],
@@ -26,7 +27,10 @@ let package = Package(
         .executableTarget(
             name: "MacActivityApp",
             dependencies: ["MacActivityCore"],
-            path: "Sources/MacActivityApp"
+            path: "Sources/MacActivityApp",
+            resources: [
+                .process("Resources"),
+            ]
         ),
         .testTarget(
             name: "MacActivityCoreTests",

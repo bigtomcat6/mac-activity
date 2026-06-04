@@ -1,0 +1,81 @@
+"app.name" = "Mac Activity";
+"app.action.preferences" = "偏好设置";
+"app.action.quit" = "退出";
+
+"dashboard.status.live" = "实时";
+"dashboard.tab.overview" = "概览";
+"dashboard.tab.actives" = "活跃";
+"dashboard.section.label" = "仪表盘分区";
+"dashboard.waiting.firstSample" = "正在等待第一组样本";
+"dashboard.waiting.firstMetricSample" = "正在等待第一组指标样本。";
+"dashboard.cpuGpu" = "CPU / GPU";
+"dashboard.trend.collecting" = "正在收集趋势";
+"dashboard.memory.chart.collectingSamples" = "内存图表正在收集样本";
+"dashboard.memory.chart.accessibility" = "内存 %d%%，已用 %@，共 %@";
+"dashboard.memory.segment.active" = "活跃";
+"dashboard.memory.segment.compressed" = "压缩";
+"dashboard.memory.segment.wired" = "联动";
+"dashboard.memory.segment.other" = "其他";
+"dashboard.memory.segment.tooltip" = "%@：%@（%@）";
+
+"metric.cpu" = "CPU";
+"metric.gpu" = "GPU";
+"metric.memory" = "内存";
+"metric.vram" = "显存";
+"metric.network" = "网络";
+"metric.battery" = "电池";
+"metric.temperature" = "温度";
+"metric.fan" = "风扇";
+"metric.battery.charging" = "正在充电";
+"metric.battery.onBattery" = "使用电池";
+
+"temperature.source.cpuSMC" = "CPU/SMC";
+"temperature.source.battery" = "电池";
+"temperature.dashboard.cpu" = "CPU 温度";
+"temperature.dashboard.battery" = "电池温度";
+
+"preferences.launchAtLogin" = "登录时启动";
+"preferences.temperatureSource" = "温度来源";
+"preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
+"preferences.menuBarMetrics" = "菜单栏指标";
+"preferences.metricsFixedOrder" = "指标始终按固定 MVP 顺序显示。";
+
+"memoryRelease.action.release" = "释放";
+"memoryRelease.action.releasing" = "释放中";
+"memoryRelease.title.idle" = "内存";
+"memoryRelease.title.usage" = "内存 %d%%";
+"memoryRelease.title.releasing" = "正在释放内存";
+"memoryRelease.title.released" = "已释放 %@";
+"memoryRelease.title.unavailable" = "无法释放内存";
+"memoryRelease.title.failed" = "内存释放失败";
+"memoryRelease.title.readFailed" = "内存读取失败";
+"memoryRelease.subtitle.percentOfTotal" = "占总内存的 %.1f%%";
+"memoryRelease.subtitle.unavailable" = "这台 Mac 没有可用的内存释放方式。";
+"memoryRelease.subtitle.readFailed" = "无法比较释放前后的内存读数。";
+"memoryRelease.subtitle.default" = "释放可回收的系统内存。";
+
+"trash.action.retry" = "重试";
+"trash.action.clean" = "清理";
+"trash.title.scanning" = "正在扫描废纸篓";
+"trash.title.clean" = "废纸篓已清空";
+"trash.title.cleanable" = "废纸篓中有 %@";
+"trash.title.cleaning" = "正在清理废纸篓";
+"trash.title.cleaned" = "已清理 %@";
+"trash.title.failed" = "废纸篓清理失败";
+"trash.subtitle.scanning" = "正在检查当前用户的废纸篓。";
+"trash.subtitle.clean" = "未找到可清理的废纸篓项目。";
+"trash.subtitle.cleanable" = "确认后可移除 %d %@。";
+"trash.subtitle.cleaning" = "正在删除已确认的废纸篓内容。";
+"trash.subtitle.cleaned" = "已移除 %d %@。";
+"trash.subtitle.partial" = "已移除 %d %@；%d %@无法删除。";
+"trash.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@无法删除。仍剩余 %@。";
+"trash.item.singular" = "个项目";
+"trash.item.plural" = "个项目";
+
+"process.empty" = "当前没有前台应用报告内存用量。";
+"process.fallbackName" = "进程 %d";
+"process.action.requested" = "已请求 %@ 退出。";
+"process.action.notFound" = "%@ 已不在运行。";
+"process.action.notTerminable" = "%@ 无法安全退出。";
+"process.action.quit" = "退出";
+"process.action.confirm" = "确认";

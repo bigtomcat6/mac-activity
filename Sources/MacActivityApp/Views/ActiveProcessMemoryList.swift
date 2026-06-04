@@ -16,7 +16,7 @@ struct ActiveProcessMemoryList: View {
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
             if model.apps.isEmpty {
-                Text("No foreground apps are reporting memory usage.")
+                Text(AppLocalization.string(.processEmpty))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, minHeight: ActiveProcessMemoryLayout.rowHeight, alignment: .leading)
@@ -60,16 +60,16 @@ struct ActiveProcessMemoryList: View {
         .frame(maxWidth: .infinity, alignment: .topLeading)
     }
 
-    static func processActionMessage(for state: ProcessActionState) -> String? {
+    static func processActionMessage(for state: ProcessActionState, bundle: Bundle? = nil) -> String? {
         switch state {
         case .idle:
             return nil
         case .requested(let name):
-            return "Requested \(name) to quit."
+            return AppLocalization.string(.processActionRequested, name, bundle: bundle)
         case .notFound(let name):
-            return "\(name) is no longer running."
+            return AppLocalization.string(.processActionNotFound, name, bundle: bundle)
         case .notTerminable(let name):
-            return "\(name) could not be quit safely."
+            return AppLocalization.string(.processActionNotTerminable, name, bundle: bundle)
         }
     }
 }
