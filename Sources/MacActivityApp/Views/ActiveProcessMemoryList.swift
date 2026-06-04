@@ -58,6 +58,7 @@ struct ActiveProcessMemoryList: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .activeCleanupCardChrome()
     }
 
     static func processActionMessage(for state: ProcessActionState, bundle: Bundle? = nil) -> String? {

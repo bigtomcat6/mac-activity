@@ -42,10 +42,7 @@ struct MemoryReleaseStatusView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: ActiveCleanReleaseLayout.memoryStripHeight, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
-        )
+        .activeCleanupCardChrome()
     }
 
     static func title(for state: MemoryState, bundle: Bundle? = nil) -> String {

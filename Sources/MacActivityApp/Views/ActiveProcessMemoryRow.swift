@@ -51,6 +51,7 @@ struct ActiveProcessQuitButtonConfiguration: Equatable {
 }
 
 struct ActiveProcessMemoryRow: View {
+    @Environment(\.appearsActive) private var appearsActive
     let app: ActiveAppMemoryEntry
     let maxBytes: UInt64
     private let quit: () -> Void
@@ -73,7 +74,7 @@ struct ActiveProcessMemoryRow: View {
         GeometryReader { proxy in
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.12))
+                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
                     .frame(
                         width: proxy.size.width * ActiveProcessMemoryLayout.progress(
                             bytes: app.residentMemoryBytes,
@@ -163,8 +164,12 @@ struct ActiveProcessMemoryRow: View {
     @ViewBuilder
     private var quitButton: some View {
         let configuration = Self.quitButtonConfiguration(for: quitConfirmationState)
+        let visualStyle = ActiveProcessQuitButtonStyling.visualStyle(
+            for: quitConfirmationState,
+            appearsActive: appearsActive
+        )
 
-        if configuration.isDestructive {
+        if visualStyle == .destructiveProminent {
             Button(configuration.title) {
                 applyQuitConfirmationEvent(.quitButtonClicked)
             }

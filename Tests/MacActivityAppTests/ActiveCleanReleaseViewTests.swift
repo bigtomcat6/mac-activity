@@ -30,6 +30,105 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["memory", "processes"])
     }
 
+    func testRenderedActivesChromeMatchesOverviewCardBackgroundTone() async throws {
+        let model = ActiveCleanupModel(
+            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
+            memoryService: ViewMemoryReleaseServiceRecorder(
+                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
+            ),
+            appProvider: ViewActiveAppProviderRecorder(
+                entries: [
+                    ActiveAppMemoryEntry(
+                        processIdentifier: 2_201,
+                        name: "First",
+                        bundleIdentifier: "com.example.first",
+                        bundleURL: URL(fileURLWithPath: "/Applications/First.app"),
+                        residentMemoryBytes: 250,
+                        isTerminable: true
+                    ),
+                    ActiveAppMemoryEntry(
+                        processIdentifier: 2_202,
+                        name: "Second",
+                        bundleIdentifier: "com.example.second",
+                        bundleURL: URL(fileURLWithPath: "/Applications/Second.app"),
+                        residentMemoryBytes: 1_000,
+                        isTerminable: true
+                    ),
+                ]
+            )
+        )
+        await model.refreshVisibleCleanReleaseSections()
+
+        let content = ActiveCleanReleaseView(model: model)
+            .frame(width: 360, height: 130, alignment: .topLeading)
+
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
+                    .frame(width: 360, height: 130),
+                atTopLeft: CGPoint(x: 210, y: 40)
+            )
+        )
+        let stripColor = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: 40)))
+        let rowColor = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: 88)))
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(stripColor, referenceColor, tolerance: 0.08),
+            "Expected the memory strip background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) strip=\(Self.debugColor(stripColor))"
+        )
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(rowColor, referenceColor, tolerance: 0.08),
+            "Expected the process list background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) row=\(Self.debugColor(rowColor))"
+        )
+    }
+
+    func testRenderedProcessProgressUsesNeutralToneWhenWindowIsInactive() throws {
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_210,
+            name: "A",
+            bundleIdentifier: "b",
+            bundleURL: nil,
+            residentMemoryBytes: 1_000,
+            isTerminable: true
+        )
+
+        let activeRow = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, true)
+        let inactiveRow = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, false)
+
+        let activeReference = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: true))
+                    .frame(width: 32, height: 32),
+                atTopLeft: CGPoint(x: 16, y: 16)
+            )
+        )
+        let inactiveReference = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: false))
+                    .frame(width: 32, height: 32),
+                atTopLeft: CGPoint(x: 16, y: 16)
+            )
+        )
+        let activeColor = try XCTUnwrap(Self.renderedColor(of: activeRow, atTopLeft: CGPoint(x: 200, y: 19)))
+        let inactiveColor = try XCTUnwrap(Self.renderedColor(of: inactiveRow, atTopLeft: CGPoint(x: 200, y: 19)))
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(activeColor, activeReference, tolerance: 0.08),
+            "Expected active process fill to keep the accent tone. reference=\(Self.debugColor(activeReference)) actual=\(Self.debugColor(activeColor))"
+        )
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, inactiveReference, tolerance: 0.08),
+            "Expected inactive process fill to switch to the neutral dark tone. reference=\(Self.debugColor(inactiveReference)) actual=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
     func testRowHoverSwapsTrailingContentWithoutChangingWidth() {
         XCTAssertEqual(
             ActiveProcessMemoryRow.trailingContent(isHovered: false, quitConfirmationState: .inactive),
@@ -76,6 +175,21 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(
             ActiveProcessMemoryRow.quitButtonConfiguration(for: .confirming, bundle: Self.englishBundle),
             ActiveProcessQuitButtonConfiguration(title: "Confirm", isDestructive: true)
+        )
+    }
+
+    func testConfirmButtonOnlyUsesProminentEmphasisWhileWindowIsActive() {
+        XCTAssertEqual(
+            ActiveProcessQuitButtonStyling.visualStyle(for: .inactive, appearsActive: true),
+            .bordered
+        )
+        XCTAssertEqual(
+            ActiveProcessQuitButtonStyling.visualStyle(for: .confirming, appearsActive: true),
+            .destructiveProminent
+        )
+        XCTAssertEqual(
+            ActiveProcessQuitButtonStyling.visualStyle(for: .confirming, appearsActive: false),
+            .bordered
         )
     }
 
@@ -228,6 +342,54 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
                 isTerminable: true
             )
         }
+    }
+
+    private static func renderedColor<Content: View>(
+        of view: Content,
+        atTopLeft point: CGPoint
+    ) -> NSColor? {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+
+        guard let image = renderer.nsImage,
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff)
+        else {
+            return nil
+        }
+
+        let x = Int(point.x.rounded(.down))
+        let y = Int(point.y.rounded(.down))
+        let pixelY = bitmap.pixelsHigh - y - 1
+
+        guard (0..<bitmap.pixelsWide).contains(x),
+              (0..<bitmap.pixelsHigh).contains(pixelY)
+        else {
+            return nil
+        }
+
+        return bitmap.colorAt(x: x, y: pixelY)?.usingColorSpace(.deviceRGB)
+    }
+
+    private static func colorsApproximatelyEqual(
+        _ lhs: NSColor,
+        _ rhs: NSColor,
+        tolerance: CGFloat
+    ) -> Bool {
+        abs(lhs.redComponent - rhs.redComponent) <= tolerance
+        && abs(lhs.greenComponent - rhs.greenComponent) <= tolerance
+        && abs(lhs.blueComponent - rhs.blueComponent) <= tolerance
+        && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
+    }
+
+    private static func debugColor(_ color: NSColor) -> String {
+        String(
+            format: "(r: %.3f g: %.3f b: %.3f a: %.3f)",
+            color.redComponent,
+            color.greenComponent,
+            color.blueComponent,
+            color.alphaComponent
+        )
     }
 }
 
