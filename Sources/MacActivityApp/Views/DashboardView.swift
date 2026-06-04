@@ -144,6 +144,112 @@ enum DashboardFooterChrome {
     static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
 }
 
+enum DashboardOverviewChrome {
+    static let usageFillOpacity = 0.82
+    static let valueStripOpacity = 0.14
+    static let inactiveEmphasisFill = ActiveCleanupChrome.inactiveProgressFill
+    static let inactiveChartPrimaryStroke = Color.black.opacity(0.56)
+    static let inactiveChartSecondaryStroke = Color.black.opacity(0.42)
+    static let inactiveChartAreaTop = Color.black.opacity(0.14)
+    static let inactiveChartAreaBottom = Color.black.opacity(0.04)
+    static let inactiveChartEmptyStroke = Color.black.opacity(0.34)
+    static let inactiveMemorySegmentFill = Color.black.opacity(0.38)
+
+    static func liveIndicatorColor(appearsActive: Bool) -> Color {
+        appearsActive ? .green : .secondary
+    }
+
+    static func emphasisFillColor(
+        baseColor: Color,
+        opacity: Double,
+        appearsActive: Bool
+    ) -> Color {
+        appearsActive ? baseColor.opacity(opacity) : inactiveEmphasisFill
+    }
+
+    static func chartSecondaryStrokeColor(
+        baseColor: Color,
+        appearsActive: Bool
+    ) -> Color {
+        appearsActive ? baseColor.opacity(0.9) : inactiveChartSecondaryStroke
+    }
+
+    static func chartAreaGradient(
+        baseColor: Color,
+        appearsActive: Bool
+    ) -> LinearGradient {
+        let colors = appearsActive
+            ? [
+                baseColor.opacity(0.16),
+                baseColor.opacity(0.02),
+            ]
+            : [
+                inactiveChartAreaTop,
+                inactiveChartAreaBottom,
+            ]
+        return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
+    }
+
+    static func chartPrimaryLineGradient(
+        baseColor: Color,
+        appearsActive: Bool
+    ) -> LinearGradient {
+        let colors = appearsActive
+            ? [
+                baseColor.opacity(0.92),
+                baseColor.opacity(0.62),
+            ]
+            : [
+                inactiveChartPrimaryStroke,
+                inactiveChartSecondaryStroke,
+            ]
+        return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
+    }
+
+    static func chartSelectionPointColor(
+        baseColor: Color,
+        appearsActive: Bool
+    ) -> Color {
+        appearsActive ? baseColor : inactiveChartPrimaryStroke
+    }
+
+    static func chartEmptyStrokeColor(
+        baseColor: Color,
+        appearsActive: Bool
+    ) -> Color {
+        appearsActive ? baseColor.opacity(0.35) : inactiveChartEmptyStroke
+    }
+
+    static func memorySegmentColor(
+        for kind: RAMSegmentBarComponent.Kind,
+        appearsActive: Bool
+    ) -> Color {
+        guard appearsActive else {
+            switch kind {
+            case .active:
+                return inactiveMemorySegmentFill
+            case .compressed:
+                return Color.black.opacity(0.33)
+            case .wired:
+                return Color.black.opacity(0.28)
+            case .other:
+                return Color.black.opacity(0.24)
+            }
+        }
+
+        switch kind {
+        case .active:
+            return Color.blue.opacity(0.88)
+        case .compressed:
+            return Color.purple.opacity(0.82)
+        case .wired:
+            return Color.teal.opacity(0.82)
+        case .other:
+            return Color.indigo.opacity(0.68)
+        }
+    }
+}
+
 private enum DashboardTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case actives = "Actives"
@@ -152,6 +258,7 @@ private enum DashboardTab: String, CaseIterable, Identifiable {
 }
 
 struct DashboardView: View {
+    @Environment(\.appearsActive) private var appearsActive
     @ObservedObject var dashboardModel: DashboardModel
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @State private var selectedTab: DashboardTab = .overview
@@ -208,7 +315,7 @@ struct DashboardView: View {
 
             Text("Live")
                 .font(.caption.weight(.semibold))
-                .foregroundStyle(.green)
+                .foregroundStyle(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
         }
     }
 
@@ -555,6 +662,7 @@ private struct RAMSegmentBars: View {
 }
 
 private struct RAMSegmentBar: View {
+    @Environment(\.appearsActive) private var appearsActive
     let sample: DashboardMemoryTrendSample?
 
     var body: some View {
@@ -569,7 +677,12 @@ private struct RAMSegmentBar: View {
                         Spacer(minLength: 0)
                         ForEach(Array(segments.reversed())) { segment in
                             Rectangle()
-                                .fill(color(for: segment.kind))
+                                .fill(
+                                    DashboardOverviewChrome.memorySegmentColor(
+                                        for: segment.kind,
+                                        appearsActive: appearsActive
+                                    )
+                                )
                                 .frame(height: barHeight(for: segment, sample: sample, containerHeight: proxy.size.height))
                         }
                     }
@@ -587,6 +700,7 @@ private struct RAMSegmentBar: View {
 }
 
 private struct RAMSegmentLegend: View {
+    @Environment(\.appearsActive) private var appearsActive
     let sample: DashboardMemoryTrendSample
 
     var body: some View {
@@ -595,7 +709,12 @@ private struct RAMSegmentLegend: View {
             ForEach(segments) { segment in
                 HStack(spacing: 3) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(color(for: segment.kind))
+                        .fill(
+                            DashboardOverviewChrome.memorySegmentColor(
+                                for: segment.kind,
+                                appearsActive: appearsActive
+                            )
+                        )
                         .frame(width: 7, height: 7)
                     Text(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample)))
                         .font(.caption2.monospacedDigit())
@@ -609,6 +728,7 @@ private struct RAMSegmentLegend: View {
 }
 
 private struct RAMSegmentTooltip: View {
+    @Environment(\.appearsActive) private var appearsActive
     let sample: DashboardMemoryTrendSample
 
     var body: some View {
@@ -616,7 +736,12 @@ private struct RAMSegmentTooltip: View {
             ForEach(RAMSegmentBarsLayout.displaySegments(for: sample)) { segment in
                 HStack(spacing: 5) {
                     RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(color(for: segment.kind))
+                        .fill(
+                            DashboardOverviewChrome.memorySegmentColor(
+                                for: segment.kind,
+                                appearsActive: appearsActive
+                            )
+                        )
                         .frame(width: 8, height: 8)
                     Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
                         .font(.caption2.monospacedDigit())
@@ -632,19 +757,6 @@ private struct RAMSegmentTooltip: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         }
         .shadow(radius: 4, y: 2)
-    }
-}
-
-private func color(for kind: RAMSegmentBarComponent.Kind) -> Color {
-    switch kind {
-    case .active:
-        return Color.blue.opacity(0.88)
-    case .compressed:
-        return Color.purple.opacity(0.82)
-    case .wired:
-        return Color.teal.opacity(0.82)
-    case .other:
-        return Color.indigo.opacity(0.68)
     }
 }
 
@@ -705,6 +817,7 @@ private struct CPUGPUUsageCard: View {
 }
 
 private struct UsageBarRow: View {
+    @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
     let color: Color
     @State private var displayedProgress: Double?
@@ -728,7 +841,13 @@ private struct UsageBarRow: View {
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.08))
                     Capsule()
-                        .fill(color.opacity(0.82))
+                        .fill(
+                            DashboardOverviewChrome.emphasisFillColor(
+                                baseColor: color,
+                                opacity: DashboardOverviewChrome.usageFillOpacity,
+                                appearsActive: appearsActive
+                            )
+                        )
                         .frame(width: proxy.size.width * progress)
                 }
             }
@@ -857,6 +976,7 @@ private struct SlimTrendMetricCard: View {
 }
 
 private struct MetricCard: View {
+    @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
     @State private var isCardHovered = false
 
@@ -898,7 +1018,13 @@ private struct MetricCard: View {
                 }
             case .value:
                 Rectangle()
-                    .fill(color.opacity(0.14))
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: color,
+                            opacity: DashboardOverviewChrome.valueStripOpacity,
+                            appearsActive: appearsActive
+                        )
+                    )
                     .frame(height: 4)
                     .clipShape(Capsule())
             }

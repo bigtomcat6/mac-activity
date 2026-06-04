@@ -220,6 +220,188 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: true
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected Overview usage bar fill to change when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewChromeUsesActivesNeutralFillWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveEmphasisFill)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected Overview inactive emphasis fill to reuse the shared neutral tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
+    func testOverviewLiveIndicatorColorChangesWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: true))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: false))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected the Live indicator color to lose its active accent when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewTrendAreaGradientChangesToneWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartAreaGradient(
+                            baseColor: .green,
+                            appearsActive: true
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 4)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartAreaGradient(
+                            baseColor: .green,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 4)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected the Overview trend area gradient to change when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewNetworkSecondaryStrokeUsesNeutralToneWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartSecondaryStrokeColor(
+                            baseColor: .red,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveChartSecondaryStroke)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected the inactive network secondary stroke to use the shared neutral chart tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
+    func testOverviewMemorySegmentColorUsesNeutralToneWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.memorySegmentColor(
+                            for: .active,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveMemorySegmentFill)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected inactive memory segment fills to use the shared neutral chart tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),

@@ -5,6 +5,7 @@ import SwiftUI
 import MacActivityCore
 
 struct DashboardTrendChart: View {
+    @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
     let color: Color
     let isCardHovered: Bool
@@ -20,7 +21,13 @@ struct DashboardTrendChart: View {
                 chartBody(trend: trend, size: proxy.size)
             } else {
                 RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .stroke(color.opacity(0.35), lineWidth: 1)
+                    .stroke(
+                        DashboardOverviewChrome.chartEmptyStrokeColor(
+                            baseColor: color,
+                            appearsActive: appearsActive
+                        ),
+                        lineWidth: 1
+                    )
                     .overlay {
                         Text(AppLocalization.string(.dashboardTrendCollecting))
                             .font(.caption2)
@@ -396,33 +403,39 @@ struct DashboardTrendChart: View {
     }
 
     private var areaGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                color.opacity(0.16),
-                color.opacity(0.02),
-            ],
-            startPoint: .top,
-            endPoint: .bottom
+        DashboardOverviewChrome.chartAreaGradient(
+            baseColor: color,
+            appearsActive: appearsActive
         )
     }
 
     private var primaryLineGradient: LinearGradient {
-        LinearGradient(
-            colors: [
-                color.opacity(0.92),
-                color.opacity(0.62)
-            ],
-            startPoint: .leading,
-            endPoint: .trailing
+        DashboardOverviewChrome.chartPrimaryLineGradient(
+            baseColor: color,
+            appearsActive: appearsActive
         )
     }
 
     private var secondaryLineColor: Color {
-        metric.kind == .network ? .red.opacity(0.9) : color.opacity(0.45)
+        let baseColor: Color = metric.kind == .network ? .red : color
+        return metric.kind == .network
+            ? DashboardOverviewChrome.chartSecondaryStrokeColor(
+                baseColor: baseColor,
+                appearsActive: appearsActive
+            )
+            : (
+                appearsActive
+                ? baseColor.opacity(0.45)
+                : DashboardOverviewChrome.inactiveChartSecondaryStroke
+            )
     }
 
     private var selectionPointColor: Color {
-        metric.kind == .network ? .red.opacity(0.95) : color
+        let baseColor: Color = metric.kind == .network ? .red : color
+        return DashboardOverviewChrome.chartSelectionPointColor(
+            baseColor: baseColor,
+            appearsActive: appearsActive
+        )
     }
 
     private var hoverRuleColor: Color {
@@ -437,6 +450,12 @@ struct DashboardTrendChart: View {
     }
 
     private func hoverIndicatorColor(for series: DashboardTrendLineSeries) -> Color {
+        guard appearsActive else {
+            return series == .primary
+                ? DashboardOverviewChrome.inactiveChartPrimaryStroke
+                : DashboardOverviewChrome.inactiveChartSecondaryStroke
+        }
+
         guard metric.kind == .network else {
             return selectionPointColor
         }
