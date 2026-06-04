@@ -36,18 +36,38 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertTrue(displaySamples.contains { $0.primaryValue == 95.0 })
     }
 
-    func testDisplaySamplesCompactFlatSeries() {
+    func testDisplaySamplesDownsampleFlatSeriesWithinBudget() {
         let samples = makeSamples(values: Array(repeating: 42.0, count: 600))
+        let containerSize = CGSize(width: 280, height: 60)
 
         let displaySamples = DashboardTrendChartLayout.displaySamples(
             for: samples,
             kind: .memory,
-            containerSize: CGSize(width: 280, height: 60)
+            containerSize: containerSize
         )
 
-        XCTAssertLessThan(displaySamples.count, 20)
+        XCTAssertLessThan(displaySamples.count, samples.count)
+        XCTAssertLessThanOrEqual(
+            displaySamples.count,
+            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
+        )
         XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
         XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
+    }
+
+    func testDisplaySamplesKeepFlatSeriesFromCollapsingIntoLargeTimeGap() {
+        let samples = makeSamples(values: Array(repeating: 42.0, count: 600))
+
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .temperature,
+            containerSize: CGSize(width: 280, height: 60)
+        )
+        let largestGap = zip(displaySamples, displaySamples.dropFirst())
+            .map { $1.timestamp.timeIntervalSince($0.timestamp) }
+            .max() ?? 0
+
+        XCTAssertLessThanOrEqual(largestGap, 30)
     }
 
     func testDisplaySamplesLeaveNetworkSeriesUnchanged() {
@@ -204,8 +224,8 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
-    func testNetworkTrendDisablesSampleAnimations() {
-        XCTAssertFalse(DashboardTrendChartLayout.animatesSampleChanges(for: .network))
+    func testOverviewTrendChartsAnimateSampleChangesIncludingNetwork() {
+        XCTAssertTrue(DashboardTrendChartLayout.animatesSampleChanges(for: .network))
         XCTAssertTrue(DashboardTrendChartLayout.animatesSampleChanges(for: .cpu))
     }
 
@@ -232,6 +252,123 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             Set((primaryPoints + secondaryPoints).map(\.id)).count,
             primaryPoints.count + secondaryPoints.count
         )
+    }
+
+    func testNetworkLinePointsMirrorDownloadBelowUploadAboveBaseline() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+        ]
+
+        let downloadPoints = DashboardTrendChartLayout.linePoints(
+            for: samples,
+            kind: .network,
+            series: .primary
+        )
+        let uploadPoints = DashboardTrendChartLayout.linePoints(
+            for: samples,
+            kind: .network,
+            series: .secondary
+        )
+
+        XCTAssertEqual(downloadPoints.map(\.value), [-2_000, -4_000])
+        XCTAssertEqual(uploadPoints.map(\.value), [500, 750])
+    }
+
+    func testNetworkAutomaticDomainMirrorsAroundZero() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+        ]
+
+        let domain = DashboardTrendChartLayout.valueDomain(
+            for: samples,
+            kind: .network,
+            scale: .automatic
+        )
+
+        XCTAssertLessThan(domain.lowerBound, 0)
+        XCTAssertGreaterThan(domain.upperBound, 0)
+        XCTAssertEqual(abs(domain.lowerBound), domain.upperBound, accuracy: 0.001)
+        XCTAssertGreaterThan(domain.upperBound, 4_000)
+    }
+
+    func testNetworkDomainSmoothingExpandsImmediatelyButContractsGradually() {
+        let previous = -2_000_000.0...2_000_000.0
+        let expanded = DashboardTrendChartLayout.smoothedDomain(
+            previous: -12_000.0...12_000.0,
+            next: previous,
+            kind: .network
+        )
+        XCTAssertEqual(expanded.lowerBound, previous.lowerBound, accuracy: 0.001)
+        XCTAssertEqual(expanded.upperBound, previous.upperBound, accuracy: 0.001)
+
+        let contracted = DashboardTrendChartLayout.smoothedDomain(
+            previous: previous,
+            next: -100_000.0...100_000.0,
+            kind: .network
+        )
+
+        XCTAssertEqual(abs(contracted.lowerBound), contracted.upperBound, accuracy: 0.001)
+        XCTAssertGreaterThan(contracted.upperBound, 100_000)
+        XCTAssertLessThan(contracted.upperBound, previous.upperBound)
+    }
+
+    func testAutomaticDomainSmoothingOnlyEasesContractions() {
+        let expanded = DashboardTrendChartLayout.smoothedDomain(
+            previous: 40.0...50.0,
+            next: 30.0...80.0,
+            kind: .temperature
+        )
+        XCTAssertEqual(expanded.lowerBound, 30, accuracy: 0.001)
+        XCTAssertEqual(expanded.upperBound, 80, accuracy: 0.001)
+
+        let contracted = DashboardTrendChartLayout.smoothedDomain(
+            previous: 30.0...80.0,
+            next: 45.0...55.0,
+            kind: .temperature
+        )
+        XCTAssertGreaterThan(contracted.lowerBound, 30)
+        XCTAssertLessThan(contracted.lowerBound, 45)
+        XCTAssertGreaterThan(contracted.upperBound, 55)
+        XCTAssertLessThan(contracted.upperBound, 80)
+    }
+
+    func testNetworkHoverIndicatorsIncludeBaselineAndBothMirroredSeriesPoints() {
+        let sample = DashboardTrendSample(
+            timestamp: Date(timeIntervalSinceReferenceDate: 1_000),
+            primaryValue: 2_000,
+            secondaryValue: 500
+        )
+
+        let points = DashboardTrendChartLayout.hoverIndicatorPoints(
+            for: sample,
+            kind: .network
+        )
+
+        XCTAssertEqual(DashboardTrendChartLayout.hoverBaselineValue(for: .network), 0)
+        XCTAssertEqual(points.map(\.series), [.primary, .secondary])
+        XCTAssertEqual(points.map(\.value), [-2_000, 500])
+        XCTAssertTrue(points.allSatisfy { $0.timestamp == sample.timestamp })
+    }
+
+    func testNonNetworkHoverIndicatorsUseSinglePrimaryPointAndNoBaseline() {
+        let sample = DashboardTrendSample(
+            timestamp: Date(timeIntervalSinceReferenceDate: 1_000),
+            primaryValue: 42,
+            secondaryValue: 7
+        )
+
+        let points = DashboardTrendChartLayout.hoverIndicatorPoints(
+            for: sample,
+            kind: .cpu
+        )
+
+        XCTAssertNil(DashboardTrendChartLayout.hoverBaselineValue(for: .cpu))
+        XCTAssertEqual(points.map(\.series), [.primary])
+        XCTAssertEqual(points.map(\.value), [42])
     }
 
     func testLinePointIDsStayStableForSamplesThatRemainAfterHistoryRolls() {

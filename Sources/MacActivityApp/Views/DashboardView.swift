@@ -1,6 +1,18 @@
 import SwiftUI
 import MacActivityCore
 
+enum DashboardMotion {
+    static let hoverDuration: Double = 0.14
+    static let sampleDuration: Double = 0.32
+    static let domainDuration: Double = 0.38
+    static let valueDuration: Double = 0.42
+
+    static var hoverAnimation: Animation { .easeInOut(duration: hoverDuration) }
+    static var sampleAnimation: Animation { .smooth(duration: sampleDuration) }
+    static var domainAnimation: Animation { .smooth(duration: domainDuration) }
+    static var valueAnimation: Animation { .easeOut(duration: valueDuration) }
+}
+
 enum DashboardCardLayout {
     static let compactChartHeight: CGFloat = 60
     static let compactChartMinHeight: CGFloat = 116
@@ -11,6 +23,15 @@ enum DashboardCardLayout {
     static func usesCompactHoverLayout(for chartHeight: CGFloat) -> Bool {
         chartHeight <= 64
     }
+
+    static func chartHeightBehavior(for kind: MetricKind) -> DashboardChartHeightBehavior {
+        kind == .network ? .fillsRemainingHeight : .fixed(compactChartHeight)
+    }
+}
+
+enum DashboardChartHeightBehavior: Equatable {
+    case fixed(CGFloat)
+    case fillsRemainingHeight
 }
 
 enum DashboardOverviewSlot: Equatable {
@@ -26,8 +47,8 @@ enum DashboardOverviewLayout {
         GridItem(.flexible(minimum: 0), spacing: 12),
     ]
     static let topRowHeight = DashboardCardLayout.compactChartMinHeight
-    static let compactTrendTextWidth: CGFloat = 84
     static let compactTrendChartHeight: CGFloat = 44
+    static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
     static let secondRowHeight = compactTrendCardHeight * 2 + sectionSpacing
     static let slimTrendCardHeight = (
@@ -75,12 +96,36 @@ enum DashboardOverviewLayout {
         return min(max(percent / 100, 0), 1)
     }
 
-    static func compactTrendTextColumnWidth(isHovered: Bool) -> CGFloat? {
-        isHovered ? nil : compactTrendTextWidth
+    static let usageHeaderTitle: String? = nil
+
+    static func trendReadoutUsesIntrinsicWidth(for kind: MetricKind) -> Bool {
+        switch kind {
+        case .temperature, .fan, .battery:
+            return true
+        default:
+            return false
+        }
     }
 
-    static func compactTrendSpacing(isHovered: Bool) -> CGFloat {
-        isHovered ? 0 : 10
+    static func compactTrendShowsReadout(
+        for kind: MetricKind,
+        isHovered: Bool
+    ) -> Bool {
+        switch kind {
+        case .temperature, .fan:
+            return !isHovered
+        default:
+            return true
+        }
+    }
+
+    static func compactTrendTextChartSpacing(
+        for kind: MetricKind,
+        isHovered: Bool
+    ) -> CGFloat {
+        compactTrendShowsReadout(for: kind, isHovered: isHovered)
+        ? compactTrendRestTextChartSpacing
+        : 0
     }
 
     static func showsTrendYAxisLabels(
@@ -457,6 +502,7 @@ private struct RAMSegmentBars: View {
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                .animation(DashboardMotion.valueAnimation, value: slots)
 
                 if let hoveredSample, let hoveredSlotIndex {
                     RAMSegmentTooltip(sample: hoveredSample)
@@ -525,6 +571,7 @@ private struct RAMSegmentBar: View {
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 2.5, style: .continuous))
+            .animation(DashboardMotion.valueAnimation, value: sample)
         }
     }
 
@@ -625,10 +672,11 @@ private struct CPUGPUUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("CPU / GPU")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
-
+            if let title = DashboardOverviewLayout.usageHeaderTitle {
+                Text(title)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
             if let cpu {
                 UsageBarRow(metric: cpu, color: DashboardMetricColor.color(for: .cpu))
             }
@@ -654,8 +702,11 @@ private struct CPUGPUUsageCard: View {
 private struct UsageBarRow: View {
     let metric: DashboardMetric
     let color: Color
+    @State private var displayedProgress: Double?
 
     var body: some View {
+        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric.value)
+
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 Text(metric.title)
@@ -668,14 +719,23 @@ private struct UsageBarRow: View {
             }
 
             GeometryReader { proxy in
+                let progress = displayedProgress ?? targetProgress
                 ZStack(alignment: .leading) {
                     Capsule().fill(Color.primary.opacity(0.08))
                     Capsule()
                         .fill(color.opacity(0.82))
-                        .frame(width: proxy.size.width * DashboardOverviewLayout.usageProgress(for: metric.value))
+                        .frame(width: proxy.size.width * progress)
                 }
             }
             .frame(height: 8)
+        }
+        .onAppear {
+            displayedProgress = targetProgress
+        }
+        .onChange(of: targetProgress) { progress in
+            withAnimation(DashboardMotion.valueAnimation) {
+                displayedProgress = progress
+            }
         }
     }
 }
@@ -685,8 +745,18 @@ private struct CompactTrendMetricCard: View {
     @State private var isCardHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendSpacing(isHovered: isCardHovered)) {
-            if let textWidth = DashboardOverviewLayout.compactTrendTextColumnWidth(isHovered: isCardHovered) {
+        HStack(
+            alignment: .center,
+            spacing: DashboardOverviewLayout.compactTrendTextChartSpacing(
+                for: metric.kind,
+                isHovered: isCardHovered
+            )
+        ) {
+            if DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: metric.kind)
+                && DashboardOverviewLayout.compactTrendShowsReadout(
+                    for: metric.kind,
+                    isHovered: isCardHovered
+                ) {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(metric.title)
                         .font(.caption2.weight(.semibold))
@@ -697,8 +767,7 @@ private struct CompactTrendMetricCard: View {
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
-                .frame(width: textWidth, alignment: .leading)
-                .transition(.opacity)
+                .fixedSize(horizontal: true, vertical: false)
             }
 
             DashboardTrendChart(
@@ -729,7 +798,7 @@ private struct CompactTrendMetricCard: View {
         .onHover { hovering in
             isCardHovered = hovering
         }
-        .animation(.easeInOut(duration: 0.14), value: isCardHovered)
+        .animation(DashboardMotion.hoverAnimation, value: isCardHovered)
     }
 }
 
@@ -738,7 +807,7 @@ private struct SlimTrendMetricCard: View {
     @State private var isCardHovered = false
 
     var body: some View {
-        HStack(alignment: .center, spacing: 10) {
+        HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(metric.title)
                     .font(.caption2.weight(.semibold))
@@ -749,7 +818,7 @@ private struct SlimTrendMetricCard: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .frame(width: DashboardOverviewLayout.compactTrendTextWidth, alignment: .leading)
+            .fixedSize(horizontal: true, vertical: false)
 
             DashboardTrendChart(
                 metric: metric,
@@ -802,16 +871,7 @@ private struct MetricCard: View {
 
             switch metric.style {
             case .chart:
-                DashboardTrendChart(
-                    metric: metric,
-                    color: color,
-                    isCardHovered: isCardHovered,
-                    showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                        for: metric.kind,
-                        isCompactOverviewChart: false
-                    )
-                )
-                    .frame(height: DashboardCardLayout.compactChartHeight)
+                trendChart
             case .memoryStackedChart:
                 if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
                     RAMSegmentBars(trend: memoryTrend)
@@ -866,6 +926,28 @@ private struct MetricCard: View {
 
     private var color: Color {
         DashboardMetricColor.color(for: metric.kind)
+    }
+
+    @ViewBuilder
+    private var trendChart: some View {
+        let chart = DashboardTrendChart(
+            metric: metric,
+            color: color,
+            isCardHovered: isCardHovered,
+            showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
+                for: metric.kind,
+                isCompactOverviewChart: false
+            )
+        )
+
+        switch DashboardCardLayout.chartHeightBehavior(for: metric.kind) {
+        case .fixed(let height):
+            chart.frame(height: height)
+        case .fillsRemainingHeight:
+            chart
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .layoutPriority(1)
+        }
     }
 
     @ViewBuilder
