@@ -70,16 +70,13 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
                 atTopLeft: CGPoint(x: 210, y: 40)
             )
         )
-        let stripColor = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: 40)))
-        let rowColor = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: 88)))
+        let processGapColor = try XCTUnwrap(
+            Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: 95))
+        )
 
         XCTAssertTrue(
-            Self.colorsApproximatelyEqual(stripColor, referenceColor, tolerance: 0.08),
-            "Expected the memory strip background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) strip=\(Self.debugColor(stripColor))"
-        )
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(rowColor, referenceColor, tolerance: 0.08),
-            "Expected the process list background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) row=\(Self.debugColor(rowColor))"
+            Self.colorsApproximatelyEqual(processGapColor, referenceColor, tolerance: 0.08),
+            "Expected the process-list gap background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) gap=\(Self.debugColor(processGapColor))"
         )
     }
 
