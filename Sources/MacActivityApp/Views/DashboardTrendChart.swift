@@ -145,6 +145,7 @@ struct DashboardTrendChart: View {
                 .transition(.opacity)
             }
         }
+        .animation(DashboardMotion.focusPaletteAnimation, value: appearsActive)
         .onAppear {
             updateDisplayedDomain(to: rawDomain, animated: false)
         }

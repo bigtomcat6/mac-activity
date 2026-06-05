@@ -32,6 +32,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardMotion.valueDuration, 0.42, accuracy: 0.001)
     }
 
+    func testOverviewTrendFocusPaletteChangeDoesNotAnimate() {
+        XCTAssertNil(DashboardMotion.focusPaletteAnimation)
+    }
+
     func testOverviewLayoutUsesApprovedFixedSlots() {
         let metrics = DashboardCardLayoutTests.overviewMetrics([
             .cpu,

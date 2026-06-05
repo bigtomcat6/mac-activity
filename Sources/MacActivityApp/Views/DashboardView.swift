@@ -7,6 +7,7 @@ enum DashboardMotion {
     static let domainDuration: Double = 0.38
     static let valueDuration: Double = 0.42
 
+    static var focusPaletteAnimation: Animation? { nil }
     static var hoverAnimation: Animation { .easeInOut(duration: hoverDuration) }
     static var sampleAnimation: Animation { .smooth(duration: sampleDuration) }
     static var domainAnimation: Animation { .smooth(duration: domainDuration) }
