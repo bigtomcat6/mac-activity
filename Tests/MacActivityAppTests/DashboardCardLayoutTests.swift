@@ -84,6 +84,13 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "Collecting"), 0.0, accuracy: 0.001)
     }
 
+    func testOverviewUsageRowsUseStableCenteredColumns() {
+        XCTAssertEqual(DashboardOverviewLayout.usageLabelColumnWidth, 54)
+        XCTAssertEqual(DashboardOverviewLayout.usageValueColumnWidth, 44)
+        XCTAssertEqual(DashboardOverviewLayout.usageRowSpacing, 10)
+        XCTAssertEqual(DashboardOverviewLayout.usageBarHeight, 8)
+    }
+
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)

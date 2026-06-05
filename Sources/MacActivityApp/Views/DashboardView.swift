@@ -47,6 +47,10 @@ enum DashboardOverviewLayout {
         GridItem(.flexible(minimum: 0), spacing: 12),
     ]
     static let topRowHeight = DashboardCardLayout.compactChartMinHeight
+    static let usageLabelColumnWidth: CGFloat = 54
+    static let usageValueColumnWidth: CGFloat = 44
+    static let usageRowSpacing: CGFloat = 10
+    static let usageBarHeight: CGFloat = 8
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
@@ -825,16 +829,14 @@ private struct UsageBarRow: View {
     var body: some View {
         let targetProgress = DashboardOverviewLayout.usageProgress(for: metric.value)
 
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(spacing: 8) {
-                Text(metric.title)
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                Spacer(minLength: 8)
-                Text(metric.value)
-                    .font(.caption.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
+        HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
+            Text(metric.title)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .frame(
+                    width: DashboardOverviewLayout.usageLabelColumnWidth,
+                    alignment: .center
+                )
 
             GeometryReader { proxy in
                 let progress = displayedProgress ?? targetProgress
@@ -851,7 +853,16 @@ private struct UsageBarRow: View {
                         .frame(width: proxy.size.width * progress)
                 }
             }
-            .frame(height: 8)
+            .frame(height: DashboardOverviewLayout.usageBarHeight)
+
+            Text(metric.value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .frame(
+                    width: DashboardOverviewLayout.usageValueColumnWidth,
+                    alignment: .center
+                )
         }
         .onAppear {
             displayedProgress = targetProgress
