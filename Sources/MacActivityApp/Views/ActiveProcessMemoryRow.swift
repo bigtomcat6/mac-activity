@@ -72,15 +72,25 @@ struct ActiveProcessMemoryRow: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let shape = RoundedRectangle(
+                cornerRadius: ActiveProcessMemoryLayout.rowCornerRadius,
+                style: .continuous
+            )
+            let progressWidth = proxy.size.width * ActiveProcessMemoryLayout.progress(
+                bytes: app.residentMemoryBytes,
+                maxBytes: maxBytes
+            )
+            let remainingWidth = max(0, proxy.size.width - progressWidth)
+
             ZStack(alignment: .leading) {
                 Rectangle()
+                    .fill(ActiveProcessMemoryLayout.rowBackgroundColor(appearsActive: appearsActive))
+                    .frame(width: remainingWidth)
+                    .offset(x: progressWidth)
+
+                Rectangle()
                     .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
-                    .frame(
-                        width: proxy.size.width * ActiveProcessMemoryLayout.progress(
-                            bytes: app.residentMemoryBytes,
-                            maxBytes: maxBytes
-                        )
-                    )
+                    .frame(width: progressWidth)
 
                 HStack(spacing: 10) {
                     HStack(spacing: 10) {
@@ -109,6 +119,13 @@ struct ActiveProcessMemoryRow: View {
                 }
                 .padding(.horizontal, 12)
             }
+            .clipShape(shape)
+            .overlay {
+                shape.stroke(
+                    ActiveProcessMemoryLayout.rowBorderColor(appearsActive: appearsActive),
+                    lineWidth: 1
+                )
+            }
         }
         .frame(height: ActiveProcessMemoryLayout.rowHeight)
         .contentShape(Rectangle())
@@ -124,7 +141,6 @@ struct ActiveProcessMemoryRow: View {
                 confirmingQuitProcessIdentifier = nil
             }
         }
-        .clipped()
     }
 
     private var quitConfirmationState: ActiveProcessQuitConfirmationState {

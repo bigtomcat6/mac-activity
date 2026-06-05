@@ -13,4 +13,11 @@ final class ActiveProcessMemoryLayoutTests: XCTestCase {
         XCTAssertEqual(ActiveProcessMemoryLayout.rowHeight, 38)
         XCTAssertEqual(ActiveProcessMemoryLayout.trailingActionWidth, 72)
     }
+
+    func testRowChromeConstantsMatchApprovedPolish() {
+        XCTAssertEqual(ActiveCleanReleaseLayout.processListSpacing, 6)
+        XCTAssertEqual(ActiveProcessMemoryLayout.rowCornerRadius, 10)
+        XCTAssertEqual(ActiveProcessMemoryLayout.rowBorderOpacity, 0.08, accuracy: 0.001)
+        XCTAssertEqual(ActiveProcessMemoryLayout.rowBackgroundOpacity, 0.05, accuracy: 0.001)
+    }
 }

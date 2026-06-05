@@ -129,6 +129,38 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
     }
 
+    func testRenderedProcessRowIncludesSoftChromeOutsideProgressFill() throws {
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_333,
+            name: "Chrome Test",
+            bundleIdentifier: "com.example.chrome-test",
+            bundleURL: nil,
+            residentMemoryBytes: 200,
+            isTerminable: true
+        )
+
+        let row = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, true)
+
+        let reference = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(ActiveProcessMemoryLayout.rowBackgroundColor(appearsActive: true))
+                    .frame(width: 32, height: 32),
+                atTopLeft: CGPoint(x: 16, y: 16)
+            )
+        )
+        let actual = try XCTUnwrap(
+            Self.renderedColor(of: row, atTopLeft: CGPoint(x: 300, y: 19))
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(actual, reference, tolerance: 0.08),
+            "Expected row chrome to be visible outside the progress-fill region. reference=\(Self.debugColor(reference)) actual=\(Self.debugColor(actual))"
+        )
+    }
+
     func testRowHoverSwapsTrailingContentWithoutChangingWidth() {
         XCTAssertEqual(
             ActiveProcessMemoryRow.trailingContent(isHovered: false, quitConfirmationState: .inactive),

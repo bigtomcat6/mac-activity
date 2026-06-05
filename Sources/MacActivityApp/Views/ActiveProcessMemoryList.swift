@@ -28,18 +28,13 @@ struct ActiveProcessMemoryList: View {
             } else {
                 let maxBytes = model.apps.map(\.residentMemoryBytes).max() ?? 0
 
-                ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
+                ForEach(model.apps, id: \.id) { app in
                     ActiveProcessMemoryRow(
                         app: app,
                         maxBytes: maxBytes,
                         confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
                     ) {
                         model.quit(app)
-                    }
-
-                    if index < model.apps.count - 1 {
-                        Divider()
-                            .padding(.leading, 12)
                     }
                 }
             }
