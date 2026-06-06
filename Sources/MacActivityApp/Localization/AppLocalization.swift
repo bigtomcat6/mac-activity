@@ -2,6 +2,9 @@ import Foundation
 import MacActivityCore
 
 enum AppLocalization {
+    private static let preferredLanguageLock = NSLock()
+    nonisolated(unsafe) private static var preferredLanguageIdentifier: String?
+
     enum Key: String {
         case appName = "app.name"
         case preferences = "app.action.preferences"
@@ -36,10 +39,15 @@ enum AppLocalization {
         case temperatureDashboardCPU = "temperature.dashboard.cpu"
         case temperatureDashboardBattery = "temperature.dashboard.battery"
         case preferencesLaunchAtLogin = "preferences.launchAtLogin"
+        case preferencesLanguage = "preferences.language"
+        case preferencesLanguageHelp = "preferences.languageHelp"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
+        case languageSystem = "language.system"
+        case languageEnglish = "language.english"
+        case languageSimplifiedChinese = "language.simplifiedChinese"
         case memoryReleaseActionRelease = "memoryRelease.action.release"
         case memoryReleaseActionReleasing = "memoryRelease.action.releasing"
         case memoryReleaseTitleIdle = "memoryRelease.title.idle"
@@ -99,8 +107,22 @@ enum AppLocalization {
         return Bundle(path: path)
     }
 
+    static func normalizedLanguageIdentifier(_ languageIdentifier: String?) -> String? {
+        guard let normalized = languageIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines),
+              normalized.isEmpty == false else {
+            return nil
+        }
+        return normalized
+    }
+
+    static func setPreferredLanguageIdentifier(_ preferredLanguageIdentifier: String?) {
+        preferredLanguageLock.lock()
+        self.preferredLanguageIdentifier = normalizedLanguageIdentifier(preferredLanguageIdentifier)
+        preferredLanguageLock.unlock()
+    }
+
     static func string(_ key: Key, _ arguments: CVarArg..., bundle: Bundle? = nil) -> String {
-        let targetBundle = bundle ?? self.bundle
+        let targetBundle = bundle ?? configuredBundle()
         let format = targetBundle.localizedString(forKey: key.rawValue, value: nil, table: nil)
 
         guard arguments.isEmpty == false else {
@@ -170,6 +192,17 @@ enum AppLocalization {
         }
     }
 
+    static func languageTitle(for language: AppLanguage, bundle: Bundle? = nil) -> String {
+        switch language {
+        case .system:
+            return string(.languageSystem, bundle: bundle)
+        case .english:
+            return string(.languageEnglish, bundle: bundle)
+        case .simplifiedChinese:
+            return string(.languageSimplifiedChinese, bundle: bundle)
+        }
+    }
+
     static func memorySegmentTitle(for kind: RAMSegmentBarComponent.Kind, bundle: Bundle? = nil) -> String {
         switch kind {
         case .active:
@@ -211,5 +244,18 @@ enum AppLocalization {
         }
 
         return .current
+    }
+
+    private static func configuredBundle() -> Bundle {
+        preferredLanguageLock.lock()
+        let preferredLanguageIdentifier = self.preferredLanguageIdentifier
+        preferredLanguageLock.unlock()
+
+        guard let preferredLanguageIdentifier,
+              let overrideBundle = bundle(forLanguageIdentifier: preferredLanguageIdentifier) else {
+            return bundle
+        }
+
+        return overrideBundle
     }
 }

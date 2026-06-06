@@ -42,6 +42,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.temperatureSource, .battery)
         XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
     }
+
+    func testPreferredLanguageIdentifierPersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(controller.state.preferredLanguageIdentifier, "zh-Hans")
+        XCTAssertEqual(store.savedValues.last?.preferredLanguageIdentifier, "zh-Hans")
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {

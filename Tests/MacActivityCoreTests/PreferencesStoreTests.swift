@@ -12,7 +12,8 @@ final class PreferencesStoreTests: XCTestCase {
         let expected = AppPreferences(
             launchAtLoginEnabled: true,
             selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu],
-            temperatureSource: .battery
+            temperatureSource: .battery,
+            preferredLanguageIdentifier: "zh-Hans"
         )
 
         try store.save(expected)
@@ -62,5 +63,6 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .temperature])
         XCTAssertEqual(loaded.launchAtLoginEnabled, true)
         XCTAssertEqual(loaded.temperatureSource, .smc)
+        XCTAssertNil(loaded.preferredLanguageIdentifier)
     }
 }

@@ -3,6 +3,7 @@ import MacActivityCore
 
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
+    @ObservedObject private var localizationController = AppLocalizationController.shared
 
     private var metricRows: [MetricKind] {
         MetricKind.summaryOrder
@@ -18,6 +19,35 @@ struct PreferencesView: View {
                         set: { preferencesController.setLaunchAtLoginEnabled($0) }
                     )
                 )
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(AppLocalization.string(.preferencesLanguage))
+                        .font(.headline)
+
+                    Picker(
+                        AppLocalization.string(.preferencesLanguage),
+                        selection: Binding(
+                            get: {
+                                AppLanguage(
+                                    preferredLanguageIdentifier: preferencesController.state.preferredLanguageIdentifier
+                                )
+                            },
+                            set: { language in
+                                preferencesController.setPreferredLanguageIdentifier(language.preferredLanguageIdentifier)
+                            }
+                        )
+                    ) {
+                        ForEach(AppLanguage.allCases) { language in
+                            Text(AppLocalization.languageTitle(for: language))
+                                .tag(language)
+                        }
+                    }
+                    .pickerStyle(.menu)
+
+                    Text(AppLocalization.string(.preferencesLanguageHelp))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text(AppLocalization.string(.preferencesTemperatureSource))

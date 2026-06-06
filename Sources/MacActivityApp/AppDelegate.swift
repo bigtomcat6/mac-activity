@@ -23,6 +23,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             store: UserDefaultsPreferencesStore(),
             launchService: launchService
         )
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier(
+            preferencesController.state.preferredLanguageIdentifier
+        )
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -83,6 +86,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesController.state.launchAtLoginEnabled != launchService.currentStatus() {
             preferencesController.setLaunchAtLoginEnabled(preferencesController.state.launchAtLoginEnabled)
         }
+
+        preferencesController.$state
+            .map(\.preferredLanguageIdentifier)
+            .removeDuplicates()
+            .sink { preferredLanguageIdentifier in
+                AppLocalizationController.shared.applyPreferredLanguageIdentifier(preferredLanguageIdentifier)
+            }
+            .store(in: &cancellables)
 
         preferencesController.$state
             .map(\.temperatureSource)

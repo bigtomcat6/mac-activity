@@ -45,21 +45,25 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]
     public var temperatureSource: TemperatureSource
+    public var preferredLanguageIdentifier: String?
 
     public init(
         launchAtLoginEnabled: Bool,
         selectedSummaryMetrics: [MetricKind],
-        temperatureSource: TemperatureSource = .smc
+        temperatureSource: TemperatureSource = .smc,
+        preferredLanguageIdentifier: String? = nil
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
         self.temperatureSource = temperatureSource
+        self.preferredLanguageIdentifier = preferredLanguageIdentifier
     }
 
     private enum CodingKeys: String, CodingKey {
         case launchAtLoginEnabled
         case selectedSummaryMetrics
         case temperatureSource
+        case preferredLanguageIdentifier
     }
 
     public init(from decoder: Decoder) throws {
@@ -67,11 +71,13 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.launchAtLoginEnabled = try container.decode(Bool.self, forKey: .launchAtLoginEnabled)
         self.selectedSummaryMetrics = try container.decode([MetricKind].self, forKey: .selectedSummaryMetrics)
         self.temperatureSource = try container.decodeIfPresent(TemperatureSource.self, forKey: .temperatureSource) ?? .smc
+        self.preferredLanguageIdentifier = try container.decodeIfPresent(String.self, forKey: .preferredLanguageIdentifier)
     }
 
     public static let `default` = AppPreferences(
         launchAtLoginEnabled: false,
         selectedSummaryMetrics: [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network],
-        temperatureSource: .smc
+        temperatureSource: .smc,
+        preferredLanguageIdentifier: nil
     )
 }

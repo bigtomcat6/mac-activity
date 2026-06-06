@@ -255,16 +255,26 @@ enum DashboardOverviewChrome {
     }
 }
 
-private enum DashboardTab: String, CaseIterable, Identifiable {
-    case overview = "Overview"
-    case actives = "Actives"
+private enum DashboardTab: CaseIterable, Identifiable {
+    case overview
+    case actives
 
-    var id: String { rawValue }
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .overview:
+            return AppLocalization.string(.dashboardTabOverview)
+        case .actives:
+            return AppLocalization.string(.dashboardTabActives)
+        }
+    }
 }
 
 struct DashboardView: View {
     @Environment(\.appearsActive) private var appearsActive
     @ObservedObject var dashboardModel: DashboardModel
+    @ObservedObject private var localizationController = AppLocalizationController.shared
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @State private var selectedTab: DashboardTab = .overview
     let openPreferences: () -> Void
@@ -294,9 +304,9 @@ struct DashboardView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Button("Preferences", action: openPreferences)
+                Button(AppLocalization.string(.preferences), action: openPreferences)
                 Spacer(minLength: 12)
-                Button("Quit", action: quitApplication)
+                Button(AppLocalization.string(.quit), action: quitApplication)
             }
             .frame(maxWidth: .infinity)
             .padding(14)
@@ -308,7 +318,7 @@ struct DashboardView: View {
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
             VStack(alignment: .leading, spacing: 4) {
-                Text("Mac Activity")
+                Text(AppLocalization.string(.appName))
                     .font(.headline)
                 Text(summaryText)
                     .font(.caption)
@@ -318,16 +328,16 @@ struct DashboardView: View {
 
             Spacer()
 
-            Text("Live")
+            Text(AppLocalization.string(.live))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
         }
     }
 
     private var tabPicker: some View {
-        Picker("Dashboard section", selection: $selectedTab) {
+        Picker(AppLocalization.string(.dashboardSection), selection: $selectedTab) {
             ForEach(DashboardTab.allCases) { tab in
-                Text(tab.rawValue).tag(tab)
+                Text(tab.title).tag(tab)
             }
         }
         .pickerStyle(.segmented)
