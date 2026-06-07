@@ -60,7 +60,7 @@ final class StatusItemController {
     }
 
     private func togglePopover() {
-        popoverController.toggle(relativeTo: summaryView)
+        popoverController.toggle(relativeTo: statusItem?.button ?? summaryView)
     }
 
     private func render(
@@ -91,7 +91,15 @@ final class StatusItemController {
         }
 
         let summaryView = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
-        statusItem.view = summaryView
+        guard let button = statusItem.button else {
+            self.summaryView = summaryView
+            return summaryView
+        }
+
+        button.title = ""
+        summaryView.frame = button.bounds
+        summaryView.autoresizingMask = [.width, .height]
+        button.addSubview(summaryView)
         self.summaryView = summaryView
         return summaryView
     }
