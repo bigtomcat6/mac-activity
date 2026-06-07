@@ -147,6 +147,8 @@ enum DashboardOverviewLayout {
 
 enum DashboardFooterChrome {
     static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
+    static let preferencesSystemImage = "gearshape"
+    static let quitSystemImage = "power"
 }
 
 enum DashboardOverviewChrome {
@@ -304,9 +306,19 @@ struct DashboardView: View {
             Divider()
 
             HStack(spacing: 12) {
-                Button(AppLocalization.string(.preferences), action: openPreferences)
+                Button(action: openPreferences) {
+                    Label(
+                        AppLocalization.string(.preferences),
+                        systemImage: DashboardFooterChrome.preferencesSystemImage
+                    )
+                }
                 Spacer(minLength: 12)
-                Button(AppLocalization.string(.quit), action: quitApplication)
+                Button(action: quitApplication) {
+                    Label(
+                        AppLocalization.string(.quit),
+                        systemImage: DashboardFooterChrome.quitSystemImage
+                    )
+                }
             }
             .frame(maxWidth: .infinity)
             .padding(14)
@@ -316,7 +328,7 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
+        HStack(alignment: .center) {
             VStack(alignment: .leading, spacing: 4) {
                 Text(AppLocalization.string(.appName))
                     .font(.headline)
@@ -328,9 +340,35 @@ struct DashboardView: View {
 
             Spacer()
 
+            liveIndicator
+        }
+    }
+
+    private var liveIndicator: some View {
+        HStack(spacing: DashboardHeaderChrome.liveIndicatorSpacing) {
+            Circle()
+                .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
+                .frame(
+                    width: DashboardHeaderChrome.liveIndicatorDotSize,
+                    height: DashboardHeaderChrome.liveIndicatorDotSize
+                )
+
             Text(AppLocalization.string(.live))
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
+        }
+        .padding(.horizontal, DashboardHeaderChrome.liveIndicatorHorizontalPadding)
+        .padding(.vertical, DashboardHeaderChrome.liveIndicatorVerticalPadding)
+        .background(
+            .quaternary.opacity(DashboardHeaderChrome.liveIndicatorBackgroundOpacity),
+            in: Capsule()
+        )
+        .overlay {
+            Capsule()
+                .stroke(
+                    .separator.opacity(DashboardHeaderChrome.liveIndicatorBorderOpacity),
+                    lineWidth: 1
+                )
         }
     }
 
@@ -446,7 +484,7 @@ private struct OverviewDashboardContent: View {
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
             .padding(18)
-            .background(.quaternary.opacity(0.45), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .dashboardCardChrome()
     }
 }
 
@@ -801,6 +839,7 @@ enum DashboardMetricColor {
 private struct CPUGPUUsageCard: View {
     let cpu: DashboardMetric?
     let gpu: DashboardMetric?
+    @State private var isCardHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -823,10 +862,9 @@ private struct CPUGPUUsageCard: View {
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .topLeading
         )
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
+        .dashboardCardChrome(isHovered: isCardHovered)
+        .onHover { hovering in
+            isCardHovered = hovering
         }
     }
 }
@@ -935,12 +973,7 @@ private struct CompactTrendMetricCard: View {
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .leading
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
-        }
+        .dashboardCardChrome(isHovered: isCardHovered)
         .onHover { hovering in
             isCardHovered = hovering
         }
@@ -985,12 +1018,7 @@ private struct SlimTrendMetricCard: View {
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .leading
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
-        }
+        .dashboardCardChrome(isHovered: isCardHovered)
         .onHover { hovering in
             isCardHovered = hovering
         }
@@ -1066,12 +1094,7 @@ private struct MetricCard: View {
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .topLeading
         )
-        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.separator.opacity(0.45), lineWidth: 1)
-        }
+        .dashboardCardChrome(isHovered: isCardHovered)
         .onHover { hovering in
             isCardHovered = hovering
         }

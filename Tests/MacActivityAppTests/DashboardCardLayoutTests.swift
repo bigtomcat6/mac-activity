@@ -116,6 +116,30 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
     }
 
+    func testDashboardCardsShareActivesSurfaceChrome() {
+        XCTAssertEqual(DashboardCardChrome.cornerRadius, ActiveCleanupChrome.cornerRadius)
+        XCTAssertEqual(DashboardCardChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(DashboardCardChrome.borderOpacity(isHovered: false), ActiveCleanupChrome.borderOpacity, accuracy: 0.001)
+    }
+
+    func testDashboardCardsIncreaseBorderEmphasisOnHover() {
+        XCTAssertGreaterThan(
+            DashboardCardChrome.borderOpacity(isHovered: true),
+            DashboardCardChrome.borderOpacity(isHovered: false)
+        )
+    }
+
+    func testHeaderLiveIndicatorUsesCompactChipChrome() {
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorDotSize, 6)
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorHorizontalPadding, 8)
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorVerticalPadding, 4)
+    }
+
+    func testFooterActionsUseStableSystemImages() {
+        XCTAssertEqual(DashboardFooterChrome.preferencesSystemImage, "gearshape")
+        XCTAssertEqual(DashboardFooterChrome.quitSystemImage, "power")
+    }
+
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
         XCTAssertEqual(
             DashboardCardLayout.chartHeightBehavior(for: .network),
