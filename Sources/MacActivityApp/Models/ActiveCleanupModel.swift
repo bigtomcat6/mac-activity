@@ -52,6 +52,7 @@ final class ActiveCleanupModel: ObservableObject {
     @Published private(set) var memoryState: MemoryState = .idle
     @Published private(set) var processActionState: ProcessActionState = .idle
     @Published private(set) var apps: [ActiveAppMemoryEntry] = []
+    @Published private(set) var quittingProcessIdentifiers: Set<pid_t> = []
     @Published private(set) var isCleaningTrash = false
     @Published private(set) var isReleasingMemory = false
     @Published var isTrashConfirmationPresented = false
@@ -60,17 +61,23 @@ final class ActiveCleanupModel: ObservableObject {
     private let memoryService: any MemoryReleaseServicing
     private let appProvider: any ActiveAppMemoryProviding
     private let limit: Int
+    private let quitRefreshIntervalNanoseconds: UInt64
+    private let quitRefreshAttemptLimit: Int
 
     init(
         trashService: any TrashCleanupServicing = TrashCleanupService(),
         memoryService: any MemoryReleaseServicing = MemoryReleaseService(),
         appProvider: any ActiveAppMemoryProviding = ActiveAppMemoryService(),
-        limit: Int = 20
+        limit: Int = 20,
+        quitRefreshIntervalNanoseconds: UInt64 = 500_000_000,
+        quitRefreshAttemptLimit: Int = 20
     ) {
         self.trashService = trashService
         self.memoryService = memoryService
         self.appProvider = appProvider
         self.limit = limit
+        self.quitRefreshIntervalNanoseconds = quitRefreshIntervalNanoseconds
+        self.quitRefreshAttemptLimit = quitRefreshAttemptLimit
     }
 
     func refresh() async {
@@ -99,7 +106,9 @@ final class ActiveCleanupModel: ObservableObject {
     }
 
     func refreshApps() {
-        apps = appProvider.topApps(limit: limit)
+        let refreshedApps = appProvider.topApps(limit: limit)
+        apps = refreshedApps
+        reconcileQuittingProcesses(with: refreshedApps)
     }
 
     func requestTrashCleanupConfirmation() {
@@ -157,13 +166,39 @@ final class ActiveCleanupModel: ObservableObject {
         switch appProvider.requestTermination(processIdentifier: app.processIdentifier) {
         case .requested:
             processActionState = .requested(app.name)
+            markQuitPending(for: app.processIdentifier)
         case .notFound:
             processActionState = .notFound(app.name)
+            clearQuitPending(for: app.processIdentifier)
         case .notTerminable:
             processActionState = .notTerminable(app.name)
+            clearQuitPending(for: app.processIdentifier)
         }
 
         refreshApps()
+    }
+
+    func refreshQuittingProcessesUntilResolved() async {
+        guard quittingProcessIdentifiers.isEmpty == false else { return }
+
+        var remainingAttempts = quitRefreshAttemptLimit
+        while quittingProcessIdentifiers.isEmpty == false && remainingAttempts > 0 {
+            if quitRefreshIntervalNanoseconds > 0 {
+                try? await Task.sleep(nanoseconds: quitRefreshIntervalNanoseconds)
+            }
+            guard Task.isCancelled == false else { return }
+
+            refreshApps()
+            remainingAttempts -= 1
+        }
+
+        if remainingAttempts == 0 && quittingProcessIdentifiers.isEmpty == false {
+            quittingProcessIdentifiers = []
+        }
+    }
+
+    func isQuitPending(for processIdentifier: pid_t) -> Bool {
+        quittingProcessIdentifiers.contains(processIdentifier)
     }
 
     private var currentMemoryPercent: Double? {
@@ -196,6 +231,26 @@ final class ActiveCleanupModel: ObservableObject {
             return bytes
         case .failed:
             return nil
+        }
+    }
+
+    private func markQuitPending(for processIdentifier: pid_t) {
+        var pending = quittingProcessIdentifiers
+        pending.insert(processIdentifier)
+        quittingProcessIdentifiers = pending
+    }
+
+    private func clearQuitPending(for processIdentifier: pid_t) {
+        var pending = quittingProcessIdentifiers
+        pending.remove(processIdentifier)
+        quittingProcessIdentifiers = pending
+    }
+
+    private func reconcileQuittingProcesses(with refreshedApps: [ActiveAppMemoryEntry]) {
+        let visibleProcessIdentifiers = Set(refreshedApps.map(\.processIdentifier))
+        let stillVisibleQuittingProcesses = quittingProcessIdentifiers.intersection(visibleProcessIdentifiers)
+        if stillVisibleQuittingProcesses != quittingProcessIdentifiers {
+            quittingProcessIdentifiers = stillVisibleQuittingProcesses
         }
     }
 

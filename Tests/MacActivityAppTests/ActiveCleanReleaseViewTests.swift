@@ -46,6 +46,32 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(ActiveProcessMemoryLayout.trailingActionWidth, 72)
     }
 
+    func testRowShowsRefreshAnimationWhileQuitIsPending() {
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContent(
+                isHovered: false,
+                quitConfirmationState: .inactive,
+                isQuitPending: true
+            ),
+            .quitting
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContent(
+                isHovered: true,
+                quitConfirmationState: .confirming,
+                isQuitPending: true
+            ),
+            .quitting
+        )
+    }
+
+    func testPendingQuitRefreshAnimationUsesTrailingAlignment() {
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.trailingContentAlignment(for: .quitting),
+            .trailing
+        )
+    }
+
     func testQuitButtonRequiresSecondClickToRequestTermination() {
         let firstClick = ActiveProcessQuitConfirmationReducer.reduce(.inactive, event: .quitButtonClicked)
 

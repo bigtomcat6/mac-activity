@@ -23,5 +23,8 @@ struct ActiveCleanReleaseView: View {
         .task {
             await model.refreshVisibleCleanReleaseSections()
         }
+        .task(id: model.quittingProcessIdentifiers) {
+            await model.refreshQuittingProcessesUntilResolved()
+        }
     }
 }

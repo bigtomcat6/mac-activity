@@ -160,10 +160,63 @@ final class ActiveCleanupModelTests: XCTestCase {
 
         model.quit(app)
         XCTAssertEqual(model.processActionState, .requested(app.name))
+        XCTAssertTrue(model.isQuitPending(for: app.processIdentifier))
         model.quit(app)
         XCTAssertEqual(model.processActionState, .notFound(app.name))
+        XCTAssertFalse(model.isQuitPending(for: app.processIdentifier))
         model.quit(app)
         XCTAssertEqual(model.processActionState, .notTerminable(app.name))
+        XCTAssertFalse(model.isQuitPending(for: app.processIdentifier))
+    }
+
+    func testPendingQuitClearsWhenRefreshedAppsNoLongerContainProcess() {
+        let app = Self.entries(count: 1)[0]
+        let provider = ActiveAppProviderRecorder(
+            entries: [app],
+            terminationResults: [.requested]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: MemoryReleaseServiceRecorder(),
+            appProvider: provider
+        )
+
+        model.refreshApps()
+        model.quit(app)
+
+        XCTAssertTrue(model.isQuitPending(for: app.processIdentifier))
+
+        provider.entries = []
+        model.refreshApps()
+
+        XCTAssertFalse(model.isQuitPending(for: app.processIdentifier))
+        XCTAssertTrue(model.apps.isEmpty)
+    }
+
+    func testPendingQuitRefreshLoopStopsWhenAppDisappears() async {
+        let app = Self.entries(count: 1)[0]
+        let provider = ActiveAppProviderRecorder(
+            entriesByCall: [[app], [app], []],
+            terminationResults: [.requested]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: MemoryReleaseServiceRecorder(),
+            appProvider: provider,
+            quitRefreshIntervalNanoseconds: 0,
+            quitRefreshAttemptLimit: 3
+        )
+
+        model.refreshApps()
+        model.quit(app)
+
+        XCTAssertTrue(model.isQuitPending(for: app.processIdentifier))
+
+        await model.refreshQuittingProcessesUntilResolved()
+
+        XCTAssertFalse(model.isQuitPending(for: app.processIdentifier))
+        XCTAssertTrue(model.apps.isEmpty)
+        XCTAssertEqual(provider.topAppsCallCount, 3)
     }
 
     static func entries(count: Int) -> [ActiveAppMemoryEntry] {
@@ -294,18 +347,26 @@ private final class SuspendedMemoryReleaseService: MemoryReleaseServicing {
 @MainActor
 private final class ActiveAppProviderRecorder: ActiveAppMemoryProviding {
     var entries: [ActiveAppMemoryEntry]
+    var entriesByCall: [[ActiveAppMemoryEntry]]
     var terminationResults: [ActiveAppTerminationResult]
+    private(set) var topAppsCallCount = 0
 
     init(
         entries: [ActiveAppMemoryEntry] = [],
+        entriesByCall: [[ActiveAppMemoryEntry]] = [],
         terminationResults: [ActiveAppTerminationResult] = []
     ) {
         self.entries = entries
+        self.entriesByCall = entriesByCall
         self.terminationResults = terminationResults
     }
 
     func topApps(limit: Int) -> [ActiveAppMemoryEntry] {
-        Array(entries.prefix(limit))
+        topAppsCallCount += 1
+        if entriesByCall.isEmpty == false {
+            entries = entriesByCall.removeFirst()
+        }
+        return Array(entries.prefix(limit))
     }
 
     func requestTermination(processIdentifier: pid_t) -> ActiveAppTerminationResult {
