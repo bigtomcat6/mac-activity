@@ -13,13 +13,19 @@ final class ActiveCleanupModelTests: XCTestCase {
         await model.refresh()
 
         XCTAssertEqual(model.trashState, .cleanable(bytes: 4_096, itemCount: 2))
-        XCTAssertEqual(model.memoryState, .usage(percent: 60))
+        XCTAssertEqual(model.memoryState, .usage(percent: 60, releasableBytes: 0))
         XCTAssertEqual(model.apps.count, 20)
     }
 
     func testRefreshVisibleCleanReleaseSectionsSkipsHiddenTrash() async {
         let trash = TrashCleanupServiceRecorder(scanResults: [.cleanable(bytes: 4_096, itemCount: 2)])
-        let memory = MemoryReleaseServiceRecorder(currentReadings: [MemoryReading(usedBytes: 6, totalBytes: 10)])
+        let memory = MemoryReleaseServiceRecorder(currentReadings: [
+            MemoryReading(
+                usedBytes: 6,
+                totalBytes: 10,
+                breakdown: MemoryBreakdown(cachedBytes: 2)
+            )
+        ], releasableByteResults: [1])
         let apps = ActiveAppProviderRecorder(entries: Self.entries(count: 2))
         let model = ActiveCleanupModel(trashService: trash, memoryService: memory, appProvider: apps)
 
@@ -27,8 +33,27 @@ final class ActiveCleanupModelTests: XCTestCase {
 
         XCTAssertEqual(model.trashState, .idle)
         XCTAssertEqual(trash.scanCallCount, 0)
-        XCTAssertEqual(model.memoryState, .usage(percent: 60))
+        XCTAssertEqual(model.memoryState, .usage(percent: 60, releasableBytes: 1))
         XCTAssertEqual(model.apps.count, 2)
+    }
+
+    func testRefreshMemoryUsageShowsReleaseServiceEstimateInsteadOfCachedMemory() async {
+        let memory = MemoryReleaseServiceRecorder(currentReadings: [
+            MemoryReading(
+                usedBytes: 6,
+                totalBytes: 10,
+                breakdown: MemoryBreakdown(cachedBytes: 9)
+            )
+        ], releasableByteResults: [3])
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: memory,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.refreshMemoryUsage()
+
+        XCTAssertEqual(model.memoryState, .usage(percent: 60, releasableBytes: 3))
     }
 
     func testRequestingTrashCleanupOnlyShowsConfirmation() {
@@ -126,6 +151,23 @@ final class ActiveCleanupModelTests: XCTestCase {
         await model.releaseMemory()
 
         XCTAssertEqual(model.memoryState, .released(bytes: 1_024, percentOfTotal: 5))
+    }
+
+    func testZeroObservedMemoryReleaseRefreshesUsageInsteadOfShowingReleasedZero() async {
+        let memory = MemoryReleaseServiceRecorder(
+            currentReadings: [MemoryReading(usedBytes: 5, totalBytes: 10)],
+            releasableByteResults: [256],
+            releaseResults: [.released(bytes: 0, percentOfTotal: 0)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: memory,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.releaseMemory()
+
+        XCTAssertEqual(model.memoryState, .usage(percent: 50, releasableBytes: 256))
     }
 
     func testDuplicateMemoryReleaseIsIgnoredWhileFirstCallIsRunning() async {
@@ -263,14 +305,17 @@ private final class TrashCleanupServiceRecorder: TrashCleanupServicing {
 @MainActor
 private final class MemoryReleaseServiceRecorder: MemoryReleaseServicing {
     var currentReadings: [MemoryReading]
+    var releasableByteResults: [UInt64?]
     var releaseResults: [MemoryReleaseResult]
     private(set) var releaseCallCount = 0
 
     init(
         currentReadings: [MemoryReading] = [],
+        releasableByteResults: [UInt64?] = [],
         releaseResults: [MemoryReleaseResult] = [.unavailable]
     ) {
         self.currentReadings = currentReadings
+        self.releasableByteResults = releasableByteResults
         self.releaseResults = releaseResults
     }
 
@@ -283,6 +328,11 @@ private final class MemoryReleaseServiceRecorder: MemoryReleaseServicing {
         releaseCallCount += 1
         guard releaseResults.isEmpty == false else { return .unavailable }
         return releaseResults.removeFirst()
+    }
+
+    func currentReleasableBytes() async -> UInt64? {
+        guard releasableByteResults.isEmpty == false else { return nil }
+        return releasableByteResults.removeFirst()
     }
 }
 
@@ -323,6 +373,8 @@ private final class SuspendedMemoryReleaseService: MemoryReleaseServicing {
     private(set) var calls = 0
 
     func currentReading() async -> MemoryReading? { nil }
+
+    func currentReleasableBytes() async -> UInt64? { nil }
 
     func release() async -> MemoryReleaseResult {
         calls += 1

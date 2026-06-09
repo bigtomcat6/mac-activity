@@ -44,11 +44,13 @@
 "memoryRelease.action.releasing" = "释放中";
 "memoryRelease.title.idle" = "内存";
 "memoryRelease.title.usage" = "内存 %d%%";
+"memoryRelease.title.reclaimable" = "可释放 %@";
 "memoryRelease.title.releasing" = "正在释放内存";
 "memoryRelease.title.released" = "已释放 %@";
 "memoryRelease.title.unavailable" = "无法释放内存";
 "memoryRelease.title.failed" = "内存释放失败";
 "memoryRelease.title.readFailed" = "内存读取失败";
+"memoryRelease.subtitle.usage" = "内存 %d%%";
 "memoryRelease.subtitle.percentOfTotal" = "占总内存的 %.1f%%";
 "memoryRelease.subtitle.unavailable" = "这台 Mac 没有可用的内存释放方式。";
 "memoryRelease.subtitle.readFailed" = "无法比较释放前后的内存读数。";

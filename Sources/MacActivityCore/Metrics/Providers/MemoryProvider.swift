@@ -212,6 +212,7 @@ public enum CleanMemoryResult: Equatable, Sendable {
 
 public protocol MemoryCleaning: Sendable {
     func cleanMemory() async -> CleanMemoryResult
+    func estimatedReleasableBytes() async -> UInt64?
 }
 
 public protocol MemoryCleanCommandRunning: Sendable {
@@ -220,6 +221,7 @@ public protocol MemoryCleanCommandRunning: Sendable {
 
 public protocol LocalMemoryReclaiming: Sendable {
     func reclaimMemory() async -> Bool
+    func estimatedReleasableBytes() async -> UInt64?
 }
 
 public protocol MemoryPressureReclaiming: Sendable {
@@ -283,6 +285,10 @@ public struct CleanMemoryService: MemoryCleaning {
         }
 
         return .unavailable
+    }
+
+    public func estimatedReleasableBytes() async -> UInt64? {
+        await localReclaimer.estimatedReleasableBytes()
     }
 }
 
@@ -352,15 +358,29 @@ public struct SystemLocalMemoryReclaimer: LocalMemoryReclaiming {
         return didReclaim
     }
 
+    public func estimatedReleasableBytes() async -> UInt64? {
+        guard reclaimableByteReader() != nil else {
+            return nil
+        }
+
+        // inactive/purgeable pages are pressure targets, not guaranteed release
+        // bytes. Keep the pre-click estimate conservative unless a non-mutating
+        // source can confirm the amount the release path will actually clear.
+        return 0
+    }
+
     public static func currentReclaimableByteCount() -> UInt64? {
         let stats = readVMStatistics()
         guard let pageSize = stats.pageSize, let vmStats = stats.vmStats else {
             return nil
         }
 
-        let reclaimablePages = UInt64(vmStats.free_count)
-            + UInt64(vmStats.inactive_count)
-            + UInt64(vmStats.purgeable_count)
+        return reclaimableByteCount(pageSize: pageSize, stats: vmStats)
+    }
+
+    static func reclaimableByteCount(pageSize: vm_size_t, stats: vm_statistics64_data_t) -> UInt64 {
+        let reclaimablePages = UInt64(stats.inactive_count)
+            + UInt64(stats.purgeable_count)
         return reclaimablePages * UInt64(pageSize)
     }
 

@@ -42,6 +42,10 @@ public struct MemoryReleaseService: Sendable {
         await memoryReader.memoryReading()
     }
 
+    public func currentReleasableBytes() async -> UInt64? {
+        await cleaner.estimatedReleasableBytes()
+    }
+
     public func release() async -> MemoryReleaseResult {
         guard let before = await memoryReader.memoryReading() else {
             return .failedToReadMemory

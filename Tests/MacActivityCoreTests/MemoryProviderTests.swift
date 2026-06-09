@@ -208,6 +208,46 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
+    func testSystemLocalMemoryReclaimerDoesNotExposePressureTargetAsConfirmedReleasableBytes() async {
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 10 * 1_024 * 1_024 * 1_024 },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [])
+        )
+
+        let estimate = await reclaimer.estimatedReleasableBytes()
+
+        XCTAssertEqual(estimate, 0)
+    }
+
+    func testSystemLocalMemoryReclaimerDoesNotEstimateSmallerPressureTargetAsConfirmedRelease() async {
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 384 * 1_024 * 1_024 },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [])
+        )
+
+        let estimate = await reclaimer.estimatedReleasableBytes()
+
+        XCTAssertEqual(estimate, 0)
+    }
+
+    func testSystemLocalMemoryReclaimerDoesNotCountAlreadyFreePagesAsReleasable() {
+        var stats = vm_statistics64_data_t()
+        stats.free_count = 2_048
+        stats.inactive_count = 3
+        stats.purgeable_count = 2
+
+        let reclaimableBytes = SystemLocalMemoryReclaimer.reclaimableByteCount(
+            pageSize: 1_024,
+            stats: stats
+        )
+
+        XCTAssertEqual(reclaimableBytes, 5 * 1_024)
+    }
+
     func testSystemLocalMemoryReclaimerUsesSmallerFinalBatch() async {
         let pressureReclaimer = MemoryPressureReclaimerRecorder(results: [true, true])
         let reclaimer = SystemLocalMemoryReclaimer(
@@ -286,10 +326,12 @@ private actor MemoryPressureReclaimerRecorder: MemoryPressureReclaiming {
 
 private actor MemoryLocalReclaimerRecorder: LocalMemoryReclaiming {
     private var results: [Bool]
+    private let estimatedReleasableBytesValue: UInt64?
     private var callCount = 0
 
-    init(results: [Bool]) {
+    init(results: [Bool], estimatedReleasableBytes: UInt64? = nil) {
         self.results = results
+        self.estimatedReleasableBytesValue = estimatedReleasableBytes
     }
 
     func reclaimMemory() async -> Bool {
@@ -300,6 +342,10 @@ private actor MemoryLocalReclaimerRecorder: LocalMemoryReclaiming {
 
     func currentCallCount() -> Int {
         callCount
+    }
+
+    func estimatedReleasableBytes() async -> UInt64? {
+        estimatedReleasableBytesValue
     }
 }
 

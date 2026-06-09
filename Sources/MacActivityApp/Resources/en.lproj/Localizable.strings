@@ -44,11 +44,13 @@
 "memoryRelease.action.releasing" = "Releasing";
 "memoryRelease.title.idle" = "Memory";
 "memoryRelease.title.usage" = "Memory %d%%";
+"memoryRelease.title.reclaimable" = "%@ Releasable";
 "memoryRelease.title.releasing" = "Releasing Memory";
 "memoryRelease.title.released" = "Released %@";
 "memoryRelease.title.unavailable" = "Memory Release Not Available";
 "memoryRelease.title.failed" = "Memory Release Failed";
 "memoryRelease.title.readFailed" = "Memory Reading Failed";
+"memoryRelease.subtitle.usage" = "Memory %d%%";
 "memoryRelease.subtitle.percentOfTotal" = "%.1f%% of total memory";
 "memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
 "memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";

@@ -2,7 +2,13 @@ import SwiftUI
 
 struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
+    let refreshTrigger: Int
     @State private var confirmingQuitProcessIdentifier: pid_t?
+
+    init(model: ActiveCleanupModel, refreshTrigger: Int = 0) {
+        self.model = model
+        self.refreshTrigger = refreshTrigger
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
@@ -20,7 +26,7 @@ struct ActiveCleanReleaseView: View {
                 .accessibilityIdentifier("actives-clean-release-processes")
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task {
+        .task(id: refreshTrigger) {
             await model.refreshVisibleCleanReleaseSections()
         }
         .task(id: model.quittingProcessIdentifiers) {

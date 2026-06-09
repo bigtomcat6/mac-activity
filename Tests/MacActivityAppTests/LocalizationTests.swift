@@ -24,9 +24,20 @@ final class LocalizationTests: XCTestCase {
     func testCleanReleaseStringsResolveWithArguments() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
+        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
 
         XCTAssertEqual(
-            MemoryReleaseStatusView.title(for: .usage(percent: 44.4), bundle: simplifiedChinese),
+            MemoryReleaseStatusView.title(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: simplifiedChinese
+            ),
+            "可释放 \(releasableBytes)"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: simplifiedChinese
+            ),
             "内存 44%"
         )
         XCTAssertEqual(

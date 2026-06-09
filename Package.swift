@@ -18,6 +18,10 @@ let package = Package(
             name: "MacActivityApp",
             targets: ["MacActivityApp"]
         ),
+        .executable(
+            name: "DebugMemoryRelease",
+            targets: ["DebugMemoryRelease"]
+        ),
     ],
     targets: [
         .target(
@@ -31,6 +35,11 @@ let package = Package(
             resources: [
                 .process("Resources"),
             ]
+        ),
+        .executableTarget(
+            name: "DebugMemoryRelease",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugMemoryRelease"
         ),
         .testTarget(
             name: "MacActivityCoreTests",

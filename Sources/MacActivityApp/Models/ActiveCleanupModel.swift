@@ -13,6 +13,7 @@ extension TrashCleanupService: TrashCleanupServicing {}
 @MainActor
 protocol MemoryReleaseServicing {
     func currentReading() async -> MemoryReading?
+    func currentReleasableBytes() async -> UInt64?
     func release() async -> MemoryReleaseResult
 }
 
@@ -31,7 +32,7 @@ enum TrashState: Equatable {
 
 enum MemoryState: Equatable {
     case idle
-    case usage(percent: Double)
+    case usage(percent: Double, releasableBytes: UInt64)
     case releasing(previousPercent: Double?)
     case released(bytes: UInt64, percentOfTotal: Double)
     case unavailable
@@ -102,7 +103,8 @@ final class ActiveCleanupModel: ObservableObject {
             return
         }
 
-        memoryState = .usage(percent: reading.pressurePercent)
+        let releasableBytes = await memoryService.currentReleasableBytes() ?? 0
+        memoryState = .usage(percent: reading.pressurePercent, releasableBytes: releasableBytes)
     }
 
     func refreshApps() {
@@ -149,7 +151,11 @@ final class ActiveCleanupModel: ObservableObject {
 
         switch await memoryService.release() {
         case .released(let bytes, let percentOfTotal):
-            memoryState = .released(bytes: bytes, percentOfTotal: percentOfTotal)
+            if bytes > 0 {
+                memoryState = .released(bytes: bytes, percentOfTotal: percentOfTotal)
+            } else {
+                await refreshMemoryUsage()
+            }
         case .unavailable:
             memoryState = .unavailable
         case .failed(let exitCode):
@@ -203,7 +209,7 @@ final class ActiveCleanupModel: ObservableObject {
 
     private var currentMemoryPercent: Double? {
         switch memoryState {
-        case .usage(let percent):
+        case .usage(let percent, _):
             return percent
         case .releasing(let previousPercent):
             return previousPercent

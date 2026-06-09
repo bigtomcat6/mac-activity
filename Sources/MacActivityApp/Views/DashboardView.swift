@@ -140,7 +140,7 @@ enum DashboardOverviewLayout {
     }
 }
 
-private enum DashboardTab: String, CaseIterable, Identifiable {
+enum DashboardTab: String, CaseIterable, Identifiable {
     case overview = "Overview"
     case actives = "Actives"
 
@@ -151,6 +151,7 @@ struct DashboardView: View {
     @ObservedObject var dashboardModel: DashboardModel
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @State private var selectedTab: DashboardTab = .overview
+    @State private var activesRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
@@ -208,7 +209,7 @@ struct DashboardView: View {
     }
 
     private var tabPicker: some View {
-        Picker("Dashboard section", selection: $selectedTab) {
+        Picker("Dashboard section", selection: selectedTabBinding) {
             ForEach(DashboardTab.allCases) { tab in
                 Text(tab.rawValue).tag(tab)
             }
@@ -223,8 +224,25 @@ struct DashboardView: View {
     }
 
     private var activesContent: some View {
-        ActiveCleanReleaseView(model: activeCleanupModel)
+        ActiveCleanReleaseView(model: activeCleanupModel, refreshTrigger: activesRefreshTrigger)
             .padding(18)
+    }
+
+    private var selectedTabBinding: Binding<DashboardTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                selectedTab = newValue
+                activesRefreshTrigger = Self.activesRefreshTrigger(
+                    afterSelecting: newValue,
+                    currentTrigger: activesRefreshTrigger
+                )
+            }
+        )
+    }
+
+    static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
+        selectedTab == .actives ? currentTrigger + 1 : currentTrigger
     }
 
     private var summaryText: String {

@@ -156,8 +156,16 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
     }
 
     func testMemoryReleasingStateShowsProgressIndicator() {
+        XCTAssertEqual(
+            MemoryReleaseStatusView.trailingAction(isReleasingMemory: false, bundle: Self.englishBundle),
+            .button(title: "Release")
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.trailingAction(isReleasingMemory: true, bundle: Self.englishBundle),
+            .progressIndicator
+        )
         XCTAssertTrue(MemoryReleaseStatusView.showsProgressIndicator(for: .releasing(previousPercent: 44)))
-        XCTAssertFalse(MemoryReleaseStatusView.showsProgressIndicator(for: .usage(percent: 44)))
+        XCTAssertFalse(MemoryReleaseStatusView.showsProgressIndicator(for: .usage(percent: 44, releasableBytes: 512)))
     }
 
     func testTrashHelperTextMatchesCleanReleasePlan() {
@@ -202,12 +210,25 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
 
     func testMemoryHelperTextMatchesCleanReleasePlan() {
         let releasedBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 65_536)
+        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
         let english = Self.englishBundle
 
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .idle, bundle: english), "Memory")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .idle, bundle: english), "Release reclaimable system memory.")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .usage(percent: 44.4), bundle: english), "Memory 44%")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .usage(percent: 44.4), bundle: english), "Release reclaimable system memory.")
+        XCTAssertEqual(
+            MemoryReleaseStatusView.title(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: english
+            ),
+            "\(releasableBytes) Releasable"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: english
+            ),
+            "Memory 44%"
+        )
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .releasing(previousPercent: 44), bundle: english), "Releasing Memory")
         XCTAssertEqual(
             MemoryReleaseStatusView.subtitle(for: .releasing(previousPercent: 44), bundle: english),
@@ -284,13 +305,16 @@ private final class ViewTrashCleanupServiceRecorder: TrashCleanupServicing {
 @MainActor
 private final class ViewMemoryReleaseServiceRecorder: MemoryReleaseServicing {
     var currentReadings: [MemoryReading]
+    var releasableByteResults: [UInt64?]
     var releaseResults: [MemoryReleaseResult]
 
     init(
         currentReadings: [MemoryReading] = [],
+        releasableByteResults: [UInt64?] = [],
         releaseResults: [MemoryReleaseResult] = [.unavailable]
     ) {
         self.currentReadings = currentReadings
+        self.releasableByteResults = releasableByteResults
         self.releaseResults = releaseResults
     }
 
@@ -302,6 +326,11 @@ private final class ViewMemoryReleaseServiceRecorder: MemoryReleaseServicing {
     func release() async -> MemoryReleaseResult {
         guard releaseResults.isEmpty == false else { return .unavailable }
         return releaseResults.removeFirst()
+    }
+
+    func currentReleasableBytes() async -> UInt64? {
+        guard releasableByteResults.isEmpty == false else { return nil }
+        return releasableByteResults.removeFirst()
     }
 }
 

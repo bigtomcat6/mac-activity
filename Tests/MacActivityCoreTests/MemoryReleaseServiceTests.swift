@@ -91,6 +91,16 @@ final class MemoryReleaseServiceTests: XCTestCase {
 
         XCTAssertEqual(result, reading)
     }
+
+    func testCurrentReleasableBytesReturnsCleanerEstimate() async {
+        let reader = MemoryReadingRecorder(readings: [])
+        let cleaner = MemoryCleanerRecorder(results: [], estimatedReleasableBytes: 1_500)
+        let service = MemoryReleaseService(memoryReader: reader, cleaner: cleaner)
+
+        let result = await service.currentReleasableBytes()
+
+        XCTAssertEqual(result, 1_500)
+    }
 }
 
 private actor MemoryReadingRecorder: MemoryReadingProviding {
@@ -108,16 +118,22 @@ private actor MemoryReadingRecorder: MemoryReadingProviding {
 
 private actor MemoryCleanerRecorder: MemoryCleaning {
     private var results: [CleanMemoryResult]
+    private let estimatedReleasableBytesValue: UInt64?
     private var calls = 0
 
-    init(results: [CleanMemoryResult]) {
+    init(results: [CleanMemoryResult], estimatedReleasableBytes: UInt64? = nil) {
         self.results = results
+        self.estimatedReleasableBytesValue = estimatedReleasableBytes
     }
 
     func cleanMemory() async -> CleanMemoryResult {
         calls += 1
         guard !results.isEmpty else { return .succeeded }
         return results.removeFirst()
+    }
+
+    func estimatedReleasableBytes() async -> UInt64? {
+        estimatedReleasableBytesValue
     }
 
     func callCount() -> Int {
