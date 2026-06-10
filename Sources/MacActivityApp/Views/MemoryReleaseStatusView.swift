@@ -1,5 +1,10 @@
 import SwiftUI
 
+enum MemoryReleaseTrailingAction: Equatable {
+    case button(title: String)
+    case progressIndicator
+}
+
 struct MemoryReleaseStatusView: View {
     @ObservedObject var model: ActiveCleanupModel
 
@@ -29,15 +34,17 @@ struct MemoryReleaseStatusView: View {
 
             Spacer(minLength: 8)
 
-            if Self.showsProgressIndicator(for: model.memoryState) {
+            switch Self.trailingAction(isReleasingMemory: model.isReleasingMemory) {
+            case .button(let title):
+                Button(title) {
+                    Task { await model.releaseMemory() }
+                }
+                .frame(minWidth: Self.releaseActionWidth, alignment: .trailing)
+            case .progressIndicator:
                 ProgressView()
                     .controlSize(.small)
+                    .frame(width: Self.releaseActionWidth, alignment: .center)
             }
-
-            Button(AppLocalization.string(model.isReleasingMemory ? .memoryReleaseActionReleasing : .memoryReleaseActionRelease)) {
-                Task { await model.releaseMemory() }
-            }
-            .disabled(model.isReleasingMemory)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
@@ -52,12 +59,16 @@ struct MemoryReleaseStatusView: View {
         switch state {
         case .idle:
             return AppLocalization.string(.memoryReleaseTitleIdle, bundle: bundle)
-        case .usage(let percent):
-            return AppLocalization.string(.memoryReleaseTitleUsage, Int(percent.rounded()), bundle: bundle)
+        case .usage(_, let releasableBytes):
+            return AppLocalization.string(.memoryReleaseTitleReclaimable, formattedBytes(releasableBytes), bundle: bundle)
         case .releasing:
             return AppLocalization.string(.memoryReleaseTitleReleasing, bundle: bundle)
         case .released(let bytes, _):
             return AppLocalization.string(.memoryReleaseTitleReleased, formattedBytes(bytes), bundle: bundle)
+        case .noSignificantRelease:
+            return AppLocalization.string(.memoryReleaseTitleNoSignificantRelease, bundle: bundle)
+        case .cooldown:
+            return AppLocalization.string(.memoryReleaseTitleCooldown, bundle: bundle)
         case .unavailable:
             return AppLocalization.string(.memoryReleaseTitleUnavailable, bundle: bundle)
         case .failed:
@@ -69,17 +80,31 @@ struct MemoryReleaseStatusView: View {
 
     static func subtitle(for state: MemoryState, bundle: Bundle? = nil) -> String {
         switch state {
+        case .usage(let percent, _):
+            return AppLocalization.string(.memoryReleaseSubtitleUsage, Int(percent.rounded()), bundle: bundle)
         case .released(_, let percentOfTotal):
             return AppLocalization.string(.memoryReleaseSubtitlePercentOfTotal, percentOfTotal, bundle: bundle)
+        case .noSignificantRelease:
+            return AppLocalization.string(.memoryReleaseSubtitleNoSignificantRelease, bundle: bundle)
+        case .cooldown(let remainingSeconds):
+            return AppLocalization.string(.memoryReleaseSubtitleCooldown, remainingSeconds, bundle: bundle)
         case .unavailable:
             return AppLocalization.string(.memoryReleaseSubtitleUnavailable, bundle: bundle)
         case .failed(let message):
             return message
         case .failedToReadMemory:
             return AppLocalization.string(.memoryReleaseSubtitleReadFailed, bundle: bundle)
-        case .idle, .usage, .releasing:
+        case .idle, .releasing:
             return AppLocalization.string(.memoryReleaseSubtitleDefault, bundle: bundle)
         }
+    }
+
+    static func trailingAction(isReleasingMemory: Bool, bundle: Bundle? = nil) -> MemoryReleaseTrailingAction {
+        if isReleasingMemory {
+            return .progressIndicator
+        }
+
+        return .button(title: AppLocalization.string(.memoryReleaseActionRelease, bundle: bundle))
     }
 
     static func showsProgressIndicator(for state: MemoryState) -> Bool {
@@ -92,4 +117,6 @@ struct MemoryReleaseStatusView: View {
     private static func formattedBytes(_ bytes: UInt64) -> String {
         byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
     }
+
+    private static let releaseActionWidth: CGFloat = 72
 }

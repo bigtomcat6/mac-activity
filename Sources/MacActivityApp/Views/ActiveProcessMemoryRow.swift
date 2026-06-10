@@ -6,6 +6,18 @@ enum ActiveProcessMemoryRowTrailingContent: Equatable {
     case memory
     case quit
     case confirmQuit
+    case quitting
+}
+
+enum ActiveProcessMemoryRowTrailingContentAlignment: Equatable {
+    case trailing
+
+    var swiftUIAlignment: Alignment {
+        switch self {
+        case .trailing:
+            return .trailing
+        }
+    }
 }
 
 enum ActiveProcessIconSource: Equatable {
@@ -53,6 +65,7 @@ struct ActiveProcessQuitButtonConfiguration: Equatable {
 struct ActiveProcessMemoryRow: View {
     let app: ActiveAppMemoryEntry
     let maxBytes: UInt64
+    let isQuitPending: Bool
     private let quit: () -> Void
     @Binding private var confirmingQuitProcessIdentifier: pid_t?
     @State private var isHovered = false
@@ -60,11 +73,13 @@ struct ActiveProcessMemoryRow: View {
     init(
         app: ActiveAppMemoryEntry,
         maxBytes: UInt64,
+        isQuitPending: Bool = false,
         confirmingQuitProcessIdentifier: Binding<pid_t?> = .constant(nil),
         quit: @escaping () -> Void
     ) {
         self.app = app
         self.maxBytes = maxBytes
+        self.isQuitPending = isQuitPending
         self._confirmingQuitProcessIdentifier = confirmingQuitProcessIdentifier
         self.quit = quit
     }
@@ -149,7 +164,11 @@ struct ActiveProcessMemoryRow: View {
 
     @ViewBuilder
     private var trailingContent: some View {
-        switch Self.trailingContent(isHovered: isHovered, quitConfirmationState: quitConfirmationState) {
+        switch Self.trailingContent(
+            isHovered: isHovered,
+            quitConfirmationState: quitConfirmationState,
+            isQuitPending: isQuitPending
+        ) {
         case .memory:
             Text(app.formattedResidentMemory)
                 .font(.caption.monospacedDigit())
@@ -157,6 +176,13 @@ struct ActiveProcessMemoryRow: View {
                 .lineLimit(1)
         case .quit, .confirmQuit:
             quitButton
+        case .quitting:
+            ProgressView()
+                .controlSize(.small)
+                .frame(
+                    maxWidth: .infinity,
+                    alignment: Self.trailingContentAlignment(for: .quitting).swiftUIAlignment
+                )
         }
     }
 
@@ -204,18 +230,43 @@ struct ActiveProcessMemoryRow: View {
     }
 
     static func trailingContent(isHovered: Bool) -> ActiveProcessMemoryRowTrailingContent {
-        trailingContent(isHovered: isHovered, quitConfirmationState: .inactive)
+        trailingContent(isHovered: isHovered, quitConfirmationState: .inactive, isQuitPending: false)
     }
 
     static func trailingContent(
         isHovered: Bool,
         quitConfirmationState: ActiveProcessQuitConfirmationState
     ) -> ActiveProcessMemoryRowTrailingContent {
+        trailingContent(
+            isHovered: isHovered,
+            quitConfirmationState: quitConfirmationState,
+            isQuitPending: false
+        )
+    }
+
+    static func trailingContent(
+        isHovered: Bool,
+        quitConfirmationState: ActiveProcessQuitConfirmationState,
+        isQuitPending: Bool
+    ) -> ActiveProcessMemoryRowTrailingContent {
+        if isQuitPending {
+            return .quitting
+        }
+
         switch quitConfirmationState {
         case .inactive:
             return isHovered ? .quit : .memory
         case .confirming:
             return .confirmQuit
+        }
+    }
+
+    static func trailingContentAlignment(
+        for content: ActiveProcessMemoryRowTrailingContent
+    ) -> ActiveProcessMemoryRowTrailingContentAlignment {
+        switch content {
+        case .memory, .quit, .confirmQuit, .quitting:
+            return .trailing
         }
     }
 

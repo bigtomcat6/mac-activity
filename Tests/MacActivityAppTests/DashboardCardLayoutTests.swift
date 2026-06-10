@@ -5,6 +5,17 @@ import MacActivityCore
 
 @MainActor
 final class DashboardCardLayoutTests: XCTestCase {
+    func testSelectingActivesTabAdvancesActivesRefreshTrigger() {
+        XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .overview, currentTrigger: 4),
+            4
+        )
+        XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .actives, currentTrigger: 4),
+            5
+        )
+    }
+
     func testCompactChartCardUsesSlightlyTallerHeights() {
         XCTAssertEqual(DashboardCardLayout.compactChartHeight, 60)
         XCTAssertEqual(DashboardCardLayout.compactChartMinHeight, 116)
