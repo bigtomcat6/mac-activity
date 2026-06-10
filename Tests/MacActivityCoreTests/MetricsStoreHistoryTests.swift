@@ -170,4 +170,37 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [48]
         )
     }
+
+    func testHistoryKeepsTemperatureSourceSeriesSeparate() {
+        let store = MetricsStore()
+        let start = Date(timeIntervalSince1970: 1_000)
+
+        store.apply(
+            [
+                .temperatures([
+                    TemperatureReading(celsius: 55, source: .smc),
+                    TemperatureReading(celsius: 30, source: .battery),
+                ]),
+            ],
+            timestamp: start
+        )
+        store.apply(
+            [
+                .temperatures([
+                    TemperatureReading(celsius: 56, source: .smc),
+                    TemperatureReading(celsius: 31, source: .battery),
+                ]),
+            ],
+            timestamp: start.addingTimeInterval(2)
+        )
+
+        XCTAssertEqual(
+            store.history.samples(for: .temperature, source: .smc).map(\.primaryValue),
+            [55, 56]
+        )
+        XCTAssertEqual(
+            store.history.samples(for: .temperature, source: .battery).map(\.primaryValue),
+            [30, 31]
+        )
+    }
 }

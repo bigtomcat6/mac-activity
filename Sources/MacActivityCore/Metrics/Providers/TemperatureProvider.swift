@@ -3,29 +3,22 @@ import Foundation
 public struct TemperatureProvider: MetricProvider {
     public let kind: MetricKind = .temperature
     public let cadence: MetricCadenceLane = .medium
-    private let readTemperatureSource: @Sendable () async -> TemperatureSource
     private let readSMCTemperatureCelsius: @Sendable () async -> Double?
     private let readBatteryTemperatureCelsius: @Sendable () -> Double?
 
     public init() {
-        self.init(temperatureSourceStore: TemperatureSourceSelectionStore(initialSource: .smc))
+        self.init(smcSnapshotCache: .shared)
     }
 
-    public init(temperatureSourceStore: TemperatureSourceSelectionStore) {
-        self.init(
-            temperatureSourceStore: temperatureSourceStore,
-            smcSnapshotCache: .shared
-        )
+    public init(temperatureSourceStore _: TemperatureSourceSelectionStore) {
+        self.init()
     }
 
     init(
-        temperatureSourceStore: TemperatureSourceSelectionStore,
+        temperatureSourceStore _: TemperatureSourceSelectionStore,
         smcSnapshotCache: SMCSensorSnapshotCache
     ) {
         self.init(
-            readTemperatureSource: {
-                await temperatureSourceStore.read()
-            },
             smcSnapshotCache: smcSnapshotCache,
             readBatteryTemperatureCelsius: {
                 BatteryTemperatureReader.readTemperatureCelsius()
@@ -34,11 +27,20 @@ public struct TemperatureProvider: MetricProvider {
     }
 
     init(
-        readTemperatureSource: @escaping @Sendable () async -> TemperatureSource,
+        smcSnapshotCache: SMCSensorSnapshotCache
+    ) {
+        self.init(
+            smcSnapshotCache: smcSnapshotCache,
+            readBatteryTemperatureCelsius: {
+                BatteryTemperatureReader.readTemperatureCelsius()
+            }
+        )
+    }
+
+    init(
         readSMCTemperatureCelsius: @escaping @Sendable () -> Double?,
         readBatteryTemperatureCelsius: @escaping @Sendable () -> Double?
     ) {
-        self.readTemperatureSource = readTemperatureSource
         self.readSMCTemperatureCelsius = {
             readSMCTemperatureCelsius()
         }
@@ -47,10 +49,20 @@ public struct TemperatureProvider: MetricProvider {
 
     init(
         readTemperatureSource: @escaping @Sendable () async -> TemperatureSource,
+        readSMCTemperatureCelsius: @escaping @Sendable () -> Double?,
+        readBatteryTemperatureCelsius: @escaping @Sendable () -> Double?
+    ) {
+        self.init(
+            readSMCTemperatureCelsius: readSMCTemperatureCelsius,
+            readBatteryTemperatureCelsius: readBatteryTemperatureCelsius
+        )
+        _ = readTemperatureSource
+    }
+
+    init(
         smcSnapshotCache: SMCSensorSnapshotCache,
         readBatteryTemperatureCelsius: @escaping @Sendable () -> Double?
     ) {
-        self.readTemperatureSource = readTemperatureSource
         self.readSMCTemperatureCelsius = {
             await smcSnapshotCache.current().temperatureCelsius
         }
@@ -58,21 +70,18 @@ public struct TemperatureProvider: MetricProvider {
     }
 
     public func sample() async -> MetricUpdate {
-        let source = await readTemperatureSource()
+        let smcCelsius = await readSMCTemperatureCelsius()
+        let batteryCelsius = readBatteryTemperatureCelsius()
+        let readings = [
+            smcCelsius.map { TemperatureReading(celsius: $0, source: .smc) },
+            batteryCelsius.map { TemperatureReading(celsius: $0, source: .battery) },
+        ].compactMap { $0 }
 
-        switch source {
-        case .smc:
-            if let celsius = await readSMCTemperatureCelsius() {
-                return .temperature(TemperatureReading(celsius: celsius, source: .smc))
-            }
-
-            return .unavailable(kind: .temperature, reason: "SMC temperature sensors are not available")
-        case .battery:
-            guard let celsius = readBatteryTemperatureCelsius() else {
-                return .unavailable(kind: .temperature, reason: "Battery temperature is not available")
-            }
-
-            return .temperature(TemperatureReading(celsius: celsius, source: .battery))
+        switch readings.count {
+        case 0:
+            return .unavailable(kind: .temperature, reason: "Temperature sensors are not available")
+        default:
+            return .temperatures(readings)
         }
     }
 }

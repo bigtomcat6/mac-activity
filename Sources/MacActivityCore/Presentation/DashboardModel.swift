@@ -74,7 +74,9 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var trend: DashboardTrend?
     public var memoryTrend: DashboardMemoryTrend?
 
-    public var id: String { kind.rawValue }
+    public var id: String {
+        kind == .temperature ? "\(kind.rawValue)-\(title)" : kind.rawValue
+    }
 
     public init(
         kind: MetricKind,
@@ -101,24 +103,52 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
 public final class DashboardModel: ObservableObject {
     @Published public private(set) var metrics: [DashboardMetric]
     private let store: MetricsStore
-    private let metricsBuilder: @Sendable (MetricsSnapshot, MetricsHistory) -> [DashboardMetric]
+    private let metricsBuilder: @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource) -> [DashboardMetric]
     private var subscription: AnyCancellable?
+    private var temperatureSourceSubscription: AnyCancellable?
     private var refreshGeneration = 0
     private var isActive: Bool
+    private var preferredTemperatureSource: TemperatureSource
 
     public convenience init(store: MetricsStore, isActive: Bool = true) {
-        self.init(store: store, isActive: isActive, metricsBuilder: DashboardModel.buildMetrics)
+        self.init(
+            store: store,
+            isActive: isActive,
+            preferredTemperatureSource: .smc,
+            metricsBuilder: DashboardModel.buildMetrics
+        )
+    }
+
+    public convenience init(
+        store: MetricsStore,
+        preferences: PreferencesController,
+        isActive: Bool = true
+    ) {
+        self.init(
+            store: store,
+            isActive: isActive,
+            preferredTemperatureSource: preferences.state.temperatureSource,
+            metricsBuilder: DashboardModel.buildMetrics
+        )
+        temperatureSourceSubscription = preferences.$state
+            .map(\.temperatureSource)
+            .removeDuplicates()
+            .sink { [weak self] source in
+                self?.setPreferredTemperatureSource(source)
+            }
     }
 
     init(
         store: MetricsStore,
         isActive: Bool = true,
-        metricsBuilder: @escaping @Sendable (MetricsSnapshot, MetricsHistory) -> [DashboardMetric]
+        preferredTemperatureSource: TemperatureSource = .smc,
+        metricsBuilder: @escaping @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource) -> [DashboardMetric]
     ) {
         self.store = store
         self.metricsBuilder = metricsBuilder
         self.isActive = isActive
-        self.metrics = isActive ? metricsBuilder(store.snapshot, store.history) : []
+        self.preferredTemperatureSource = preferredTemperatureSource
+        self.metrics = isActive ? metricsBuilder(store.snapshot, store.history, preferredTemperatureSource) : []
         if isActive { startSubscription() }
     }
 
@@ -135,7 +165,19 @@ public final class DashboardModel: ObservableObject {
         }
     }
 
-    nonisolated private static func buildMetrics(from snapshot: MetricsSnapshot, history: MetricsHistory) -> [DashboardMetric] {
+    private func setPreferredTemperatureSource(_ source: TemperatureSource) {
+        guard preferredTemperatureSource != source else { return }
+        preferredTemperatureSource = source
+        if isActive {
+            refreshMetricsAsync()
+        }
+    }
+
+    nonisolated private static func buildMetrics(
+        from snapshot: MetricsSnapshot,
+        history: MetricsHistory,
+        preferredTemperatureSource: TemperatureSource
+    ) -> [DashboardMetric] {
         var items: [DashboardMetric] = []
 
         if let cpu = snapshot.cpu {
@@ -179,9 +221,20 @@ public final class DashboardModel: ObservableObject {
             )
         }
 
-        if let temperature = snapshot.temperature {
+        if let temperature = snapshot.temperature(for: preferredTemperatureSource) {
             items.append(
-                DashboardMetric(kind: .temperature, title: temperature.source.dashboardTitle, value: formatTemperature(temperature.celsius), style: .chart, trend: trend(from: history, kind: .temperature, scale: .automatic))
+                DashboardMetric(
+                    kind: .temperature,
+                    title: temperature.source.dashboardTitle,
+                    value: formatTemperature(temperature.celsius),
+                    style: .chart,
+                    trend: trend(
+                        from: history,
+                        kind: .temperature,
+                        scale: .automatic,
+                        source: preferredTemperatureSource
+                    )
+                )
             )
         }
 
@@ -198,9 +251,14 @@ public final class DashboardModel: ObservableObject {
 
     nonisolated private static func formatTemperature(_ value: Double) -> String { String(format: "%.1f C", value) }
 
-    nonisolated private static func trend(from history: MetricsHistory, kind: MetricKind, scale: DashboardTrendScale) -> DashboardTrend {
+    nonisolated private static func trend(
+        from history: MetricsHistory,
+        kind: MetricKind,
+        scale: DashboardTrendScale,
+        source: TemperatureSource? = nil
+    ) -> DashboardTrend {
         DashboardTrend(
-            samples: history.samples(for: kind).map {
+            samples: history.samples(for: kind, source: source).map {
                 DashboardTrendSample(timestamp: $0.timestamp, primaryValue: $0.primaryValue, secondaryValue: $0.secondaryValue)
             },
             scale: scale
@@ -232,10 +290,11 @@ public final class DashboardModel: ObservableObject {
 
     private func refreshMetricsAsync(snapshot: MetricsSnapshot, history: MetricsHistory) {
         let metricsBuilder = self.metricsBuilder
+        let preferredTemperatureSource = self.preferredTemperatureSource
         refreshGeneration += 1
         let refreshGeneration = refreshGeneration
-        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder] in
-            let metrics = metricsBuilder(snapshot, history)
+        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder, preferredTemperatureSource] in
+            let metrics = metricsBuilder(snapshot, history, preferredTemperatureSource)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isActive, self.refreshGeneration == refreshGeneration, self.metrics != metrics else { return }
                 self.metrics = metrics

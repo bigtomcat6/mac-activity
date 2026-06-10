@@ -30,4 +30,30 @@ final class MetricsSnapshotTests: XCTestCase {
         XCTAssertEqual(updated.issues[.temperature], .unsupported("Unsupported sensor"))
     }
 
+    func testApplyingTemperatureSnapshotReplacesMissingSources() {
+        let original = MetricsSnapshot(
+            timestamp: Date(timeIntervalSince1970: 1_000),
+            temperatures: [
+                .smc: TemperatureReading(celsius: 55, source: .smc),
+                .battery: TemperatureReading(celsius: 30, source: .battery),
+            ]
+        )
+
+        let updated = original.applying(
+            [
+                .temperatures([
+                    TemperatureReading(celsius: 31, source: .battery),
+                ]),
+            ],
+            timestamp: Date(timeIntervalSince1970: 1_001)
+        )
+
+        XCTAssertNil(updated.temperature(for: .smc))
+        XCTAssertEqual(
+            updated.temperature(for: .battery),
+            TemperatureReading(celsius: 31, source: .battery)
+        )
+        XCTAssertEqual(updated.temperature, TemperatureReading(celsius: 31, source: .battery))
+    }
+
 }

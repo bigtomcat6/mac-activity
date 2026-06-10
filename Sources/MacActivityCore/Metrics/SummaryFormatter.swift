@@ -104,7 +104,7 @@ public struct SummaryFormatter: SummaryFormatting {
                 }
                 return "BAT \(Int(battery.percentage.rounded()))%"
             case .temperature:
-                guard let temperature = snapshot.temperature else {
+                guard let temperature = snapshot.temperature(for: preferredTemperatureSource) else {
                     return nil
                 }
                 return "\(temperature.source.summaryPrefix) \(Int(temperature.celsius.rounded()))C"
@@ -177,10 +177,11 @@ public struct SummaryFormatter: SummaryFormatting {
                     style: .metric
                 )
             case .temperature:
+                let temperature = snapshot.temperature(for: preferredTemperatureSource)
                 return StatusSummaryItem(
                     kind: .temperature,
-                    primaryText: snapshot.temperature.map { "\(Int($0.celsius.rounded()))℃" } ?? "--",
-                    secondaryText: snapshot.temperature?.source.statusLabel ?? preferredTemperatureSource.statusLabel,
+                    primaryText: temperature.map { "\(Int($0.celsius.rounded()))℃" } ?? "--",
+                    secondaryText: temperature?.source.statusLabel ?? preferredTemperatureSource.statusLabel,
                     style: .metric
                 )
             case .fan:

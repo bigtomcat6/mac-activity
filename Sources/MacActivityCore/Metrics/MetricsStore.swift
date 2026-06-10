@@ -69,6 +69,8 @@ public struct MetricHistorySample: Equatable, Sendable {
         case .temperature(let reading):
             self.primaryValue = reading.celsius
             self.secondaryValue = nil
+        case .temperatures:
+            return nil
         case .fan(let reading):
             self.primaryValue = Double(reading.rpm)
             self.secondaryValue = nil
@@ -106,16 +108,26 @@ public struct MetricsHistory: Equatable, Sendable {
     }
 
     private var samplesByKind: [MetricKind: [MetricHistorySample]]
+    private var temperatureSamplesBySource: [TemperatureSource: [MetricHistorySample]]
 
-    public init(samplesByKind: [MetricKind: [MetricHistorySample]] = [:]) {
+    public init(
+        samplesByKind: [MetricKind: [MetricHistorySample]] = [:],
+        temperatureSamplesBySource: [TemperatureSource: [MetricHistorySample]] = [:]
+    ) {
         self.init(
             samplesByKind: samplesByKind,
-            trimReferenceDates: samplesByKind.mapValues { $0.last?.timestamp ?? .now }
+            temperatureSamplesBySource: temperatureSamplesBySource,
+            trimReferenceDates: samplesByKind.mapValues { $0.last?.timestamp ?? .now },
+            temperatureTrimReferenceDates: temperatureSamplesBySource.mapValues { $0.last?.timestamp ?? .now }
         )
     }
 
-    public func samples(for kind: MetricKind) -> [MetricHistorySample] {
-        samplesByKind[kind] ?? []
+    public func samples(for kind: MetricKind, source: TemperatureSource? = nil) -> [MetricHistorySample] {
+        if kind == .temperature, let source {
+            return temperatureSamplesBySource[source] ?? []
+        }
+
+        return samplesByKind[kind] ?? []
     }
 
     public func appending(
@@ -123,36 +135,89 @@ public struct MetricsHistory: Equatable, Sendable {
         timestamp: Date
     ) -> MetricsHistory {
         var nextSamplesByKind = samplesByKind
+        var nextTemperatureSamplesBySource = temperatureSamplesBySource
 
         for update in updates {
+            switch update {
+            case .temperature(let reading):
+                let sample = MetricHistorySample(
+                    timestamp: timestamp,
+                    primaryValue: reading.celsius
+                )
+                nextSamplesByKind[.temperature] = Self.appending(
+                    sample,
+                    to: nextSamplesByKind[.temperature] ?? [],
+                    kind: .temperature
+                )
+                nextTemperatureSamplesBySource[reading.source] = Self.appending(
+                    sample,
+                    to: nextTemperatureSamplesBySource[reading.source] ?? [],
+                    kind: .temperature
+                )
+                continue
+            case .temperatures(let readings):
+                for reading in readings {
+                    let sample = MetricHistorySample(
+                        timestamp: timestamp,
+                        primaryValue: reading.celsius
+                    )
+                    nextTemperatureSamplesBySource[reading.source] = Self.appending(
+                        sample,
+                        to: nextTemperatureSamplesBySource[reading.source] ?? [],
+                        kind: .temperature
+                    )
+                }
+
+                if let canonicalReading = readings.first(where: { $0.source == .smc }) ?? readings.first {
+                    let sample = MetricHistorySample(
+                        timestamp: timestamp,
+                        primaryValue: canonicalReading.celsius
+                    )
+                    nextSamplesByKind[.temperature] = Self.appending(
+                        sample,
+                        to: nextSamplesByKind[.temperature] ?? [],
+                        kind: .temperature
+                    )
+                }
+                continue
+            default:
+                break
+            }
+
             guard let sample = MetricHistorySample(update: update, timestamp: timestamp) else {
                 continue
             }
 
-            var samples = nextSamplesByKind[update.kind] ?? []
-            if Self.startsNewContinuousSegment(sample, after: samples.last, kind: update.kind) {
-                samples = [sample]
-            } else {
-                samples.append(sample)
-            }
-            nextSamplesByKind[update.kind] = samples
+            nextSamplesByKind[update.kind] = Self.appending(
+                sample,
+                to: nextSamplesByKind[update.kind] ?? [],
+                kind: update.kind
+            )
         }
 
         let trimReferenceDates = Dictionary(
             uniqueKeysWithValues: nextSamplesByKind.keys.map { ($0, timestamp) }
         )
+        let temperatureTrimReferenceDates = Dictionary(
+            uniqueKeysWithValues: nextTemperatureSamplesBySource.keys.map { ($0, timestamp) }
+        )
 
         return MetricsHistory(
             samplesByKind: nextSamplesByKind,
-            trimReferenceDates: trimReferenceDates
+            temperatureSamplesBySource: nextTemperatureSamplesBySource,
+            trimReferenceDates: trimReferenceDates,
+            temperatureTrimReferenceDates: temperatureTrimReferenceDates
         )
     }
 
     private init(
         samplesByKind: [MetricKind: [MetricHistorySample]],
-        trimReferenceDates: [MetricKind: Date]
+        temperatureSamplesBySource: [TemperatureSource: [MetricHistorySample]],
+        trimReferenceDates: [MetricKind: Date],
+        temperatureTrimReferenceDates: [TemperatureSource: Date]
     ) {
         var retainedSamplesByKind: [MetricKind: [MetricHistorySample]] = [:]
+        var retainedTemperatureSamplesBySource: [TemperatureSource: [MetricHistorySample]] = [:]
 
         for (kind, samples) in samplesByKind {
             let referenceDate = trimReferenceDates[kind] ?? samples.last?.timestamp ?? .now
@@ -163,7 +228,29 @@ public struct MetricsHistory: Equatable, Sendable {
             )
         }
 
+        for (source, samples) in temperatureSamplesBySource {
+            let referenceDate = temperatureTrimReferenceDates[source] ?? samples.last?.timestamp ?? .now
+            retainedTemperatureSamplesBySource[source] = Self.retainedSamples(
+                from: samples,
+                kind: .temperature,
+                asOf: referenceDate
+            )
+        }
+
         self.samplesByKind = retainedSamplesByKind
+        self.temperatureSamplesBySource = retainedTemperatureSamplesBySource
+    }
+
+    private static func appending(
+        _ sample: MetricHistorySample,
+        to existingSamples: [MetricHistorySample],
+        kind: MetricKind
+    ) -> [MetricHistorySample] {
+        if startsNewContinuousSegment(sample, after: existingSamples.last, kind: kind) {
+            return [sample]
+        }
+
+        return existingSamples + [sample]
     }
 
     private static func retainedSamples(
