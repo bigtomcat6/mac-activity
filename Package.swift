@@ -22,6 +22,14 @@ let package = Package(
             name: "DebugMemoryRelease",
             targets: ["DebugMemoryRelease"]
         ),
+        .executable(
+            name: "DebugActiveProcessMemory",
+            targets: ["DebugActiveProcessMemory"]
+        ),
+        .executable(
+            name: "DebugMemoryReleaseUI",
+            targets: ["DebugMemoryReleaseUI"]
+        ),
     ],
     targets: [
         .target(
@@ -40,6 +48,15 @@ let package = Package(
             name: "DebugMemoryRelease",
             dependencies: ["MacActivityCore"],
             path: "Tools/DebugMemoryRelease"
+        ),
+        .executableTarget(
+            name: "DebugActiveProcessMemory",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugActiveProcessMemory"
+        ),
+        .executableTarget(
+            name: "DebugMemoryReleaseUI",
+            path: "Tools/DebugMemoryReleaseUI"
         ),
         .testTarget(
             name: "MacActivityCoreTests",

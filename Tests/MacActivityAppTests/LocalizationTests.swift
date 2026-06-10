@@ -45,6 +45,14 @@ final class LocalizationTests: XCTestCase {
             "占总内存的 2.5%"
         )
         XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 0), bundle: simplifiedChinese),
+            "没有发现可立即释放的内存。"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 7.5), bundle: simplifiedChinese),
+            "7.5 秒后再试。"
+        )
+        XCTAssertEqual(
             TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
             "确认后可移除 2 个项目。"
         )

@@ -170,6 +170,36 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(model.memoryState, .usage(percent: 50, releasableBytes: 256))
     }
 
+    func testNoSignificantMemoryReleaseShowsExplicitState() async {
+        let memory = MemoryReleaseServiceRecorder(
+            releaseResults: [.noSignificantRelease(observedBytes: 0)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: memory,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.releaseMemory()
+
+        XCTAssertEqual(model.memoryState, .noSignificantRelease(observedBytes: 0))
+    }
+
+    func testMemoryReleaseCooldownShowsCooldownState() async {
+        let memory = MemoryReleaseServiceRecorder(
+            releaseResults: [.skippedCooldown(remainingSeconds: 7.5)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: memory,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.releaseMemory()
+
+        XCTAssertEqual(model.memoryState, .cooldown(remainingSeconds: 7.5))
+    }
+
     func testDuplicateMemoryReleaseIsIgnoredWhileFirstCallIsRunning() async {
         let memory = SuspendedMemoryReleaseService()
         let model = ActiveCleanupModel(

@@ -9,6 +9,6 @@ cd "${REPO_ROOT}"
 CLANG_MODULE_CACHE_PATH="${CLANG_MODULE_CACHE_PATH:-/private/tmp/clang-module-cache}" \
 swift run \
   --quiet \
-  --scratch-path "${MAC_ACTIVITY_DEBUG_MEMORY_SCRATCH:-/private/tmp/macactivity-debug-memory-release-build}" \
-  DebugMemoryRelease \
+  --scratch-path "${MAC_ACTIVITY_DEBUG_PROCESS_MEMORY_SCRATCH:-/private/tmp/macactivity-debug-active-process-memory-build}" \
+  DebugActiveProcessMemory \
   "$@"

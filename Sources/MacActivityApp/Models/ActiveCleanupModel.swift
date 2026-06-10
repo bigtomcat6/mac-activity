@@ -35,6 +35,8 @@ enum MemoryState: Equatable {
     case usage(percent: Double, releasableBytes: UInt64)
     case releasing(previousPercent: Double?)
     case released(bytes: UInt64, percentOfTotal: Double)
+    case noSignificantRelease(observedBytes: UInt64)
+    case cooldown(remainingSeconds: TimeInterval)
     case unavailable
     case failed(String)
     case failedToReadMemory
@@ -156,6 +158,10 @@ final class ActiveCleanupModel: ObservableObject {
             } else {
                 await refreshMemoryUsage()
             }
+        case .noSignificantRelease(let observedBytes):
+            memoryState = .noSignificantRelease(observedBytes: observedBytes)
+        case .skippedCooldown(let remainingSeconds):
+            memoryState = .cooldown(remainingSeconds: remainingSeconds)
         case .unavailable:
             memoryState = .unavailable
         case .failed(let exitCode):
@@ -213,7 +219,7 @@ final class ActiveCleanupModel: ObservableObject {
             return percent
         case .releasing(let previousPercent):
             return previousPercent
-        case .idle, .released, .unavailable, .failed, .failedToReadMemory:
+        case .idle, .released, .noSignificantRelease, .cooldown, .unavailable, .failed, .failedToReadMemory:
             return nil
         }
     }

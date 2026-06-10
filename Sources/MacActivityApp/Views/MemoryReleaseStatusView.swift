@@ -65,6 +65,10 @@ struct MemoryReleaseStatusView: View {
             return AppLocalization.string(.memoryReleaseTitleReleasing, bundle: bundle)
         case .released(let bytes, _):
             return AppLocalization.string(.memoryReleaseTitleReleased, formattedBytes(bytes), bundle: bundle)
+        case .noSignificantRelease:
+            return AppLocalization.string(.memoryReleaseTitleNoSignificantRelease, bundle: bundle)
+        case .cooldown:
+            return AppLocalization.string(.memoryReleaseTitleCooldown, bundle: bundle)
         case .unavailable:
             return AppLocalization.string(.memoryReleaseTitleUnavailable, bundle: bundle)
         case .failed:
@@ -80,6 +84,10 @@ struct MemoryReleaseStatusView: View {
             return AppLocalization.string(.memoryReleaseSubtitleUsage, Int(percent.rounded()), bundle: bundle)
         case .released(_, let percentOfTotal):
             return AppLocalization.string(.memoryReleaseSubtitlePercentOfTotal, percentOfTotal, bundle: bundle)
+        case .noSignificantRelease:
+            return AppLocalization.string(.memoryReleaseSubtitleNoSignificantRelease, bundle: bundle)
+        case .cooldown(let remainingSeconds):
+            return AppLocalization.string(.memoryReleaseSubtitleCooldown, remainingSeconds, bundle: bundle)
         case .unavailable:
             return AppLocalization.string(.memoryReleaseSubtitleUnavailable, bundle: bundle)
         case .failed(let message):

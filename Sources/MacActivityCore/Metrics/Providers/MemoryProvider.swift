@@ -119,20 +119,30 @@ public enum ActiveAppTerminationResult: Equatable, Sendable {
 public final class ActiveAppMemoryService {
     private let workspace: NSWorkspace
     private let memoryReader: ProcessResidentMemoryReading
+    private let processSnapshotReader: any ProcessMemorySnapshotReading
 
     public init(
         workspace: NSWorkspace = .shared,
-        memoryReader: ProcessResidentMemoryReading = MachProcessResidentMemoryReader()
+        memoryReader: ProcessResidentMemoryReading = MachProcessResidentMemoryReader(),
+        processSnapshotReader: any ProcessMemorySnapshotReading = SystemProcessMemorySnapshotReader()
     ) {
         self.workspace = workspace
         self.memoryReader = memoryReader
+        self.processSnapshotReader = processSnapshotReader
     }
 
     public func topApps(limit: Int = 8) -> [ActiveAppMemoryEntry] {
-        let entries = workspace.runningApplications.compactMap { app -> ActiveAppMemoryEntry? in
-            guard app.activationPolicy == .regular else { return nil }
+        let regularApps = workspace.runningApplications.filter { $0.activationPolicy == .regular }
+        let aggregates = ProcessTreeResidentMemoryAggregator.aggregate(
+            rootProcessIdentifiers: regularApps.map(\.processIdentifier),
+            snapshots: processSnapshotReader.snapshots()
+        )
+
+        let entries = regularApps.compactMap { app -> ActiveAppMemoryEntry? in
             let pid = app.processIdentifier
-            guard let residentBytes = memoryReader.residentMemoryBytes(for: pid), residentBytes > 0 else { return nil }
+            let residentBytes = aggregates[pid]?.aggregateResidentBytes
+                ?? memoryReader.residentMemoryBytes(for: pid)
+            guard let residentBytes, residentBytes > 0 else { return nil }
 
             return ActiveAppMemoryEntry(
                 processIdentifier: pid,
@@ -194,6 +204,129 @@ public struct MachProcessResidentMemoryReader: ProcessResidentMemoryReading {
     }
 }
 
+public struct ProcessMemorySnapshot: Equatable, Sendable {
+    public let processIdentifier: pid_t
+    public let parentProcessIdentifier: pid_t
+    public let residentMemoryBytes: UInt64
+
+    public init(
+        processIdentifier: pid_t,
+        parentProcessIdentifier: pid_t,
+        residentMemoryBytes: UInt64
+    ) {
+        self.processIdentifier = processIdentifier
+        self.parentProcessIdentifier = parentProcessIdentifier
+        self.residentMemoryBytes = residentMemoryBytes
+    }
+}
+
+public struct ProcessTreeResidentMemoryAggregate: Equatable, Sendable {
+    public let mainResidentBytes: UInt64
+    public let childResidentBytes: UInt64
+    public let aggregateResidentBytes: UInt64
+    public let childCount: Int
+
+    public init(
+        mainResidentBytes: UInt64,
+        childResidentBytes: UInt64,
+        aggregateResidentBytes: UInt64,
+        childCount: Int
+    ) {
+        self.mainResidentBytes = mainResidentBytes
+        self.childResidentBytes = childResidentBytes
+        self.aggregateResidentBytes = aggregateResidentBytes
+        self.childCount = childCount
+    }
+}
+
+public enum ProcessTreeResidentMemoryAggregator {
+    public static func aggregate(
+        rootProcessIdentifiers: [pid_t],
+        snapshots: [ProcessMemorySnapshot]
+    ) -> [pid_t: ProcessTreeResidentMemoryAggregate] {
+        let snapshotsByPID = Dictionary(uniqueKeysWithValues: snapshots.map { ($0.processIdentifier, $0) })
+        let childrenByParent = Dictionary(grouping: snapshots, by: \.parentProcessIdentifier)
+
+        return Dictionary(uniqueKeysWithValues: rootProcessIdentifiers.map { rootPID in
+            let mainResidentBytes = snapshotsByPID[rootPID]?.residentMemoryBytes ?? 0
+            var childResidentBytes: UInt64 = 0
+            var childCount = 0
+            var visited = Set<pid_t>([rootPID])
+            var stack = childrenByParent[rootPID] ?? []
+
+            while let child = stack.popLast() {
+                guard visited.insert(child.processIdentifier).inserted else { continue }
+                childResidentBytes += child.residentMemoryBytes
+                childCount += 1
+                stack.append(contentsOf: childrenByParent[child.processIdentifier] ?? [])
+            }
+
+            let aggregate = ProcessTreeResidentMemoryAggregate(
+                mainResidentBytes: mainResidentBytes,
+                childResidentBytes: childResidentBytes,
+                aggregateResidentBytes: mainResidentBytes + childResidentBytes,
+                childCount: childCount
+            )
+            return (rootPID, aggregate)
+        })
+    }
+}
+
+public protocol ProcessMemorySnapshotReading: Sendable {
+    func snapshots() -> [ProcessMemorySnapshot]
+}
+
+public struct SystemProcessMemorySnapshotReader: ProcessMemorySnapshotReading {
+    public init() {}
+
+    public func snapshots() -> [ProcessMemorySnapshot] {
+        let pidBytes = proc_listpids(UInt32(PROC_ALL_PIDS), 0, nil, 0)
+        guard pidBytes > 0 else { return [] }
+
+        let pidCapacity = Int(pidBytes) / MemoryLayout<pid_t>.stride
+        var pids = [pid_t](repeating: 0, count: pidCapacity)
+        let filledBytes = pids.withUnsafeMutableBytes { buffer in
+            proc_listpids(UInt32(PROC_ALL_PIDS), 0, buffer.baseAddress, pidBytes)
+        }
+        guard filledBytes > 0 else { return [] }
+
+        let filledCount = min(Int(filledBytes) / MemoryLayout<pid_t>.stride, pids.count)
+        return pids.prefix(filledCount).compactMap { pid -> ProcessMemorySnapshot? in
+            guard pid > 0 else { return nil }
+
+            var bsdInfo = proc_bsdinfo()
+            let bsdByteCount = proc_pidinfo(
+                pid,
+                PROC_PIDTBSDINFO,
+                0,
+                &bsdInfo,
+                Int32(MemoryLayout<proc_bsdinfo>.size)
+            )
+            guard bsdByteCount == Int32(MemoryLayout<proc_bsdinfo>.size) else {
+                return nil
+            }
+
+            var taskInfo = proc_taskinfo()
+            let taskByteCount = proc_pidinfo(
+                pid,
+                PROC_PIDTASKINFO,
+                0,
+                &taskInfo,
+                Int32(MemoryLayout<proc_taskinfo>.size)
+            )
+            guard taskByteCount == Int32(MemoryLayout<proc_taskinfo>.size) else {
+                return nil
+            }
+
+            return ProcessMemorySnapshot(
+                processIdentifier: pid,
+                parentProcessIdentifier: pid_t(bitPattern: bsdInfo.pbi_ppid),
+                residentMemoryBytes: UInt64(taskInfo.pti_resident_size)
+            )
+        }
+    }
+}
+
 public struct MemoryCleanCommand: Equatable, Sendable {
     public let executableURL: URL
     public let arguments: [String]
@@ -211,8 +344,14 @@ public enum CleanMemoryResult: Equatable, Sendable {
 }
 
 public protocol MemoryCleaning: Sendable {
-    func cleanMemory() async -> CleanMemoryResult
+    func cleanMemory(strategy: MemoryReleaseStrategy) async -> CleanMemoryResult
     func estimatedReleasableBytes() async -> UInt64?
+}
+
+public extension MemoryCleaning {
+    func cleanMemory() async -> CleanMemoryResult {
+        await cleanMemory(strategy: .full)
+    }
 }
 
 public protocol MemoryCleanCommandRunning: Sendable {
@@ -260,14 +399,24 @@ public struct CleanMemoryService: MemoryCleaning {
         self.runner = runner
     }
 
-    public func cleanMemory() async -> CleanMemoryResult {
-        if await localReclaimer.reclaimMemory() {
-            return .succeeded
+    public func cleanMemory(strategy: MemoryReleaseStrategy) async -> CleanMemoryResult {
+        switch strategy {
+        case .local:
+            return await localReclaimer.reclaimMemory() ? .succeeded : .unavailable
+        case .purge:
+            return await cleanUsingPurgeCommands()
+        case .full:
+            if await localReclaimer.reclaimMemory() {
+                return .succeeded
+            }
+            return await cleanUsingPurgeCommands()
         }
+    }
 
+    private func cleanUsingPurgeCommands() async -> CleanMemoryResult {
         guard commands.isEmpty == false else { return .unavailable }
 
-        var sawFailedCommand = false
+        var lastFailedExitCode: Int32?
         for command in commands {
             let result = await runner.run(command)
             switch result {
@@ -275,13 +424,13 @@ public struct CleanMemoryService: MemoryCleaning {
                 continue
             case .succeeded:
                 return result
-            case .failed:
-                sawFailedCommand = true
+            case .failed(let exitCode):
+                lastFailedExitCode = exitCode
             }
         }
 
-        if sawFailedCommand {
-            return .succeeded
+        if let lastFailedExitCode {
+            return .failed(exitCode: lastFailedExitCode)
         }
 
         return .unavailable
@@ -495,6 +644,8 @@ public struct ProcessMemoryCleanCommandRunner: MemoryCleanCommandRunning {
             let process = Process()
             process.executableURL = command.executableURL
             process.arguments = command.arguments
+            process.standardOutput = Pipe()
+            process.standardError = Pipe()
 
             do {
                 try process.run()
