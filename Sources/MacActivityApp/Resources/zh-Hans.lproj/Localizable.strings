@@ -78,6 +78,30 @@
 "trash.item.singular" = "个项目";
 "trash.item.plural" = "个项目";
 
+"diskCleanup.action.retry" = "重试";
+"diskCleanup.action.clean" = "清理";
+"diskCleanup.title.scanning" = "正在扫描磁盘清理项";
+"diskCleanup.title.clean" = "磁盘已清理";
+"diskCleanup.title.cleanable" = "可清理 %@";
+"diskCleanup.title.cleaning" = "正在清理磁盘";
+"diskCleanup.title.cleaned" = "已清理 %@";
+"diskCleanup.title.failed" = "磁盘清理失败";
+"diskCleanup.subtitle.scanning" = "正在检查废纸篓、缓存和日志。";
+"diskCleanup.subtitle.clean" = "未找到已选择的磁盘清理项。";
+"diskCleanup.subtitle.cleanable" = "已选择 %d %@，来自 %d %@。";
+"diskCleanup.subtitle.cleaning" = "正在删除已选择的废纸篓、缓存和日志文件。";
+"diskCleanup.subtitle.cleaned" = "已移除 %d %@。";
+"diskCleanup.subtitle.partial" = "已移除 %d %@；%d %@无法删除。";
+"diskCleanup.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@无法删除。仍剩余 %@。";
+"diskCleanup.item.singular" = "个项目";
+"diskCleanup.item.plural" = "个项目";
+"diskCleanup.category.singular" = "个分类";
+"diskCleanup.category.plural" = "个分类";
+"diskCleanup.confirmation.title" = "清理已选择的磁盘项目？";
+"diskCleanup.confirmation.message" = "已选择的废纸篓、缓存和日志文件将被永久删除。";
+"diskCleanup.confirmation.confirm" = "清理";
+"diskCleanup.confirmation.cancel" = "取消";
+
 "process.empty" = "当前没有前台应用报告内存用量。";
 "process.fallbackName" = "进程 %d";
 "process.action.requested" = "已请求 %@ 退出。";

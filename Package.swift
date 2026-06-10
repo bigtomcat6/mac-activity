@@ -30,6 +30,10 @@ let package = Package(
             name: "DebugMemoryReleaseUI",
             targets: ["DebugMemoryReleaseUI"]
         ),
+        .executable(
+            name: "DebugDiskCleanup",
+            targets: ["DebugDiskCleanup"]
+        ),
     ],
     targets: [
         .target(
@@ -57,6 +61,11 @@ let package = Package(
         .executableTarget(
             name: "DebugMemoryReleaseUI",
             path: "Tools/DebugMemoryReleaseUI"
+        ),
+        .executableTarget(
+            name: "DebugDiskCleanup",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugDiskCleanup"
         ),
         .testTarget(
             name: "MacActivityCoreTests",

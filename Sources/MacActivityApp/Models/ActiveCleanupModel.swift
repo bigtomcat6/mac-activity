@@ -11,6 +11,14 @@ protocol TrashCleanupServicing {
 extension TrashCleanupService: TrashCleanupServicing {}
 
 @MainActor
+protocol DiskCleanupServicing {
+    func scan(categories: [DiskCleanupCategoryKind], now: Date) async -> DiskCleanupScanResult
+    func clean(categories: [DiskCleanupCategoryKind], now: Date) async -> DiskCleanupResult
+}
+
+extension DiskCleanupService: DiskCleanupServicing {}
+
+@MainActor
 protocol MemoryReleaseServicing {
     func currentReading() async -> MemoryReading?
     func currentReleasableBytes() async -> UInt64?
@@ -42,6 +50,17 @@ enum MemoryState: Equatable {
     case failedToReadMemory
 }
 
+enum DiskCleanupState: Equatable {
+    case idle
+    case scanning
+    case clean
+    case cleanable(bytes: UInt64, itemCount: Int, categoryCount: Int)
+    case cleaning
+    case cleaned(bytes: UInt64, itemCount: Int)
+    case failed(String)
+    case partial(bytes: UInt64, deletedCount: Int, failedCount: Int, remainingBytes: UInt64?)
+}
+
 enum ProcessActionState: Equatable {
     case idle
     case requested(String)
@@ -53,16 +72,21 @@ enum ProcessActionState: Equatable {
 final class ActiveCleanupModel: ObservableObject {
     @Published private(set) var trashState: TrashState = .idle
     @Published private(set) var memoryState: MemoryState = .idle
+    @Published private(set) var diskCleanupState: DiskCleanupState = .idle
     @Published private(set) var processActionState: ProcessActionState = .idle
     @Published private(set) var apps: [ActiveAppMemoryEntry] = []
     @Published private(set) var quittingProcessIdentifiers: Set<pid_t> = []
     @Published private(set) var isCleaningTrash = false
+    @Published private(set) var isCleaningDiskCleanup = false
     @Published private(set) var isReleasingMemory = false
     @Published var isTrashConfirmationPresented = false
+    @Published var isDiskCleanupConfirmationPresented = false
 
     private let trashService: any TrashCleanupServicing
     private let memoryService: any MemoryReleaseServicing
+    private let diskCleanupService: any DiskCleanupServicing
     private let appProvider: any ActiveAppMemoryProviding
+    private let diskCleanupCategories: [DiskCleanupCategoryKind]
     private let limit: Int
     private let quitRefreshIntervalNanoseconds: UInt64
     private let quitRefreshAttemptLimit: Int
@@ -70,6 +94,8 @@ final class ActiveCleanupModel: ObservableObject {
     init(
         trashService: any TrashCleanupServicing = TrashCleanupService(),
         memoryService: any MemoryReleaseServicing = MemoryReleaseService(),
+        diskCleanupService: any DiskCleanupServicing = DiskCleanupService(),
+        diskCleanupCategories: [DiskCleanupCategoryKind] = [.trash, .userCaches, .userLogs],
         appProvider: any ActiveAppMemoryProviding = ActiveAppMemoryService(),
         limit: Int = 20,
         quitRefreshIntervalNanoseconds: UInt64 = 500_000_000,
@@ -77,6 +103,8 @@ final class ActiveCleanupModel: ObservableObject {
     ) {
         self.trashService = trashService
         self.memoryService = memoryService
+        self.diskCleanupService = diskCleanupService
+        self.diskCleanupCategories = diskCleanupCategories
         self.appProvider = appProvider
         self.limit = limit
         self.quitRefreshIntervalNanoseconds = quitRefreshIntervalNanoseconds
@@ -90,13 +118,20 @@ final class ActiveCleanupModel: ObservableObject {
     }
 
     func refreshVisibleCleanReleaseSections() async {
-        await refreshMemoryUsage()
+        await refreshDiskCleanup()
         refreshApps()
     }
 
     func refreshTrash() async {
         trashState = .scanning
         trashState = mapScan(await trashService.scan())
+    }
+
+    func refreshDiskCleanup() async {
+        diskCleanupState = .scanning
+        diskCleanupState = mapDiskScan(
+            await diskCleanupService.scan(categories: diskCleanupCategories, now: Date())
+        )
     }
 
     func refreshMemoryUsage() async {
@@ -117,6 +152,10 @@ final class ActiveCleanupModel: ObservableObject {
 
     func requestTrashCleanupConfirmation() {
         isTrashConfirmationPresented = true
+    }
+
+    func requestDiskCleanupConfirmation() {
+        isDiskCleanupConfirmationPresented = true
     }
 
     func confirmTrashCleanup() async {
@@ -141,6 +180,31 @@ final class ActiveCleanupModel: ObservableObject {
             )
         case .failed(let message):
             trashState = .failed(message)
+        }
+    }
+
+    func confirmDiskCleanup() async {
+        guard isCleaningDiskCleanup == false else { return }
+
+        isDiskCleanupConfirmationPresented = false
+        isCleaningDiskCleanup = true
+        defer { isCleaningDiskCleanup = false }
+
+        diskCleanupState = .cleaning
+
+        switch await diskCleanupService.clean(categories: diskCleanupCategories, now: Date()) {
+        case .cleaned(let bytes, let itemCount):
+            diskCleanupState = await stateAfterCleanedDiskCleanup(bytes: bytes, itemCount: itemCount)
+        case .partial(let bytes, let deletedCount, let failedCount, _):
+            let remainingBytes = await remainingBytesAfterPartialDiskCleanup()
+            diskCleanupState = .partial(
+                bytes: bytes,
+                deletedCount: deletedCount,
+                failedCount: failedCount,
+                remainingBytes: remainingBytes
+            )
+        case .failed(let message):
+            diskCleanupState = .failed(message)
         }
     }
 
@@ -235,12 +299,38 @@ final class ActiveCleanupModel: ObservableObject {
         }
     }
 
+    private func stateAfterCleanedDiskCleanup(bytes: UInt64, itemCount: Int) async -> DiskCleanupState {
+        switch await diskCleanupService.scan(categories: diskCleanupCategories, now: Date()) {
+        case .clean:
+            return .cleaned(bytes: bytes, itemCount: itemCount)
+        case .cleanable(let summary):
+            return .cleanable(
+                bytes: summary.selectedBytes,
+                itemCount: summary.selectedItemCount,
+                categoryCount: summary.categories.count
+            )
+        case .failed(let message):
+            return .failed(message)
+        }
+    }
+
     private func remainingBytesAfterPartialCleanup() async -> UInt64? {
         switch await trashService.scan() {
         case .clean:
             return 0
         case .cleanable(let bytes, _):
             return bytes
+        case .failed:
+            return nil
+        }
+    }
+
+    private func remainingBytesAfterPartialDiskCleanup() async -> UInt64? {
+        switch await diskCleanupService.scan(categories: diskCleanupCategories, now: Date()) {
+        case .clean:
+            return 0
+        case .cleanable(let summary):
+            return summary.selectedBytes
         case .failed:
             return nil
         }
@@ -272,6 +362,21 @@ final class ActiveCleanupModel: ObservableObject {
             return .clean
         case .cleanable(let bytes, let itemCount):
             return .cleanable(bytes: bytes, itemCount: itemCount)
+        case .failed(let message):
+            return .failed(message)
+        }
+    }
+
+    private func mapDiskScan(_ result: DiskCleanupScanResult) -> DiskCleanupState {
+        switch result {
+        case .clean:
+            return .clean
+        case .cleanable(let summary):
+            return .cleanable(
+                bytes: summary.selectedBytes,
+                itemCount: summary.selectedItemCount,
+                categoryCount: summary.categories.count
+            )
         case .failed(let message):
             return .failed(message)
         }

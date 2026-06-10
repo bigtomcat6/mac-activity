@@ -12,8 +12,8 @@ struct ActiveCleanReleaseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
-            MemoryReleaseStatusView(model: model)
-                .accessibilityIdentifier("actives-clean-release-memory")
+            DiskCleanupStatusView(model: model)
+                .accessibilityIdentifier("actives-clean-release-disk-cleanup")
                 .contentShape(Rectangle())
                 .onTapGesture {
                     confirmingQuitProcessIdentifier = nil
@@ -31,6 +31,17 @@ struct ActiveCleanReleaseView: View {
         }
         .task(id: model.quittingProcessIdentifiers) {
             await model.refreshQuittingProcessesUntilResolved()
+        }
+        .confirmationDialog(
+            AppLocalization.string(.diskCleanupConfirmationTitle),
+            isPresented: $model.isDiskCleanupConfirmationPresented
+        ) {
+            Button(AppLocalization.string(.diskCleanupConfirmationConfirm), role: .destructive) {
+                Task { await model.confirmDiskCleanup() }
+            }
+            Button(AppLocalization.string(.diskCleanupConfirmationCancel), role: .cancel) {}
+        } message: {
+            Text(AppLocalization.string(.diskCleanupConfirmationMessage))
         }
     }
 }

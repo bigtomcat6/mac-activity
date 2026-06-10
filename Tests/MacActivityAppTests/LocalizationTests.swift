@@ -25,6 +25,7 @@ final class LocalizationTests: XCTestCase {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
         let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
+        let cleanableBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
 
         XCTAssertEqual(
             MemoryReleaseStatusView.title(
@@ -58,6 +59,27 @@ final class LocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             TrashCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
+                bundle: simplifiedChinese
+            ),
+            "已移除 3 个项目；1 个项目无法删除。仍剩余 \(remainingBytes)。"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.title(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1),
+                bundle: simplifiedChinese
+            ),
+            "可清理 \(cleanableBytes)"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1),
+                bundle: simplifiedChinese
+            ),
+            "已选择 2 个项目，来自 1 个分类。"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
                 for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
                 bundle: simplifiedChinese
             ),

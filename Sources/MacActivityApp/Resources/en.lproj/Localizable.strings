@@ -78,6 +78,30 @@
 "trash.item.singular" = "item";
 "trash.item.plural" = "items";
 
+"diskCleanup.action.retry" = "Retry";
+"diskCleanup.action.clean" = "Clean";
+"diskCleanup.title.scanning" = "Scanning Disk Cleanup";
+"diskCleanup.title.clean" = "Disk Is Clean";
+"diskCleanup.title.cleanable" = "%@ Cleanable";
+"diskCleanup.title.cleaning" = "Cleaning Disk";
+"diskCleanup.title.cleaned" = "Cleaned %@";
+"diskCleanup.title.failed" = "Disk Cleanup Failed";
+"diskCleanup.subtitle.scanning" = "Checking Trash, caches, and logs.";
+"diskCleanup.subtitle.clean" = "No selected disk cleanup items found.";
+"diskCleanup.subtitle.cleanable" = "%d %@ selected across %d %@.";
+"diskCleanup.subtitle.cleaning" = "Deleting selected Trash, cache, and log files.";
+"diskCleanup.subtitle.cleaned" = "Removed %d %@.";
+"diskCleanup.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
+"diskCleanup.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"diskCleanup.item.singular" = "item";
+"diskCleanup.item.plural" = "items";
+"diskCleanup.category.singular" = "category";
+"diskCleanup.category.plural" = "categories";
+"diskCleanup.confirmation.title" = "Clean selected disk items?";
+"diskCleanup.confirmation.message" = "Selected Trash, cache, and log files will be permanently deleted.";
+"diskCleanup.confirmation.confirm" = "Clean";
+"diskCleanup.confirmation.cancel" = "Cancel";
+
 "process.empty" = "No foreground apps are reporting memory usage.";
 "process.fallbackName" = "Process %d";
 "process.action.requested" = "Requested %@ to quit.";
