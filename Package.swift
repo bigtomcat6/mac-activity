@@ -18,6 +18,22 @@ let package = Package(
             name: "MacActivityApp",
             targets: ["MacActivityApp"]
         ),
+        .executable(
+            name: "DebugMemoryRelease",
+            targets: ["DebugMemoryRelease"]
+        ),
+        .executable(
+            name: "DebugActiveProcessMemory",
+            targets: ["DebugActiveProcessMemory"]
+        ),
+        .executable(
+            name: "DebugMemoryReleaseUI",
+            targets: ["DebugMemoryReleaseUI"]
+        ),
+        .executable(
+            name: "DebugDiskCleanup",
+            targets: ["DebugDiskCleanup"]
+        ),
     ],
     targets: [
         .target(
@@ -31,6 +47,25 @@ let package = Package(
             resources: [
                 .process("Resources"),
             ]
+        ),
+        .executableTarget(
+            name: "DebugMemoryRelease",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugMemoryRelease"
+        ),
+        .executableTarget(
+            name: "DebugActiveProcessMemory",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugActiveProcessMemory"
+        ),
+        .executableTarget(
+            name: "DebugMemoryReleaseUI",
+            path: "Tools/DebugMemoryReleaseUI"
+        ),
+        .executableTarget(
+            name: "DebugDiskCleanup",
+            dependencies: ["MacActivityCore"],
+            path: "Tools/DebugDiskCleanup"
         ),
         .testTarget(
             name: "MacActivityCoreTests",

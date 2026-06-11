@@ -128,7 +128,7 @@ final class MemoryProviderTests: XCTestCase {
         let runner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 1)])
         let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
-        let result = await service.cleanMemory()
+        let result = await service.cleanMemory(strategy: .full)
         let localCallCount = await localReclaimer.currentCallCount()
         let commands = await runner.recordedCommands()
 
@@ -142,7 +142,7 @@ final class MemoryProviderTests: XCTestCase {
         let runner = MemoryCleanCommandRecorder(results: [.succeeded])
         let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
-        let result = await service.cleanMemory()
+        let result = await service.cleanMemory(strategy: .full)
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .succeeded)
@@ -154,23 +154,49 @@ final class MemoryProviderTests: XCTestCase {
         let runner = MemoryCleanCommandRecorder(results: [.unavailable, .succeeded])
         let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
-        let result = await service.cleanMemory()
+        let result = await service.cleanMemory(strategy: .full)
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .succeeded)
         XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
     }
 
-    func testCleanMemoryServiceTreatsFailedPurgeCommandsAsCompletedFallback() async {
+    func testCleanMemoryServiceReportsFailedPurgeCommands() async {
         let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
-        let runner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 1), .failed(exitCode: 1)])
+        let runner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 7), .failed(exitCode: 9)])
         let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
-        let result = await service.cleanMemory()
+        let result = await service.cleanMemory(strategy: .full)
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .failed(exitCode: 9))
+        XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
+    }
+
+    func testCleanMemoryServiceLocalStrategyDoesNotRunPurgeCommands() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [false])
+        let runner = MemoryCleanCommandRecorder(results: [.succeeded])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
+
+        let result = await service.cleanMemory(strategy: .local)
+        let commands = await runner.recordedCommands()
+
+        XCTAssertEqual(result, .unavailable)
+        XCTAssertEqual(commands, [])
+    }
+
+    func testCleanMemoryServicePurgeStrategyDoesNotRunLocalReclaimer() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [true])
+        let runner = MemoryCleanCommandRecorder(results: [.succeeded])
+        let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
+
+        let result = await service.cleanMemory(strategy: .purge)
+        let localCallCount = await localReclaimer.currentCallCount()
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .succeeded)
-        XCTAssertEqual(commands, CleanMemoryService.defaultCommands)
+        XCTAssertEqual(localCallCount, 0)
+        XCTAssertEqual(commands, [CleanMemoryService.defaultCommands[0]])
     }
 
     func testCleanMemoryServiceReportsUnavailableWhenAllCommandsAreUnavailable() async {
@@ -178,7 +204,7 @@ final class MemoryProviderTests: XCTestCase {
         let runner = MemoryCleanCommandRecorder(results: [.unavailable, .unavailable])
         let service = CleanMemoryService(localReclaimer: localReclaimer, runner: runner)
 
-        let result = await service.cleanMemory()
+        let result = await service.cleanMemory(strategy: .full)
         let commands = await runner.recordedCommands()
 
         XCTAssertEqual(result, .unavailable)
@@ -205,6 +231,93 @@ final class MemoryProviderTests: XCTestCase {
                 256 * 1_024 * 1_024,
                 256 * 1_024 * 1_024,
             ]
+        )
+    }
+
+    func testSystemLocalMemoryReclaimerDoesNotExposePressureTargetAsConfirmedReleasableBytes() async {
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 10 * 1_024 * 1_024 * 1_024 },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [])
+        )
+
+        let estimate = await reclaimer.estimatedReleasableBytes()
+
+        XCTAssertEqual(estimate, 0)
+    }
+
+    func testSystemLocalMemoryReclaimerDoesNotEstimateSmallerPressureTargetAsConfirmedRelease() async {
+        let reclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 768 * 1_024 * 1_024,
+            batchByteCount: 256 * 1_024 * 1_024,
+            reclaimableByteReader: { 384 * 1_024 * 1_024 },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [])
+        )
+
+        let estimate = await reclaimer.estimatedReleasableBytes()
+
+        XCTAssertEqual(estimate, 0)
+    }
+
+    func testSystemLocalMemoryReclaimerDoesNotCountAlreadyFreePagesAsReleasable() {
+        var stats = vm_statistics64_data_t()
+        stats.free_count = 2_048
+        stats.inactive_count = 3
+        stats.purgeable_count = 2
+
+        let reclaimableBytes = SystemLocalMemoryReclaimer.reclaimableByteCount(
+            pageSize: 1_024,
+            stats: stats
+        )
+
+        XCTAssertEqual(reclaimableBytes, 5 * 1_024)
+    }
+
+    func testProcessTreeAggregatorAddsDescendantResidentMemoryToOwningApp() {
+        let snapshots = [
+            ProcessMemorySnapshot(processIdentifier: 100, parentProcessIdentifier: 1, residentMemoryBytes: 1_000),
+            ProcessMemorySnapshot(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 200),
+            ProcessMemorySnapshot(processIdentifier: 102, parentProcessIdentifier: 100, residentMemoryBytes: 300),
+            ProcessMemorySnapshot(processIdentifier: 103, parentProcessIdentifier: 102, residentMemoryBytes: 400),
+            ProcessMemorySnapshot(processIdentifier: 999, parentProcessIdentifier: 1, residentMemoryBytes: 9_000),
+        ]
+
+        let aggregate = ProcessTreeResidentMemoryAggregator.aggregate(
+            rootProcessIdentifiers: [100],
+            snapshots: snapshots
+        )
+
+        XCTAssertEqual(
+            aggregate[100],
+            ProcessTreeResidentMemoryAggregate(
+                mainResidentBytes: 1_000,
+                childResidentBytes: 900,
+                aggregateResidentBytes: 1_900,
+                childCount: 3
+            )
+        )
+    }
+
+    func testProcessTreeAggregatorDoesNotAttachOrphansToUnrelatedApps() {
+        let snapshots = [
+            ProcessMemorySnapshot(processIdentifier: 100, parentProcessIdentifier: 1, residentMemoryBytes: 1_000),
+            ProcessMemorySnapshot(processIdentifier: 200, parentProcessIdentifier: 404, residentMemoryBytes: 3_000),
+        ]
+
+        let aggregate = ProcessTreeResidentMemoryAggregator.aggregate(
+            rootProcessIdentifiers: [100],
+            snapshots: snapshots
+        )
+
+        XCTAssertEqual(
+            aggregate[100],
+            ProcessTreeResidentMemoryAggregate(
+                mainResidentBytes: 1_000,
+                childResidentBytes: 0,
+                aggregateResidentBytes: 1_000,
+                childCount: 0
+            )
         )
     }
 
@@ -286,10 +399,12 @@ private actor MemoryPressureReclaimerRecorder: MemoryPressureReclaiming {
 
 private actor MemoryLocalReclaimerRecorder: LocalMemoryReclaiming {
     private var results: [Bool]
+    private let estimatedReleasableBytesValue: UInt64?
     private var callCount = 0
 
-    init(results: [Bool]) {
+    init(results: [Bool], estimatedReleasableBytes: UInt64? = nil) {
         self.results = results
+        self.estimatedReleasableBytesValue = estimatedReleasableBytes
     }
 
     func reclaimMemory() async -> Bool {
@@ -300,6 +415,10 @@ private actor MemoryLocalReclaimerRecorder: LocalMemoryReclaiming {
 
     func currentCallCount() -> Int {
         callCount
+    }
+
+    func estimatedReleasableBytes() async -> UInt64? {
+        estimatedReleasableBytesValue
     }
 }
 

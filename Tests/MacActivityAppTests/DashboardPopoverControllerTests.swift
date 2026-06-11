@@ -14,6 +14,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             popover: popover,
             focusController: focusController,
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
@@ -39,6 +40,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             popover: popover,
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -57,6 +59,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             popover: RecordingPopoverHost(recorder: recorder),
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -73,6 +76,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             popover: RecordingPopoverHost(recorder: recorder),
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
@@ -85,6 +89,13 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "visible:false",
         ])
+    }
+
+    private static func preferencesController() -> PreferencesController {
+        PreferencesController(
+            store: DashboardPopoverPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
     }
 }
 
@@ -137,5 +148,21 @@ private final class RecordingDashboardPopoverFocusController: DashboardPopoverFo
 
     func focusPresentedPopover(_ popover: DashboardPopoverHosting) {
         recorder.record("focus-popover")
+    }
+}
+
+private final class DashboardPopoverPreferencesStore: PreferencesStoring, @unchecked Sendable {
+    private var value: AppPreferences
+
+    init(initial: AppPreferences) {
+        self.value = initial
+    }
+
+    func load() -> AppPreferences {
+        value
+    }
+
+    func save(_ preferences: AppPreferences) throws {
+        value = preferences
     }
 }

@@ -257,7 +257,7 @@ enum DashboardOverviewChrome {
     }
 }
 
-private enum DashboardTab: CaseIterable, Identifiable {
+enum DashboardTab: CaseIterable, Identifiable {
     case overview
     case actives
 
@@ -277,8 +277,10 @@ struct DashboardView: View {
     @Environment(\.appearsActive) private var appearsActive
     @ObservedObject var dashboardModel: DashboardModel
     @ObservedObject private var localizationController = AppLocalizationController.shared
+    @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @State private var selectedTab: DashboardTab = .overview
+    @State private var activesRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
@@ -325,6 +327,12 @@ struct DashboardView: View {
             .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
+        }
+        .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
+            applyDiskCleanupCategories(newCategories, refreshActives: true)
+        }
     }
 
     private var header: some View {
@@ -373,7 +381,7 @@ struct DashboardView: View {
     }
 
     private var tabPicker: some View {
-        Picker(AppLocalization.string(.dashboardSection), selection: $selectedTab) {
+        Picker(AppLocalization.string(.dashboardSection), selection: selectedTabBinding) {
             ForEach(DashboardTab.allCases) { tab in
                 Text(tab.title).tag(tab)
             }
@@ -388,8 +396,32 @@ struct DashboardView: View {
     }
 
     private var activesContent: some View {
-        ActiveCleanReleaseView(model: activeCleanupModel)
+        ActiveCleanReleaseView(model: activeCleanupModel, refreshTrigger: activesRefreshTrigger)
             .padding(18)
+    }
+
+    private var selectedTabBinding: Binding<DashboardTab> {
+        Binding(
+            get: { selectedTab },
+            set: { newValue in
+                selectedTab = newValue
+                activesRefreshTrigger = Self.activesRefreshTrigger(
+                    afterSelecting: newValue,
+                    currentTrigger: activesRefreshTrigger
+                )
+            }
+        )
+    }
+
+    static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
+        selectedTab == .actives ? currentTrigger + 1 : currentTrigger
+    }
+
+    private func applyDiskCleanupCategories(_ categories: [DiskCleanupCategoryKind], refreshActives: Bool) {
+        activeCleanupModel.setDiskCleanupCategories(categories)
+        if refreshActives && selectedTab == .actives {
+            activesRefreshTrigger += 1
+        }
     }
 
     private var summaryText: String {
@@ -963,6 +995,7 @@ private struct CompactTrendMetricCard: View {
                     isCompactOverviewChart: true
                 )
             )
+            .id(metric.id)
             .frame(height: DashboardOverviewLayout.compactTrendChartHeight)
             .frame(maxWidth: .infinity)
         }
@@ -1008,6 +1041,7 @@ private struct SlimTrendMetricCard: View {
                     isCompactOverviewChart: false
                 )
             )
+            .id(metric.id)
             .frame(height: DashboardCardLayout.compactChartHeight)
             .frame(maxWidth: .infinity)
         }
@@ -1064,6 +1098,7 @@ private struct MetricCard: View {
                             isCompactOverviewChart: false
                         )
                     )
+                        .id(metric.id)
                         .frame(height: DashboardCardLayout.compactChartHeight)
                 }
             case .value:
@@ -1115,6 +1150,7 @@ private struct MetricCard: View {
                 isCompactOverviewChart: false
             )
         )
+        .id(metric.id)
 
         switch DashboardCardLayout.chartHeightBehavior(for: metric.kind) {
         case .fixed(let height):

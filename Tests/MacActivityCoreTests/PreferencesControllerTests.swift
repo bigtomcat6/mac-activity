@@ -55,6 +55,21 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.preferredLanguageIdentifier, "zh-Hans")
         XCTAssertEqual(store.savedValues.last?.preferredLanguageIdentifier, "zh-Hans")
     }
+
+    func testDiskCleanupCategoriesPersistToPreferencesStateInDisplayOrder() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setDiskCleanupCategory(.userLogs, isSelected: true)
+        controller.setDiskCleanupCategory(.trash, isSelected: true)
+        controller.setDiskCleanupCategory(.userCaches, isSelected: false)
+
+        XCTAssertEqual(controller.state.diskCleanupCategories, [.trash, .userLogs])
+        XCTAssertEqual(store.savedValues.last?.diskCleanupCategories, [.trash, .userLogs])
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {

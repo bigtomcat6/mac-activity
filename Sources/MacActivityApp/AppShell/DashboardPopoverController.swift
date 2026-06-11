@@ -47,6 +47,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
     convenience init(
         dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
         onVisibilityChange: @escaping (Bool) -> Void,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void
@@ -55,6 +56,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             popover: NSPopover(),
             focusController: SharedDashboardPopoverFocusController(),
             dashboardModel: dashboardModel,
+            preferencesController: preferencesController,
             onVisibilityChange: onVisibilityChange,
             openPreferences: openPreferences,
             quitApplication: quitApplication
@@ -65,6 +67,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         popover: DashboardPopoverHosting,
         focusController: DashboardPopoverFocusControlling,
         dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
         onVisibilityChange: @escaping (Bool) -> Void,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void
@@ -78,6 +81,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(
             rootView: DashboardView(
                 dashboardModel: dashboardModel,
+                preferencesController: preferencesController,
                 openPreferences: {
                     popover.performClose(nil)
                     openPreferences()

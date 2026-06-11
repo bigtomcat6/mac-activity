@@ -13,7 +13,8 @@ final class PreferencesStoreTests: XCTestCase {
             launchAtLoginEnabled: true,
             selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu],
             temperatureSource: .battery,
-            preferredLanguageIdentifier: "zh-Hans"
+            preferredLanguageIdentifier: "zh-Hans",
+            diskCleanupCategories: [.userCaches, .trash, .userLogs]
         )
 
         try store.save(expected)
@@ -64,5 +65,37 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.launchAtLoginEnabled, true)
         XCTAssertEqual(loaded.temperatureSource, .smc)
         XCTAssertNil(loaded.preferredLanguageIdentifier)
+    }
+
+    func testLoadDefaultsDiskCleanupCategoriesWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let legacyData = Data(
+            #"{"selectedSummaryMetrics":["cpu","temperature"],"launchAtLoginEnabled":true,"temperatureSource":"battery"}"#
+                .utf8
+        )
+        userDefaults.set(legacyData, forKey: "mac-activity.preferences")
+
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches])
+    }
+
+    func testLoadMigratesLegacyDiskCleanupScopeToCategories() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let legacyData = Data(
+            #"{"selectedSummaryMetrics":["cpu","temperature"],"launchAtLoginEnabled":true,"temperatureSource":"battery","diskCleanupScope":"cachesTrashAndLogs"}"#
+                .utf8
+        )
+        userDefaults.set(legacyData, forKey: "mac-activity.preferences")
+
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches, .trash, .userLogs])
     }
 }

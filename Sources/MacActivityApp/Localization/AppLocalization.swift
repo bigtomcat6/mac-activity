@@ -43,21 +43,32 @@ enum AppLocalization {
         case preferencesLanguageHelp = "preferences.languageHelp"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
+        case preferencesDiskCleanupScope = "preferences.diskCleanupScope"
+        case preferencesDiskCleanupHelp = "preferences.diskCleanupHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
         case languageSystem = "language.system"
         case languageEnglish = "language.english"
         case languageSimplifiedChinese = "language.simplifiedChinese"
+        case diskCleanupCategoryUserCaches = "diskCleanup.category.userCaches"
+        case diskCleanupCategoryTrash = "diskCleanup.category.trash"
+        case diskCleanupCategoryUserLogs = "diskCleanup.category.userLogs"
         case memoryReleaseActionRelease = "memoryRelease.action.release"
         case memoryReleaseActionReleasing = "memoryRelease.action.releasing"
         case memoryReleaseTitleIdle = "memoryRelease.title.idle"
         case memoryReleaseTitleUsage = "memoryRelease.title.usage"
+        case memoryReleaseTitleReclaimable = "memoryRelease.title.reclaimable"
         case memoryReleaseTitleReleasing = "memoryRelease.title.releasing"
         case memoryReleaseTitleReleased = "memoryRelease.title.released"
+        case memoryReleaseTitleNoSignificantRelease = "memoryRelease.title.noSignificantRelease"
+        case memoryReleaseTitleCooldown = "memoryRelease.title.cooldown"
         case memoryReleaseTitleUnavailable = "memoryRelease.title.unavailable"
         case memoryReleaseTitleFailed = "memoryRelease.title.failed"
         case memoryReleaseTitleReadFailed = "memoryRelease.title.readFailed"
+        case memoryReleaseSubtitleUsage = "memoryRelease.subtitle.usage"
         case memoryReleaseSubtitlePercentOfTotal = "memoryRelease.subtitle.percentOfTotal"
+        case memoryReleaseSubtitleNoSignificantRelease = "memoryRelease.subtitle.noSignificantRelease"
+        case memoryReleaseSubtitleCooldown = "memoryRelease.subtitle.cooldown"
         case memoryReleaseSubtitleUnavailable = "memoryRelease.subtitle.unavailable"
         case memoryReleaseSubtitleReadFailed = "memoryRelease.subtitle.readFailed"
         case memoryReleaseSubtitleDefault = "memoryRelease.subtitle.default"
@@ -78,6 +89,25 @@ enum AppLocalization {
         case trashSubtitlePartialWithRemaining = "trash.subtitle.partialWithRemaining"
         case trashItemSingular = "trash.item.singular"
         case trashItemPlural = "trash.item.plural"
+        case diskCleanupActionRetry = "diskCleanup.action.retry"
+        case diskCleanupActionClean = "diskCleanup.action.clean"
+        case diskCleanupTitleScanning = "diskCleanup.title.scanning"
+        case diskCleanupTitleClean = "diskCleanup.title.clean"
+        case diskCleanupTitleCleanable = "diskCleanup.title.cleanable"
+        case diskCleanupTitleCleaning = "diskCleanup.title.cleaning"
+        case diskCleanupTitleCleaned = "diskCleanup.title.cleaned"
+        case diskCleanupTitleFailed = "diskCleanup.title.failed"
+        case diskCleanupSubtitleScanning = "diskCleanup.subtitle.scanning"
+        case diskCleanupSubtitleClean = "diskCleanup.subtitle.clean"
+        case diskCleanupSubtitleCleanable = "diskCleanup.subtitle.cleanable"
+        case diskCleanupSubtitleCleaning = "diskCleanup.subtitle.cleaning"
+        case diskCleanupSubtitleCleaned = "diskCleanup.subtitle.cleaned"
+        case diskCleanupSubtitlePartial = "diskCleanup.subtitle.partial"
+        case diskCleanupSubtitlePartialWithRemaining = "diskCleanup.subtitle.partialWithRemaining"
+        case diskCleanupItemSingular = "diskCleanup.item.singular"
+        case diskCleanupItemPlural = "diskCleanup.item.plural"
+        case diskCleanupCategorySingular = "diskCleanup.category.singular"
+        case diskCleanupCategoryPlural = "diskCleanup.category.plural"
         case processEmpty = "process.empty"
         case processFallbackName = "process.fallbackName"
         case processActionRequested = "process.action.requested"
@@ -200,6 +230,17 @@ enum AppLocalization {
             return string(.languageEnglish, bundle: bundle)
         case .simplifiedChinese:
             return string(.languageSimplifiedChinese, bundle: bundle)
+        }
+    }
+
+    static func diskCleanupCategoryTitle(for kind: DiskCleanupCategoryKind, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .userCaches:
+            return string(.diskCleanupCategoryUserCaches, bundle: bundle)
+        case .trash:
+            return string(.diskCleanupCategoryTrash, bundle: bundle)
+        case .userLogs:
+            return string(.diskCleanupCategoryUserLogs, bundle: bundle)
         }
     }
 

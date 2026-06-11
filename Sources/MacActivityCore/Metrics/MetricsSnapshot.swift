@@ -120,6 +120,7 @@ public enum MetricUpdate: Equatable, Sendable {
     case network(NetworkReading)
     case battery(BatteryReading)
     case temperature(TemperatureReading)
+    case temperatures([TemperatureReading])
     case fan(FanReading)
     case unavailable(kind: MetricKind, reason: String)
     case stale(kind: MetricKind, reason: String)
@@ -138,7 +139,7 @@ public enum MetricUpdate: Equatable, Sendable {
             return .network
         case .battery:
             return .battery
-        case .temperature:
+        case .temperature, .temperatures:
             return .temperature
         case .fan:
             return .fan
@@ -157,6 +158,7 @@ public struct MetricsSnapshot: Equatable, Sendable {
     public var network: NetworkReading?
     public var battery: BatteryReading?
     public var temperature: TemperatureReading?
+    public var temperatures: [TemperatureSource: TemperatureReading]
     public var fan: FanReading?
     public var issues: [MetricKind: MetricIssue]
 
@@ -169,6 +171,7 @@ public struct MetricsSnapshot: Equatable, Sendable {
         network: NetworkReading? = nil,
         battery: BatteryReading? = nil,
         temperature: TemperatureReading? = nil,
+        temperatures: [TemperatureSource: TemperatureReading] = [:],
         fan: FanReading? = nil,
         issues: [MetricKind: MetricIssue] = [:]
     ) {
@@ -179,9 +182,18 @@ public struct MetricsSnapshot: Equatable, Sendable {
         self.vram = vram
         self.network = network
         self.battery = battery
-        self.temperature = temperature
+        var mergedTemperatures = temperatures
+        if let temperature {
+            mergedTemperatures[temperature.source] = temperature
+        }
+        self.temperature = temperature ?? mergedTemperatures[.smc] ?? mergedTemperatures[.battery]
+        self.temperatures = mergedTemperatures
         self.fan = fan
         self.issues = issues
+    }
+
+    public func temperature(for source: TemperatureSource) -> TemperatureReading? {
+        temperatures[source] ?? (temperature?.source == source ? temperature : nil)
     }
 
     public func applying(_ updates: [MetricUpdate], timestamp: Date = .now) -> MetricsSnapshot {
@@ -209,7 +221,17 @@ public struct MetricsSnapshot: Equatable, Sendable {
                 next.issues[.battery] = nil
             case .temperature(let reading):
                 next.temperature = reading
+                next.temperatures[reading.source] = reading
                 next.issues[.temperature] = nil
+            case .temperatures(let readings):
+                let readingsBySource = Dictionary(
+                    uniqueKeysWithValues: readings.map { ($0.source, $0) }
+                )
+                next.temperatures = readingsBySource
+                next.temperature = readingsBySource[.smc] ?? readingsBySource[.battery]
+                if !readings.isEmpty {
+                    next.issues[.temperature] = nil
+                }
             case .fan(let reading):
                 next.fan = reading
                 next.issues[.fan] = nil
@@ -239,6 +261,7 @@ public struct MetricsSnapshot: Equatable, Sendable {
             battery = nil
         case .temperature:
             temperature = nil
+            temperatures = [:]
         case .fan:
             fan = nil
         }

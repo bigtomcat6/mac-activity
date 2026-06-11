@@ -58,9 +58,39 @@ final class SummaryFormatterTests: XCTestCase {
 
         let items = SummaryFormatter().renderStatusItems(
             snapshot: snapshot,
-            selectedMetrics: [.temperature]
+            selectedMetrics: [.temperature],
+            preferredTemperatureSource: .battery
         )
 
+        XCTAssertEqual(
+            items,
+            [
+                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric),
+            ]
+        )
+    }
+
+    func testRenderUsesPreferredTemperatureSourceFromDualReadings() {
+        let snapshot = MetricsSnapshot(
+            timestamp: Date(timeIntervalSince1970: 602),
+            temperatures: [
+                .smc: TemperatureReading(celsius: 55.4, source: .smc),
+                .battery: TemperatureReading(celsius: 30.2, source: .battery),
+            ]
+        )
+
+        let summary = SummaryFormatter().render(
+            snapshot: snapshot,
+            selectedMetrics: [.temperature],
+            preferredTemperatureSource: .battery
+        )
+        let items = SummaryFormatter().renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: [.temperature],
+            preferredTemperatureSource: .battery
+        )
+
+        XCTAssertEqual(summary, "BTMP 30C")
         XCTAssertEqual(
             items,
             [

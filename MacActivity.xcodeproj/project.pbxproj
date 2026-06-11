@@ -23,6 +23,7 @@
 		29B0CBE169F75666C6DBB021 /* DashboardModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4C28EA386891B5D88473C012 /* DashboardModelTests.swift */; };
 		2CEB231CDBBCDDF36F125107 /* MetricsSchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */; };
 		31542F075E8801EA33B52763 /* MetricsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36396300E73F3D423CCDC77C /* MetricsStore.swift */; };
+		32444F91115ACDBDBEEE41F0 /* DiskCleanupStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */; };
 		34B193CBB778F3DBAEB8E354 /* TrashCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = B541AF54F89E04066F33AD8E /* TrashCleanupService.swift */; };
 		366D7404F0EDEC0EA16DF7CB /* TrashCleanupServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C1D390604B9381BB20F9F4A /* TrashCleanupServiceTests.swift */; };
 		3A4477BDC23605E2899597CD /* MetricsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7215BA634217D46E3C2AFD25 /* MetricsSnapshotTests.swift */; };
@@ -69,6 +70,7 @@
 		C77CC2A65843DFBB2B6BEE32 /* MacActivityCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CC96AD1A721BD82A5462EF6A /* MemoryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC3E242AE71B79619755C0D /* MemoryProvider.swift */; };
 		CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */; };
+		CF45AF27EDBD4FB898FC14D4 /* DiskCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */; };
 		D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */; };
 		D490D4024E6274B6F559D0A3 /* DashboardTrendChartLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */; };
 		D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */; };
@@ -78,6 +80,7 @@
 		DDE03109BB32E7B770459990 /* MetricProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC85A29241CC6F902A0531F /* MetricProvider.swift */; };
 		E22AB043F51E6D277BD26F51 /* MetricsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD8679864283C26574C3861 /* MetricsSnapshot.swift */; };
 		E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */; };
+		F20363F876BE2F8C2CA12F53 /* DiskCleanupServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */; };
 		F2CDB29D41CEBB988A44BA7F /* DashboardPopoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D95C239D721596A4768CE46 /* DashboardPopoverController.swift */; };
 		F81BAEE13BCE464C6BC9FA92 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A8D20F98149046273836B /* StatusItemController.swift */; };
 		F8F113DFCAC07290279B4AE2 /* NetworkProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 422B3F924F7EC6DA0DF6493F /* NetworkProviderTests.swift */; };
@@ -185,7 +188,9 @@
 		8C1D390604B9381BB20F9F4A /* TrashCleanupServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashCleanupServiceTests.swift; sourceTree = "<group>"; };
 		98B74985CC421B77A15255C4 /* ActiveProcessMemoryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryLayoutTests.swift; sourceTree = "<group>"; };
 		98D9223A23FC96035099E89A /* MemoryReleaseStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryReleaseStatusView.swift; sourceTree = "<group>"; };
+		9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupServiceTests.swift; sourceTree = "<group>"; };
 		A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModelTests.swift; sourceTree = "<group>"; };
+		A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupStatusView.swift; sourceTree = "<group>"; };
 		A5D2DB29774991AF1785E99D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A62CD05233387237992500A0 /* NetworkProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProvider.swift; sourceTree = "<group>"; };
 		AC0CEBE8C815796DC9899475 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -208,6 +213,7 @@
 		E6B629DAB047D5C4066597A1 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/InfoPlist.strings"; sourceTree = "<group>"; };
 		ECAE9B17ED4BB6141029863B /* PreferencesController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesController.swift; sourceTree = "<group>"; };
 		EDC3E242AE71B79619755C0D /* MemoryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryProvider.swift; sourceTree = "<group>"; };
+		EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupService.swift; sourceTree = "<group>"; };
 		F6393E8D414DD5B454117647 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		F7280E98435B3B94E406813A /* StatusSummaryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModel.swift; sourceTree = "<group>"; };
 		F7B4887EAAB65C8DBBE0314A /* ActiveCleanupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModelTests.swift; sourceTree = "<group>"; };
@@ -354,6 +360,7 @@
 			isa = PBXGroup;
 			children = (
 				716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */,
+				EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */,
 				1245314B585B575A9D44A916 /* MemoryReleaseService.swift */,
 				B541AF54F89E04066F33AD8E /* TrashCleanupService.swift */,
 			);
@@ -412,6 +419,7 @@
 				443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */,
 				C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */,
 				80D21F3C01CE00EFD700E003 /* DashboardView.swift */,
+				A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */,
 				98D9223A23FC96035099E89A /* MemoryReleaseStatusView.swift */,
 				C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */,
 				3A45145799F0B2FCD4EEB53E /* TrashCleanupStatusView.swift */,
@@ -424,6 +432,7 @@
 			children = (
 				782F556D94AA82856902F0AD /* ActiveAppMemoryProvidingTests.swift */,
 				4C28EA386891B5D88473C012 /* DashboardModelTests.swift */,
+				9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */,
 				B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */,
 				5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */,
 				091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */,
@@ -643,6 +652,7 @@
 			files = (
 				7D184325401391E30FCB55B5 /* ActiveAppMemoryProvidingTests.swift in Sources */,
 				29B0CBE169F75666C6DBB021 /* DashboardModelTests.swift in Sources */,
+				F20363F876BE2F8C2CA12F53 /* DiskCleanupServiceTests.swift in Sources */,
 				9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */,
 				0EE72E0F0ADBDE77B23D912F /* MemoryReleaseServiceTests.swift in Sources */,
 				2CEB231CDBBCDDF36F125107 /* MetricsSchedulerTests.swift in Sources */,
@@ -668,6 +678,7 @@
 				B5B1142091C4E8D575C3F253 /* BatteryProvider.swift in Sources */,
 				17C8C8D688BB94F85DBDE1DC /* CPUProvider.swift in Sources */,
 				1B3A5C1A4385179E39C90CDF /* DashboardModel.swift in Sources */,
+				CF45AF27EDBD4FB898FC14D4 /* DiskCleanupService.swift in Sources */,
 				B1D58B1C23E57C4B2EFA43B2 /* FanProvider.swift in Sources */,
 				B3C6A01640BB5B354B59AF73 /* LaunchAtLoginService.swift in Sources */,
 				CC96AD1A721BD82A5462EF6A /* MemoryProvider.swift in Sources */,
@@ -706,6 +717,7 @@
 				F2CDB29D41CEBB988A44BA7F /* DashboardPopoverController.swift in Sources */,
 				5140176C2576A4D6D6811614 /* DashboardTrendChart.swift in Sources */,
 				C2E14BE8D7854558592A0937 /* DashboardView.swift in Sources */,
+				32444F91115ACDBDBEEE41F0 /* DiskCleanupStatusView.swift in Sources */,
 				FBF001BAC7F21E222969200A /* MemoryReleaseStatusView.swift in Sources */,
 				0F0F8EC373BBE78CFBA35CE0 /* PreferencesView.swift in Sources */,
 				0A4F50CC81A438D2B1EC4B28 /* PreferencesWindowController.swift in Sources */,

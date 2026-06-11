@@ -39,6 +39,8 @@
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
+"preferences.diskCleanupScope" = "Cleanup scope";
+"preferences.diskCleanupHelp" = "Controls what Actives Disk Cleanup scans and deletes.";
 "preferences.menuBarMetrics" = "Menu bar metrics";
 "preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
 
@@ -46,16 +48,26 @@
 "language.english" = "English";
 "language.simplifiedChinese" = "Simplified Chinese";
 
+"diskCleanup.category.userCaches" = "Caches";
+"diskCleanup.category.trash" = "Trash";
+"diskCleanup.category.userLogs" = "Logs";
+
 "memoryRelease.action.release" = "Release";
 "memoryRelease.action.releasing" = "Releasing";
 "memoryRelease.title.idle" = "Memory";
 "memoryRelease.title.usage" = "Memory %d%%";
+"memoryRelease.title.reclaimable" = "%@ Releasable";
 "memoryRelease.title.releasing" = "Releasing Memory";
 "memoryRelease.title.released" = "Released %@";
+"memoryRelease.title.noSignificantRelease" = "Memory Unchanged";
+"memoryRelease.title.cooldown" = "Release Cooling Down";
 "memoryRelease.title.unavailable" = "Memory Release Not Available";
 "memoryRelease.title.failed" = "Memory Release Failed";
 "memoryRelease.title.readFailed" = "Memory Reading Failed";
+"memoryRelease.subtitle.usage" = "Memory %d%%";
 "memoryRelease.subtitle.percentOfTotal" = "%.1f%% of total memory";
+"memoryRelease.subtitle.noSignificantRelease" = "No immediately releasable memory was found.";
+"memoryRelease.subtitle.cooldown" = "Try again in %.1f seconds.";
 "memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
 "memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";
 "memoryRelease.subtitle.default" = "Release reclaimable system memory.";
@@ -77,6 +89,26 @@
 "trash.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
 "trash.item.singular" = "item";
 "trash.item.plural" = "items";
+
+"diskCleanup.action.retry" = "Retry";
+"diskCleanup.action.clean" = "Clean";
+"diskCleanup.title.scanning" = "Scanning Disk Cleanup";
+"diskCleanup.title.clean" = "Disk Is Clean";
+"diskCleanup.title.cleanable" = "%@ Cleanable";
+"diskCleanup.title.cleaning" = "Cleaning Disk";
+"diskCleanup.title.cleaned" = "Cleaned %@";
+"diskCleanup.title.failed" = "Disk Cleanup Failed";
+"diskCleanup.subtitle.scanning" = "Checking the selected cleanup scope.";
+"diskCleanup.subtitle.clean" = "No selected disk cleanup items found.";
+"diskCleanup.subtitle.cleanable" = "%d %@ selected from %@.";
+"diskCleanup.subtitle.cleaning" = "Deleting selected disk cleanup files.";
+"diskCleanup.subtitle.cleaned" = "Removed %d %@.";
+"diskCleanup.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
+"diskCleanup.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"diskCleanup.item.singular" = "item";
+"diskCleanup.item.plural" = "items";
+"diskCleanup.category.singular" = "category";
+"diskCleanup.category.plural" = "categories";
 
 "process.empty" = "No foreground apps are reporting memory usage.";
 "process.fallbackName" = "Process %d";

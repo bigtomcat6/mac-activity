@@ -45,4 +45,16 @@ public final class PreferencesController: ObservableObject {
         state.preferredLanguageIdentifier = preferredLanguageIdentifier
         try? store.save(state)
     }
+
+    public func setDiskCleanupCategory(_ kind: DiskCleanupCategoryKind, isSelected: Bool) {
+        var selectedCategories = Set(state.diskCleanupCategories)
+        if isSelected {
+            selectedCategories.insert(kind)
+        } else {
+            selectedCategories.remove(kind)
+        }
+
+        state.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: selectedCategories)
+        try? store.save(state)
+    }
 }

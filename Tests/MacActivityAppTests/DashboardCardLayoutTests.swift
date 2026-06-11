@@ -7,6 +7,17 @@ import MacActivityCore
 
 @MainActor
 final class DashboardCardLayoutTests: XCTestCase {
+    func testSelectingActivesTabAdvancesActivesRefreshTrigger() {
+        XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .overview, currentTrigger: 4),
+            4
+        )
+        XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .actives, currentTrigger: 4),
+            5
+        )
+    }
+
     func testCompactChartCardUsesSlightlyTallerHeights() {
         XCTAssertEqual(DashboardCardLayout.compactChartHeight, 60)
         XCTAssertEqual(DashboardCardLayout.compactChartMinHeight, 116)
@@ -232,6 +243,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let model = DashboardModel(store: MetricsStore())
         let content = DashboardView(
             dashboardModel: model,
+            preferencesController: Self.preferencesController(),
             openPreferences: {},
             quitApplication: {}
         )
@@ -577,6 +589,13 @@ final class DashboardCardLayoutTests: XCTestCase {
         }
     }
 
+    private static func preferencesController() -> PreferencesController {
+        PreferencesController(
+            store: DashboardCardLayoutPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+    }
+
     private static func renderedColor<Content: View>(
         of view: Content,
         atTopLeft point: CGPoint
@@ -623,5 +642,21 @@ final class DashboardCardLayoutTests: XCTestCase {
             color.blueComponent,
             color.alphaComponent
         )
+    }
+}
+
+private final class DashboardCardLayoutPreferencesStore: PreferencesStoring, @unchecked Sendable {
+    private var value: AppPreferences
+
+    init(initial: AppPreferences) {
+        self.value = initial
+    }
+
+    func load() -> AppPreferences {
+        value
+    }
+
+    func save(_ preferences: AppPreferences) throws {
+        value = preferences
     }
 }

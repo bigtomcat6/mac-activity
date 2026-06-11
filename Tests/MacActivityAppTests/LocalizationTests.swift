@@ -19,14 +19,35 @@ final class LocalizationTests: XCTestCase {
 
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: english), "Battery")
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: simplifiedChinese), "电池")
+
+        XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: english), "Cleanup scope")
+        XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: simplifiedChinese), "清理范围")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: english), "Caches")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .trash, bundle: english), "Trash")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: english), "Logs")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: simplifiedChinese), "缓存")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .trash, bundle: simplifiedChinese), "废纸篓")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: simplifiedChinese), "日志")
     }
 
     func testCleanReleaseStringsResolveWithArguments() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
+        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
+        let cleanableBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
 
         XCTAssertEqual(
-            MemoryReleaseStatusView.title(for: .usage(percent: 44.4), bundle: simplifiedChinese),
+            MemoryReleaseStatusView.title(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: simplifiedChinese
+            ),
+            "可释放 \(releasableBytes)"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(
+                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
+                bundle: simplifiedChinese
+            ),
             "内存 44%"
         )
         XCTAssertEqual(
@@ -34,11 +55,40 @@ final class LocalizationTests: XCTestCase {
             "占总内存的 2.5%"
         )
         XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 0), bundle: simplifiedChinese),
+            "没有发现可立即释放的内存。"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 7.5), bundle: simplifiedChinese),
+            "7.5 秒后再试。"
+        )
+        XCTAssertEqual(
             TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
             "确认后可移除 2 个项目。"
         )
         XCTAssertEqual(
             TrashCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
+                bundle: simplifiedChinese
+            ),
+            "已移除 3 个项目；1 个项目无法删除。仍剩余 \(remainingBytes)。"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.title(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
+                bundle: simplifiedChinese
+            ),
+            "可清理 \(cleanableBytes)"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
+                bundle: simplifiedChinese
+            ),
+            "已选择 2 个项目，来自缓存、废纸篓、日志。"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
                 for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
                 bundle: simplifiedChinese
             ),

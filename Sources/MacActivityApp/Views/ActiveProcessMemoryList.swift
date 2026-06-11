@@ -32,6 +32,7 @@ struct ActiveProcessMemoryList: View {
                     ActiveProcessMemoryRow(
                         app: app,
                         maxBytes: maxBytes,
+                        isQuitPending: model.isQuitPending(for: app.processIdentifier),
                         confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
                     ) {
                         model.quit(app)
