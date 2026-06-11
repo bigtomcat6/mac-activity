@@ -42,6 +42,21 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.temperatureSource, .battery)
         XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
     }
+
+    func testDiskCleanupCategoriesPersistToPreferencesStateInDisplayOrder() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setDiskCleanupCategory(.userLogs, isSelected: true)
+        controller.setDiskCleanupCategory(.trash, isSelected: true)
+        controller.setDiskCleanupCategory(.userCaches, isSelected: false)
+
+        XCTAssertEqual(controller.state.diskCleanupCategories, [.trash, .userLogs])
+        XCTAssertEqual(store.savedValues.last?.diskCleanupCategories, [.trash, .userLogs])
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {

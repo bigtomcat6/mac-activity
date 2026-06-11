@@ -9,6 +9,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
     init(
         dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
         onVisibilityChange: @escaping (Bool) -> Void,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void
@@ -21,6 +22,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         popover.contentViewController = NSHostingController(
             rootView: DashboardView(
                 dashboardModel: dashboardModel,
+                preferencesController: preferencesController,
                 openPreferences: {
                     popover.performClose(nil)
                     openPreferences()

@@ -37,8 +37,14 @@
 "preferences.launchAtLogin" = "Launch at login";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
+"preferences.diskCleanupScope" = "Cleanup scope";
+"preferences.diskCleanupHelp" = "Controls what Actives Disk Cleanup scans and deletes.";
 "preferences.menuBarMetrics" = "Menu bar metrics";
 "preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
+
+"diskCleanup.category.userCaches" = "Caches";
+"diskCleanup.category.trash" = "Trash";
+"diskCleanup.category.userLogs" = "Logs";
 
 "memoryRelease.action.release" = "Release";
 "memoryRelease.action.releasing" = "Releasing";
@@ -86,10 +92,10 @@
 "diskCleanup.title.cleaning" = "Cleaning Disk";
 "diskCleanup.title.cleaned" = "Cleaned %@";
 "diskCleanup.title.failed" = "Disk Cleanup Failed";
-"diskCleanup.subtitle.scanning" = "Checking Trash, caches, and logs.";
+"diskCleanup.subtitle.scanning" = "Checking the selected cleanup scope.";
 "diskCleanup.subtitle.clean" = "No selected disk cleanup items found.";
-"diskCleanup.subtitle.cleanable" = "%d %@ selected across %d %@.";
-"diskCleanup.subtitle.cleaning" = "Deleting selected Trash, cache, and log files.";
+"diskCleanup.subtitle.cleanable" = "%d %@ selected from %@.";
+"diskCleanup.subtitle.cleaning" = "Deleting selected disk cleanup files.";
 "diskCleanup.subtitle.cleaned" = "Removed %d %@.";
 "diskCleanup.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
 "diskCleanup.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
@@ -98,7 +104,7 @@
 "diskCleanup.category.singular" = "category";
 "diskCleanup.category.plural" = "categories";
 "diskCleanup.confirmation.title" = "Clean selected disk items?";
-"diskCleanup.confirmation.message" = "Selected Trash, cache, and log files will be permanently deleted.";
+"diskCleanup.confirmation.message" = "Selected disk cleanup files will be permanently deleted.";
 "diskCleanup.confirmation.confirm" = "Clean";
 "diskCleanup.confirmation.cancel" = "Cancel";
 

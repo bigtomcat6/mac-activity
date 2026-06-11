@@ -54,7 +54,7 @@ enum DiskCleanupState: Equatable {
     case idle
     case scanning
     case clean
-    case cleanable(bytes: UInt64, itemCount: Int, categoryCount: Int)
+    case cleanable(bytes: UInt64, itemCount: Int, categories: [DiskCleanupCategoryKind])
     case cleaning
     case cleaned(bytes: UInt64, itemCount: Int)
     case failed(String)
@@ -86,7 +86,7 @@ final class ActiveCleanupModel: ObservableObject {
     private let memoryService: any MemoryReleaseServicing
     private let diskCleanupService: any DiskCleanupServicing
     private let appProvider: any ActiveAppMemoryProviding
-    private let diskCleanupCategories: [DiskCleanupCategoryKind]
+    private var diskCleanupCategories: [DiskCleanupCategoryKind]
     private let limit: Int
     private let quitRefreshIntervalNanoseconds: UInt64
     private let quitRefreshAttemptLimit: Int
@@ -95,7 +95,7 @@ final class ActiveCleanupModel: ObservableObject {
         trashService: any TrashCleanupServicing = TrashCleanupService(),
         memoryService: any MemoryReleaseServicing = MemoryReleaseService(),
         diskCleanupService: any DiskCleanupServicing = DiskCleanupService(),
-        diskCleanupCategories: [DiskCleanupCategoryKind] = [.trash, .userCaches, .userLogs],
+        diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories,
         appProvider: any ActiveAppMemoryProviding = ActiveAppMemoryService(),
         limit: Int = 20,
         quitRefreshIntervalNanoseconds: UInt64 = 500_000_000,
@@ -109,6 +109,10 @@ final class ActiveCleanupModel: ObservableObject {
         self.limit = limit
         self.quitRefreshIntervalNanoseconds = quitRefreshIntervalNanoseconds
         self.quitRefreshAttemptLimit = quitRefreshAttemptLimit
+    }
+
+    func setDiskCleanupCategories(_ categories: [DiskCleanupCategoryKind]) {
+        diskCleanupCategories = categories
     }
 
     func refresh() async {
@@ -307,7 +311,7 @@ final class ActiveCleanupModel: ObservableObject {
             return .cleanable(
                 bytes: summary.selectedBytes,
                 itemCount: summary.selectedItemCount,
-                categoryCount: summary.categories.count
+                categories: diskCleanupCategories
             )
         case .failed(let message):
             return .failed(message)
@@ -375,7 +379,7 @@ final class ActiveCleanupModel: ObservableObject {
             return .cleanable(
                 bytes: summary.selectedBytes,
                 itemCount: summary.selectedItemCount,
-                categoryCount: summary.categories.count
+                categories: diskCleanupCategories
             )
         case .failed(let message):
             return .failed(message)

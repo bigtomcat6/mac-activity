@@ -169,7 +169,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
         XCTAssertTrue(DiskCleanupStatusView.showsProgressIndicator(for: .scanning))
         XCTAssertTrue(DiskCleanupStatusView.showsProgressIndicator(for: .cleaning))
-        XCTAssertFalse(DiskCleanupStatusView.showsProgressIndicator(for: .cleanable(bytes: 512, itemCount: 1, categoryCount: 1)))
+        XCTAssertFalse(DiskCleanupStatusView.showsProgressIndicator(for: .cleanable(bytes: 512, itemCount: 1, categories: [.userCaches])))
     }
 
     func testTrashHelperTextMatchesCleanReleasePlan() {
@@ -220,21 +220,27 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         let english = Self.englishBundle
 
         XCTAssertEqual(DiskCleanupStatusView.title(for: .idle, bundle: english), "Scanning Disk Cleanup")
-        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .idle, bundle: english), "Checking Trash, caches, and logs.")
+        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .idle, bundle: english), "Checking the selected cleanup scope.")
         XCTAssertEqual(DiskCleanupStatusView.title(for: .scanning, bundle: english), "Scanning Disk Cleanup")
-        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .scanning, bundle: english), "Checking Trash, caches, and logs.")
+        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .scanning, bundle: english), "Checking the selected cleanup scope.")
         XCTAssertEqual(DiskCleanupStatusView.title(for: .clean, bundle: english), "Disk Is Clean")
         XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .clean, bundle: english), "No selected disk cleanup items found.")
         XCTAssertEqual(
-            DiskCleanupStatusView.title(for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1), bundle: english),
+            DiskCleanupStatusView.title(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
+                bundle: english
+            ),
             "\(cleanableBytes) Cleanable"
         )
         XCTAssertEqual(
-            DiskCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1), bundle: english),
-            "2 items selected across 1 category."
+            DiskCleanupStatusView.subtitle(
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
+                bundle: english
+            ),
+            "2 items selected from Caches, Trash, Logs."
         )
         XCTAssertEqual(DiskCleanupStatusView.title(for: .cleaning, bundle: english), "Cleaning Disk")
-        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .cleaning, bundle: english), "Deleting selected Trash, cache, and log files.")
+        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .cleaning, bundle: english), "Deleting selected disk cleanup files.")
         XCTAssertEqual(DiskCleanupStatusView.title(for: .cleaned(bytes: 8_192, itemCount: 1), bundle: english), "Cleaned \(cleanedBytes)")
         XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .cleaned(bytes: 8_192, itemCount: 1), bundle: english), "Removed 1 item.")
         XCTAssertEqual(

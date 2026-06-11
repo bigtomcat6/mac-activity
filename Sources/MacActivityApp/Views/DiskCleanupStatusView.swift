@@ -1,4 +1,5 @@
 import SwiftUI
+import MacActivityCore
 
 enum DiskCleanupTrailingAction: Equatable {
     case button(title: String)
@@ -93,13 +94,12 @@ struct DiskCleanupStatusView: View {
             return AppLocalization.string(.diskCleanupSubtitleScanning, bundle: bundle)
         case .clean:
             return AppLocalization.string(.diskCleanupSubtitleClean, bundle: bundle)
-        case .cleanable(_, let itemCount, let categoryCount):
+        case .cleanable(_, let itemCount, let categories):
             return AppLocalization.string(
                 .diskCleanupSubtitleCleanable,
                 itemCount,
                 itemLabel(for: itemCount, bundle: bundle),
-                categoryCount,
-                categoryLabel(for: categoryCount, bundle: bundle),
+                categoryList(for: categories, bundle: bundle),
                 bundle: bundle
             )
         case .cleaning:
@@ -156,8 +156,20 @@ struct DiskCleanupStatusView: View {
         AppLocalization.string(count == 1 ? .diskCleanupItemSingular : .diskCleanupItemPlural, bundle: bundle)
     }
 
-    private static func categoryLabel(for count: Int, bundle: Bundle? = nil) -> String {
-        AppLocalization.string(count == 1 ? .diskCleanupCategorySingular : .diskCleanupCategoryPlural, bundle: bundle)
+    private static func categoryList(for categories: [DiskCleanupCategoryKind], bundle: Bundle? = nil) -> String {
+        categories
+            .map { AppLocalization.diskCleanupCategoryTitle(for: $0, bundle: bundle) }
+            .joined(separator: categoryListSeparator(for: bundle))
+    }
+
+    private static func categoryListSeparator(for bundle: Bundle?) -> String {
+        if let bundle {
+            let identifiers = bundle.preferredLocalizations + bundle.localizations + [bundle.bundleURL.lastPathComponent]
+            if identifiers.contains(where: { $0.hasPrefix("zh") || $0.hasPrefix("zh-") }) {
+                return "、"
+            }
+        }
+        return ", "
     }
 
     private static let actionWidth: CGFloat = 72

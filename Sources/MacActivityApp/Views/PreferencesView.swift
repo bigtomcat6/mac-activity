@@ -42,6 +42,27 @@ struct PreferencesView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(AppLocalization.string(.preferencesDiskCleanupScope))
+                        .font(.headline)
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        ForEach(AppPreferences.diskCleanupCategoryOrder, id: \.self) { category in
+                            Toggle(
+                                AppLocalization.diskCleanupCategoryTitle(for: category),
+                                isOn: Binding(
+                                    get: { preferencesController.state.diskCleanupCategories.contains(category) },
+                                    set: { preferencesController.setDiskCleanupCategory(category, isSelected: $0) }
+                                )
+                            )
+                        }
+                    }
+
+                    Text(AppLocalization.string(.preferencesDiskCleanupHelp))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
                 Text(AppLocalization.string(.preferencesMenuBarMetrics))
                     .font(.headline)
 

@@ -149,6 +149,7 @@ enum DashboardTab: String, CaseIterable, Identifiable {
 
 struct DashboardView: View {
     @ObservedObject var dashboardModel: DashboardModel
+    @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
@@ -187,6 +188,12 @@ struct DashboardView: View {
             .background(.bar)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onAppear {
+            applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
+        }
+        .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
+            applyDiskCleanupCategories(newCategories, refreshActives: true)
+        }
     }
 
     private var header: some View {
@@ -243,6 +250,13 @@ struct DashboardView: View {
 
     static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
         selectedTab == .actives ? currentTrigger + 1 : currentTrigger
+    }
+
+    private func applyDiskCleanupCategories(_ categories: [DiskCleanupCategoryKind], refreshActives: Bool) {
+        activeCleanupModel.setDiskCleanupCategories(categories)
+        if refreshActives && selectedTab == .actives {
+            activesRefreshTrigger += 1
+        }
     }
 
     private var summaryText: String {
