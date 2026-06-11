@@ -103,10 +103,6 @@
 "diskCleanup.item.plural" = "items";
 "diskCleanup.category.singular" = "category";
 "diskCleanup.category.plural" = "categories";
-"diskCleanup.confirmation.title" = "Clean selected disk items?";
-"diskCleanup.confirmation.message" = "Selected disk cleanup files will be permanently deleted.";
-"diskCleanup.confirmation.confirm" = "Clean";
-"diskCleanup.confirmation.cancel" = "Cancel";
 
 "process.empty" = "No foreground apps are reporting memory usage.";
 "process.fallbackName" = "Process %d";

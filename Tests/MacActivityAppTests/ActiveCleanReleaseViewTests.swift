@@ -85,6 +85,18 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertTrue(secondClick.shouldQuit)
     }
 
+    func testDiskCleanupButtonRequiresSecondClickToClean() {
+        let firstClick = DiskCleanupConfirmationReducer.reduce(.inactive, event: .cleanButtonClicked)
+
+        XCTAssertEqual(firstClick.state, .confirming)
+        XCTAssertFalse(firstClick.shouldClean)
+
+        let secondClick = DiskCleanupConfirmationReducer.reduce(.confirming, event: .cleanButtonClicked)
+
+        XCTAssertEqual(secondClick.state, .inactive)
+        XCTAssertTrue(secondClick.shouldClean)
+    }
+
     func testQuitConfirmationCancelsFromOutsideClickOrTimeout() {
         let outsideClick = ActiveProcessQuitConfirmationReducer.reduce(.confirming, event: .outsideClicked)
         let timeout = ActiveProcessQuitConfirmationReducer.reduce(.confirming, event: .timedOut)
@@ -95,6 +107,16 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertFalse(timeout.shouldQuit)
     }
 
+    func testDiskCleanupConfirmationCancelsFromOutsideClickOrTimeout() {
+        let outsideClick = DiskCleanupConfirmationReducer.reduce(.confirming, event: .outsideClicked)
+        let timeout = DiskCleanupConfirmationReducer.reduce(.confirming, event: .timedOut)
+
+        XCTAssertEqual(outsideClick.state, .inactive)
+        XCTAssertFalse(outsideClick.shouldClean)
+        XCTAssertEqual(timeout.state, .inactive)
+        XCTAssertFalse(timeout.shouldClean)
+    }
+
     func testQuitButtonConfigurationTurnsDestructiveWhileConfirming() {
         XCTAssertEqual(
             ActiveProcessMemoryRow.quitButtonConfiguration(for: .inactive, bundle: Self.englishBundle),
@@ -103,6 +125,17 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(
             ActiveProcessMemoryRow.quitButtonConfiguration(for: .confirming, bundle: Self.englishBundle),
             ActiveProcessQuitButtonConfiguration(title: "Confirm", isDestructive: true)
+        )
+    }
+
+    func testDiskCleanupButtonConfigurationTurnsDestructiveWhileConfirming() {
+        XCTAssertEqual(
+            DiskCleanupStatusView.buttonConfiguration(for: .inactive, bundle: Self.englishBundle),
+            DiskCleanupActionButtonConfiguration(title: "Clean", isDestructive: false)
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.buttonConfiguration(for: .confirming, bundle: Self.englishBundle),
+            DiskCleanupActionButtonConfiguration(title: "Confirm", isDestructive: true)
         )
     }
 
@@ -160,8 +193,20 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
 
     func testDiskCleanupStateShowsProgressIndicator() {
         XCTAssertEqual(
-            DiskCleanupStatusView.trailingAction(isCleaningDiskCleanup: false, bundle: Self.englishBundle),
-            .button(title: "Clean")
+            DiskCleanupStatusView.trailingAction(
+                isCleaningDiskCleanup: false,
+                confirmationState: .inactive,
+                bundle: Self.englishBundle
+            ),
+            .button(title: "Clean", isDestructive: false)
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.trailingAction(
+                isCleaningDiskCleanup: false,
+                confirmationState: .confirming,
+                bundle: Self.englishBundle
+            ),
+            .button(title: "Confirm", isDestructive: true)
         )
         XCTAssertEqual(
             DiskCleanupStatusView.trailingAction(isCleaningDiskCleanup: true, bundle: Self.englishBundle),

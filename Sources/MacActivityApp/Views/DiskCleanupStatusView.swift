@@ -2,12 +2,50 @@ import SwiftUI
 import MacActivityCore
 
 enum DiskCleanupTrailingAction: Equatable {
-    case button(title: String)
+    case button(title: String, isDestructive: Bool)
     case progressIndicator
+}
+
+enum DiskCleanupConfirmationState: Equatable {
+    case inactive
+    case confirming
+}
+
+enum DiskCleanupConfirmationEvent {
+    case cleanButtonClicked
+    case outsideClicked
+    case timedOut
+}
+
+struct DiskCleanupConfirmationResult {
+    let state: DiskCleanupConfirmationState
+    let shouldClean: Bool
+}
+
+enum DiskCleanupConfirmationReducer {
+    static func reduce(
+        _ state: DiskCleanupConfirmationState,
+        event: DiskCleanupConfirmationEvent
+    ) -> DiskCleanupConfirmationResult {
+        switch (state, event) {
+        case (.inactive, .cleanButtonClicked):
+            return DiskCleanupConfirmationResult(state: .confirming, shouldClean: false)
+        case (.confirming, .cleanButtonClicked):
+            return DiskCleanupConfirmationResult(state: .inactive, shouldClean: true)
+        case (_, .outsideClicked), (_, .timedOut):
+            return DiskCleanupConfirmationResult(state: .inactive, shouldClean: false)
+        }
+    }
+}
+
+struct DiskCleanupActionButtonConfiguration: Equatable {
+    let title: String
+    let isDestructive: Bool
 }
 
 struct DiskCleanupStatusView: View {
     @ObservedObject var model: ActiveCleanupModel
+    @Binding private var confirmationState: DiskCleanupConfirmationState
 
     static let byteFormatter: ByteCountFormatter = {
         let formatter = ByteCountFormatter()
@@ -15,22 +53,36 @@ struct DiskCleanupStatusView: View {
         return formatter
     }()
 
+    init(
+        model: ActiveCleanupModel,
+        confirmationState: Binding<DiskCleanupConfirmationState> = .constant(.inactive)
+    ) {
+        self.model = model
+        self._confirmationState = confirmationState
+    }
+
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: "externaldrive.badge.checkmark")
-                .font(.headline)
-                .foregroundStyle(.secondary)
-                .frame(width: 22)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(Self.title(for: model.diskCleanupState))
-                    .font(.subheadline.weight(.semibold))
-                    .lineLimit(1)
-
-                Text(Self.subtitle(for: model.diskCleanupState))
-                    .font(.caption)
+            HStack(spacing: 10) {
+                Image(systemName: "externaldrive.badge.checkmark")
+                    .font(.headline)
                     .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Self.title(for: model.diskCleanupState))
+                        .font(.subheadline.weight(.semibold))
+                        .lineLimit(1)
+
+                    Text(Self.subtitle(for: model.diskCleanupState))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .contentShape(Rectangle())
+            .onTapGesture {
+                applyConfirmationEvent(.outsideClicked)
             }
 
             Spacer(minLength: 8)
@@ -44,6 +96,15 @@ struct DiskCleanupStatusView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
         )
+        .task(id: confirmationState) {
+            guard confirmationState == .confirming else { return }
+            try? await Task.sleep(nanoseconds: Self.confirmationTimeoutNanoseconds)
+            guard Task.isCancelled == false else { return }
+            applyConfirmationEvent(.timedOut)
+        }
+        .onDisappear {
+            confirmationState = .inactive
+        }
     }
 
     @ViewBuilder
@@ -59,13 +120,41 @@ struct DiskCleanupStatusView: View {
             }
             .frame(minWidth: Self.actionWidth, alignment: .trailing)
         case .cleanable:
-            Button(AppLocalization.string(.diskCleanupActionClean)) {
-                model.requestDiskCleanupConfirmation()
-            }
-            .disabled(model.isCleaningDiskCleanup)
-            .frame(minWidth: Self.actionWidth, alignment: .trailing)
+            actionButton
         case .idle, .clean, .cleaned, .partial:
             EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var actionButton: some View {
+        let configuration = Self.buttonConfiguration(for: confirmationState)
+
+        if configuration.isDestructive {
+            Button(configuration.title) {
+                applyConfirmationEvent(.cleanButtonClicked)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(.red)
+            .disabled(model.isCleaningDiskCleanup)
+            .frame(minWidth: Self.actionWidth, alignment: .trailing)
+        } else {
+            Button(configuration.title) {
+                applyConfirmationEvent(.cleanButtonClicked)
+            }
+            .buttonStyle(.bordered)
+            .disabled(model.isCleaningDiskCleanup)
+            .frame(minWidth: Self.actionWidth, alignment: .trailing)
+        }
+    }
+
+    @MainActor
+    private func applyConfirmationEvent(_ event: DiskCleanupConfirmationEvent) {
+        let result = DiskCleanupConfirmationReducer.reduce(confirmationState, event: event)
+        confirmationState = result.state
+
+        if result.shouldClean {
+            Task { await model.confirmDiskCleanup() }
         }
     }
 
@@ -131,12 +220,17 @@ struct DiskCleanupStatusView: View {
         }
     }
 
-    static func trailingAction(isCleaningDiskCleanup: Bool, bundle: Bundle? = nil) -> DiskCleanupTrailingAction {
+    static func trailingAction(
+        isCleaningDiskCleanup: Bool,
+        confirmationState: DiskCleanupConfirmationState = .inactive,
+        bundle: Bundle? = nil
+    ) -> DiskCleanupTrailingAction {
         if isCleaningDiskCleanup {
             return .progressIndicator
         }
 
-        return .button(title: AppLocalization.string(.diskCleanupActionClean, bundle: bundle))
+        let configuration = buttonConfiguration(for: confirmationState, bundle: bundle)
+        return .button(title: configuration.title, isDestructive: configuration.isDestructive)
     }
 
     static func showsProgressIndicator(for state: DiskCleanupState) -> Bool {
@@ -145,6 +239,24 @@ struct DiskCleanupStatusView: View {
             return true
         case .idle, .clean, .cleanable, .cleaned, .failed, .partial:
             return false
+        }
+    }
+
+    static func buttonConfiguration(
+        for state: DiskCleanupConfirmationState,
+        bundle: Bundle? = nil
+    ) -> DiskCleanupActionButtonConfiguration {
+        switch state {
+        case .inactive:
+            return DiskCleanupActionButtonConfiguration(
+                title: AppLocalization.string(.diskCleanupActionClean, bundle: bundle),
+                isDestructive: false
+            )
+        case .confirming:
+            return DiskCleanupActionButtonConfiguration(
+                title: AppLocalization.string(.processActionConfirm, bundle: bundle),
+                isDestructive: true
+            )
         }
     }
 
@@ -173,4 +285,5 @@ struct DiskCleanupStatusView: View {
     }
 
     private static let actionWidth: CGFloat = 72
+    private static let confirmationTimeoutNanoseconds = ActiveProcessMemoryRow.quitConfirmationTimeoutNanoseconds
 }

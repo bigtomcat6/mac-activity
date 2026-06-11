@@ -80,7 +80,6 @@ final class ActiveCleanupModel: ObservableObject {
     @Published private(set) var isCleaningDiskCleanup = false
     @Published private(set) var isReleasingMemory = false
     @Published var isTrashConfirmationPresented = false
-    @Published var isDiskCleanupConfirmationPresented = false
 
     private let trashService: any TrashCleanupServicing
     private let memoryService: any MemoryReleaseServicing
@@ -158,10 +157,6 @@ final class ActiveCleanupModel: ObservableObject {
         isTrashConfirmationPresented = true
     }
 
-    func requestDiskCleanupConfirmation() {
-        isDiskCleanupConfirmationPresented = true
-    }
-
     func confirmTrashCleanup() async {
         guard isCleaningTrash == false else { return }
 
@@ -190,7 +185,6 @@ final class ActiveCleanupModel: ObservableObject {
     func confirmDiskCleanup() async {
         guard isCleaningDiskCleanup == false else { return }
 
-        isDiskCleanupConfirmationPresented = false
         isCleaningDiskCleanup = true
         defer { isCleaningDiskCleanup = false }
 
