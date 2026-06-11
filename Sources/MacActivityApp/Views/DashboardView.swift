@@ -797,6 +797,7 @@ private struct CompactTrendMetricCard: View {
                     isCompactOverviewChart: true
                 )
             )
+            .id(metric.id)
             .frame(height: DashboardOverviewLayout.compactTrendChartHeight)
             .frame(maxWidth: .infinity)
         }
@@ -847,6 +848,7 @@ private struct SlimTrendMetricCard: View {
                     isCompactOverviewChart: false
                 )
             )
+            .id(metric.id)
             .frame(height: DashboardCardLayout.compactChartHeight)
             .frame(maxWidth: .infinity)
         }
@@ -907,6 +909,7 @@ private struct MetricCard: View {
                             isCompactOverviewChart: false
                         )
                     )
+                        .id(metric.id)
                         .frame(height: DashboardCardLayout.compactChartHeight)
                 }
             case .value:
@@ -957,6 +960,7 @@ private struct MetricCard: View {
                 isCompactOverviewChart: false
             )
         )
+        .id(metric.id)
 
         switch DashboardCardLayout.chartHeightBehavior(for: metric.kind) {
         case .fixed(let height):

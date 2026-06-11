@@ -97,6 +97,57 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(cpu.value, "12%")
     }
 
+    func testTemperatureMetricSwitchesPreferredSourceTrendImmediately() async {
+        let store = MetricsStore()
+        let preferences = PreferencesController(
+            store: InMemoryDashboardPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.temperature],
+                    temperatureSource: .battery
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = DashboardModel(store: store, preferences: preferences)
+        let start = Date(timeIntervalSince1970: 2_000)
+
+        store.apply(
+            [
+                .temperatures([
+                    TemperatureReading(celsius: 55, source: .smc),
+                    TemperatureReading(celsius: 30, source: .battery),
+                ]),
+            ],
+            timestamp: start
+        )
+        store.apply(
+            [
+                .temperatures([
+                    TemperatureReading(celsius: 56, source: .smc),
+                    TemperatureReading(celsius: 31, source: .battery),
+                ]),
+            ],
+            timestamp: start.addingTimeInterval(2)
+        )
+
+        let batteryMetrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [30, 31]
+        }
+        let batteryTemperature = try! XCTUnwrap(batteryMetrics.first { $0.kind == .temperature })
+        XCTAssertEqual(batteryTemperature.title, TemperatureSource.battery.dashboardTitle)
+        XCTAssertEqual(batteryTemperature.value, "31.0 C")
+
+        preferences.setTemperatureSource(.smc)
+
+        let smcMetrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [55, 56]
+        }
+        let smcTemperature = try! XCTUnwrap(smcMetrics.first { $0.kind == .temperature })
+        XCTAssertEqual(smcTemperature.title, TemperatureSource.smc.dashboardTitle)
+        XCTAssertEqual(smcTemperature.value, "56.0 C")
+    }
+
     private func waitForMetrics(
         in model: DashboardModel,
         timeout: TimeInterval = 1,
@@ -109,5 +160,21 @@ final class DashboardModelTests: XCTestCase {
             try? await Task.sleep(nanoseconds: 10_000_000)
         }
         return model.metrics
+    }
+}
+
+private final class InMemoryDashboardPreferencesStore: PreferencesStoring, @unchecked Sendable {
+    private var value: AppPreferences
+
+    init(initial: AppPreferences) {
+        self.value = initial
+    }
+
+    func load() -> AppPreferences {
+        value
+    }
+
+    func save(_ preferences: AppPreferences) throws {
+        value = preferences
     }
 }

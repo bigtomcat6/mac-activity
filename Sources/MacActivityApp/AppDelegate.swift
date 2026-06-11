@@ -27,9 +27,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
-        let temperatureSourceStore = TemperatureSourceSelectionStore(
-            initialSource: preferencesController.state.temperatureSource
-        )
         let preferencesWindowController = LazyPreferencesWindowController { [preferencesController] in
             return PreferencesWindowController(
                 preferencesController: preferencesController
@@ -58,7 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 VRAMProvider(),
                 NetworkProvider(),
                 BatteryProvider(),
-                TemperatureProvider(temperatureSourceStore: temperatureSourceStore),
+                TemperatureProvider(),
                 FanProvider(),
             ],
             store: metricsStore,
@@ -83,16 +80,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if preferencesController.state.launchAtLoginEnabled != launchService.currentStatus() {
             preferencesController.setLaunchAtLoginEnabled(preferencesController.state.launchAtLoginEnabled)
         }
-
-        preferencesController.$state
-            .map(\.temperatureSource)
-            .removeDuplicates()
-            .sink { source in
-                Task {
-                    await temperatureSourceStore.set(source)
-                }
-            }
-            .store(in: &cancellables)
 
         metricsStore.$snapshot
             .map { snapshot in
@@ -157,7 +144,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeDashboardPopoverController() -> DashboardPopoverController {
-        let dashboardModel = DashboardModel(store: metricsStore, isActive: false)
+        guard let preferencesController else {
+            fatalError("Dashboard requested before preferences were configured")
+        }
+
+        let dashboardModel = DashboardModel(
+            store: metricsStore,
+            preferences: preferencesController,
+            isActive: false
+        )
         self.dashboardModel = dashboardModel
 
         return DashboardPopoverController(
