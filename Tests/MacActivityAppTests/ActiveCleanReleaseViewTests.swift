@@ -31,7 +31,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["diskCleanup", "processes"])
     }
 
-    func testRenderedActivesChromeMatchesOverviewCardBackgroundTone() async throws {
+    func testRenderedProcessListRestoresTransparentGapBetweenRows() async throws {
         let model = ActiveCleanupModel(
             trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
             memoryService: ViewMemoryReleaseServiceRecorder(
@@ -61,33 +61,17 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
         await model.refreshVisibleCleanReleaseSections()
 
-        let content = ActiveCleanReleaseView(model: model)
-            .frame(width: 360, height: 130, alignment: .topLeading)
-        // The bitmap helper flips y when sampling, so convert the visual process-row gap point.
-        let processGapY = (
-            130
-            - ActiveCleanReleaseLayout.diskCleanupStripHeight
-            - ActiveCleanReleaseLayout.sectionSpacing
-            - ActiveProcessMemoryLayout.rowHeight
-            - ActiveCleanReleaseLayout.processListSpacing / 2
-            - 1
-        )
-
-        let referenceColor = try XCTUnwrap(
-            Self.renderedColor(
-                of: RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
-                    .frame(width: 360, height: 130),
-                atTopLeft: CGPoint(x: 210, y: 40)
-            )
-        )
+        let content = ActiveProcessMemoryList(model: model)
+            .frame(width: 360, height: 90, alignment: .topLeading)
+        let processGapY = ActiveProcessMemoryLayout.rowHeight + (ActiveCleanReleaseLayout.processListSpacing / 2)
         let processGapColor = try XCTUnwrap(
             Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: processGapY))
         )
 
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(processGapColor, referenceColor, tolerance: 0.08),
-            "Expected the process-list gap background to match Overview card chrome. reference=\(Self.debugColor(referenceColor)) gap=\(Self.debugColor(processGapColor))"
+        XCTAssertLessThan(
+            processGapColor.alphaComponent,
+            0.02,
+            "Expected the process-list gap to restore the original transparent divider spacing. gap=\(Self.debugColor(processGapColor))"
         )
     }
 
@@ -137,7 +121,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
     }
 
-    func testRenderedProcessRowIncludesSoftChromeOutsideProgressFill() throws {
+    func testRenderedProcessRowRestoresTransparentSpaceOutsideProgressFill() throws {
         let app = ActiveAppMemoryEntry(
             processIdentifier: 2_333,
             name: "Chrome Test",
@@ -151,21 +135,49 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
             .environment(\.appearsActive, true)
 
+        let actual = try XCTUnwrap(
+            Self.renderedColor(of: row, atTopLeft: CGPoint(x: 300, y: 19))
+        )
+
+        XCTAssertLessThan(
+            actual.alphaComponent,
+            0.02,
+            "Expected the original row shape to leave the area outside progress fill transparent. actual=\(Self.debugColor(actual))"
+        )
+    }
+
+    func testRenderedProcessRowLeavesInteriorBottomCornersSquare() throws {
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_334,
+            name: "Corner Test",
+            bundleIdentifier: "com.example.corner-test",
+            bundleURL: nil,
+            residentMemoryBytes: 1_000,
+            isTerminable: true
+        )
+
+        let row = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, true)
+
         let reference = try XCTUnwrap(
             Self.renderedColor(
                 of: Rectangle()
-                    .fill(ActiveProcessMemoryLayout.rowBackgroundColor(appearsActive: true))
+                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: true))
                     .frame(width: 32, height: 32),
                 atTopLeft: CGPoint(x: 16, y: 16)
             )
         )
         let actual = try XCTUnwrap(
-            Self.renderedColor(of: row, atTopLeft: CGPoint(x: 300, y: 19))
+            Self.renderedColor(
+                of: row,
+                atTopLeft: CGPoint(x: 1, y: ActiveProcessMemoryLayout.rowHeight - 1)
+            )
         )
 
         XCTAssertTrue(
             Self.colorsApproximatelyEqual(actual, reference, tolerance: 0.08),
-            "Expected row chrome to be visible outside the progress-fill region. reference=\(Self.debugColor(reference)) actual=\(Self.debugColor(actual))"
+            "Expected process rows to keep interior corners square; only the outer list edge should round. reference=\(Self.debugColor(reference)) actual=\(Self.debugColor(actual))"
         )
     }
 

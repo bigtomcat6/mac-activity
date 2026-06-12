@@ -52,6 +52,8 @@ enum DashboardOverviewLayout {
     static let usageValueColumnWidth: CGFloat = 44
     static let usageRowSpacing: CGFloat = 10
     static let usageBarHeight: CGFloat = 8
+    static let usageContentMaxWidth: CGFloat = 180
+    static let usageCardContentAlignment: Alignment = .center
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
@@ -887,12 +889,17 @@ private struct CPUGPUUsageCard: View {
                 UsageBarRow(metric: gpu, color: DashboardMetricColor.color(for: .gpu))
             }
         }
+        .frame(
+            maxWidth: DashboardOverviewLayout.usageContentMaxWidth,
+            alignment: .leading
+        )
+        .frame(maxWidth: .infinity, alignment: .center)
         .padding(DashboardCardLayout.regularCardInsets)
         .frame(
             maxWidth: .infinity,
             minHeight: DashboardCardLayout.compactChartMinHeight,
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
-            alignment: .topLeading
+            alignment: DashboardOverviewLayout.usageCardContentAlignment
         )
         .dashboardCardChrome(isHovered: isCardHovered)
         .onHover { hovering in

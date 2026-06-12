@@ -106,6 +106,14 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageBarHeight, 8)
     }
 
+    func testOverviewUsageCardCentersRowsWithinBoundedContentWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.usageContentMaxWidth, 180)
+    }
+
+    func testOverviewUsageCardCentersContentWithinCardFrame() {
+        XCTAssertEqual(DashboardOverviewLayout.usageCardContentAlignment, Alignment.center)
+    }
+
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
