@@ -49,7 +49,7 @@ struct ActiveProcessMemoryList: View {
         let maxBytes = model.apps.map(\.residentMemoryBytes).max() ?? 0
 
         return VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
-            ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
+            ForEach(model.apps) { app in
                 ActiveProcessMemoryRow(
                     app: app,
                     maxBytes: maxBytes,
@@ -57,11 +57,6 @@ struct ActiveProcessMemoryList: View {
                     confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
                 ) {
                     model.quit(app)
-                }
-
-                if index < model.apps.count - 1 {
-                    Divider()
-                        .padding(.leading, 12)
                 }
             }
         }

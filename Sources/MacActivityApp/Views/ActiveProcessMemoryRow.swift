@@ -127,6 +127,7 @@ struct ActiveProcessMemoryRow: View {
         }
         .frame(height: ActiveProcessMemoryLayout.rowHeight)
         .contentShape(Rectangle())
+        .background(isHovered ? AnyShapeStyle(.quaternary.opacity(0.5)) : AnyShapeStyle(.clear))
         .onHover { isHovered = $0 }
         .task(id: quitConfirmationState) {
             guard quitConfirmationState == .confirming else { return }

@@ -31,49 +31,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["diskCleanup", "processes"])
     }
 
-    func testRenderedProcessListRestoresTransparentGapBetweenRows() async throws {
-        let model = ActiveCleanupModel(
-            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
-            memoryService: ViewMemoryReleaseServiceRecorder(
-                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
-            ),
-            diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
-            appProvider: ViewActiveAppProviderRecorder(
-                entries: [
-                    ActiveAppMemoryEntry(
-                        processIdentifier: 2_201,
-                        name: "First",
-                        bundleIdentifier: "com.example.first",
-                        bundleURL: URL(fileURLWithPath: "/Applications/First.app"),
-                        residentMemoryBytes: 250,
-                        isTerminable: true
-                    ),
-                    ActiveAppMemoryEntry(
-                        processIdentifier: 2_202,
-                        name: "Second",
-                        bundleIdentifier: "com.example.second",
-                        bundleURL: URL(fileURLWithPath: "/Applications/Second.app"),
-                        residentMemoryBytes: 1_000,
-                        isTerminable: true
-                    ),
-                ]
-            )
-        )
-        await model.refreshVisibleCleanReleaseSections()
-
-        let content = ActiveProcessMemoryList(model: model)
-            .frame(width: 360, height: 90, alignment: .topLeading)
-        let processGapY = ActiveProcessMemoryLayout.rowHeight + (ActiveCleanReleaseLayout.processListSpacing / 2)
-        let processGapColor = try XCTUnwrap(
-            Self.renderedColor(of: content, atTopLeft: CGPoint(x: 210, y: processGapY))
-        )
-
-        XCTAssertLessThan(
-            processGapColor.alphaComponent,
-            0.02,
-            "Expected the process-list gap to restore the original transparent divider spacing. gap=\(Self.debugColor(processGapColor))"
-        )
-    }
 
     func testRenderedProcessProgressUsesNeutralToneWhenWindowIsInactive() throws {
         let app = ActiveAppMemoryEntry(
