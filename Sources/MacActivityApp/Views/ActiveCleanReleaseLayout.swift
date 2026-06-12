@@ -5,7 +5,7 @@ enum ActiveCleanReleaseLayout {
     static let diskCleanupStripHeight: CGFloat = 44
     static let memoryStripHeight: CGFloat = diskCleanupStripHeight
     static let processRowHeight: CGFloat = ActiveProcessMemoryLayout.rowHeight
-    static let processListSpacing: CGFloat = 6
+    static let processListSpacing: CGFloat = 0
     static let sectionSpacing: CGFloat = 10
     static let zoneOrder = ["diskCleanup", "processes"]
 }

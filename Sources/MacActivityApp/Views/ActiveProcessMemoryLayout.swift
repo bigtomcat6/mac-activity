@@ -2,7 +2,7 @@ import Foundation
 import SwiftUI
 
 enum ActiveProcessMemoryLayout {
-    static let rowHeight: CGFloat = 38
+    static let rowHeight: CGFloat = 32
     static let trailingActionWidth: CGFloat = 72
     static let outerCornerRadius: CGFloat = ActiveCleanupChrome.cornerRadius
 

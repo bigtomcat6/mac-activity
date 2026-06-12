@@ -10,12 +10,12 @@ final class ActiveProcessMemoryLayoutTests: XCTestCase {
     }
 
     func testCompactLayoutConstantsMatchCleanReleasePage() {
-        XCTAssertEqual(ActiveProcessMemoryLayout.rowHeight, 38)
+        XCTAssertEqual(ActiveProcessMemoryLayout.rowHeight, 32)
         XCTAssertEqual(ActiveProcessMemoryLayout.trailingActionWidth, 72)
     }
 
-    func testProcessListKeepsOriginalSpacingWithOnlyOuterCornersRounded() {
-        XCTAssertEqual(ActiveCleanReleaseLayout.processListSpacing, 6)
+    func testProcessListHasZeroSpacingWithOuterCornersRounded() {
+        XCTAssertEqual(ActiveCleanReleaseLayout.processListSpacing, 0)
         XCTAssertEqual(ActiveProcessMemoryLayout.outerCornerRadius, ActiveCleanupChrome.cornerRadius)
     }
 }
