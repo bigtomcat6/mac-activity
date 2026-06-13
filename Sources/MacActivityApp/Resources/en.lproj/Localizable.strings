@@ -35,6 +35,8 @@
 "temperature.dashboard.battery" = "Battery Temp";
 
 "preferences.launchAtLogin" = "Launch at login";
+"preferences.language" = "Language";
+"preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
 "preferences.diskCleanupScope" = "Cleanup scope";
@@ -42,6 +44,9 @@
 "preferences.menuBarMetrics" = "Menu bar metrics";
 "preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
 
+"language.system" = "Follow System";
+"language.english" = "English";
+"language.simplifiedChinese" = "Simplified Chinese";
 "diskCleanup.category.userCaches" = "Caches";
 "diskCleanup.category.trash" = "Trash";
 "diskCleanup.category.userLogs" = "Logs";

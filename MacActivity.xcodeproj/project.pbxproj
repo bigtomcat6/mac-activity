@@ -37,6 +37,7 @@
 		4FFC3DDFBB0B515A0097F021 /* MacActivityCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; };
 		5140176C2576A4D6D6811614 /* DashboardTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */; };
 		52F1D09D256A6C328EAA9285 /* ActiveProcessMemoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */; };
+		58C4C4C06FA54E1729C4FA61 /* AppLocalizationController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 55B02C737DA82873951C86D0 /* AppLocalizationController.swift */; };
 		5A3A7F1C964BA2C6A4A8DB22 /* MacActivityCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; };
 		61985D0288B1AB38FE15C6B3 /* MemoryReleaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1245314B585B575A9D44A916 /* MemoryReleaseService.swift */; };
 		6C19FF93C33548A9CA841AB6 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28B16690F3A93F5DF6A08150 /* LocalizationTests.swift */; };
@@ -48,12 +49,14 @@
 		7B1D24512C0A80195755C3BF /* ActiveProcessMemoryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B74985CC421B77A15255C4 /* ActiveProcessMemoryLayoutTests.swift */; };
 		7D184325401391E30FCB55B5 /* ActiveAppMemoryProvidingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782F556D94AA82856902F0AD /* ActiveAppMemoryProvidingTests.swift */; };
 		81525E2FD6BFFE11475B033B /* AppSamplingControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16DC22E8B8CB44094748DE32 /* AppSamplingControllerTests.swift */; };
+		8517EBA83A074E7F8426D541 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B63F02833B7A142E6D3C19 /* AppLanguage.swift */; };
 		86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */; };
 		92C61117E8F8715D08B902E3 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */; };
 		973E3F49276C6903D1FD4C7A /* NetworkProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62CD05233387237992500A0 /* NetworkProvider.swift */; };
 		9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */; };
 		A1DC0091AFAA3500C5AAA85F /* ActiveAppMemoryProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */; };
 		A213CFC8796C05D3D613B3A7 /* ActiveProcessMemoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */; };
+		A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */; };
 		AD712FC4EBAA68F9349BACD3 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */; };
 		B1D58B1C23E57C4B2EFA43B2 /* FanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */; };
 		B3C6A01640BB5B354B59AF73 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFFA707E889556C69367275 /* LaunchAtLoginService.swift */; };
@@ -136,6 +139,7 @@
 /* Begin PBXFileReference section */
 		00BBC1CE28299769CF06DE96 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		051A8D20F98149046273836B /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPopoverControllerTests.swift; sourceTree = "<group>"; };
 		0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSchedulerTests.swift; sourceTree = "<group>"; };
 		10490BB072DAB977325EFD85 /* ActiveCleanReleaseViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanReleaseViewTests.swift; sourceTree = "<group>"; };
@@ -159,11 +163,13 @@
 		41333E534CBDB52CD351763E /* DashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModel.swift; sourceTree = "<group>"; };
 		422B3F924F7EC6DA0DF6493F /* NetworkProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProviderTests.swift; sourceTree = "<group>"; };
 		443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryRow.swift; sourceTree = "<group>"; };
+		46B63F02833B7A142E6D3C19 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStore.swift; sourceTree = "<group>"; };
 		4C28EA386891B5D88473C012 /* DashboardModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModelTests.swift; sourceTree = "<group>"; };
 		4CC85A29241CC6F902A0531F /* MetricProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricProvider.swift; sourceTree = "<group>"; };
 		4DBDE27C632732B8D69B540E /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
 		54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarSummaryLayoutTests.swift; sourceTree = "<group>"; };
+		55B02C737DA82873951C86D0 /* AppLocalizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalizationController.swift; sourceTree = "<group>"; };
 		5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryReleaseServiceTests.swift; sourceTree = "<group>"; };
 		5BF612FC0E3589FE46DFACD2 /* MacActivityApp.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = MacActivityApp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		5F80A7CF6CB9E39D7858C692 /* CPUProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUProvider.swift; sourceTree = "<group>"; };
@@ -237,7 +243,9 @@
 		0BD63CD3DD680B1A1712D838 /* Localization */ = {
 			isa = PBXGroup;
 			children = (
+				46B63F02833B7A142E6D3C19 /* AppLanguage.swift */,
 				4DBDE27C632732B8D69B540E /* AppLocalization.swift */,
+				55B02C737DA82873951C86D0 /* AppLocalizationController.swift */,
 			);
 			path = Localization;
 			sourceTree = "<group>";
@@ -451,6 +459,7 @@
 				70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */,
 				16DC22E8B8CB44094748DE32 /* AppSamplingControllerTests.swift */,
 				64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */,
+				0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */,
 				B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */,
 				24963319103DEB56F52E3199 /* DashboardTrendReadoutFormatterTests.swift */,
 				1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */,
@@ -628,6 +637,7 @@
 				D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */,
 				81525E2FD6BFFE11475B033B /* AppSamplingControllerTests.swift in Sources */,
 				86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */,
+				A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */,
 				D490D4024E6274B6F559D0A3 /* DashboardTrendChartLayoutTests.swift in Sources */,
 				C380E15BD3A593ED21F6770F /* DashboardTrendReadoutFormatterTests.swift in Sources */,
 				481D37333B0C15E0EE471191 /* LazyShellControllerTests.swift in Sources */,
@@ -700,7 +710,9 @@
 				A213CFC8796C05D3D613B3A7 /* ActiveProcessMemoryList.swift in Sources */,
 				BE29FD7AFB08F50A87AAEE02 /* ActiveProcessMemoryRow.swift in Sources */,
 				92C61117E8F8715D08B902E3 /* AppDelegate.swift in Sources */,
+				8517EBA83A074E7F8426D541 /* AppLanguage.swift in Sources */,
 				3DBC7E06E7664EDC37008F87 /* AppLocalization.swift in Sources */,
+				58C4C4C06FA54E1729C4FA61 /* AppLocalizationController.swift in Sources */,
 				4A5640B4C2F6695CF03B960A /* AppPresentationCoordinator.swift in Sources */,
 				F2CDB29D41CEBB988A44BA7F /* DashboardPopoverController.swift in Sources */,
 				5140176C2576A4D6D6811614 /* DashboardTrendChart.swift in Sources */,

@@ -35,6 +35,8 @@
 "temperature.dashboard.battery" = "电池温度";
 
 "preferences.launchAtLogin" = "登录时启动";
+"preferences.language" = "语言";
+"preferences.languageHelp" = "控制偏好设置和仪表盘的显示语言。";
 "preferences.temperatureSource" = "温度来源";
 "preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
 "preferences.diskCleanupScope" = "清理范围";
@@ -42,6 +44,9 @@
 "preferences.menuBarMetrics" = "菜单栏指标";
 "preferences.metricsFixedOrder" = "指标始终按固定 MVP 顺序显示。";
 
+"language.system" = "跟随系统";
+"language.english" = "English";
+"language.simplifiedChinese" = "简体中文";
 "diskCleanup.category.userCaches" = "缓存";
 "diskCleanup.category.trash" = "废纸篓";
 "diskCleanup.category.userLogs" = "日志";

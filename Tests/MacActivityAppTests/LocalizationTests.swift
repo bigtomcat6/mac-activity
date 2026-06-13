@@ -117,4 +117,14 @@ final class LocalizationTests: XCTestCase {
             "内存 72%，已用 8.0GB，共 16.0GB"
         )
     }
+
+    func testPreferredLanguageSelectionOverridesDefaultBundle() {
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+        XCTAssertEqual(AppLocalization.string(.preferences), "偏好设置")
+
+        AppLocalization.setPreferredLanguageIdentifier("en")
+        XCTAssertEqual(AppLocalization.string(.preferences), "Preferences")
+
+        AppLocalization.setPreferredLanguageIdentifier(nil)
+    }
 }

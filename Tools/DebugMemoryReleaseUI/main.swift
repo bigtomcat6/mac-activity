@@ -194,7 +194,6 @@ struct DebugMemoryReleaseUI {
         return arguments[valueIndex]
     }
 }
-
 private enum DebugMemoryReleaseUIError: LocalizedError {
     case unknownArgument(String)
     case missingValue(argument: String)
@@ -214,4 +213,3 @@ private enum DebugMemoryReleaseUIError: LocalizedError {
         }
     }
 }
-

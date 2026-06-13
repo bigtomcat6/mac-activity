@@ -63,6 +63,7 @@ struct ActiveProcessQuitButtonConfiguration: Equatable {
 }
 
 struct ActiveProcessMemoryRow: View {
+    @Environment(\.appearsActive) private var appearsActive
     let app: ActiveAppMemoryEntry
     let maxBytes: UInt64
     let isQuitPending: Bool
@@ -86,15 +87,15 @@ struct ActiveProcessMemoryRow: View {
 
     var body: some View {
         GeometryReader { proxy in
+            let progressWidth = proxy.size.width * ActiveProcessMemoryLayout.progress(
+                bytes: app.residentMemoryBytes,
+                maxBytes: maxBytes
+            )
+
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(Color.accentColor.opacity(0.12))
-                    .frame(
-                        width: proxy.size.width * ActiveProcessMemoryLayout.progress(
-                            bytes: app.residentMemoryBytes,
-                            maxBytes: maxBytes
-                        )
-                    )
+                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
+                    .frame(width: progressWidth)
 
                 HStack(spacing: 10) {
                     HStack(spacing: 10) {
@@ -126,6 +127,7 @@ struct ActiveProcessMemoryRow: View {
         }
         .frame(height: ActiveProcessMemoryLayout.rowHeight)
         .contentShape(Rectangle())
+        .background(isHovered ? AnyShapeStyle(.quaternary.opacity(0.5)) : AnyShapeStyle(.clear))
         .onHover { isHovered = $0 }
         .task(id: quitConfirmationState) {
             guard quitConfirmationState == .confirming else { return }
@@ -189,8 +191,12 @@ struct ActiveProcessMemoryRow: View {
     @ViewBuilder
     private var quitButton: some View {
         let configuration = Self.quitButtonConfiguration(for: quitConfirmationState)
+        let visualStyle = ActiveProcessQuitButtonStyling.visualStyle(
+            for: quitConfirmationState,
+            appearsActive: appearsActive
+        )
 
-        if configuration.isDestructive {
+        if visualStyle == .destructiveProminent {
             Button(configuration.title) {
                 applyQuitConfirmationEvent(.quitButtonClicked)
             }

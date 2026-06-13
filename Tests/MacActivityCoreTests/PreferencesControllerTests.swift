@@ -43,6 +43,18 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
     }
 
+    func testPreferredLanguageIdentifierPersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(controller.state.preferredLanguageIdentifier, "zh-Hans")
+        XCTAssertEqual(store.savedValues.last?.preferredLanguageIdentifier, "zh-Hans")
+    }
     func testDiskCleanupCategoriesPersistToPreferencesStateInDisplayOrder() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

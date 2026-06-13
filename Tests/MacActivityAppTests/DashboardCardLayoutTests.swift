@@ -1,5 +1,7 @@
-import XCTest
 import CoreGraphics
+import AppKit
+import SwiftUI
+import XCTest
 import MacActivityCore
 @testable import MacActivityApp
 
@@ -39,6 +41,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardMotion.sampleDuration, 0.32, accuracy: 0.001)
         XCTAssertEqual(DashboardMotion.domainDuration, 0.38, accuracy: 0.001)
         XCTAssertEqual(DashboardMotion.valueDuration, 0.42, accuracy: 0.001)
+    }
+
+    func testOverviewTrendFocusPaletteChangeDoesNotAnimate() {
+        XCTAssertNil(DashboardMotion.focusPaletteAnimation)
     }
 
     func testOverviewLayoutUsesApprovedFixedSlots() {
@@ -93,6 +99,21 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: "Collecting"), 0.0, accuracy: 0.001)
     }
 
+    func testOverviewUsageRowsUseStableCenteredColumns() {
+        XCTAssertEqual(DashboardOverviewLayout.usageLabelColumnWidth, 54)
+        XCTAssertEqual(DashboardOverviewLayout.usageValueColumnWidth, 44)
+        XCTAssertEqual(DashboardOverviewLayout.usageRowSpacing, 10)
+        XCTAssertEqual(DashboardOverviewLayout.usageBarHeight, 8)
+    }
+
+    func testOverviewUsageCardCentersRowsWithinBoundedContentWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.usageContentMaxWidth, 180)
+    }
+
+    func testOverviewUsageCardCentersContentWithinCardFrame() {
+        XCTAssertEqual(DashboardOverviewLayout.usageCardContentAlignment, Alignment.center)
+    }
+
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
@@ -108,6 +129,34 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .fan))
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .battery))
         XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
+    }
+
+    func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
+        XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
+    }
+
+    func testDashboardCardsShareActivesSurfaceChrome() {
+        XCTAssertEqual(DashboardCardChrome.cornerRadius, ActiveCleanupChrome.cornerRadius)
+        XCTAssertEqual(DashboardCardChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
+        XCTAssertEqual(DashboardCardChrome.borderOpacity(isHovered: false), ActiveCleanupChrome.borderOpacity, accuracy: 0.001)
+    }
+
+    func testDashboardCardsIncreaseBorderEmphasisOnHover() {
+        XCTAssertGreaterThan(
+            DashboardCardChrome.borderOpacity(isHovered: true),
+            DashboardCardChrome.borderOpacity(isHovered: false)
+        )
+    }
+
+    func testHeaderLiveIndicatorUsesCompactChipChrome() {
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorDotSize, 6)
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorHorizontalPadding, 8)
+        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorVerticalPadding, 4)
+    }
+
+    func testFooterActionsUseStableSystemImages() {
+        XCTAssertEqual(DashboardFooterChrome.preferencesSystemImage, "gearshape")
+        XCTAssertEqual(DashboardFooterChrome.quitSystemImage, "power")
     }
 
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
@@ -196,6 +245,216 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.showsTrendYAxisLabels(for: .fan, isCompactOverviewChart: true))
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .memory, isCompactOverviewChart: false))
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
+    }
+
+    func testRenderedFooterUsesOverviewGrayBackgroundTone() throws {
+        let model = DashboardModel(store: MetricsStore())
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 260)
+
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
+                    .frame(width: 360, height: 60),
+                atTopLeft: CGPoint(x: 180, y: 30)
+            )
+        )
+        let footerColor = try XCTUnwrap(
+            Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 236))
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
+            "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
+        )
+    }
+
+    func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: true
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected Overview usage bar fill to change when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewChromeUsesActivesNeutralFillWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.emphasisFillColor(
+                            baseColor: .orange,
+                            opacity: DashboardOverviewChrome.usageFillOpacity,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveEmphasisFill)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected Overview inactive emphasis fill to reuse the shared neutral tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
+    func testOverviewLiveIndicatorColorChangesWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: true))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: false))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected the Live indicator color to lose its active accent when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewTrendAreaGradientChangesToneWhenWindowIsInactive() throws {
+        let activeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartAreaGradient(
+                            baseColor: .green,
+                            appearsActive: true
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 4)
+            )
+        )
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartAreaGradient(
+                            baseColor: .green,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 4)
+            )
+        )
+
+        XCTAssertFalse(
+            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
+            "Expected the Overview trend area gradient to change when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
+        )
+    }
+
+    func testOverviewNetworkSecondaryStrokeUsesNeutralToneWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartSecondaryStrokeColor(
+                            baseColor: .red,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveChartSecondaryStroke)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected the inactive network secondary stroke to use the shared neutral chart tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
+    func testOverviewMemorySegmentColorUsesNeutralToneWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.memorySegmentColor(
+                            for: .active,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveMemorySegmentFill)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
+            "Expected inactive memory segment fills to use the shared neutral chart tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
     }
 
     func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
@@ -336,5 +595,76 @@ final class DashboardCardLayoutTests: XCTestCase {
                 style: kind == .memory ? .memoryStackedChart : .chart
             )
         }
+    }
+
+    private static func preferencesController() -> PreferencesController {
+        PreferencesController(
+            store: DashboardCardLayoutPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+    }
+
+    private static func renderedColor<Content: View>(
+        of view: Content,
+        atTopLeft point: CGPoint
+    ) -> NSColor? {
+        let renderer = ImageRenderer(content: view)
+        renderer.scale = 1
+
+        guard let image = renderer.nsImage,
+              let tiff = image.tiffRepresentation,
+              let bitmap = NSBitmapImageRep(data: tiff)
+        else {
+            return nil
+        }
+
+        let x = Int(point.x.rounded(.down))
+        let y = Int(point.y.rounded(.down))
+        let pixelY = bitmap.pixelsHigh - y - 1
+
+        guard (0..<bitmap.pixelsWide).contains(x),
+              (0..<bitmap.pixelsHigh).contains(pixelY)
+        else {
+            return nil
+        }
+
+        return bitmap.colorAt(x: x, y: pixelY)?.usingColorSpace(.deviceRGB)
+    }
+
+    private static func colorsApproximatelyEqual(
+        _ lhs: NSColor,
+        _ rhs: NSColor,
+        tolerance: CGFloat
+    ) -> Bool {
+        abs(lhs.redComponent - rhs.redComponent) <= tolerance
+        && abs(lhs.greenComponent - rhs.greenComponent) <= tolerance
+        && abs(lhs.blueComponent - rhs.blueComponent) <= tolerance
+        && abs(lhs.alphaComponent - rhs.alphaComponent) <= tolerance
+    }
+
+    private static func debugColor(_ color: NSColor) -> String {
+        String(
+            format: "(r: %.3f g: %.3f b: %.3f a: %.3f)",
+            color.redComponent,
+            color.greenComponent,
+            color.blueComponent,
+            color.alphaComponent
+        )
+    }
+}
+
+private final class DashboardCardLayoutPreferencesStore: PreferencesStoring, @unchecked Sendable {
+    private var value: AppPreferences
+
+    init(initial: AppPreferences) {
+        self.value = initial
+    }
+
+    func load() -> AppPreferences {
+        value
+    }
+
+    func save(_ preferences: AppPreferences) throws {
+        value = preferences
     }
 }

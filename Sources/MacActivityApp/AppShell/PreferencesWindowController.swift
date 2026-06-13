@@ -1,9 +1,12 @@
 import AppKit
+import Combine
 import SwiftUI
 import MacActivityCore
 
 @MainActor
 final class PreferencesWindowController: NSWindowController {
+    private var cancellables: Set<AnyCancellable> = []
+
     init(
         preferencesController: PreferencesController
     ) {
@@ -17,6 +20,12 @@ final class PreferencesWindowController: NSWindowController {
         window.styleMask = [.titled, .closable, .miniaturizable]
         window.isReleasedWhenClosed = false
         super.init(window: window)
+
+        AppLocalizationController.shared.$preferredLanguageIdentifier
+            .sink { [weak self] _ in
+                self?.window?.title = AppLocalization.string(.preferences)
+            }
+            .store(in: &cancellables)
     }
 
     @available(*, unavailable)

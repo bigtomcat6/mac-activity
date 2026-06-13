@@ -26,23 +26,7 @@ struct ActiveProcessMemoryList: View {
                         confirmingQuitProcessIdentifier = nil
                     }
             } else {
-                let maxBytes = model.apps.map(\.residentMemoryBytes).max() ?? 0
-
-                ForEach(Array(model.apps.enumerated()), id: \.element.id) { index, app in
-                    ActiveProcessMemoryRow(
-                        app: app,
-                        maxBytes: maxBytes,
-                        isQuitPending: model.isQuitPending(for: app.processIdentifier),
-                        confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
-                    ) {
-                        model.quit(app)
-                    }
-
-                    if index < model.apps.count - 1 {
-                        Divider()
-                            .padding(.leading, 12)
-                    }
-                }
+                processRows
             }
 
             if let message = Self.processActionMessage(for: model.processActionState) {
@@ -59,6 +43,29 @@ struct ActiveProcessMemoryList: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+    }
+
+    private var processRows: some View {
+        let maxBytes = model.apps.map(\.residentMemoryBytes).max() ?? 0
+
+        return VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+            ForEach(model.apps) { app in
+                ActiveProcessMemoryRow(
+                    app: app,
+                    maxBytes: maxBytes,
+                    isQuitPending: model.isQuitPending(for: app.processIdentifier),
+                    confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
+                ) {
+                    model.quit(app)
+                }
+            }
+        }
+        .clipShape(
+            RoundedRectangle(
+                cornerRadius: ActiveProcessMemoryLayout.outerCornerRadius,
+                style: .continuous
+            )
+        )
     }
 
     static func processActionMessage(for state: ProcessActionState, bundle: Bundle? = nil) -> String? {

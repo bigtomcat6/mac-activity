@@ -13,6 +13,7 @@ final class PreferencesStoreTests: XCTestCase {
             launchAtLoginEnabled: true,
             selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu],
             temperatureSource: .battery,
+            preferredLanguageIdentifier: "zh-Hans",
             diskCleanupCategories: [.userCaches, .trash, .userLogs]
         )
 
@@ -63,6 +64,7 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .temperature])
         XCTAssertEqual(loaded.launchAtLoginEnabled, true)
         XCTAssertEqual(loaded.temperatureSource, .smc)
+        XCTAssertNil(loaded.preferredLanguageIdentifier)
     }
 
     func testLoadDefaultsDiskCleanupCategoriesWhenMissingFromStoredPreferences() throws {
@@ -96,4 +98,5 @@ final class PreferencesStoreTests: XCTestCase {
 
         XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches, .trash, .userLogs])
     }
+
 }

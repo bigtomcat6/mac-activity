@@ -59,17 +59,20 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]
     public var temperatureSource: TemperatureSource
+    public var preferredLanguageIdentifier: String?
     public var diskCleanupCategories: [DiskCleanupCategoryKind]
 
     public init(
         launchAtLoginEnabled: Bool,
         selectedSummaryMetrics: [MetricKind],
         temperatureSource: TemperatureSource = .smc,
+        preferredLanguageIdentifier: String? = nil,
         diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
         self.temperatureSource = temperatureSource
+        self.preferredLanguageIdentifier = preferredLanguageIdentifier
         self.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: Set(diskCleanupCategories))
     }
 
@@ -77,6 +80,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case launchAtLoginEnabled
         case selectedSummaryMetrics
         case temperatureSource
+        case preferredLanguageIdentifier
         case diskCleanupCategories
         case diskCleanupScope
     }
@@ -86,6 +90,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.launchAtLoginEnabled = try container.decode(Bool.self, forKey: .launchAtLoginEnabled)
         self.selectedSummaryMetrics = try container.decode([MetricKind].self, forKey: .selectedSummaryMetrics)
         self.temperatureSource = try container.decodeIfPresent(TemperatureSource.self, forKey: .temperatureSource) ?? .smc
+        self.preferredLanguageIdentifier = try container.decodeIfPresent(String.self, forKey: .preferredLanguageIdentifier)
         if let categories = try container.decodeIfPresent([DiskCleanupCategoryKind].self, forKey: .diskCleanupCategories) {
             self.diskCleanupCategories = Self.orderedDiskCleanupCategories(from: Set(categories))
         } else if let legacyScope = try container.decodeIfPresent(LegacyDiskCleanupScope.self, forKey: .diskCleanupScope) {
@@ -100,6 +105,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(launchAtLoginEnabled, forKey: .launchAtLoginEnabled)
         try container.encode(selectedSummaryMetrics, forKey: .selectedSummaryMetrics)
         try container.encode(temperatureSource, forKey: .temperatureSource)
+        try container.encodeIfPresent(preferredLanguageIdentifier, forKey: .preferredLanguageIdentifier)
         try container.encode(diskCleanupCategories, forKey: .diskCleanupCategories)
     }
 
@@ -114,6 +120,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         launchAtLoginEnabled: false,
         selectedSummaryMetrics: [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network],
         temperatureSource: .smc,
+        preferredLanguageIdentifier: nil,
         diskCleanupCategories: defaultDiskCleanupCategories
     )
 }

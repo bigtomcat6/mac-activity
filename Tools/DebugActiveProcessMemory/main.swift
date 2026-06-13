@@ -174,7 +174,6 @@ struct DebugActiveProcessMemory {
         return formatter.string(fromByteCount: Int64(clamping: bytes))
     }
 }
-
 private enum DebugActiveProcessError: LocalizedError {
     case unknownArgument(String)
     case missingValue(argument: String)
@@ -191,4 +190,3 @@ private enum DebugActiveProcessError: LocalizedError {
         }
     }
 }
-
