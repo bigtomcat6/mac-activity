@@ -38,8 +38,13 @@ enum AppLocalization {
         case preferencesLaunchAtLogin = "preferences.launchAtLogin"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
+        case preferencesDiskCleanupScope = "preferences.diskCleanupScope"
+        case preferencesDiskCleanupHelp = "preferences.diskCleanupHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
+        case diskCleanupCategoryUserCaches = "diskCleanup.category.userCaches"
+        case diskCleanupCategoryTrash = "diskCleanup.category.trash"
+        case diskCleanupCategoryUserLogs = "diskCleanup.category.userLogs"
         case memoryReleaseActionRelease = "memoryRelease.action.release"
         case memoryReleaseActionReleasing = "memoryRelease.action.releasing"
         case memoryReleaseTitleIdle = "memoryRelease.title.idle"
@@ -95,10 +100,6 @@ enum AppLocalization {
         case diskCleanupItemPlural = "diskCleanup.item.plural"
         case diskCleanupCategorySingular = "diskCleanup.category.singular"
         case diskCleanupCategoryPlural = "diskCleanup.category.plural"
-        case diskCleanupConfirmationTitle = "diskCleanup.confirmation.title"
-        case diskCleanupConfirmationMessage = "diskCleanup.confirmation.message"
-        case diskCleanupConfirmationConfirm = "diskCleanup.confirmation.confirm"
-        case diskCleanupConfirmationCancel = "diskCleanup.confirmation.cancel"
         case processEmpty = "process.empty"
         case processFallbackName = "process.fallbackName"
         case processActionRequested = "process.action.requested"
@@ -196,6 +197,17 @@ enum AppLocalization {
             return string(.temperatureSourceCPUSMC, bundle: bundle)
         case .battery:
             return string(.temperatureSourceBattery, bundle: bundle)
+        }
+    }
+
+    static func diskCleanupCategoryTitle(for kind: DiskCleanupCategoryKind, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .userCaches:
+            return string(.diskCleanupCategoryUserCaches, bundle: bundle)
+        case .trash:
+            return string(.diskCleanupCategoryTrash, bundle: bundle)
+        case .userLogs:
+            return string(.diskCleanupCategoryUserLogs, bundle: bundle)
         }
     }
 

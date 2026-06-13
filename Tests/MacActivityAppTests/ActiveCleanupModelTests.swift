@@ -41,11 +41,50 @@ final class ActiveCleanupModelTests: XCTestCase {
 
         XCTAssertEqual(model.trashState, .idle)
         XCTAssertEqual(trash.scanCallCount, 0)
-        XCTAssertEqual(model.diskCleanupState, .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1))
+        XCTAssertEqual(model.diskCleanupState, .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches]))
         XCTAssertEqual(disk.scanCallCount, 1)
         XCTAssertEqual(memory.currentReadingCallCount, 0)
         XCTAssertEqual(memory.releasableBytesCallCount, 0)
         XCTAssertEqual(model.apps.count, 2)
+    }
+
+    func testDefaultDiskCleanupOnlyScansAndCleansUserCaches() async {
+        let disk = DiskCleanupServiceRecorder(
+            scanResults: [.clean, .clean],
+            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: MemoryReleaseServiceRecorder(),
+            diskCleanupService: disk,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.refreshDiskCleanup()
+        await model.confirmDiskCleanup()
+
+        XCTAssertEqual(disk.scannedCategories, [[.userCaches], [.userCaches]])
+        XCTAssertEqual(disk.cleanedCategories, [[.userCaches]])
+    }
+
+    func testDiskCleanupCategoriesCanIncludeCachesTrashAndLogs() async {
+        let disk = DiskCleanupServiceRecorder(
+            scanResults: [.clean, .clean],
+            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: MemoryReleaseServiceRecorder(),
+            diskCleanupService: disk,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        model.setDiskCleanupCategories([.userCaches, .trash, .userLogs])
+        await model.refreshDiskCleanup()
+        await model.confirmDiskCleanup()
+
+        XCTAssertEqual(disk.scannedCategories, [[.userCaches, .trash, .userLogs], [.userCaches, .trash, .userLogs]])
+        XCTAssertEqual(disk.cleanedCategories, [[.userCaches, .trash, .userLogs]])
     }
 
     func testRefreshMemoryUsageShowsReleaseServiceEstimateInsteadOfCachedMemory() async {
@@ -477,6 +516,8 @@ private final class DiskCleanupServiceRecorder: DiskCleanupServicing {
     var cleanResults: [DiskCleanupResult]
     private(set) var scanCallCount = 0
     private(set) var cleanCallCount = 0
+    private(set) var scannedCategories: [[DiskCleanupCategoryKind]] = []
+    private(set) var cleanedCategories: [[DiskCleanupCategoryKind]] = []
 
     init(
         scanResults: [DiskCleanupScanResult] = [],
@@ -488,12 +529,14 @@ private final class DiskCleanupServiceRecorder: DiskCleanupServicing {
 
     func scan(categories: [DiskCleanupCategoryKind], now: Date) async -> DiskCleanupScanResult {
         scanCallCount += 1
+        scannedCategories.append(categories)
         guard scanResults.isEmpty == false else { return .clean }
         return scanResults.removeFirst()
     }
 
     func clean(categories: [DiskCleanupCategoryKind], now: Date) async -> DiskCleanupResult {
         cleanCallCount += 1
+        cleanedCategories.append(categories)
         guard cleanResults.isEmpty == false else { return .cleaned(bytes: 0, itemCount: 0) }
         return cleanResults.removeFirst()
     }

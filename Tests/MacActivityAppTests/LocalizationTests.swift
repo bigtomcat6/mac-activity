@@ -19,6 +19,15 @@ final class LocalizationTests: XCTestCase {
 
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: english), "Battery")
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: simplifiedChinese), "电池")
+
+        XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: english), "Cleanup scope")
+        XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: simplifiedChinese), "清理范围")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: english), "Caches")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .trash, bundle: english), "Trash")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: english), "Logs")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: simplifiedChinese), "缓存")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .trash, bundle: simplifiedChinese), "废纸篓")
+        XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: simplifiedChinese), "日志")
     }
 
     func testCleanReleaseStringsResolveWithArguments() throws {
@@ -66,17 +75,17 @@ final class LocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             DiskCleanupStatusView.title(
-                for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1),
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
                 bundle: simplifiedChinese
             ),
             "可清理 \(cleanableBytes)"
         )
         XCTAssertEqual(
             DiskCleanupStatusView.subtitle(
-                for: .cleanable(bytes: 4_096, itemCount: 2, categoryCount: 1),
+                for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
                 bundle: simplifiedChinese
             ),
-            "已选择 2 个项目，来自 1 个分类。"
+            "已选择 2 个项目，来自缓存、废纸篓、日志。"
         )
         XCTAssertEqual(
             DiskCleanupStatusView.subtitle(

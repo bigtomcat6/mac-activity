@@ -157,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         return DashboardPopoverController(
             dashboardModel: dashboardModel,
+            preferencesController: preferencesController,
             onVisibilityChange: { [weak self] isVisible in
                 self?.handleDashboardVisibilityChange(isVisible)
             },

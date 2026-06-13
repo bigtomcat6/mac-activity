@@ -4,6 +4,7 @@ struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
     let refreshTrigger: Int
     @State private var confirmingQuitProcessIdentifier: pid_t?
+    @State private var diskCleanupConfirmationState: DiskCleanupConfirmationState = .inactive
 
     init(model: ActiveCleanupModel, refreshTrigger: Int = 0) {
         self.model = model
@@ -12,7 +13,10 @@ struct ActiveCleanReleaseView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
-            DiskCleanupStatusView(model: model)
+            DiskCleanupStatusView(
+                model: model,
+                confirmationState: $diskCleanupConfirmationState
+            )
                 .accessibilityIdentifier("actives-clean-release-disk-cleanup")
                 .contentShape(Rectangle())
                 .onTapGesture {
@@ -31,17 +35,6 @@ struct ActiveCleanReleaseView: View {
         }
         .task(id: model.quittingProcessIdentifiers) {
             await model.refreshQuittingProcessesUntilResolved()
-        }
-        .confirmationDialog(
-            AppLocalization.string(.diskCleanupConfirmationTitle),
-            isPresented: $model.isDiskCleanupConfirmationPresented
-        ) {
-            Button(AppLocalization.string(.diskCleanupConfirmationConfirm), role: .destructive) {
-                Task { await model.confirmDiskCleanup() }
-            }
-            Button(AppLocalization.string(.diskCleanupConfirmationCancel), role: .cancel) {}
-        } message: {
-            Text(AppLocalization.string(.diskCleanupConfirmationMessage))
         }
     }
 }
