@@ -153,7 +153,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(position.y, 31)
     }
 
-    func testXAxisDatesUseFirstMiddleAndLastSamplesWhenPlotIsWideEnough() {
+    func testXAxisDatesUseFirstAndLastSamples() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let samples = (0..<5).map { index in
             DashboardTrendSample(
@@ -163,38 +163,23 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         }
 
         XCTAssertEqual(
-            DashboardTrendChartLayout.xAxisDates(for: samples, plotWidth: 200),
-            [samples[0].timestamp, samples[2].timestamp, samples[4].timestamp]
-        )
-    }
-
-    func testXAxisDatesDropMiddleLabelWhenPlotCannotFitThreeLabels() {
-        let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let samples = (0..<5).map { index in
-            DashboardTrendSample(
-                timestamp: base.addingTimeInterval(Double(index) * 60),
-                primaryValue: Double(index)
-            )
-        }
-
-        XCTAssertEqual(
-            DashboardTrendChartLayout.xAxisDates(for: samples, plotWidth: 120),
+            DashboardTrendChartLayout.xAxisDates(for: samples),
             [samples[0].timestamp, samples[4].timestamp]
         )
     }
 
-    func testXAxisDatesCollapseToLatestLabelWhenPlotCannotFitTwoLabels() {
+    func testXAxisDatesDeduplicateMatchingEdgeSamples() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let samples = (0..<5).map { index in
+        let samples = (0..<2).map { index in
             DashboardTrendSample(
-                timestamp: base.addingTimeInterval(Double(index) * 60),
+                timestamp: base,
                 primaryValue: Double(index)
             )
         }
 
         XCTAssertEqual(
-            DashboardTrendChartLayout.xAxisDates(for: samples, plotWidth: 90),
-            [samples[4].timestamp]
+            DashboardTrendChartLayout.xAxisDates(for: samples),
+            [base]
         )
     }
 
