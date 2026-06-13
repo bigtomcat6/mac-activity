@@ -47,7 +47,6 @@
 "language.system" = "Follow System";
 "language.english" = "English";
 "language.simplifiedChinese" = "Simplified Chinese";
-
 "diskCleanup.category.userCaches" = "Caches";
 "diskCleanup.category.trash" = "Trash";
 "diskCleanup.category.userLogs" = "Logs";

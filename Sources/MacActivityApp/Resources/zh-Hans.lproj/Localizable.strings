@@ -47,7 +47,6 @@
 "language.system" = "跟随系统";
 "language.english" = "English";
 "language.simplifiedChinese" = "简体中文";
-
 "diskCleanup.category.userCaches" = "缓存";
 "diskCleanup.category.trash" = "废纸篓";
 "diskCleanup.category.userLogs" = "日志";

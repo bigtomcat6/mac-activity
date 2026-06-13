@@ -98,4 +98,5 @@ final class PreferencesStoreTests: XCTestCase {
 
         XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches, .trash, .userLogs])
     }
+
 }

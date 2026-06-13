@@ -232,7 +232,6 @@ enum AppLocalization {
             return string(.languageSimplifiedChinese, bundle: bundle)
         }
     }
-
     static func diskCleanupCategoryTitle(for kind: DiskCleanupCategoryKind, bundle: Bundle? = nil) -> String {
         switch kind {
         case .userCaches:

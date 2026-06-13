@@ -55,7 +55,6 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.preferredLanguageIdentifier, "zh-Hans")
         XCTAssertEqual(store.savedValues.last?.preferredLanguageIdentifier, "zh-Hans")
     }
-
     func testDiskCleanupCategoriesPersistToPreferencesStateInDisplayOrder() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

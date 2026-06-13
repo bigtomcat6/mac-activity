@@ -249,7 +249,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             .bordered
         )
     }
-
     func testDiskCleanupButtonConfigurationTurnsDestructiveWhileConfirming() {
         XCTAssertEqual(
             DiskCleanupStatusView.buttonConfiguration(for: .inactive, bundle: Self.englishBundle),
