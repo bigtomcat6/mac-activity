@@ -52,7 +52,6 @@ struct DashboardTrendChart: View {
         let selectedSample = isCardHovered ? (hoveredSample(in: trend) ?? trend.samples.last) : nil
         let isHovering = selectedSample != nil
         let isCompactHoverLayout = DashboardCardLayout.usesCompactHoverLayout(for: size.height)
-        let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
         let yAxisValues = DashboardTrendChartLayout.yAxisValues(for: domain)
         let yAxisLabelWidth = DashboardTrendChartLayout.yAxisLabelWidth(
             for: yAxisValues.map(axisLabel(for:)),
@@ -63,6 +62,10 @@ struct DashboardTrendChart: View {
             isHovering: isHovering,
             yAxisLabelWidth: yAxisLabelWidth,
             xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
+        )
+        let xAxisDates = DashboardTrendChartLayout.xAxisDates(
+            for: displaySamples,
+            plotWidth: plotFrame.width
         )
         let showsAreaFill = DashboardTrendChartLayout.showsAreaFill(
             kind: metric.kind,
@@ -626,6 +629,7 @@ struct DashboardTrendChartLayout {
     static let xAxisLabelHeight: CGFloat = xAxisLabelHalfHeight * 2
     static let axisLabelPlotGap: CGFloat = 6
     static let xAxisLabelPlotGap: CGFloat = 4
+    private static let minimumXAxisLabelGap: CGFloat = 4
     private static let maximumHoverLeadingWidthRatio: CGFloat = 0.36
     private static let maximumHoverBottomHeightRatio: CGFloat = 0.45
     private static let minimumDisplaySampleBudget = 60
@@ -665,20 +669,28 @@ struct DashboardTrendChartLayout {
         return CGPoint(x: x, y: y)
     }
 
-    static func xAxisDates(for samples: [DashboardTrendSample]) -> [Date] {
+    static func xAxisDates(
+        for samples: [DashboardTrendSample],
+        plotWidth: CGFloat
+    ) -> [Date] {
         guard let first = samples.first?.timestamp,
               let last = samples.last?.timestamp else {
             return []
         }
 
         let middle = samples[samples.count / 2].timestamp
-        var dates: [Date] = []
+        let allDates = uniqueDates(from: [first, middle, last])
 
-        for date in [first, middle, last] where !dates.contains(date) {
-            dates.append(date)
+        if plotWidth >= requiredPlotWidth(forXAxisLabelCount: allDates.count) {
+            return allDates
         }
 
-        return dates
+        let edgeDates = uniqueDates(from: [first, last])
+        if plotWidth >= requiredPlotWidth(forXAxisLabelCount: edgeDates.count) {
+            return edgeDates
+        }
+
+        return [last]
     }
 
     static func yAxisValues(for domain: ClosedRange<Double>) -> [Double] {
@@ -1229,6 +1241,10 @@ struct DashboardTrendChartLayout {
         for index: Int,
         count: Int
     ) -> Alignment {
+        if count <= 1 {
+            return .trailing
+        }
+
         switch index {
         case 0:
             return .leading
@@ -1247,6 +1263,10 @@ struct DashboardTrendChartLayout {
     ) -> CGFloat {
         let halfWidth = xAxisLabelWidth / 2
 
+        if count <= 1 {
+            return plotFrame.maxX - halfWidth
+        }
+
         switch index {
         case 0:
             return plotFrame.minX + halfWidth
@@ -1262,6 +1282,25 @@ struct DashboardTrendChartLayout {
         containerHeight: CGFloat
     ) -> CGFloat {
         containerHeight - xAxisLabelHalfHeight
+    }
+
+    private static func uniqueDates(from dates: [Date]) -> [Date] {
+        var unique: [Date] = []
+
+        for date in dates where !unique.contains(date) {
+            unique.append(date)
+        }
+
+        return unique
+    }
+
+    private static func requiredPlotWidth(forXAxisLabelCount count: Int) -> CGFloat {
+        guard count > 0 else {
+            return 0
+        }
+
+        return CGFloat(count) * xAxisLabelWidth
+            + CGFloat(max(0, count - 1)) * minimumXAxisLabelGap
     }
 
     static func showsAreaFill(
