@@ -42,6 +42,31 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.breakdown.activeBytes, 3_221_225_472)
     }
 
+    func testModelBuildsDiskAndSwapMetricsForOverviewUsageArea() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 25)),
+                .gpu(GPUReading(usagePercent: 50)),
+                .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 11)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .swap }
+        }
+
+        XCTAssertEqual(metrics.map(\.kind), [.cpu, .gpu, .disk, .swap])
+        XCTAssertEqual(metrics.first { $0.kind == .disk }?.title, "Disk")
+        XCTAssertEqual(metrics.first { $0.kind == .disk }?.value, "75%")
+        XCTAssertEqual(metrics.first { $0.kind == .swap }?.title, "Swap")
+        XCTAssertEqual(metrics.first { $0.kind == .swap }?.value, "25%")
+    }
+
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
