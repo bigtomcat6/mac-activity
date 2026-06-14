@@ -52,7 +52,6 @@ struct DashboardTrendChart: View {
         let selectedSample = isCardHovered ? (hoveredSample(in: trend) ?? trend.samples.last) : nil
         let isHovering = selectedSample != nil
         let isCompactHoverLayout = DashboardCardLayout.usesCompactHoverLayout(for: size.height)
-        let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
         let yAxisValues = DashboardTrendChartLayout.yAxisValues(for: domain)
         let yAxisLabelWidth = DashboardTrendChartLayout.yAxisLabelWidth(
             for: yAxisValues.map(axisLabel(for:)),
@@ -64,6 +63,7 @@ struct DashboardTrendChart: View {
             yAxisLabelWidth: yAxisLabelWidth,
             xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
         )
+        let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
         let showsAreaFill = DashboardTrendChartLayout.showsAreaFill(
             kind: metric.kind,
             samples: displaySamples,
@@ -671,14 +671,7 @@ struct DashboardTrendChartLayout {
             return []
         }
 
-        let middle = samples[samples.count / 2].timestamp
-        var dates: [Date] = []
-
-        for date in [first, middle, last] where !dates.contains(date) {
-            dates.append(date)
-        }
-
-        return dates
+        return uniqueDates(from: [first, last])
     }
 
     static func yAxisValues(for domain: ClosedRange<Double>) -> [Double] {
@@ -1229,6 +1222,10 @@ struct DashboardTrendChartLayout {
         for index: Int,
         count: Int
     ) -> Alignment {
+        if count <= 1 {
+            return .trailing
+        }
+
         switch index {
         case 0:
             return .leading
@@ -1247,6 +1244,10 @@ struct DashboardTrendChartLayout {
     ) -> CGFloat {
         let halfWidth = xAxisLabelWidth / 2
 
+        if count <= 1 {
+            return plotFrame.maxX - halfWidth
+        }
+
         switch index {
         case 0:
             return plotFrame.minX + halfWidth
@@ -1262,6 +1263,16 @@ struct DashboardTrendChartLayout {
         containerHeight: CGFloat
     ) -> CGFloat {
         containerHeight - xAxisLabelHalfHeight
+    }
+
+    private static func uniqueDates(from dates: [Date]) -> [Date] {
+        var unique: [Date] = []
+
+        for date in dates where !unique.contains(date) {
+            unique.append(date)
+        }
+
+        return unique
     }
 
     static func showsAreaFill(

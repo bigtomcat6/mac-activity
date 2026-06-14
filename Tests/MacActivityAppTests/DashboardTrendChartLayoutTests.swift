@@ -153,7 +153,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(position.y, 31)
     }
 
-    func testXAxisDatesUseFirstMiddleAndLastSamples() {
+    func testXAxisDatesUseFirstAndLastSamples() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let samples = (0..<5).map { index in
             DashboardTrendSample(
@@ -164,7 +164,22 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardTrendChartLayout.xAxisDates(for: samples),
-            [samples[0].timestamp, samples[2].timestamp, samples[4].timestamp]
+            [samples[0].timestamp, samples[4].timestamp]
+        )
+    }
+
+    func testXAxisDatesDeduplicateMatchingEdgeSamples() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = (0..<2).map { index in
+            DashboardTrendSample(
+                timestamp: base,
+                primaryValue: Double(index)
+            )
+        }
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.xAxisDates(for: samples),
+            [base]
         )
     }
 
@@ -513,6 +528,26 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             labelCenterY + DashboardTrendChartLayout.xAxisLabelHalfHeight,
             containerHeight,
             accuracy: 0.001
+        )
+    }
+
+    func testSingleXAxisLabelPinsToTrailingEdge() {
+        let plotFrame = CGRect(x: 12, y: 4, width: 90, height: 38)
+        let centerX = DashboardTrendChartLayout.xAxisLabelCenterX(
+            for: plotFrame.maxX,
+            plotFrame: plotFrame,
+            index: 0,
+            count: 1
+        )
+
+        XCTAssertEqual(
+            centerX,
+            plotFrame.maxX - DashboardTrendChartLayout.xAxisLabelWidth / 2,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardTrendChartLayout.xAxisLabelAlignment(for: 0, count: 1),
+            .trailing
         )
     }
 
