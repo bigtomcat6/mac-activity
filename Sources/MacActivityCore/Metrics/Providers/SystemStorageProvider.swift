@@ -77,7 +77,9 @@ public struct SwapProvider: MetricProvider {
 
     public static func makeReading(usage: xsw_usage) -> SwapReading? {
         let totalBytes = UInt64(usage.xsu_total)
-        guard totalBytes > 0 else { return nil }
+        guard totalBytes > 0 else {
+            return SwapReading(usedBytes: 0, totalBytes: 0)
+        }
         let usedBytes = min(UInt64(usage.xsu_used), totalBytes)
         return SwapReading(usedBytes: usedBytes, totalBytes: totalBytes)
     }

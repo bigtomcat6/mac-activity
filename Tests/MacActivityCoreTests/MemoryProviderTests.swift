@@ -90,6 +90,18 @@ final class MemoryProviderTests: XCTestCase {
         XCTAssertEqual(reading.usagePercent, 25, accuracy: 0.001)
     }
 
+    func testSwapProviderReadingReportsZeroWhenNoSwapIsAllocated() throws {
+        var usage = xsw_usage()
+        usage.xsu_total = 0
+        usage.xsu_used = 0
+        usage.xsu_avail = 0
+
+        let reading = try XCTUnwrap(SwapProvider.makeReading(usage: usage))
+
+        XCTAssertEqual(reading, SwapReading(usedBytes: 0, totalBytes: 0))
+        XCTAssertEqual(reading.usagePercent, 0, accuracy: 0.001)
+    }
+
     func testActiveAppMemoryRankingSortsDescendingAndUsesNameTieBreaker() {
         let entries = [
             ActiveAppMemoryEntry(
