@@ -93,7 +93,11 @@ enum DashboardOverviewLayout {
     }
 
     static func hasUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
-        metricsByKind[.cpu] != nil || metricsByKind[.gpu] != nil
+        !usageMetricKinds(in: metricsByKind).isEmpty
+    }
+
+    static func usageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
+        [.cpu, .gpu, .disk, .swap].filter { metricsByKind[$0] != nil }
     }
 
     static func usageProgress(for value: String) -> Double {
@@ -466,7 +470,11 @@ private struct OverviewDashboardContent: View {
         if hasTopRegion {
             LazyVGrid(columns: DashboardOverviewLayout.topRowColumns, spacing: DashboardOverviewLayout.sectionSpacing) {
                 if DashboardOverviewLayout.hasUsageMetric(in: metricsByKind) {
-                    CPUGPUUsageCard(cpu: metricsByKind[.cpu], gpu: metricsByKind[.gpu])
+                    ResourceUsageCard(
+                        metrics: DashboardOverviewLayout.usageMetricKinds(in: metricsByKind).compactMap {
+                            metricsByKind[$0]
+                        }
+                    )
                         .frame(height: DashboardOverviewLayout.topRowHeight)
                 }
                 if let memory = metricsByKind[.memory] {
@@ -854,6 +862,10 @@ enum DashboardMetricColor {
             return .orange
         case .gpu:
             return .purple
+        case .disk:
+            return .mint
+        case .swap:
+            return .pink
         case .memory:
             return .blue
         case .vram:
@@ -870,9 +882,8 @@ enum DashboardMetricColor {
     }
 }
 
-private struct CPUGPUUsageCard: View {
-    let cpu: DashboardMetric?
-    let gpu: DashboardMetric?
+private struct ResourceUsageCard: View {
+    let metrics: [DashboardMetric]
     @State private var isCardHovered = false
 
     var body: some View {
@@ -882,11 +893,8 @@ private struct CPUGPUUsageCard: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(.secondary)
             }
-            if let cpu {
-                UsageBarRow(metric: cpu, color: DashboardMetricColor.color(for: .cpu))
-            }
-            if let gpu {
-                UsageBarRow(metric: gpu, color: DashboardMetricColor.color(for: .gpu))
+            ForEach(metrics) { metric in
+                UsageBarRow(metric: metric, color: DashboardMetricColor.color(for: metric.kind))
             }
         }
         .frame(

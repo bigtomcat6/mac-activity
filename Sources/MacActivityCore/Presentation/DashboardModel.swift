@@ -192,6 +192,18 @@ public final class DashboardModel: ObservableObject {
             )
         }
 
+        if let disk = snapshot.disk {
+            items.append(
+                DashboardMetric(kind: .disk, title: MetricKind.disk.title, value: DashboardMetricTextFormatter.formatPercent(disk.usagePercent), style: .chart, trend: trend(from: history, kind: .disk, scale: .fixed(lowerBound: 0, upperBound: 100)))
+            )
+        }
+
+        if let swap = snapshot.swap {
+            items.append(
+                DashboardMetric(kind: .swap, title: MetricKind.swap.title, value: DashboardMetricTextFormatter.formatPercent(swap.usagePercent), style: .chart, trend: trend(from: history, kind: .swap, scale: .fixed(lowerBound: 0, upperBound: 100)))
+            )
+        }
+
         if let memory = snapshot.memory {
             items.append(
                 DashboardMetric(

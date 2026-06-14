@@ -54,6 +54,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             providers: [
                 CPUProvider(),
                 GPUProvider(),
+                DiskProvider(),
+                SwapProvider(),
                 MemoryProvider(),
                 VRAMProvider(),
                 NetworkProvider(),

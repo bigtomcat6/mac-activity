@@ -772,7 +772,7 @@ struct DashboardTrendChartLayout {
         switch kind {
         case .network, .temperature, .fan:
             return true
-        case .cpu, .gpu, .memory, .vram, .battery:
+        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
             return false
         }
     }
@@ -1291,7 +1291,7 @@ struct DashboardTrendChartLayout {
 enum DashboardTrendReadoutFormatter {
     static func axisLabel(for kind: MetricKind, value: Double) -> String {
         switch kind {
-        case .cpu, .gpu, .memory, .vram, .battery:
+        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
             return "\(Int(value.rounded()))%"
         case .temperature:
             return String(format: "%.1f C", value)
@@ -1304,7 +1304,7 @@ enum DashboardTrendReadoutFormatter {
 
     static func primaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String {
         switch kind {
-        case .cpu, .gpu, .memory, .vram, .battery:
+        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
             return "\(Int(sample.primaryValue.rounded()))%"
         case .temperature:
             return String(format: "%.1f C", sample.primaryValue)
