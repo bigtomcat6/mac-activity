@@ -4,7 +4,7 @@ import MacActivityCore
 
 @MainActor
 final class StatusItemController: NSObject {
-    private static let summaryUpdateInterval: DispatchQueue.SchedulerTimeType.Stride = .seconds(10)
+    static let summaryUpdateInterval: DispatchQueue.SchedulerTimeType.Stride = .seconds(2)
 
     private let summaryModel: StatusSummaryModel
     private let popoverController: DashboardPopoverControlling

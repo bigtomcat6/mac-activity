@@ -54,6 +54,10 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 8)
     }
 
+    func testStatusItemThrottlesValueRendersToTwoSeconds() {
+        XCTAssertEqual(StatusItemController.summaryUpdateInterval, .seconds(2))
+    }
+
     func testStatusBarLabelsUseBoldWeightAndValuesUseHeavyWeight() {
         XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.fallbackFont), 9)
         XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.primaryFont(for: .metric)), 10)

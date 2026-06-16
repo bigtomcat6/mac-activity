@@ -130,14 +130,18 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(memoryCount, 2)
     }
 
-    func testBackgroundProfileUsesLowCadenceForMenuBarOnlyMode() {
+    func testBackgroundProfileRefreshesVisibleLiveMetricsEveryTwoSeconds() {
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .cpu, defaultCadence: .fast),
-            15
+            2
         )
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .gpu, defaultCadence: .fast),
-            30
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .network, defaultCadence: .fast),
+            2
         )
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .memory, defaultCadence: .medium),
@@ -156,6 +160,18 @@ final class MetricsSchedulerTests: XCTestCase {
     func testEnergySaverProfileUsesLowCadenceForExpensiveSensors() {
         XCTAssertEqual(TemperatureProvider().cadence, .medium)
         XCTAssertEqual(FanProvider().cadence, .medium)
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .cpu, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .gpu, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .network, defaultCadence: .fast),
+            2
+        )
         XCTAssertEqual(
             MetricsSamplingProfile.energySaver.interval(for: .temperature, defaultCadence: .slow),
             60
