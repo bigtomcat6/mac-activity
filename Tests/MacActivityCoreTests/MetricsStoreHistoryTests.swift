@@ -171,6 +171,28 @@ final class MetricsStoreHistoryTests: XCTestCase {
         )
     }
 
+    func testBatteryHistoryStoresSystemAndHardwarePercentages() throws {
+        let store = MetricsStore()
+
+        store.apply(
+            [
+                .battery(
+                    BatteryReading(
+                        percentage: 79,
+                        isCharging: false,
+                        hardwarePercentage: 74.51
+                    )
+                ),
+            ],
+            timestamp: Date(timeIntervalSince1970: 10)
+        )
+
+        let sample = try XCTUnwrap(store.history.samples(for: .battery).first)
+        XCTAssertEqual(sample.primaryValue, 79, accuracy: 0.001)
+        let hardwarePercentage = try XCTUnwrap(sample.secondaryValue)
+        XCTAssertEqual(hardwarePercentage, 74.51, accuracy: 0.001)
+    }
+
     func testHistoryKeepsTemperatureSourceSeriesSeparate() {
         let store = MetricsStore()
         let start = Date(timeIntervalSince1970: 1_000)

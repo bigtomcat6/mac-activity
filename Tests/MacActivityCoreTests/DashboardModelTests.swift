@@ -122,6 +122,27 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(cpu.value, "12%")
     }
 
+    func testBatteryTrendDoesNotExposeHardwarePercentageAsSecondarySeriesByDefault() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 30)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.trend?.samples.isEmpty == false
+        }
+        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
+        let sample = try! XCTUnwrap(battery.trend?.samples.first)
+
+        XCTAssertEqual(sample.primaryValue, 79, accuracy: 0.001)
+        XCTAssertNil(sample.secondaryValue)
+    }
+
     func testTemperatureMetricSwitchesPreferredSourceTrendImmediately() async {
         let store = MetricsStore()
         let preferences = PreferencesController(

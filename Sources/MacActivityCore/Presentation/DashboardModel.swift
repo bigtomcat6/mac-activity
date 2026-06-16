@@ -271,7 +271,11 @@ public final class DashboardModel: ObservableObject {
     ) -> DashboardTrend {
         DashboardTrend(
             samples: history.samples(for: kind, source: source).map {
-                DashboardTrendSample(timestamp: $0.timestamp, primaryValue: $0.primaryValue, secondaryValue: $0.secondaryValue)
+                DashboardTrendSample(
+                    timestamp: $0.timestamp,
+                    primaryValue: $0.primaryValue,
+                    secondaryValue: kind == .network ? $0.secondaryValue : nil
+                )
             },
             scale: scale
         )
