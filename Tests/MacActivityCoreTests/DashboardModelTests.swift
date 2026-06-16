@@ -143,6 +143,99 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertNil(sample.secondaryValue)
     }
 
+    func testBatteryMetricUsesSystemPercentageWhenHardwareDisplayIsDisabled() async {
+        let store = MetricsStore()
+        let preferences = PreferencesController(
+            store: InMemoryDashboardPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.battery],
+                    showsHardwareBatteryPercentage: false
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = DashboardModel(store: store, preferences: preferences)
+
+        store.apply(
+            [
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 20)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.value == "79%"
+        }
+        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
+
+        XCTAssertEqual(battery.value, "79%")
+        XCTAssertEqual(battery.trend?.samples.map(\.primaryValue), [79])
+    }
+
+    func testBatteryMetricUsesHardwarePercentageWhenPreferenceIsEnabled() async {
+        let store = MetricsStore()
+        let preferences = PreferencesController(
+            store: InMemoryDashboardPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.battery],
+                    showsHardwareBatteryPercentage: true
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = DashboardModel(store: store, preferences: preferences)
+
+        store.apply(
+            [
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 21)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.value == "75%"
+        }
+        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
+
+        XCTAssertEqual(battery.value, "75%")
+        XCTAssertEqual(battery.trend?.samples.map(\.primaryValue), [74.51])
+    }
+
+    func testBatteryMetricUpdatesImmediatelyWhenHardwarePreferenceChanges() async {
+        let store = MetricsStore()
+        let preferences = PreferencesController(
+            store: InMemoryDashboardPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.battery],
+                    showsHardwareBatteryPercentage: false
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = DashboardModel(store: store, preferences: preferences)
+
+        store.apply(
+            [
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 22)
+        )
+        _ = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.value == "79%"
+        }
+
+        preferences.setShowsHardwareBatteryPercentage(true)
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.value == "75%"
+        }
+
+        XCTAssertEqual(metrics.first { $0.kind == .battery }?.trend?.samples.map(\.primaryValue), [74.51])
+    }
+
     func testTemperatureMetricSwitchesPreferredSourceTrendImmediately() async {
         let store = MetricsStore()
         let preferences = PreferencesController(
