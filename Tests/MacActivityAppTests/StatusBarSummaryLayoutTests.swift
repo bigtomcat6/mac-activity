@@ -48,10 +48,10 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
     }
 
     func testFontsUseReadableStatusBarSizes() {
-        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .metric).pointSize, 7)
+        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .metric).pointSize, 10)
         XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .metric).pointSize, 6)
-        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .network).pointSize, 5)
-        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 5)
+        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .network).pointSize, 8)
+        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 8)
     }
 
     func testStatusBarLabelsUseBoldWeightAndValuesUseHeavyWeight() {

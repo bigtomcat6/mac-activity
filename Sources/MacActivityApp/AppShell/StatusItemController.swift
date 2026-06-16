@@ -221,11 +221,11 @@ enum StatusBarSummaryLayout {
     }
 
     static func primaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 5 : 7, weight: .heavy)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 10, weight: .heavy)
     }
 
     static func secondaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 5 : 6, weight: style == .network ? .heavy : .bold)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 6, weight: style == .network ? .heavy : .bold)
     }
 
     // Use representative max-width samples per metric so the status item width

@@ -82,12 +82,12 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             rootView: DashboardView(
                 dashboardModel: dashboardModel,
                 preferencesController: preferencesController,
-                openPreferences: {
-                    popover.performClose(nil)
+                openPreferences: { [weak popover] in
+                    popover?.performClose(nil)
                     openPreferences()
                 },
-                quitApplication: {
-                    popover.performClose(nil)
+                quitApplication: { [weak popover] in
+                    popover?.performClose(nil)
                     quitApplication()
                 }
             )
