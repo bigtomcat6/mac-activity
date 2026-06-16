@@ -147,4 +147,36 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         )
     }
 
+    func testStructureKeyChangesWhenMenuBarMetricSelectionChanges() {
+        let cpuAndMemory = [
+            StatusSummaryItem(kind: .cpu, primaryText: "--", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "--", secondaryText: "MEM", style: .metric),
+        ]
+        let cpuAndNetwork = [
+            StatusSummaryItem(kind: .cpu, primaryText: "--", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network),
+        ]
+
+        XCTAssertNotEqual(
+            StatusBarSummaryStructureKey(items: cpuAndMemory),
+            StatusBarSummaryStructureKey(items: cpuAndNetwork)
+        )
+    }
+
+    func testStructureKeyIgnoresValueOnlyChanges() {
+        let quieterItems = [
+            StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
+        ]
+        let busierItems = [
+            StatusSummaryItem(kind: .cpu, primaryText: "98%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "88%", secondaryText: "MEM", style: .metric),
+        ]
+
+        XCTAssertEqual(
+            StatusBarSummaryStructureKey(items: quieterItems),
+            StatusBarSummaryStructureKey(items: busierItems)
+        )
+    }
+
 }
