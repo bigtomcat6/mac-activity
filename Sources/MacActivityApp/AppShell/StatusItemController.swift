@@ -3,11 +3,12 @@ import Combine
 import MacActivityCore
 
 @MainActor
-final class StatusItemController {
+final class StatusItemController: NSObject {
+    private static let summaryUpdateInterval: DispatchQueue.SchedulerTimeType.Stride = .seconds(10)
+
     private let summaryModel: StatusSummaryModel
     private let popoverController: DashboardPopoverControlling
     private var statusItem: NSStatusItem?
-    private var summaryView: StatusBarSummaryView?
     private var cancellables: Set<AnyCancellable> = []
     private var currentSummary: RenderedStatusSummary?
 
@@ -17,6 +18,7 @@ final class StatusItemController {
     ) {
         self.summaryModel = summaryModel
         self.popoverController = popoverController
+        super.init()
     }
 
     func install() {
@@ -29,10 +31,7 @@ final class StatusItemController {
         }
 
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-        let summaryView = installSummaryViewIfNeeded(onto: statusItem)
-        summaryView.mouseDownHandler = { [weak self] in
-            self?.togglePopover()
-        }
+        configureButton(for: statusItem)
         render(
             summaryText: summaryModel.summaryText,
             items: summaryModel.summaryItems,
@@ -40,6 +39,7 @@ final class StatusItemController {
         )
 
         Publishers.CombineLatest(summaryModel.$summaryText, summaryModel.$summaryItems)
+            .throttle(for: Self.summaryUpdateInterval, scheduler: DispatchQueue.main, latest: true)
             .sink { [weak self] summaryText, items in
                 self?.render(summaryText: summaryText, items: items)
             }
@@ -54,13 +54,30 @@ final class StatusItemController {
         }
 
         statusItem = nil
-        summaryView = nil
         currentSummary = nil
         cancellables.removeAll()
     }
 
+    private func configureButton(for statusItem: NSStatusItem) {
+        guard let button = statusItem.button else {
+            return
+        }
+
+        button.title = ""
+        button.attributedTitle = NSAttributedString(string: "")
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleNone
+        button.target = self
+        button.action = #selector(statusItemClicked(_:))
+        button.sendAction(on: [.leftMouseUp])
+    }
+
+    @objc private func statusItemClicked(_ sender: Any?) {
+        togglePopover()
+    }
+
     private func togglePopover() {
-        popoverController.toggle(relativeTo: statusItem?.button ?? summaryView)
+        popoverController.toggle(relativeTo: statusItem?.button)
     }
 
     private func render(
@@ -68,7 +85,11 @@ final class StatusItemController {
         items: [StatusSummaryItem],
         onto statusItem: NSStatusItem? = nil
     ) {
-        let nextSummary = RenderedStatusSummary(text: summaryText, items: items)
+        let presentation = StatusBarSummaryLayout.imagePresentation(summaryText: summaryText, items: items)
+        let nextSummary = RenderedStatusSummary(
+            title: presentation.accessibilityTitle,
+            length: presentation.length
+        )
         guard currentSummary != nextSummary else {
             return
         }
@@ -78,260 +99,60 @@ final class StatusItemController {
             return
         }
 
-        let summaryView = installSummaryViewIfNeeded(onto: targetStatusItem)
-        summaryView.update(summaryText: summaryText, items: items)
-        targetStatusItem.length = summaryView.frame.width
-
-        currentSummary = nextSummary
-    }
-
-    private func installSummaryViewIfNeeded(onto statusItem: NSStatusItem) -> StatusBarSummaryView {
-        if let summaryView {
-            return summaryView
-        }
-
-        let summaryView = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
-        guard let button = statusItem.button else {
-            self.summaryView = summaryView
-            return summaryView
+        guard let button = targetStatusItem.button else {
+            return
         }
 
         button.title = ""
-        summaryView.frame = button.bounds
-        summaryView.autoresizingMask = [.width, .height]
-        button.addSubview(summaryView)
-        self.summaryView = summaryView
-        return summaryView
+        button.attributedTitle = NSAttributedString(string: "")
+        button.image = presentation.image
+        button.imagePosition = .imageOnly
+        button.imageScaling = .scaleNone
+        button.toolTip = presentation.accessibilityTitle
+        button.setAccessibilityLabel(presentation.accessibilityTitle)
+        if abs(targetStatusItem.length - presentation.length) > 0.5 {
+            targetStatusItem.length = presentation.length
+        }
+
+        currentSummary = nextSummary
     }
 }
 
 private struct RenderedStatusSummary: Equatable {
-    var text: String
-    var items: [StatusSummaryItem]
+    var title: String
+    var length: CGFloat
 }
 
-final class StatusBarSummaryView: NSView {
-    private let stackView: NSStackView
-    private var fallbackView: StatusBarFallbackSummaryView?
-    private var itemViewsByKind: [MetricKind: StatusBarSummaryItemView] = [:]
-    private var separatorViews: [StatusBarSummarySeparatorView] = []
-    var mouseDownHandler: (() -> Void)?
-
-    override init(frame frameRect: NSRect) {
-        stackView = NSStackView()
-        super.init(frame: frameRect)
-
-        stackView.orientation = .horizontal
-        stackView.alignment = .centerY
-        stackView.distribution = .gravityAreas
-        stackView.spacing = 0
-        stackView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(stackView)
-
-        NSLayoutConstraint.activate([
-            stackView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            stackView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            stackView.topAnchor.constraint(equalTo: topAnchor),
-            stackView.bottomAnchor.constraint(equalTo: bottomAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        mouseDownHandler?()
-    }
-
-    func update(summaryText: String, items: [StatusSummaryItem]) {
-        if items.isEmpty {
-            let fallbackView = fallbackView ?? StatusBarFallbackSummaryView(text: summaryText)
-            fallbackView.update(text: summaryText)
-            self.fallbackView = fallbackView
-            setArrangedSubviews([fallbackView])
-            frame.size = NSSize(
-                width: StatusBarSummaryLayout.fallbackWidth(for: summaryText),
-                height: 22
-            )
-            return
-        }
-
-        fallbackView = nil
-        var arrangedSubviews: [NSView] = []
-
-        for (index, item) in items.enumerated() {
-            let itemView = itemViewsByKind[item.kind] ?? StatusBarSummaryItemView(item: item)
-            itemView.update(item: item)
-            itemViewsByKind[item.kind] = itemView
-            arrangedSubviews.append(itemView)
-
-            if index < items.index(before: items.endIndex) {
-                arrangedSubviews.append(separatorView(at: index))
-            }
-        }
-
-        setArrangedSubviews(arrangedSubviews)
-        frame.size = NSSize(width: StatusBarSummaryLayout.preferredWidth(for: items), height: 22)
-        invalidateIntrinsicContentSize()
-    }
-
-    private func separatorView(at index: Int) -> StatusBarSummarySeparatorView {
-        if index >= separatorViews.count {
-            separatorViews.append(StatusBarSummarySeparatorView())
-        }
-        return separatorViews[index]
-    }
-
-    private func setArrangedSubviews(_ views: [NSView]) {
-        let current = stackView.arrangedSubviews
-        let isSameLayout =
-            current.count == views.count &&
-            zip(current, views).allSatisfy { currentView, nextView in
-                currentView === nextView
-            }
-
-        guard !isSameLayout else {
-            return
-        }
-
-        current.forEach { view in
-            stackView.removeArrangedSubview(view)
-            view.removeFromSuperview()
-        }
-
-        views.forEach { view in
-            stackView.addArrangedSubview(view)
-        }
-    }
-}
-
-private final class StatusBarFallbackSummaryView: NSView {
-    private let label: NSTextField
-
-    init(text: String) {
-        label = NSTextField(labelWithString: text)
-        super.init(frame: .zero)
-
-        label.font = StatusBarSummaryLayout.fallbackFont
-        label.textColor = .controlTextColor
-        label.alignment = .center
-        label.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(label)
-
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func update(text: String) {
-        label.stringValue = text
-    }
-}
-
-private final class StatusBarSummaryItemView: NSStackView {
-    private var widthConstraint: NSLayoutConstraint?
-    private let primaryLabel: NSTextField
-    private let secondaryLabel: NSTextField
-
-    init(item: StatusSummaryItem) {
-        primaryLabel = NSTextField(labelWithString: item.primaryText)
-        secondaryLabel = NSTextField(labelWithString: item.secondaryText)
-        super.init(frame: .zero)
-
-        distribution = .gravityAreas
-
-        primaryLabel.font = StatusBarSummaryLayout.primaryFont(for: item.style)
-        primaryLabel.textColor = .controlTextColor
-        primaryLabel.alignment = item.style == .network ? .left : .center
-        primaryLabel.lineBreakMode = .byClipping
-        primaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        secondaryLabel.font = StatusBarSummaryLayout.secondaryFont(for: item.style)
-        secondaryLabel.textColor = .controlTextColor
-        secondaryLabel.alignment = item.style == .network ? .left : .center
-        secondaryLabel.lineBreakMode = .byClipping
-        secondaryLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        addArrangedSubview(primaryLabel)
-        addArrangedSubview(secondaryLabel)
-
-        applyLayout(for: item)
-        let widthConstraint = widthAnchor.constraint(equalToConstant: StatusBarSummaryLayout.itemWidth(for: item))
-        widthConstraint.isActive = true
-        self.widthConstraint = widthConstraint
-        heightAnchor.constraint(equalToConstant: 22).isActive = true
-    }
-
-    @available(*, unavailable)
-    required init(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    func update(item: StatusSummaryItem) {
-        primaryLabel.stringValue = item.primaryText
-        primaryLabel.font = StatusBarSummaryLayout.primaryFont(for: item.style)
-        primaryLabel.alignment = item.style == .network ? .left : .center
-        secondaryLabel.stringValue = item.secondaryText
-        secondaryLabel.font = StatusBarSummaryLayout.secondaryFont(for: item.style)
-        secondaryLabel.alignment = item.style == .network ? .left : .center
-        applyLayout(for: item)
-        widthConstraint?.constant = StatusBarSummaryLayout.itemWidth(for: item)
-    }
-
-    private func applyLayout(for item: StatusSummaryItem) {
-        orientation = .vertical
-        alignment = item.style == .network ? .leading : .centerX
-        spacing = -1
-        edgeInsets = item.style == .network
-            ? NSEdgeInsets(top: 1, left: 1, bottom: 1, right: 1)
-            : NSEdgeInsets(top: 1, left: 0, bottom: 1, right: 0)
-    }
-}
-
-private final class StatusBarSummarySeparatorView: NSView {
-    override var intrinsicContentSize: NSSize {
-        NSSize(width: StatusBarSummaryLayout.separatorWidth, height: 22)
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setContentHuggingPriority(.required, for: .horizontal)
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-
-        NSColor.controlTextColor.withAlphaComponent(0.35).setFill()
-        let dividerRect = NSRect(
-            x: floor((bounds.width - 1) / 2),
-            y: floor((bounds.height - 16) / 2),
-            width: 1,
-            height: 16
-        )
-        dividerRect.fill()
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+struct StatusBarSummaryPresentation {
+    var image: NSImage
+    var length: CGFloat
+    var accessibilityTitle: String
 }
 
 enum StatusBarSummaryLayout {
     static let metricMinimumWidth: CGFloat = 26
     static let networkMinimumWidth: CGFloat = 34
     static let separatorWidth: CGFloat = 2
+    static let statusBarHeight: CGFloat = 22
+    static let minimumTitleLength: CGFloat = 44
     static var fallbackFont: NSFont {
         .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+    }
+
+    static func imagePresentation(
+        summaryText: String,
+        items: [StatusSummaryItem]
+    ) -> StatusBarSummaryPresentation {
+        let length = items.isEmpty
+            ? fallbackWidth(for: summaryText)
+            : preferredWidth(for: items)
+        let image = renderImage(summaryText: summaryText, items: items, size: NSSize(width: length, height: statusBarHeight))
+
+        return StatusBarSummaryPresentation(
+            image: image,
+            length: length,
+            accessibilityTitle: accessibilityTitle(summaryText: summaryText, items: items)
+        )
     }
 
     static func preferredWidth(for items: [StatusSummaryItem]) -> CGFloat {
@@ -357,7 +178,7 @@ enum StatusBarSummaryLayout {
     }
 
     static func fallbackWidth(for text: String) -> CGFloat {
-        ceil(max(44, textWidth(text, font: fallbackFont) + 10))
+        ceil(max(minimumTitleLength, textWidth(text, font: fallbackFont) + 10))
     }
 
     static func primaryFont(for style: StatusSummaryItemStyle) -> NSFont {
@@ -402,6 +223,137 @@ enum StatusBarSummaryLayout {
         default:
             return 0
         }
+    }
+
+    private static func accessibilityTitle(summaryText: String, items: [StatusSummaryItem]) -> String {
+        guard !items.isEmpty else {
+            return summaryText
+        }
+
+        return items.map(accessibilityComponent(for:)).joined(separator: " | ")
+    }
+
+    private static func accessibilityComponent(for item: StatusSummaryItem) -> String {
+        switch item.kind {
+        case .fan:
+            return item.primaryText == "--" ? "FAN --" : "FAN \(item.primaryText)RPM"
+        case .network:
+            return "\(item.primaryText) \(item.secondaryText)"
+        default:
+            return "\(item.secondaryText) \(item.primaryText)"
+        }
+    }
+
+    private static func renderImage(
+        summaryText: String,
+        items: [StatusSummaryItem],
+        size: NSSize
+    ) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocusFlipped(true)
+
+        NSGraphicsContext.current?.imageInterpolation = .high
+        NSColor.clear.setFill()
+        NSRect(origin: .zero, size: size).fill()
+
+        if items.isEmpty {
+            drawFallbackText(summaryText, in: NSRect(origin: .zero, size: size))
+        } else {
+            drawItems(items, in: NSRect(origin: .zero, size: size))
+        }
+
+        image.unlockFocus()
+        image.isTemplate = true
+        return image
+    }
+
+    private static func drawFallbackText(_ text: String, in rect: NSRect) {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = .center
+        let attributes: [NSAttributedString.Key: Any] = [
+            .font: fallbackFont,
+            .foregroundColor: NSColor.black,
+            .paragraphStyle: paragraphStyle,
+        ]
+        let textHeight = ceil((text as NSString).size(withAttributes: attributes).height)
+        let drawingRect = NSRect(
+            x: rect.minX,
+            y: rect.minY + floor((rect.height - textHeight) / 2),
+            width: rect.width,
+            height: textHeight
+        )
+        (text as NSString).draw(in: drawingRect, withAttributes: attributes)
+    }
+
+    private static func drawItems(_ items: [StatusSummaryItem], in rect: NSRect) {
+        var x = rect.minX
+
+        for (index, item) in items.enumerated() {
+            let width = itemWidth(for: item)
+            let itemRect = NSRect(x: x, y: rect.minY, width: width, height: rect.height)
+            drawItem(item, in: itemRect)
+            x += width
+
+            if index < items.index(before: items.endIndex) {
+                drawSeparator(atX: x, in: rect)
+                x += separatorWidth
+            }
+        }
+    }
+
+    private static func drawItem(_ item: StatusSummaryItem, in rect: NSRect) {
+        let alignment: NSTextAlignment = item.style == .network ? .left : .center
+        let horizontalInset: CGFloat = item.style == .network ? 1 : 0
+        let primaryAttributes = textAttributes(
+            font: primaryFont(for: item.style),
+            alignment: alignment
+        )
+        let secondaryAttributes = textAttributes(
+            font: secondaryFont(for: item.style),
+            alignment: alignment
+        )
+        let contentRect = rect.insetBy(dx: horizontalInset, dy: 0)
+        let primaryRect = NSRect(
+            x: contentRect.minX,
+            y: contentRect.minY + 1,
+            width: contentRect.width,
+            height: item.style == .network ? 10 : 12
+        )
+        let secondaryRect = NSRect(
+            x: contentRect.minX,
+            y: contentRect.minY + (item.style == .network ? 10 : 13),
+            width: contentRect.width,
+            height: item.style == .network ? 10 : 8
+        )
+
+        (item.primaryText as NSString).draw(in: primaryRect, withAttributes: primaryAttributes)
+        (item.secondaryText as NSString).draw(in: secondaryRect, withAttributes: secondaryAttributes)
+    }
+
+    private static func drawSeparator(atX x: CGFloat, in rect: NSRect) {
+        NSColor.black.withAlphaComponent(0.35).setFill()
+        let dividerRect = NSRect(
+            x: x + floor((separatorWidth - 1) / 2),
+            y: rect.minY + floor((rect.height - 16) / 2),
+            width: 1,
+            height: 16
+        )
+        dividerRect.fill()
+    }
+
+    private static func textAttributes(
+        font: NSFont,
+        alignment: NSTextAlignment
+    ) -> [NSAttributedString.Key: Any] {
+        let paragraphStyle = NSMutableParagraphStyle()
+        paragraphStyle.alignment = alignment
+        paragraphStyle.lineBreakMode = .byClipping
+
+        return [
+            .font: font,
+            .foregroundColor: NSColor.black,
+            .paragraphStyle: paragraphStyle,
+        ]
     }
 
     private static func textWidth(_ text: String, font: NSFont) -> CGFloat {

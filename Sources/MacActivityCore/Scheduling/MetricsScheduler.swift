@@ -33,18 +33,32 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .fan: 2,
         ]
     )
+    public static let background = MetricsSamplingProfile(
+        cadenceOverrides: [
+            .cpu: 15,
+            .gpu: 30,
+            .disk: 60,
+            .swap: 60,
+            .memory: 30,
+            .vram: 60,
+            .network: 15,
+            .battery: 60,
+            .temperature: 60,
+            .fan: 60,
+        ]
+    )
     public static let energySaver = MetricsSamplingProfile(
         cadenceOverrides: [
-            .cpu: 5,
-            .gpu: 5,
-            .disk: 30,
-            .swap: 30,
-            .memory: 15,
-            .vram: 15,
-            .network: 5,
-            .battery: 30,
-            .temperature: 2,
-            .fan: 2,
+            .cpu: 30,
+            .gpu: 60,
+            .disk: 120,
+            .swap: 120,
+            .memory: 60,
+            .vram: 120,
+            .network: 30,
+            .battery: 120,
+            .temperature: 60,
+            .fan: 60,
         ]
     )
 }
