@@ -4,10 +4,10 @@ import MacActivityCore
 
 @MainActor
 final class AppSamplingControllerTests: XCTestCase {
-    func testHiddenDashboardDefaultsToBalancedSampling() {
+    func testHiddenDashboardDefaultsToBackgroundSampling() {
         let controller = AppSamplingController()
 
-        XCTAssertEqual(controller.currentProfile, .balanced)
+        XCTAssertEqual(controller.currentProfile, .background)
     }
 
     func testVisibleDashboardForcesRealtimeSampling() {

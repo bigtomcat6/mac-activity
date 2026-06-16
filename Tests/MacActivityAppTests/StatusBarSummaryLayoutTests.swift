@@ -5,6 +5,37 @@ import MacActivityCore
 
 @MainActor
 final class StatusBarSummaryLayoutTests: XCTestCase {
+    func testImagePresentationUsesTwoLineStatusBarImage() {
+        let items = [
+            StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
+        ]
+
+        let presentation = StatusBarSummaryLayout.imagePresentation(
+            summaryText: "fallback",
+            items: items
+        )
+
+        XCTAssertEqual(presentation.accessibilityTitle, "CPU 7% | MEM 38% | ↑13.8K ↓15.4K")
+        XCTAssertEqual(presentation.image.size.height, StatusBarSummaryLayout.statusBarHeight)
+        XCTAssertEqual(presentation.image.size.width, StatusBarSummaryLayout.preferredWidth(for: items))
+        XCTAssertGreaterThanOrEqual(presentation.length, 44)
+        XCTAssertTrue(presentation.image.isTemplate)
+    }
+
+    func testImagePresentationUsesFallbackTextWhenNoStructuredItemsExist() {
+        let presentation = StatusBarSummaryLayout.imagePresentation(
+            summaryText: "Metrics",
+            items: []
+        )
+
+        XCTAssertEqual(presentation.accessibilityTitle, "Metrics")
+        XCTAssertEqual(presentation.image.size.height, StatusBarSummaryLayout.statusBarHeight)
+        XCTAssertEqual(presentation.image.size.width, presentation.length)
+        XCTAssertGreaterThanOrEqual(presentation.length, 44)
+    }
+
     func testPreferredWidthUsesDeterministicColumnsAndSeparators() {
         let items = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
@@ -90,45 +121,22 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         )
     }
 
-    func testSummaryViewReusesExistingMetricViewsAcrossValueUpdates() {
-        let view = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
-        let initialItems = [
+    func testImagePresentationWidthIsStableForSameMetricSelectionAcrossDifferentValues() {
+        let quieterItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
+            StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network),
         ]
-        let updatedItems = [
-            StatusSummaryItem(kind: .cpu, primaryText: "18%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .memory, primaryText: "41%", secondaryText: "MEM", style: .metric),
+        let busierItems = [
+            StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .temperature, primaryText: "105℃", secondaryText: "CPU", style: .metric),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network),
         ]
 
-        view.update(summaryText: "", items: initialItems)
-
-        let stackView = try! XCTUnwrap(view.subviews.first as? NSStackView)
-        let firstMetricView = stackView.arrangedSubviews[0]
-        let secondMetricView = stackView.arrangedSubviews[2]
-
-        view.update(summaryText: "", items: updatedItems)
-
-        XCTAssertTrue(firstMetricView === stackView.arrangedSubviews[0])
-        XCTAssertTrue(secondMetricView === stackView.arrangedSubviews[2])
+        XCTAssertEqual(
+            StatusBarSummaryLayout.imagePresentation(summaryText: "quiet", items: quieterItems).length,
+            StatusBarSummaryLayout.imagePresentation(summaryText: "busy", items: busierItems).length
+        )
     }
 
-    func testNetworkSummaryViewUsesTwoLineVerticalLayoutWithUnifiedFonts() {
-        let view = StatusBarSummaryView(frame: NSRect(x: 0, y: 0, width: 44, height: 22))
-        let items = [
-            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
-        ]
-
-        view.update(summaryText: "", items: items)
-
-        let stackView = try! XCTUnwrap(view.subviews.first as? NSStackView)
-        let itemView = try! XCTUnwrap(stackView.arrangedSubviews.first as? NSStackView)
-        let primaryLabel = try! XCTUnwrap(itemView.arrangedSubviews.first as? NSTextField)
-        let secondaryLabel = try! XCTUnwrap(itemView.arrangedSubviews.last as? NSTextField)
-
-        XCTAssertEqual(itemView.orientation, .vertical)
-        XCTAssertEqual(primaryLabel.font?.pointSize, secondaryLabel.font?.pointSize)
-        XCTAssertEqual(primaryLabel.stringValue, "↑13.8K")
-        XCTAssertEqual(secondaryLabel.stringValue, "↓15.4K")
-    }
 }
