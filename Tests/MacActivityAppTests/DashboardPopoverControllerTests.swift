@@ -91,6 +91,29 @@ final class DashboardPopoverControllerTests: XCTestCase {
         ])
     }
 
+    func testPopoverHostCanDeallocateAfterControllerIsReleased() {
+        weak var releasedPopover: RecordingPopoverHost?
+
+        autoreleasepool {
+            let recorder = DashboardPopoverEventRecorder()
+            let popover = RecordingPopoverHost(recorder: recorder)
+            let controller = DashboardPopoverController(
+                popover: popover,
+                focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+                dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+                preferencesController: Self.preferencesController(),
+                onVisibilityChange: { _ in },
+                openPreferences: {},
+                quitApplication: {}
+            )
+            releasedPopover = popover
+
+            withExtendedLifetime(controller) {}
+        }
+
+        XCTAssertNil(releasedPopover)
+    }
+
     private static func preferencesController() -> PreferencesController {
         PreferencesController(
             store: DashboardPopoverPreferencesStore(initial: .default),

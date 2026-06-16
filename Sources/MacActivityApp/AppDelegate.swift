@@ -203,7 +203,7 @@ final class AppSamplingController {
 
     init(initialLowPowerModeEnabled: Bool = false) {
         self.isLowPowerModeEnabled = initialLowPowerModeEnabled
-        self.currentProfile = initialLowPowerModeEnabled ? .energySaver : .balanced
+        self.currentProfile = initialLowPowerModeEnabled ? .energySaver : .background
     }
 
     func setDashboardVisible(_ isVisible: Bool) {
@@ -228,7 +228,7 @@ final class AppSamplingController {
         } else if isRunningOnBattery || isLowPowerModeEnabled {
             nextProfile = .energySaver
         } else {
-            nextProfile = .balanced
+            nextProfile = .background
         }
 
         guard currentProfile != nextProfile else {

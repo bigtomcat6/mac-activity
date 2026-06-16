@@ -130,24 +130,55 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(memoryCount, 2)
     }
 
-    func testTemperatureAndFanCadenceMatchLemonMonitorRefreshInterval() {
-        XCTAssertEqual(TemperatureProvider().cadence, .medium)
-        XCTAssertEqual(FanProvider().cadence, .medium)
+    func testBackgroundProfileRefreshesLiveMetricsEveryTwoSecondsAndSupportMetricsEveryTenSeconds() {
         XCTAssertEqual(
-            MetricsSamplingProfile.balanced.interval(for: .temperature, defaultCadence: .slow),
+            MetricsSamplingProfile.background.interval(for: .cpu, defaultCadence: .fast),
             2
         )
         XCTAssertEqual(
-            MetricsSamplingProfile.balanced.interval(for: .fan, defaultCadence: .slow),
+            MetricsSamplingProfile.background.interval(for: .gpu, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .network, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .memory, defaultCadence: .medium),
+            10
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .temperature, defaultCadence: .medium),
+            10
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .fan, defaultCadence: .medium),
+            10
+        )
+    }
+
+    func testEnergySaverProfileUsesLowCadenceForExpensiveSensors() {
+        XCTAssertEqual(TemperatureProvider().cadence, .medium)
+        XCTAssertEqual(FanProvider().cadence, .medium)
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .cpu, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .gpu, defaultCadence: .fast),
+            2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .network, defaultCadence: .fast),
             2
         )
         XCTAssertEqual(
             MetricsSamplingProfile.energySaver.interval(for: .temperature, defaultCadence: .slow),
-            2
+            60
         )
         XCTAssertEqual(
             MetricsSamplingProfile.energySaver.interval(for: .fan, defaultCadence: .slow),
-            2
+            60
         )
     }
 }
