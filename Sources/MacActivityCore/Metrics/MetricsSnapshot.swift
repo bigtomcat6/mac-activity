@@ -117,10 +117,24 @@ public struct NetworkReading: Equatable, Sendable {
 public struct BatteryReading: Equatable, Sendable {
     public var percentage: Double
     public var isCharging: Bool
+    public var hardwarePercentage: Double?
 
-    public init(percentage: Double, isCharging: Bool) {
+    public init(
+        percentage: Double,
+        isCharging: Bool,
+        hardwarePercentage: Double? = nil
+    ) {
         self.percentage = percentage
         self.isCharging = isCharging
+        self.hardwarePercentage = hardwarePercentage
+    }
+
+    public func displayPercentage(showsHardwarePercentage: Bool) -> Double {
+        guard showsHardwarePercentage, let hardwarePercentage else {
+            return percentage
+        }
+
+        return hardwarePercentage
     }
 }
 
