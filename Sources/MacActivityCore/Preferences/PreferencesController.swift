@@ -41,10 +41,16 @@ public final class PreferencesController: ObservableObject {
         try? store.save(state)
     }
 
+    public func setShowsHardwareBatteryPercentage(_ showsHardwareBatteryPercentage: Bool) {
+        state.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
+        try? store.save(state)
+    }
+
     public func setPreferredLanguageIdentifier(_ preferredLanguageIdentifier: String?) {
         state.preferredLanguageIdentifier = preferredLanguageIdentifier
         try? store.save(state)
     }
+
     public func setDiskCleanupCategory(_ kind: DiskCleanupCategoryKind, isSelected: Bool) {
         var selectedCategories = Set(state.diskCleanupCategories)
         if isSelected {

@@ -14,7 +14,8 @@ final class PreferencesStoreTests: XCTestCase {
             selectedSummaryMetrics: [.vram, .memory, .temperature, .cpu],
             temperatureSource: .battery,
             preferredLanguageIdentifier: "zh-Hans",
-            diskCleanupCategories: [.userCaches, .trash, .userLogs]
+            diskCleanupCategories: [.userCaches, .trash, .userLogs],
+            showsHardwareBatteryPercentage: true
         )
 
         try store.save(expected)
@@ -28,6 +29,7 @@ final class PreferencesStoreTests: XCTestCase {
             AppPreferences.default.selectedSummaryMetrics,
             [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network]
         )
+        XCTAssertFalse(AppPreferences.default.showsHardwareBatteryPercentage)
     }
 
     func testLoadMigratesLegacyDefaultSummaryMetricsToCurrentHardwareMetrics() throws {
@@ -81,6 +83,22 @@ final class PreferencesStoreTests: XCTestCase {
         let loaded = store.load()
 
         XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches])
+    }
+
+    func testLoadDefaultsHardwareBatteryPercentageToFalseWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let legacyData = Data(
+            #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":false,"temperatureSource":"smc"}"#
+                .utf8
+        )
+        userDefaults.set(legacyData, forKey: "mac-activity.preferences")
+
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertFalse(loaded.showsHardwareBatteryPercentage)
     }
 
     func testLoadMigratesLegacyDiskCleanupScopeToCategories() throws {
