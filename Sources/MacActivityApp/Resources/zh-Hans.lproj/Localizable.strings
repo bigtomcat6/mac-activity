@@ -20,6 +20,8 @@
 
 "metric.cpu" = "CPU";
 "metric.gpu" = "GPU";
+"metric.disk" = "磁盘";
+"metric.swap" = "Swap";
 "metric.memory" = "内存";
 "metric.vram" = "显存";
 "metric.network" = "网络";

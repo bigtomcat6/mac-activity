@@ -60,6 +60,18 @@ public struct MetricHistorySample: Equatable, Sendable {
             }
             self.primaryValue = Double(reading.usedBytes) / Double(reading.totalBytes) * 100
             self.secondaryValue = nil
+        case .disk(let reading):
+            guard reading.totalBytes > 0 else {
+                return nil
+            }
+            self.primaryValue = reading.usagePercent
+            self.secondaryValue = nil
+        case .swap(let reading):
+            guard reading.totalBytes > 0 else {
+                return nil
+            }
+            self.primaryValue = reading.usagePercent
+            self.secondaryValue = nil
         case .network(let reading):
             self.primaryValue = max(0, reading.downloadBytesPerSecond)
             self.secondaryValue = max(0, reading.uploadBytesPerSecond)
@@ -96,7 +108,7 @@ public struct MetricsHistory: Equatable, Sendable {
                     recentSamplesToPreserve: 300,
                     maximumContinuousSampleGap: 10 * 60
                 )
-            case .cpu, .gpu, .memory, .vram, .battery, .temperature, .fan:
+            case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery, .temperature, .fan:
                 return RetentionPolicy(
                     window: 24 * 60 * 60,
                     maxSamples: 1_440,

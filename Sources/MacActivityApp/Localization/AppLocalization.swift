@@ -26,6 +26,8 @@ enum AppLocalization {
         case memorySegmentTooltip = "dashboard.memory.segment.tooltip"
         case metricCPU = "metric.cpu"
         case metricGPU = "metric.gpu"
+        case metricDisk = "metric.disk"
+        case metricSwap = "metric.swap"
         case metricMemory = "metric.memory"
         case metricVRAM = "metric.vram"
         case metricNetwork = "metric.network"
@@ -172,6 +174,10 @@ enum AppLocalization {
             return string(.metricCPU, bundle: bundle)
         case .gpu:
             return string(.metricGPU, bundle: bundle)
+        case .disk:
+            return string(.metricDisk, bundle: bundle)
+        case .swap:
+            return string(.metricSwap, bundle: bundle)
         case .memory:
             return string(.metricMemory, bundle: bundle)
         case .vram:

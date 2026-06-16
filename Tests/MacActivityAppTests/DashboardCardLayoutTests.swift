@@ -51,6 +51,8 @@ final class DashboardCardLayoutTests: XCTestCase {
         let metrics = DashboardCardLayoutTests.overviewMetrics([
             .cpu,
             .gpu,
+            .disk,
+            .swap,
             .memory,
             .network,
             .temperature,
@@ -61,6 +63,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
             [.usage, .metric(.memory)]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.cpu, .gpu, .disk, .swap]
         )
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
@@ -89,6 +95,19 @@ final class DashboardCardLayoutTests: XCTestCase {
             [.metric(.fan)]
         )
         XCTAssertEqual(DashboardOverviewLayout.thirdRowSlots(for: metrics), [])
+    }
+
+    func testOverviewUsageRegionCanDisplayDiskAndSwapWithoutCPUOrGPU() {
+        let metrics = DashboardCardLayoutTests.overviewMetrics([.disk, .swap])
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: metrics),
+            [.usage]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.disk, .swap]
+        )
     }
 
     func testOverviewUsageProgressParsesPercentTextAndClamps() {

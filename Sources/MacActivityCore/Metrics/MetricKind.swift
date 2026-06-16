@@ -3,6 +3,8 @@ import Foundation
 public enum MetricKind: String, CaseIterable, Codable, Sendable {
     case cpu
     case gpu
+    case disk
+    case swap
     case memory
     case vram
     case network
@@ -13,6 +15,8 @@ public enum MetricKind: String, CaseIterable, Codable, Sendable {
     public static let summaryOrder: [MetricKind] = [
         .cpu,
         .gpu,
+        .disk,
+        .swap,
         .memory,
         .vram,
         .temperature,
@@ -27,6 +31,10 @@ public enum MetricKind: String, CaseIterable, Codable, Sendable {
             return "CPU"
         case .gpu:
             return "GPU"
+        case .disk:
+            return "Disk"
+        case .swap:
+            return "Swap"
         case .memory:
             return "Memory"
         case .vram:

@@ -376,6 +376,10 @@ enum StatusBarSummaryLayout {
             return StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric)
         case .gpu:
             return StatusSummaryItem(kind: .gpu, primaryText: "100%", secondaryText: "GPU", style: .metric)
+        case .disk:
+            return StatusSummaryItem(kind: .disk, primaryText: "100%", secondaryText: "DISK", style: .metric)
+        case .swap:
+            return StatusSummaryItem(kind: .swap, primaryText: "100%", secondaryText: "SWAP", style: .metric)
         case .memory:
             return StatusSummaryItem(kind: .memory, primaryText: "100%", secondaryText: "MEM", style: .metric)
         case .vram:

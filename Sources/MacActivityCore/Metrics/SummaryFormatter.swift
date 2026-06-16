@@ -81,6 +81,16 @@ public struct SummaryFormatter: SummaryFormatting {
                     return nil
                 }
                 return "GPU \(Int(gpu.usagePercent.rounded()))%"
+            case .disk:
+                guard let disk = snapshot.disk else {
+                    return nil
+                }
+                return "DISK \(Int(disk.usagePercent.rounded()))%"
+            case .swap:
+                guard let swap = snapshot.swap else {
+                    return nil
+                }
+                return "SWAP \(Int(swap.usagePercent.rounded()))%"
             case .memory:
                 guard let memory = snapshot.memory, memory.totalBytes > 0 else {
                     return nil
@@ -145,6 +155,20 @@ public struct SummaryFormatter: SummaryFormatting {
                     secondaryText: "GPU",
                     style: .metric
                 )
+            case .disk:
+                return StatusSummaryItem(
+                    kind: .disk,
+                    primaryText: formatPercent(snapshot.disk?.usagePercent),
+                    secondaryText: "DISK",
+                    style: .metric
+                )
+            case .swap:
+                return StatusSummaryItem(
+                    kind: .swap,
+                    primaryText: formatPercent(snapshot.swap?.usagePercent),
+                    secondaryText: "SWAP",
+                    style: .metric
+                )
             case .memory:
                 return StatusSummaryItem(
                     kind: .memory,
@@ -198,6 +222,8 @@ public struct SummaryFormatter: SummaryFormatting {
     private static let statusDisplayOrder: [MetricKind] = [
         .cpu,
         .gpu,
+        .disk,
+        .swap,
         .memory,
         .vram,
         .temperature,

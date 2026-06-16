@@ -74,6 +74,36 @@ public struct VRAMReading: Equatable, Sendable {
     }
 }
 
+public struct DiskReading: Equatable, Sendable {
+    public var usedBytes: UInt64
+    public var totalBytes: UInt64
+
+    public init(usedBytes: UInt64, totalBytes: UInt64) {
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+    }
+
+    public var usagePercent: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(usedBytes) / Double(totalBytes) * 100
+    }
+}
+
+public struct SwapReading: Equatable, Sendable {
+    public var usedBytes: UInt64
+    public var totalBytes: UInt64
+
+    public init(usedBytes: UInt64, totalBytes: UInt64) {
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+    }
+
+    public var usagePercent: Double {
+        guard totalBytes > 0 else { return 0 }
+        return Double(usedBytes) / Double(totalBytes) * 100
+    }
+}
+
 public struct NetworkReading: Equatable, Sendable {
     public var downloadBytesPerSecond: Double
     public var uploadBytesPerSecond: Double
@@ -117,6 +147,8 @@ public enum MetricUpdate: Equatable, Sendable {
     case gpu(GPUReading)
     case memory(MemoryReading)
     case vram(VRAMReading)
+    case disk(DiskReading)
+    case swap(SwapReading)
     case network(NetworkReading)
     case battery(BatteryReading)
     case temperature(TemperatureReading)
@@ -135,6 +167,10 @@ public enum MetricUpdate: Equatable, Sendable {
             return .memory
         case .vram:
             return .vram
+        case .disk:
+            return .disk
+        case .swap:
+            return .swap
         case .network:
             return .network
         case .battery:
@@ -155,6 +191,8 @@ public struct MetricsSnapshot: Equatable, Sendable {
     public var gpu: GPUReading?
     public var memory: MemoryReading?
     public var vram: VRAMReading?
+    public var disk: DiskReading?
+    public var swap: SwapReading?
     public var network: NetworkReading?
     public var battery: BatteryReading?
     public var temperature: TemperatureReading?
@@ -168,6 +206,8 @@ public struct MetricsSnapshot: Equatable, Sendable {
         gpu: GPUReading? = nil,
         memory: MemoryReading? = nil,
         vram: VRAMReading? = nil,
+        disk: DiskReading? = nil,
+        swap: SwapReading? = nil,
         network: NetworkReading? = nil,
         battery: BatteryReading? = nil,
         temperature: TemperatureReading? = nil,
@@ -180,6 +220,8 @@ public struct MetricsSnapshot: Equatable, Sendable {
         self.gpu = gpu
         self.memory = memory
         self.vram = vram
+        self.disk = disk
+        self.swap = swap
         self.network = network
         self.battery = battery
         var mergedTemperatures = temperatures
@@ -213,6 +255,12 @@ public struct MetricsSnapshot: Equatable, Sendable {
             case .vram(let reading):
                 next.vram = reading
                 next.issues[.vram] = nil
+            case .disk(let reading):
+                next.disk = reading
+                next.issues[.disk] = nil
+            case .swap(let reading):
+                next.swap = reading
+                next.issues[.swap] = nil
             case .network(let reading):
                 next.network = reading
                 next.issues[.network] = nil
@@ -255,6 +303,10 @@ public struct MetricsSnapshot: Equatable, Sendable {
             memory = nil
         case .vram:
             vram = nil
+        case .disk:
+            disk = nil
+        case .swap:
+            swap = nil
         case .network:
             network = nil
         case .battery:

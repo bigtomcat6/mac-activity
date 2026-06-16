@@ -10,6 +10,7 @@
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
 		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
 		0A4F50CC81A438D2B1EC4B28 /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */; };
+		0BFDE8B415E395427CB657F0 /* SystemStorageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */; };
 		0EE72E0F0ADBDE77B23D912F /* MemoryReleaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */; };
 		0F0F8EC373BBE78CFBA35CE0 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */; };
 		0F84699B798F0CDD47A3B634 /* ActiveCleanupModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */; };
@@ -217,6 +218,7 @@
 		F6393E8D414DD5B454117647 /* Shared.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Shared.xcconfig; sourceTree = "<group>"; };
 		F7280E98435B3B94E406813A /* StatusSummaryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModel.swift; sourceTree = "<group>"; };
 		F7B4887EAAB65C8DBBE0314A /* ActiveCleanupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModelTests.swift; sourceTree = "<group>"; };
+		F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStorageProvider.swift; sourceTree = "<group>"; };
 		FFD8679864283C26574C3861 /* MetricsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -340,6 +342,7 @@
 				EDC3E242AE71B79619755C0D /* MemoryProvider.swift */,
 				4CC85A29241CC6F902A0531F /* MetricProvider.swift */,
 				A62CD05233387237992500A0 /* NetworkProvider.swift */,
+				F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */,
 				E49ECEEFF448A10DF483AD89 /* TemperatureProvider.swift */,
 				C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */,
 			);
@@ -693,6 +696,7 @@
 				CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */,
 				6D54144EB0A0E5918A23CFEF /* StatusSummaryModel.swift in Sources */,
 				16F46C34538525E3E05606BF /* SummaryFormatter.swift in Sources */,
+				0BFDE8B415E395427CB657F0 /* SystemStorageProvider.swift in Sources */,
 				D8142466738CAAAF7E09698E /* TemperatureProvider.swift in Sources */,
 				E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */,
 				34B193CBB778F3DBAEB8E354 /* TrashCleanupService.swift in Sources */,

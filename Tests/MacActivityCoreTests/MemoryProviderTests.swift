@@ -63,6 +63,45 @@ final class MemoryProviderTests: XCTestCase {
         )
     }
 
+    func testDiskProviderReadingUsesAppleVolumeCapacityValues() throws {
+        let reading = try XCTUnwrap(DiskProvider.makeReading(totalBytes: 1_000, availableBytes: 250))
+
+        XCTAssertEqual(reading, DiskReading(usedBytes: 750, totalBytes: 1_000))
+        XCTAssertEqual(reading.usagePercent, 75, accuracy: 0.001)
+    }
+
+    func testDiskProviderReadingRejectsInvalidVolumeCapacityValues() {
+        XCTAssertNil(DiskProvider.makeReading(totalBytes: 0, availableBytes: 0))
+        XCTAssertEqual(
+            DiskProvider.makeReading(totalBytes: 1_000, availableBytes: 1_500),
+            DiskReading(usedBytes: 0, totalBytes: 1_000)
+        )
+    }
+
+    func testSwapProviderReadingUsesAppleSysctlSwapUsageValues() throws {
+        var usage = xsw_usage()
+        usage.xsu_total = 4_096
+        usage.xsu_used = 1_024
+        usage.xsu_avail = 3_072
+
+        let reading = try XCTUnwrap(SwapProvider.makeReading(usage: usage))
+
+        XCTAssertEqual(reading, SwapReading(usedBytes: 1_024, totalBytes: 4_096))
+        XCTAssertEqual(reading.usagePercent, 25, accuracy: 0.001)
+    }
+
+    func testSwapProviderReadingReportsZeroWhenNoSwapIsAllocated() throws {
+        var usage = xsw_usage()
+        usage.xsu_total = 0
+        usage.xsu_used = 0
+        usage.xsu_avail = 0
+
+        let reading = try XCTUnwrap(SwapProvider.makeReading(usage: usage))
+
+        XCTAssertEqual(reading, SwapReading(usedBytes: 0, totalBytes: 0))
+        XCTAssertEqual(reading.usagePercent, 0, accuracy: 0.001)
+    }
+
     func testActiveAppMemoryRankingSortsDescendingAndUsesNameTieBreaker() {
         let entries = [
             ActiveAppMemoryEntry(

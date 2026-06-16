@@ -23,6 +23,8 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
         cadenceOverrides: [
             .cpu: 2,
             .gpu: 2,
+            .disk: 15,
+            .swap: 15,
             .memory: 5,
             .vram: 5,
             .network: 2,
@@ -35,6 +37,8 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
         cadenceOverrides: [
             .cpu: 5,
             .gpu: 5,
+            .disk: 30,
+            .swap: 30,
             .memory: 15,
             .vram: 15,
             .network: 5,
