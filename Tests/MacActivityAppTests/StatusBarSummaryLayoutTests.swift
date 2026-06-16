@@ -48,10 +48,18 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
     }
 
     func testFontsUseReadableStatusBarSizes() {
-        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .metric).pointSize, 10)
+        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .metric).pointSize, 7)
         XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .metric).pointSize, 6)
-        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .network).pointSize, 8)
-        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 8)
+        XCTAssertEqual(StatusBarSummaryLayout.primaryFont(for: .network).pointSize, 5)
+        XCTAssertEqual(StatusBarSummaryLayout.secondaryFont(for: .network).pointSize, 5)
+    }
+
+    func testStatusBarLabelsUseBoldWeightAndValuesUseHeavyWeight() {
+        XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.fallbackFont), 9)
+        XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.primaryFont(for: .metric)), 10)
+        XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.secondaryFont(for: .metric)), 9)
+        XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.primaryFont(for: .network)), 10)
+        XCTAssertEqual(NSFontManager.shared.weight(of: StatusBarSummaryLayout.secondaryFont(for: .network)), 10)
     }
 
     func testItemWidthIsStableForNetworkMetricAcrossDifferentValues() {

@@ -136,7 +136,7 @@ enum StatusBarSummaryLayout {
     static let statusBarHeight: CGFloat = 22
     static let minimumTitleLength: CGFloat = 44
     static var fallbackFont: NSFont {
-        .monospacedDigitSystemFont(ofSize: 11, weight: .semibold)
+        .monospacedDigitSystemFont(ofSize: 11, weight: .bold)
     }
 
     static func imagePresentation(
@@ -182,11 +182,11 @@ enum StatusBarSummaryLayout {
     }
 
     static func primaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 10, weight: .semibold)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 5 : 7, weight: .heavy)
     }
 
     static func secondaryFont(for style: StatusSummaryItemStyle) -> NSFont {
-        .monospacedDigitSystemFont(ofSize: style == .network ? 8 : 6, weight: .semibold)
+        .monospacedDigitSystemFont(ofSize: style == .network ? 5 : 6, weight: style == .network ? .heavy : .bold)
     }
 
     // Use representative max-width samples per metric so the status item width
