@@ -23,7 +23,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
         cadenceOverrides: [
             .cpu: 2,
             .gpu: 2,
-            .disk: 15,
+            .disk: 30,
             .swap: 15,
             .memory: 5,
             .vram: 5,
@@ -39,12 +39,12 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .gpu: 2,
             .disk: 60,
             .swap: 60,
-            .memory: 30,
-            .vram: 60,
+            .memory: 10,
+            .vram: 10,
             .network: 2,
-            .battery: 60,
-            .temperature: 60,
-            .fan: 60,
+            .battery: 10,
+            .temperature: 10,
+            .fan: 10,
         ]
     )
     public static let energySaver = MetricsSamplingProfile(
