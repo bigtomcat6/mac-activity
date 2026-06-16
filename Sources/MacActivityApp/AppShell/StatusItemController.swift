@@ -45,6 +45,13 @@ final class StatusItemController: NSObject {
             }
             .store(in: &cancellables)
 
+        summaryModel.$summaryItems
+            .dropFirst()
+            .sink { [weak self] items in
+                self?.renderImmediatelyIfStructureChanged(items: items)
+            }
+            .store(in: &cancellables)
+
         self.statusItem = statusItem
     }
 
@@ -85,10 +92,12 @@ final class StatusItemController: NSObject {
         items: [StatusSummaryItem],
         onto statusItem: NSStatusItem? = nil
     ) {
+        let structureKey = StatusBarSummaryStructureKey(items: items)
         let presentation = StatusBarSummaryLayout.imagePresentation(summaryText: summaryText, items: items)
         let nextSummary = RenderedStatusSummary(
             title: presentation.accessibilityTitle,
-            length: presentation.length
+            length: presentation.length,
+            structureKey: structureKey
         )
         guard currentSummary != nextSummary else {
             return
@@ -116,11 +125,41 @@ final class StatusItemController: NSObject {
 
         currentSummary = nextSummary
     }
+
+    private func renderImmediatelyIfStructureChanged(items: [StatusSummaryItem]) {
+        let structureKey = StatusBarSummaryStructureKey(items: items)
+        guard currentSummary?.structureKey != structureKey else {
+            return
+        }
+
+        render(summaryText: summaryModel.summaryText, items: items)
+    }
 }
 
 private struct RenderedStatusSummary: Equatable {
     var title: String
     var length: CGFloat
+    var structureKey: StatusBarSummaryStructureKey
+}
+
+struct StatusBarSummaryStructureKey: Equatable {
+    private var components: [Component]
+
+    init(items: [StatusSummaryItem]) {
+        components = items.map(Component.init(item:))
+    }
+
+    private struct Component: Equatable {
+        var kind: MetricKind
+        var secondaryText: String
+        var style: StatusSummaryItemStyle
+
+        init(item: StatusSummaryItem) {
+            self.kind = item.kind
+            self.secondaryText = item.secondaryText
+            self.style = item.style
+        }
+    }
 }
 
 struct StatusBarSummaryPresentation {
