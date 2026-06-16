@@ -20,6 +20,23 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: english), "Battery")
         XCTAssertEqual(AppLocalization.temperatureSourceTitle(for: .battery, bundle: simplifiedChinese), "电池")
 
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesHardwareBatteryPercentage, bundle: english),
+            "Show hardware battery percentage"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesHardwareBatteryPercentage, bundle: simplifiedChinese),
+            "显示硬件电池百分比"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesHardwareBatteryPercentageHelp, bundle: english),
+            "Uses raw AppleSmartBattery capacity when available; falls back to the system percentage."
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesHardwareBatteryPercentageHelp, bundle: simplifiedChinese),
+            "可用时使用 AppleSmartBattery 的原始容量；不可用时回退为系统百分比。"
+        )
+
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: english), "Cleanup scope")
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: simplifiedChinese), "清理范围")
         XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: english), "Caches")

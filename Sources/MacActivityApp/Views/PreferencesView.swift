@@ -73,6 +73,20 @@ struct PreferencesView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Toggle(
+                        AppLocalization.string(.preferencesHardwareBatteryPercentage),
+                        isOn: Binding(
+                            get: { preferencesController.state.showsHardwareBatteryPercentage },
+                            set: { preferencesController.setShowsHardwareBatteryPercentage($0) }
+                        )
+                    )
+
+                    Text(AppLocalization.string(.preferencesHardwareBatteryPercentageHelp))
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
                     Text(AppLocalization.string(.preferencesDiskCleanupScope))
                         .font(.headline)
 
