@@ -41,6 +41,8 @@
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
+"preferences.hardwareBatteryPercentage" = "Show hardware battery percentage";
+"preferences.hardwareBatteryPercentageHelp" = "Uses raw AppleSmartBattery capacity when available; falls back to the system percentage.";
 "preferences.diskCleanupScope" = "Cleanup scope";
 "preferences.diskCleanupHelp" = "Controls what Actives Disk Cleanup scans and deletes.";
 "preferences.menuBarMetrics" = "Menu bar metrics";

@@ -99,22 +99,29 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     }
 }
 
+private struct DashboardDisplayPreferences: Equatable {
+    var temperatureSource: TemperatureSource
+    var showsHardwareBatteryPercentage: Bool
+}
+
 @MainActor
 public final class DashboardModel: ObservableObject {
     @Published public private(set) var metrics: [DashboardMetric]
     private let store: MetricsStore
-    private let metricsBuilder: @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource) -> [DashboardMetric]
+    private let metricsBuilder: @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource, Bool) -> [DashboardMetric]
     private var subscription: AnyCancellable?
     private var temperatureSourceSubscription: AnyCancellable?
     private var refreshGeneration = 0
     private var isActive: Bool
     private var preferredTemperatureSource: TemperatureSource
+    private var showsHardwareBatteryPercentage: Bool
 
     public convenience init(store: MetricsStore, isActive: Bool = true) {
         self.init(
             store: store,
             isActive: isActive,
             preferredTemperatureSource: .smc,
+            showsHardwareBatteryPercentage: false,
             metricsBuilder: DashboardModel.buildMetrics
         )
     }
@@ -128,13 +135,19 @@ public final class DashboardModel: ObservableObject {
             store: store,
             isActive: isActive,
             preferredTemperatureSource: preferences.state.temperatureSource,
+            showsHardwareBatteryPercentage: preferences.state.showsHardwareBatteryPercentage,
             metricsBuilder: DashboardModel.buildMetrics
         )
         temperatureSourceSubscription = preferences.$state
-            .map(\.temperatureSource)
+            .map { state in
+                DashboardDisplayPreferences(
+                    temperatureSource: state.temperatureSource,
+                    showsHardwareBatteryPercentage: state.showsHardwareBatteryPercentage
+                )
+            }
             .removeDuplicates()
-            .sink { [weak self] source in
-                self?.setPreferredTemperatureSource(source)
+            .sink { [weak self] preferences in
+                self?.setDisplayPreferences(preferences)
             }
     }
 
@@ -142,13 +155,15 @@ public final class DashboardModel: ObservableObject {
         store: MetricsStore,
         isActive: Bool = true,
         preferredTemperatureSource: TemperatureSource = .smc,
-        metricsBuilder: @escaping @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource) -> [DashboardMetric]
+        showsHardwareBatteryPercentage: Bool = false,
+        metricsBuilder: @escaping @Sendable (MetricsSnapshot, MetricsHistory, TemperatureSource, Bool) -> [DashboardMetric]
     ) {
         self.store = store
         self.metricsBuilder = metricsBuilder
         self.isActive = isActive
         self.preferredTemperatureSource = preferredTemperatureSource
-        self.metrics = isActive ? metricsBuilder(store.snapshot, store.history, preferredTemperatureSource) : []
+        self.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
+        self.metrics = isActive ? metricsBuilder(store.snapshot, store.history, preferredTemperatureSource, showsHardwareBatteryPercentage) : []
         if isActive { startSubscription() }
     }
 
@@ -165,9 +180,13 @@ public final class DashboardModel: ObservableObject {
         }
     }
 
-    private func setPreferredTemperatureSource(_ source: TemperatureSource) {
-        guard preferredTemperatureSource != source else { return }
-        preferredTemperatureSource = source
+    private func setDisplayPreferences(_ displayPreferences: DashboardDisplayPreferences) {
+        let changed = preferredTemperatureSource != displayPreferences.temperatureSource ||
+            showsHardwareBatteryPercentage != displayPreferences.showsHardwareBatteryPercentage
+        guard changed else { return }
+
+        preferredTemperatureSource = displayPreferences.temperatureSource
+        showsHardwareBatteryPercentage = displayPreferences.showsHardwareBatteryPercentage
         if isActive {
             refreshMetricsAsync()
         }
@@ -176,7 +195,8 @@ public final class DashboardModel: ObservableObject {
     nonisolated private static func buildMetrics(
         from snapshot: MetricsSnapshot,
         history: MetricsHistory,
-        preferredTemperatureSource: TemperatureSource
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
     ) -> [DashboardMetric] {
         var items: [DashboardMetric] = []
 
@@ -228,8 +248,21 @@ public final class DashboardModel: ObservableObject {
         }
 
         if let battery = snapshot.battery {
+            let percentage = battery.displayPercentage(
+                showsHardwarePercentage: showsHardwareBatteryPercentage
+            )
             items.append(
-                DashboardMetric(kind: .battery, title: MetricKind.battery.title, value: "\(Int(battery.percentage.rounded()))%", detail: battery.isCharging ? "Charging" : "On Battery", style: .chart, trend: trend(from: history, kind: .battery, scale: .fixed(lowerBound: 0, upperBound: 100)))
+                DashboardMetric(
+                    kind: .battery,
+                    title: MetricKind.battery.title,
+                    value: "\(Int(percentage.rounded()))%",
+                    detail: battery.isCharging ? "Charging" : "On Battery",
+                    style: .chart,
+                    trend: batteryTrend(
+                        from: history,
+                        showsHardwareBatteryPercentage: showsHardwareBatteryPercentage
+                    )
+                )
             )
         }
 
@@ -263,6 +296,23 @@ public final class DashboardModel: ObservableObject {
 
     nonisolated private static func formatTemperature(_ value: Double) -> String { String(format: "%.1f C", value) }
 
+    nonisolated private static func batteryTrend(
+        from history: MetricsHistory,
+        showsHardwareBatteryPercentage: Bool
+    ) -> DashboardTrend {
+        DashboardTrend(
+            samples: history.samples(for: .battery).map { sample in
+                DashboardTrendSample(
+                    timestamp: sample.timestamp,
+                    primaryValue: showsHardwareBatteryPercentage
+                        ? (sample.secondaryValue ?? sample.primaryValue)
+                        : sample.primaryValue
+                )
+            },
+            scale: .fixed(lowerBound: 0, upperBound: 100)
+        )
+    }
+
     nonisolated private static func trend(
         from history: MetricsHistory,
         kind: MetricKind,
@@ -271,7 +321,11 @@ public final class DashboardModel: ObservableObject {
     ) -> DashboardTrend {
         DashboardTrend(
             samples: history.samples(for: kind, source: source).map {
-                DashboardTrendSample(timestamp: $0.timestamp, primaryValue: $0.primaryValue, secondaryValue: $0.secondaryValue)
+                DashboardTrendSample(
+                    timestamp: $0.timestamp,
+                    primaryValue: $0.primaryValue,
+                    secondaryValue: kind == .network ? $0.secondaryValue : nil
+                )
             },
             scale: scale
         )
@@ -303,10 +357,11 @@ public final class DashboardModel: ObservableObject {
     private func refreshMetricsAsync(snapshot: MetricsSnapshot, history: MetricsHistory) {
         let metricsBuilder = self.metricsBuilder
         let preferredTemperatureSource = self.preferredTemperatureSource
+        let showsHardwareBatteryPercentage = self.showsHardwareBatteryPercentage
         refreshGeneration += 1
         let refreshGeneration = refreshGeneration
-        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder, preferredTemperatureSource] in
-            let metrics = metricsBuilder(snapshot, history, preferredTemperatureSource)
+        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder, preferredTemperatureSource, showsHardwareBatteryPercentage] in
+            let metrics = metricsBuilder(snapshot, history, preferredTemperatureSource, showsHardwareBatteryPercentage)
             DispatchQueue.main.async { [weak self] in
                 guard let self, self.isActive, self.refreshGeneration == refreshGeneration, self.metrics != metrics else { return }
                 self.metrics = metrics

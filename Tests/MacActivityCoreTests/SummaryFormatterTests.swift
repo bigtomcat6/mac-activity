@@ -70,6 +70,65 @@ final class SummaryFormatterTests: XCTestCase {
         )
     }
 
+    func testFormatterUsesHardwareBatteryPercentageWhenRequested() {
+        let formatter = SummaryFormatter()
+        let snapshot = MetricsSnapshot(
+            battery: BatteryReading(
+                percentage: 79,
+                isCharging: false,
+                hardwarePercentage: 74.51
+            )
+        )
+
+        XCTAssertEqual(
+            formatter.render(
+                snapshot: snapshot,
+                selectedMetrics: [.battery],
+                preferredTemperatureSource: .smc,
+                showsHardwareBatteryPercentage: true
+            ),
+            "BAT 75%"
+        )
+
+        XCTAssertEqual(
+            formatter.renderStatusItems(
+                snapshot: snapshot,
+                selectedMetrics: [.battery],
+                preferredTemperatureSource: .smc,
+                showsHardwareBatteryPercentage: true
+            ),
+            [
+                StatusSummaryItem(
+                    kind: .battery,
+                    primaryText: "75%",
+                    secondaryText: "BAT",
+                    style: .metric
+                ),
+            ]
+        )
+    }
+
+    func testFormatterUsesSystemBatteryPercentageWhenHardwareDisplayIsDisabled() {
+        let formatter = SummaryFormatter()
+        let snapshot = MetricsSnapshot(
+            battery: BatteryReading(
+                percentage: 79,
+                isCharging: false,
+                hardwarePercentage: 74.51
+            )
+        )
+
+        XCTAssertEqual(
+            formatter.render(
+                snapshot: snapshot,
+                selectedMetrics: [.battery],
+                preferredTemperatureSource: .smc,
+                showsHardwareBatteryPercentage: false
+            ),
+            "BAT 79%"
+        )
+    }
+
     func testRenderUsesPreferredTemperatureSourceFromDualReadings() {
         let snapshot = MetricsSnapshot(
             timestamp: Date(timeIntervalSince1970: 602),

@@ -77,7 +77,7 @@ public struct MetricHistorySample: Equatable, Sendable {
             self.secondaryValue = max(0, reading.uploadBytesPerSecond)
         case .battery(let reading):
             self.primaryValue = reading.percentage
-            self.secondaryValue = nil
+            self.secondaryValue = reading.hardwarePercentage
         case .temperature(let reading):
             self.primaryValue = reading.celsius
             self.secondaryValue = nil

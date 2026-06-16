@@ -61,19 +61,22 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var temperatureSource: TemperatureSource
     public var preferredLanguageIdentifier: String?
     public var diskCleanupCategories: [DiskCleanupCategoryKind]
+    public var showsHardwareBatteryPercentage: Bool
 
     public init(
         launchAtLoginEnabled: Bool,
         selectedSummaryMetrics: [MetricKind],
         temperatureSource: TemperatureSource = .smc,
         preferredLanguageIdentifier: String? = nil,
-        diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories
+        diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories,
+        showsHardwareBatteryPercentage: Bool = false
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
         self.temperatureSource = temperatureSource
         self.preferredLanguageIdentifier = preferredLanguageIdentifier
         self.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: Set(diskCleanupCategories))
+        self.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -82,6 +85,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case temperatureSource
         case preferredLanguageIdentifier
         case diskCleanupCategories
+        case showsHardwareBatteryPercentage
         case diskCleanupScope
     }
 
@@ -98,6 +102,10 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         } else {
             self.diskCleanupCategories = Self.defaultDiskCleanupCategories
         }
+        self.showsHardwareBatteryPercentage = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsHardwareBatteryPercentage
+        ) ?? false
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -107,6 +115,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(temperatureSource, forKey: .temperatureSource)
         try container.encodeIfPresent(preferredLanguageIdentifier, forKey: .preferredLanguageIdentifier)
         try container.encode(diskCleanupCategories, forKey: .diskCleanupCategories)
+        try container.encode(showsHardwareBatteryPercentage, forKey: .showsHardwareBatteryPercentage)
     }
 
     public static let diskCleanupCategoryOrder: [DiskCleanupCategoryKind] = [.userCaches, .trash, .userLogs]
@@ -121,6 +130,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         selectedSummaryMetrics: [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network],
         temperatureSource: .smc,
         preferredLanguageIdentifier: nil,
-        diskCleanupCategories: defaultDiskCleanupCategories
+        diskCleanupCategories: defaultDiskCleanupCategories,
+        showsHardwareBatteryPercentage: false
     )
 }

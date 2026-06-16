@@ -43,6 +43,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.temperatureSource, .battery)
     }
 
+    func testHardwareBatteryPercentagePreferencePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setShowsHardwareBatteryPercentage(true)
+
+        XCTAssertEqual(controller.state.showsHardwareBatteryPercentage, true)
+        XCTAssertEqual(store.savedValues.last?.showsHardwareBatteryPercentage, true)
+    }
+
     func testPreferredLanguageIdentifierPersistsToPreferencesState() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

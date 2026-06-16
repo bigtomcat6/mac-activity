@@ -45,6 +45,8 @@ enum AppLocalization {
         case preferencesLanguageHelp = "preferences.languageHelp"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
+        case preferencesHardwareBatteryPercentage = "preferences.hardwareBatteryPercentage"
+        case preferencesHardwareBatteryPercentageHelp = "preferences.hardwareBatteryPercentageHelp"
         case preferencesDiskCleanupScope = "preferences.diskCleanupScope"
         case preferencesDiskCleanupHelp = "preferences.diskCleanupHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"

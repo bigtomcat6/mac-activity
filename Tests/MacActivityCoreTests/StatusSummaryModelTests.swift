@@ -54,6 +54,86 @@ final class StatusSummaryModelTests: XCTestCase {
         XCTAssertEqual(emitted, ["CPU 42%"])
         _ = cancellable
     }
+
+    func testModelUpdatesBatterySummaryWhenHardwareBatteryPreferenceChanges() {
+        let store = MetricsStore(
+            snapshot: MetricsSnapshot(
+                timestamp: Date(timeIntervalSince1970: 100),
+                battery: BatteryReading(
+                    percentage: 79,
+                    isCharging: false,
+                    hardwarePercentage: 74.51
+                )
+            )
+        )
+        let preferences = PreferencesController(
+            store: InMemoryPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.battery],
+                    showsHardwareBatteryPercentage: false
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = StatusSummaryModel(store: store, preferences: preferences)
+
+        XCTAssertEqual(model.summaryText, "BAT 79%")
+
+        preferences.setShowsHardwareBatteryPercentage(true)
+
+        XCTAssertEqual(model.summaryText, "BAT 75%")
+        XCTAssertEqual(model.summaryItems.first?.primaryText, "75%")
+    }
+
+    func testModelAcceptsLegacySummaryFormatterWhenHardwareBatteryPreferenceEnabled() {
+        let store = MetricsStore(
+            snapshot: MetricsSnapshot(
+                timestamp: Date(timeIntervalSince1970: 100),
+                battery: BatteryReading(
+                    percentage: 79,
+                    isCharging: false,
+                    hardwarePercentage: 74.51
+                )
+            )
+        )
+        let preferences = PreferencesController(
+            store: InMemoryPreferencesStore(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: [.battery],
+                    showsHardwareBatteryPercentage: true
+                )
+            ),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let model = StatusSummaryModel(
+            store: store,
+            preferences: preferences,
+            formatter: LegacySummaryFormatter()
+        )
+
+        XCTAssertEqual(model.summaryText, "legacy")
+        XCTAssertEqual(model.summaryItems, [])
+    }
+}
+
+private struct LegacySummaryFormatter: SummaryFormatting {
+    func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> String {
+        "legacy"
+    }
+
+    func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem] {
+        []
+    }
 }
 
 private final class InMemoryPreferencesStore: PreferencesStoring, @unchecked Sendable {

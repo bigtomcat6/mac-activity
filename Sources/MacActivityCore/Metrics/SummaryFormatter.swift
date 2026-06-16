@@ -13,6 +13,22 @@ public protocol SummaryFormatting: Sendable {
     ) -> [StatusSummaryItem]
 }
 
+public protocol HardwareBatterySummaryFormatting: SummaryFormatting {
+    func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
+    ) -> String
+
+    func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
+    ) -> [StatusSummaryItem]
+}
+
 public extension SummaryFormatting {
     func render(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> String {
         render(
@@ -22,11 +38,55 @@ public extension SummaryFormatting {
         )
     }
 
+    func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
+    ) -> String {
+        if let formatter = self as? any HardwareBatterySummaryFormatting {
+            return formatter.render(
+                snapshot: snapshot,
+                selectedMetrics: selectedMetrics,
+                preferredTemperatureSource: preferredTemperatureSource,
+                showsHardwareBatteryPercentage: showsHardwareBatteryPercentage
+            )
+        }
+
+        return render(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: preferredTemperatureSource
+        )
+    }
+
     func renderStatusItems(snapshot: MetricsSnapshot, selectedMetrics: [MetricKind]) -> [StatusSummaryItem] {
         renderStatusItems(
             snapshot: snapshot,
             selectedMetrics: selectedMetrics,
             preferredTemperatureSource: .smc
+        )
+    }
+
+    func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
+    ) -> [StatusSummaryItem] {
+        if let formatter = self as? any HardwareBatterySummaryFormatting {
+            return formatter.renderStatusItems(
+                snapshot: snapshot,
+                selectedMetrics: selectedMetrics,
+                preferredTemperatureSource: preferredTemperatureSource,
+                showsHardwareBatteryPercentage: showsHardwareBatteryPercentage
+            )
+        }
+
+        return renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: preferredTemperatureSource
         )
     }
 }
@@ -56,13 +116,27 @@ public struct StatusSummaryItem: Equatable, Identifiable, Sendable {
     }
 }
 
-public struct SummaryFormatter: SummaryFormatting {
+public struct SummaryFormatter: HardwareBatterySummaryFormatting {
     public init() {}
 
     public func render(
         snapshot: MetricsSnapshot,
         selectedMetrics: [MetricKind],
         preferredTemperatureSource: TemperatureSource
+    ) -> String {
+        render(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: preferredTemperatureSource,
+            showsHardwareBatteryPercentage: false
+        )
+    }
+
+    public func render(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
     ) -> String {
         let selectedSet = Set(selectedMetrics)
         let rendered = MetricKind.summaryOrder.compactMap { kind -> String? in
@@ -112,7 +186,10 @@ public struct SummaryFormatter: SummaryFormatting {
                 guard let battery = snapshot.battery else {
                     return nil
                 }
-                return "BAT \(Int(battery.percentage.rounded()))%"
+                let percentage = battery.displayPercentage(
+                    showsHardwarePercentage: showsHardwareBatteryPercentage
+                )
+                return "BAT \(Int(percentage.rounded()))%"
             case .temperature:
                 guard let temperature = snapshot.temperature(for: preferredTemperatureSource) else {
                     return nil
@@ -133,6 +210,20 @@ public struct SummaryFormatter: SummaryFormatting {
         snapshot: MetricsSnapshot,
         selectedMetrics: [MetricKind],
         preferredTemperatureSource: TemperatureSource
+    ) -> [StatusSummaryItem] {
+        renderStatusItems(
+            snapshot: snapshot,
+            selectedMetrics: selectedMetrics,
+            preferredTemperatureSource: preferredTemperatureSource,
+            showsHardwareBatteryPercentage: false
+        )
+    }
+
+    public func renderStatusItems(
+        snapshot: MetricsSnapshot,
+        selectedMetrics: [MetricKind],
+        preferredTemperatureSource: TemperatureSource,
+        showsHardwareBatteryPercentage: Bool
     ) -> [StatusSummaryItem] {
         let selectedSet = Set(selectedMetrics)
         return Self.statusDisplayOrder.compactMap { kind -> StatusSummaryItem? in
@@ -194,9 +285,12 @@ public struct SummaryFormatter: SummaryFormatting {
                 guard let battery = snapshot.battery else {
                     return nil
                 }
+                let percentage = battery.displayPercentage(
+                    showsHardwarePercentage: showsHardwareBatteryPercentage
+                )
                 return StatusSummaryItem(
                     kind: .battery,
-                    primaryText: "\(Int(battery.percentage.rounded()))%",
+                    primaryText: "\(Int(percentage.rounded()))%",
                     secondaryText: "BAT",
                     style: .metric
                 )
