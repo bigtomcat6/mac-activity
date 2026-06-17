@@ -1,0 +1,11 @@
+included:
+  - Sources
+  - Tests
+  - Tools
+
+excluded:
+  - .build
+  - DerivedData
+
+strict: false
+reporter: github-actions-logging

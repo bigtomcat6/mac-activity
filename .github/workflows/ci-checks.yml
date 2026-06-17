@@ -1,0 +1,125 @@
+name: CI Checks
+
+on:
+  workflow_call:
+    inputs:
+      suite:
+        description: "Checks to run: full, swiftpm, or xcode."
+        required: false
+        type: string
+        default: full
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: Checks to run.
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - swiftpm
+          - xcode
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: SwiftPM + Xcode Tests
+    runs-on: macos-26
+    timeout-minutes: 20
+
+    steps:
+      - name: Validate suite input
+        run: |
+          case "${{ inputs.suite }}" in
+            full|swiftpm|xcode)
+              ;;
+            *)
+              echo "::error::suite must be one of: full, swiftpm, xcode"
+              exit 1
+              ;;
+          esac
+
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Run SwiftLint (advisory)
+        if: ${{ inputs.suite == 'full' }}
+        continue-on-error: true
+        run: |
+          if ! command -v swiftlint >/dev/null; then
+            brew install swiftlint
+          fi
+          swiftlint lint --config .swiftlint.yml
+
+      - name: Run SwiftPM tests with coverage
+        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
+        run: |
+          swift test \
+            --enable-code-coverage \
+            --cache-path /tmp/swiftpm-cache \
+            --scratch-path /tmp/swiftpm-build
+
+      - name: Export SwiftPM coverage
+        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
+        run: |
+          mkdir -p coverage
+          coverage_path="$(
+            swift test \
+              --show-codecov-path \
+              --cache-path /tmp/swiftpm-cache \
+              --scratch-path /tmp/swiftpm-build |
+              tail -n 1
+          )"
+          cp "${coverage_path}" coverage/swiftpm-codecov.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path("coverage/swiftpm-codecov.json").read_text())
+          lines = data.get("data", [{}])[0].get("totals", {}).get("lines", {})
+          percent = lines.get("percent")
+          if isinstance(percent, (int, float)):
+              print(f"Line coverage: {percent:.2f}%")
+          else:
+              print("SwiftPM coverage exported.")
+          PY
+
+      - name: Upload SwiftPM coverage
+        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: swiftpm-coverage
+          path: coverage/swiftpm-codecov.json
+          if-no-files-found: error
+
+      - name: Verify generated Xcode project is current
+        if: ${{ inputs.suite == 'full' || inputs.suite == 'xcode' }}
+        run: |
+          if ! command -v xcodegen >/dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen generate --quiet
+          if ! git diff --exit-code -- MacActivity.xcodeproj; then
+            echo "::error::MacActivity.xcodeproj is out of sync with project.yml. Run xcodegen generate."
+            exit 1
+          fi
+
+      - name: Run Xcode tests
+        if: ${{ inputs.suite == 'full' || inputs.suite == 'xcode' }}
+        run: |
+          xcodebuild test \
+            -project MacActivity.xcodeproj \
+            -scheme MacActivity \
+            -destination "platform=macOS" \
+            -derivedDataPath /tmp/DerivedData \
+            -resultBundlePath /tmp/xcode-test-results \
+            CODE_SIGN_IDENTITY="" \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO
