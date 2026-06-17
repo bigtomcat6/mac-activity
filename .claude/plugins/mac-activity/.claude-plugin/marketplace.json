@@ -1,0 +1,12 @@
+{
+  "name": "mac-activity",
+  "owner": {
+    "name": "MacActivity"
+  },
+  "plugins": [
+    {
+      "name": "mac-activity",
+      "source": "./"
+    }
+  ]
+}

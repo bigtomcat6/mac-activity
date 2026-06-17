@@ -1,6 +1,6 @@
 ---
-name: mac-activity:create-pr
-description: Create a MacActivity pull request with the repository title convention, PR template, and local verification notes.
+name: create-pr
+description: Use when creating or drafting a MacActivity pull request
 ---
 
 # Create Pull Request

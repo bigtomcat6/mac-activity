@@ -1,6 +1,6 @@
 ---
-name: mac-activity:pr-readiness-check
-description: Check whether a MacActivity pull request is ready for human review.
+name: pr-readiness-check
+description: Use when checking whether a MacActivity pull request is ready for human review
 ---
 
 # PR Readiness Check
