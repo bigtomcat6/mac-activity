@@ -44,11 +44,6 @@ on:
         required: true
         type: boolean
         default: false
-      commit_version_change:
-        description: Commit the Shared.xcconfig version change before tagging.
-        required: true
-        type: boolean
-        default: false
 
 permissions:
   contents: write
@@ -106,23 +101,6 @@ jobs:
             --version "${{ inputs.version }}" \
             --build "${{ steps.build.outputs.build }}" \
             --xcconfig Configuration/Shared.xcconfig
-
-      - name: Commit version change
-        if: ${{ inputs.commit_version_change }}
-        run: |
-          if [[ "${{ github.ref_type }}" != "branch" ]]; then
-            echo "::error::commit_version_change requires running the workflow from a branch ref"
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add Configuration/Shared.xcconfig
-          if git diff --cached --quiet; then
-            echo "Configuration/Shared.xcconfig already has the requested version."
-            exit 0
-          fi
-          git commit -m "chore(release): Set ${{ steps.release.outputs.tag }}"
-          git push origin "HEAD:${{ github.ref_name }}"
 
       - name: Resolve release target commit
         id: target

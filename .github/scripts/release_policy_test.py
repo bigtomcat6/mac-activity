@@ -30,6 +30,13 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("prepare_release_metadata.py"),
         )
 
+    def test_release_workflow_never_pushes_version_commits(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertNotIn("commit_version_change", workflow)
+        self.assertNotIn("Commit version change", workflow)
+        self.assertNotIn("git push origin", workflow)
+
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
             REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md"
@@ -41,6 +48,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Do not create a GitHub Release", skill)
         self.assertIn("Stop and ask", skill)
         self.assertIn("Phase 2: Draft GitHub Release", skill)
+        self.assertNotIn("commit_version_change", skill)
 
 
 if __name__ == "__main__":
