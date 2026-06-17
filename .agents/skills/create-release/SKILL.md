@@ -14,8 +14,7 @@ result, then ask before creating a draft GitHub Release. Never publish directly
 from Actions.
 
 The release workflow never commits or pushes source version changes. It injects
-the requested version into the runner workspace before packaging. Any committed
-source version change must go through a normal PR before triggering release.
+the requested version into the runner workspace before packaging. The checked-in `MARKETING_VERSION` stays `0.1.0` as the development placeholder. Release versions are injected only in the runner workspace and verified against the built app bundle, artifact name, tag, and GitHub Release metadata.
 
 ## Version Rule
 
@@ -109,7 +108,3 @@ gh workflow run release.yml \
 `signing=local` creates an ad-hoc signed app suitable for workflow artifacts and
 internal smoke checks. Use `signing=project` only after the repository has the
 required signing identity and runner secrets for distribution signing.
-
-For final releases that need the source version committed, make a normal PR for
-`Configuration/Shared.xcconfig` first, merge it, then run the two-phase flow
-from `main`. Do not use release automation to write back to `main`.

@@ -60,6 +60,16 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Phase 2: Draft GitHub Release", skill)
         self.assertNotIn("commit_version_change", skill)
 
+    def test_create_release_skill_keeps_source_version_as_development_placeholder(self):
+        skill = (
+            REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md"
+        ).read_text()
+
+        self.assertIn("checked-in `MARKETING_VERSION` stays `0.1.0`", skill)
+        self.assertIn("Release versions are injected only in the runner workspace", skill)
+        self.assertNotIn("source version committed", skill)
+        self.assertNotIn("make a normal PR for\n`Configuration/Shared.xcconfig`", skill)
+
 
 if __name__ == "__main__":
     unittest.main()
