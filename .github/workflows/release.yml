@@ -40,7 +40,7 @@ on:
           - local
           - project
       create_github_release:
-        description: Create a GitHub Release and upload the zip asset.
+        description: Create a draft GitHub Release and upload the zip asset.
         required: true
         type: boolean
         default: false
@@ -49,11 +49,6 @@ on:
         required: true
         type: boolean
         default: false
-      draft:
-        description: Create the GitHub Release as a draft.
-        required: true
-        type: boolean
-        default: true
 
 permissions:
   contents: write
@@ -92,6 +87,16 @@ jobs:
             build="${GITHUB_RUN_NUMBER}"
           fi
           echo "build=${build}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check release conflicts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/plan_release.py \
+            --channel "${{ inputs.channel }}" \
+            --version "${{ inputs.version }}" \
+            --build "${{ steps.build.outputs.build }}" \
+            --remote
 
       - name: Prepare release metadata
         id: release
@@ -184,7 +189,6 @@ jobs:
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
           LATEST: ${{ steps.release.outputs.latest }}
-          DRAFT: ${{ inputs.draft }}
         run: |
           args=(
             "${TAG}"
@@ -194,11 +198,9 @@ jobs:
             --target "${TARGET_SHA}"
             --generate-notes
             --latest="${LATEST}"
+            --draft
           )
           if [[ "${PRERELEASE}" == "true" ]]; then
             args+=(--prerelease)
-          fi
-          if [[ "${DRAFT}" == "true" ]]; then
-            args+=(--draft)
           fi
           gh release create "${args[@]}"
