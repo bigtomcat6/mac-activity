@@ -24,23 +24,13 @@ permissions:
   contents: read
 
 jobs:
-  test:
-    name: SwiftPM + Xcode Tests
+  swiftpm-tests:
+    name: SwiftPM Tests
     runs-on: macos-26
+    if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
     timeout-minutes: 20
 
     steps:
-      - name: Validate suite input
-        run: |
-          case "${{ inputs.suite }}" in
-            full|swiftpm|xcode)
-              ;;
-            *)
-              echo "::error::suite must be one of: full, swiftpm, xcode"
-              exit 1
-              ;;
-          esac
-
       - name: Checkout
         uses: actions/checkout@v6
 
@@ -52,17 +42,7 @@ jobs:
           swift --version
           xcodebuild -version
 
-      - name: Run SwiftLint (advisory)
-        if: ${{ inputs.suite == 'full' }}
-        continue-on-error: true
-        run: |
-          if ! command -v swiftlint >/dev/null; then
-            brew install swiftlint
-          fi
-          swiftlint lint --config .swiftlint.yml
-
       - name: Run SwiftPM tests with coverage
-        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
         run: |
           swift test \
             --enable-code-coverage \
@@ -70,7 +50,6 @@ jobs:
             --scratch-path /tmp/swiftpm-build
 
       - name: Export SwiftPM coverage
-        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
         run: |
           mkdir -p coverage
           coverage_path="$(
@@ -81,29 +60,33 @@ jobs:
               tail -n 1
           )"
           cp "${coverage_path}" coverage/swiftpm-codecov.json
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-
-          data = json.loads(Path("coverage/swiftpm-codecov.json").read_text())
-          lines = data.get("data", [{}])[0].get("totals", {}).get("lines", {})
-          percent = lines.get("percent")
-          if isinstance(percent, (int, float)):
-              print(f"Line coverage: {percent:.2f}%")
-          else:
-              print("SwiftPM coverage exported.")
-          PY
 
       - name: Upload SwiftPM coverage
-        if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
         uses: actions/upload-artifact@v6
         with:
           name: swiftpm-coverage
           path: coverage/swiftpm-codecov.json
           if-no-files-found: error
 
+  xcode-tests:
+    name: Xcode Tests
+    runs-on: macos-26
+    if: ${{ inputs.suite == 'full' || inputs.suite == 'xcode' }}
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check development version
+        run: python3 .github/scripts/check_development_version.py
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
       - name: Verify generated Xcode project is current
-        if: ${{ inputs.suite == 'full' || inputs.suite == 'xcode' }}
         run: |
           if ! command -v xcodegen >/dev/null; then
             brew install xcodegen
@@ -115,7 +98,6 @@ jobs:
           fi
 
       - name: Run Xcode tests
-        if: ${{ inputs.suite == 'full' || inputs.suite == 'xcode' }}
         run: |
           xcodebuild test \
             -project MacActivity.xcodeproj \
@@ -126,3 +108,188 @@ jobs:
             CODE_SIGN_IDENTITY="" \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO
+
+  tests:
+    runs-on: ubuntu-latest
+    needs: [swiftpm-tests, xcode-tests]
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Verify test results
+        run: |
+          suite="${{ inputs.suite }}"
+          swiftpm_result="${{ needs.swiftpm-tests.result }}"
+          xcode_result="${{ needs.xcode-tests.result }}"
+          failed=0
+
+          case "${suite}" in
+            full|swiftpm|xcode)
+              ;;
+            *)
+              echo "::error::suite must be one of: full, swiftpm, xcode"
+              exit 1
+              ;;
+          esac
+
+          if [[ "${suite}" == "full" || "${suite}" == "swiftpm" ]]; then
+            if [[ "${swiftpm_result}" != "success" ]]; then
+              echo "::error::SwiftPM tests finished with result '${swiftpm_result}'."
+              failed=1
+            fi
+          fi
+
+          if [[ "${suite}" == "full" || "${suite}" == "xcode" ]]; then
+            if [[ "${xcode_result}" != "success" ]]; then
+              echo "::error::Xcode tests finished with result '${xcode_result}'."
+              failed=1
+            fi
+          fi
+
+          exit "${failed}"
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    needs: [tests, swiftpm-tests]
+    if: ${{ always() && needs.tests.result == 'success' && (inputs.suite == 'full' || inputs.suite == 'swiftpm') }}
+    timeout-minutes: 5
+    outputs:
+      line_coverage_percent: ${{ steps.coverage.outputs.line_coverage_percent }}
+      status: ${{ steps.coverage.outputs.status }}
+
+    steps:
+      - name: Download SwiftPM coverage
+        continue-on-error: true
+        uses: actions/download-artifact@v6
+        with:
+          name: swiftpm-coverage
+          path: coverage
+
+      - name: Summarize SwiftPM coverage
+        id: coverage
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          coverage_path = Path("coverage/swiftpm-codecov.json")
+          status = "unavailable"
+          percent_text = ""
+
+          try:
+              data = json.loads(coverage_path.read_text(encoding="utf-8"))
+              lines = data.get("data", [{}])[0].get("totals", {}).get("lines", {})
+              percent = lines.get("percent")
+              if isinstance(percent, (int, float)):
+                  percent_text = f"{percent:.2f}"
+                  status = "reported"
+                  print(f"Line coverage: {percent_text}%")
+              else:
+                  print("::warning::SwiftPM coverage JSON did not include line coverage percent.")
+          except Exception as error:
+              print(f"::warning::Unable to summarize SwiftPM coverage: {error}")
+
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"line_coverage_percent={percent_text}\n")
+              output.write(f"status={status}\n")
+          PY
+
+  lint:
+    name: Lint
+    runs-on: macos-26
+    needs: [tests]
+    if: ${{ always() && needs.tests.result == 'success' && inputs.suite == 'full' }}
+    timeout-minutes: 10
+    outputs:
+      exit_code: ${{ steps.swiftlint.outputs.exit_code }}
+      status: ${{ steps.swiftlint.outputs.status }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Run SwiftLint advisory check
+        id: swiftlint
+        run: |
+          if ! command -v swiftlint >/dev/null; then
+            brew install swiftlint
+          fi
+
+          set +e
+          swiftlint lint --config .swiftlint.yml
+          exit_code="$?"
+          set -e
+
+          echo "exit_code=${exit_code}" >> "${GITHUB_OUTPUT}"
+          if [[ "${exit_code}" == "0" ]]; then
+            echo "status=clean" >> "${GITHUB_OUTPUT}"
+          else
+            echo "status=issues" >> "${GITHUB_OUTPUT}"
+            echo "::warning::SwiftLint reported advisory issues. See the lint job log for details."
+          fi
+
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Write CI summary
+        env:
+          SUITE: ${{ inputs.suite }}
+          SWIFTPM_RESULT: ${{ needs.swiftpm-tests.result }}
+          XCODE_RESULT: ${{ needs.xcode-tests.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          COVERAGE_RESULT: ${{ needs.coverage.result }}
+          COVERAGE_STATUS: ${{ needs.coverage.outputs.status }}
+          COVERAGE_PERCENT: ${{ needs.coverage.outputs.line_coverage_percent }}
+          LINT_RESULT: ${{ needs.lint.result }}
+          LINT_STATUS: ${{ needs.lint.outputs.status }}
+          LINT_EXIT_CODE: ${{ needs.lint.outputs.exit_code }}
+        run: |
+          result_label() {
+            case "$1" in
+              success) echo "PASS" ;;
+              failure) echo "FAIL" ;;
+              cancelled) echo "CANCELLED" ;;
+              skipped) echo "SKIP" ;;
+              *) echo "${1:-UNKNOWN}" ;;
+            esac
+          }
+
+          coverage_detail="Not run"
+          coverage_result="$(result_label "${COVERAGE_RESULT}")"
+          if [[ "${COVERAGE_STATUS}" == "reported" ]]; then
+            coverage_detail="Line coverage ${COVERAGE_PERCENT}%"
+          elif [[ "${COVERAGE_RESULT}" == "success" ]]; then
+            coverage_result="WARN"
+            coverage_detail="Coverage artifact was unavailable or incomplete"
+          fi
+
+          lint_result="$(result_label "${LINT_RESULT}")"
+          lint_detail="Not run"
+          if [[ "${LINT_STATUS}" == "clean" ]]; then
+            lint_detail="No SwiftLint issues"
+          elif [[ "${LINT_STATUS}" == "issues" ]]; then
+            lint_result="WARN"
+            lint_detail="SwiftLint exited ${LINT_EXIT_CODE}; advisory only"
+          fi
+
+          {
+            echo "# CI Summary"
+            echo
+            echo "Suite: \`${SUITE}\`"
+            echo
+            echo "| Check | Result | Details |"
+            echo "| --- | --- | --- |"
+            echo "| SwiftPM tests | $(result_label "${SWIFTPM_RESULT}") | Runs \`swift test --enable-code-coverage\` |"
+            echo "| Xcode tests | $(result_label "${XCODE_RESULT}") | Runs project drift check and \`xcodebuild test\` |"
+            echo "| tests | $(result_label "${TESTS_RESULT}") | Required gate for selected test suite |"
+            echo "| Coverage | ${coverage_result} | ${coverage_detail} |"
+            echo "| Lint | ${lint_result} | ${lint_detail} |"
+          } >> "${GITHUB_STEP_SUMMARY}"

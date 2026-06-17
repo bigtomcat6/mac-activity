@@ -47,14 +47,38 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("Run SwiftPM tests with coverage"),
         )
 
-    def test_ci_workflow_exposes_stable_required_check_gate(self):
+    def test_ci_workflow_uses_reusable_ci_checks(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
         self.assertIn("name: Run CI Checks", workflow)
-        self.assertIn("required-ci:", workflow)
-        self.assertIn("name: SwiftPM + Xcode Tests", workflow)
-        self.assertIn("needs: [test]", workflow)
-        self.assertIn("needs.test.result", workflow)
+        self.assertIn("uses: ./.github/workflows/ci-checks.yml", workflow)
+        self.assertIn("suite: full", workflow)
+        self.assertNotIn("required-ci:", workflow)
+
+    def test_ci_checks_runs_tests_in_parallel_then_reports_advisory_jobs(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()
+
+        self.assertIn("swiftpm-tests:", workflow)
+        self.assertIn("xcode-tests:", workflow)
+        self.assertIn("tests:", workflow)
+        self.assertIn("coverage:", workflow)
+        self.assertIn("lint:", workflow)
+        self.assertIn("ci-summary:", workflow)
+
+        tests_section = workflow.split("\n  tests:", 1)[1].split("\n  coverage:", 1)[0]
+        self.assertIn("needs: [swiftpm-tests, xcode-tests]", tests_section)
+        self.assertNotIn("\n    name:", tests_section)
+
+        coverage_section = workflow.split("\n  coverage:", 1)[1].split("\n  lint:", 1)[0]
+        self.assertIn("needs: [tests, swiftpm-tests]", coverage_section)
+
+        lint_section = workflow.split("\n  lint:", 1)[1].split("\n  ci-summary:", 1)[0]
+        self.assertIn("needs: [tests]", lint_section)
+
+        summary_section = workflow.split("\n  ci-summary:", 1)[1]
+        self.assertIn("needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]", summary_section)
+        self.assertIn("GITHUB_STEP_SUMMARY", summary_section)
+        self.assertIn("| Check | Result | Details |", summary_section)
 
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
