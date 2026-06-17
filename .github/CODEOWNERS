@@ -4,6 +4,7 @@
 
 .github/** @bigtomcat6
 .agents/** @bigtomcat6
+.claude/** @bigtomcat6
 Configuration/** @bigtomcat6
 project.yml @bigtomcat6
 scripts/** @bigtomcat6

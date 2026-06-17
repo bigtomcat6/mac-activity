@@ -18,6 +18,7 @@ namespacing.
 │   └── plugin.json
 ├── skills/
 │   ├── create-pr -> ../../../../.agents/skills/create-pr
+│   ├── create-release -> ../../../../.agents/skills/create-release
 │   └── pr-readiness-check -> ../../../../.agents/skills/pr-readiness-check
 └── README.md
 ```
