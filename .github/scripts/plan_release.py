@@ -33,7 +33,7 @@ def validate_channel(channel):
 
 def validate_version(version):
     if not version or not VERSION_PATTERN.fullmatch(version):
-        raise ValueError("version must use MAJOR.MINOR.PATCH, for example 2026.0.0")
+        raise ValueError("version must use MAJOR.MINOR.PATCH, for example 26.0.0")
 
 
 def validate_build(build):
@@ -201,7 +201,7 @@ def parse_args(argv=None):
     parser.add_argument("--channel", choices=ALLOWED_CHANNELS, required=True)
     parser.add_argument("--version")
     parser.add_argument("--build")
-    parser.add_argument("--release-year", type=int, default=dt.date.today().year)
+    parser.add_argument("--release-year", type=int, default=int(dt.date.today().strftime("%y")))
     parser.add_argument("--remote", action="store_true", help="Read tags and releases from GitHub.")
     parser.add_argument("--tags-file", help="JSON file containing a list of tag names.")
     parser.add_argument("--releases-file", help="JSON file containing a GitHub releases list.")

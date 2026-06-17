@@ -26,11 +26,11 @@ class CheckDevelopmentVersionTests(unittest.TestCase):
 
     def test_rejects_release_marketing_version(self):
         errors = self.module.validate_development_version(
-            "MARKETING_VERSION = 2026.0.0\nCURRENT_PROJECT_VERSION = 1\n"
+            "MARKETING_VERSION = 26.0.0\nCURRENT_PROJECT_VERSION = 1\n"
         )
 
         self.assertEqual(
-            ["MARKETING_VERSION must stay 0.1.0 during development; got 2026.0.0"],
+            ["MARKETING_VERSION must stay 0.1.0 during development; got 26.0.0"],
             errors,
         )
 

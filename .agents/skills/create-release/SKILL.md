@@ -19,12 +19,12 @@ the requested version into the runner workspace before packaging. The checked-in
 ## Version Rule
 
 Use calendar-versioned release trains. The first public alpha starts at
-`2026.0.0-alpha.1`; the matching final release is `2026.0.0`.
+`26.0.0-alpha.1`; the matching final release is `26.0.0`.
 
 Confirm the intended channel and version:
 
-- `alpha`, `beta`, and `rc` create prerelease tags like `v2026.0.0-alpha.1`
-- `release` creates the final tag like `v2026.0.0`
+- `alpha`, `beta`, and `rc` create prerelease tags like `v26.0.0-alpha.1`
+- `release` creates the final tag like `v26.0.0`
 - `version` must be `MAJOR.MINOR.PATCH`
 - `build` must be a positive integer, or omitted to use the workflow run number
 
@@ -45,7 +45,7 @@ If channel, version, and build are known:
 ```bash
 python3 .github/scripts/plan_release.py \
   --channel alpha \
-  --version 2026.0.0 \
+  --version 26.0.0 \
   --build 1 \
   --remote
 ```
@@ -55,7 +55,7 @@ If version or build is missing, ask the planner for a suggestion first:
 ```bash
 python3 .github/scripts/plan_release.py \
   --channel alpha \
-  --release-year 2026 \
+  --release-year 26 \
   --remote
 ```
 
@@ -70,7 +70,7 @@ Do not create a GitHub Release or tag in phase 1.
 gh workflow run release.yml \
   --ref main \
   -f channel=alpha \
-  -f version=2026.0.0 \
+  -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
   -f signing=local \
@@ -96,7 +96,7 @@ Releases as drafts; there is no `draft=false` path.
 gh workflow run release.yml \
   --ref main \
   -f channel=alpha \
-  -f version=2026.0.0 \
+  -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
   -f signing=local \
