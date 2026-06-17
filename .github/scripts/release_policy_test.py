@@ -47,6 +47,15 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("Run SwiftPM tests with coverage"),
         )
 
+    def test_ci_workflow_exposes_stable_required_check_gate(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+        self.assertIn("name: Run CI Checks", workflow)
+        self.assertIn("required-ci:", workflow)
+        self.assertIn("name: SwiftPM + Xcode Tests", workflow)
+        self.assertIn("needs: [test]", workflow)
+        self.assertIn("needs.test.result", workflow)
+
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
             REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md"
