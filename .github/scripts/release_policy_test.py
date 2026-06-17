@@ -37,6 +37,16 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("Commit version change", workflow)
         self.assertNotIn("git push origin", workflow)
 
+    def test_pull_request_ci_checks_development_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()
+
+        self.assertIn("Check development version", workflow)
+        self.assertIn(".github/scripts/check_development_version.py", workflow)
+        self.assertLess(
+            workflow.index("Check development version"),
+            workflow.index("Run SwiftPM tests with coverage"),
+        )
+
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
             REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md"

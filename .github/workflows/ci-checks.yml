@@ -44,6 +44,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Check development version
+        run: python3 .github/scripts/check_development_version.py
+
       - name: Show toolchain versions
         run: |
           swift --version
