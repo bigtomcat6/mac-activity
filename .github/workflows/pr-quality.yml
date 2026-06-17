@@ -23,7 +23,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.base_ref }}
+          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Validate PR title and body
         run: python3 .github/scripts/check_pr_metadata.py --event "$GITHUB_EVENT_PATH"
