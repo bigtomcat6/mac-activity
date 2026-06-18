@@ -87,6 +87,27 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Lint:", summary_section)
         self.assertNotIn("| Check | Result | Details |", summary_section)
 
+    def test_ci_checks_removes_unused_runner_homebrew_taps_before_installing_tools(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()
+
+        xcode_section = workflow.split("\n  xcode-tests:", 1)[1].split("\n  tests:", 1)[0]
+        self.assertIn("Remove unused runner Homebrew taps", xcode_section)
+        self.assertIn("aws/tap", xcode_section)
+        self.assertIn("azure/bicep", xcode_section)
+        self.assertLess(
+            xcode_section.index("Remove unused runner Homebrew taps"),
+            xcode_section.index("brew install xcodegen"),
+        )
+
+        lint_section = workflow.split("\n  lint:", 1)[1].split("\n  ci-summary:", 1)[0]
+        self.assertIn("Remove unused runner Homebrew taps", lint_section)
+        self.assertIn("aws/tap", lint_section)
+        self.assertIn("azure/bicep", lint_section)
+        self.assertLess(
+            lint_section.index("Remove unused runner Homebrew taps"),
+            lint_section.index("brew install swiftlint"),
+        )
+
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
             REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md"

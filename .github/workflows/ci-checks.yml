@@ -86,6 +86,14 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Remove unused runner Homebrew taps
+        run: |
+          for tap in aws/tap azure/bicep; do
+            if brew tap | grep -qx "${tap}"; then
+              brew untap "${tap}"
+            fi
+          done
+
       - name: Verify generated Xcode project is current
         run: |
           if ! command -v xcodegen >/dev/null; then
@@ -211,6 +219,14 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
 
+      - name: Remove unused runner Homebrew taps
+        run: |
+          for tap in aws/tap azure/bicep; do
+            if brew tap | grep -qx "${tap}"; then
+              brew untap "${tap}"
+            fi
+          done
+
       - name: Run SwiftLint advisory check
         id: swiftlint
         run: |
@@ -302,12 +318,12 @@ jobs:
           fi
 
           {
-            echo "#Summary"
+            echo "# Summary"
             echo
             echo "> **Suite:** \`${SUITE}\`"
             echo
             echo "- 🧪 Tests: ${tests_badge} ${tests_text}"
-            echo "  - SwiftPM: ${swiftpm_text}
+            echo "  - SwiftPM: ${swiftpm_text}"
             echo "  - Xcode: ${xcode_text}"
             echo
             echo "- 📈 Coverage: ${coverage_badge} ${coverage_text}"
