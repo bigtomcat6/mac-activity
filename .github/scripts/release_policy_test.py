@@ -30,6 +30,44 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("prepare_release_metadata.py"),
         )
 
+    def test_release_workflow_requires_main_before_ci_and_packaging(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn("preflight:", workflow)
+        self.assertIn('GITHUB_REF_NAME}" != "main"', workflow)
+        self.assertIn("needs: [preflight]", workflow)
+        self.assertIn("needs: [preflight, ci]", workflow)
+
+    def test_release_package_checks_project_drift_even_when_ci_is_skipped(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        package_section = workflow.split("\n  package:", 1)[1]
+
+        self.assertIn("Verify generated Xcode project is current", package_section)
+        self.assertIn("xcodegen generate --quiet", package_section)
+        self.assertIn("git diff --exit-code -- MacActivity.xcodeproj", package_section)
+
+    def test_release_workflow_packages_symbols_and_release_notes(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn("-dSYM.zip", workflow)
+        self.assertIn("Write release notes prefix", workflow)
+        self.assertIn("Release Summary", workflow)
+        self.assertIn("dSYM SHA256", workflow)
+        self.assertIn('DSYM_PATH: ${{ steps.package.outputs.dsym_path }}', workflow)
+        self.assertIn('--notes "$(cat "${NOTES_PATH}")"', workflow)
+
+    def test_release_workflow_supports_developer_id_notarization(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+
+        self.assertIn("- developer-id", workflow)
+        self.assertIn("Import Developer ID certificate", workflow)
+        self.assertIn("DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64", workflow)
+        self.assertIn("Notarize Developer ID app", workflow)
+        self.assertIn("xcrun notarytool submit", workflow)
+        self.assertIn("xcrun stapler staple", workflow)
+        self.assertIn("spctl --assess --type execute", workflow)
+        self.assertIn("Final releases must use signing=developer-id", workflow)
+
     def test_release_workflow_never_pushes_version_commits(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
