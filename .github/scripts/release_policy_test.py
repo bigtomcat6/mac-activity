@@ -78,7 +78,7 @@ class ReleasePolicyTests(unittest.TestCase):
         summary_section = workflow.split("\n  ci-summary:", 1)[1]
         self.assertIn("needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]", summary_section)
         self.assertIn("GITHUB_STEP_SUMMARY", summary_section)
-        self.assertIn("# CI Dashboard", summary_section)
+        self.assertIn("# Summary", summary_section)
         self.assertIn("🧪", summary_section)
         self.assertIn("📈", summary_section)
         self.assertIn("🧹", summary_section)

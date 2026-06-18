@@ -88,11 +88,7 @@ jobs:
 
       - name: Remove unused runner Homebrew taps
         run: |
-          for tap in aws/tap azure/bicep; do
-            if brew tap | grep -qx "${tap}"; then
-              brew untap "${tap}"
-            fi
-          done
+          bash .github/scripts/remove_unused_homebrew_taps.sh aws/tap azure/bicep
 
       - name: Verify generated Xcode project is current
         run: |
@@ -221,11 +217,7 @@ jobs:
 
       - name: Remove unused runner Homebrew taps
         run: |
-          for tap in aws/tap azure/bicep; do
-            if brew tap | grep -qx "${tap}"; then
-              brew untap "${tap}"
-            fi
-          done
+          bash .github/scripts/remove_unused_homebrew_taps.sh aws/tap azure/bicep
 
       - name: Run SwiftLint advisory check
         id: swiftlint
