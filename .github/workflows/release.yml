@@ -39,6 +39,7 @@ on:
         options:
           - local
           - project
+          - developer-id
       create_github_release:
         description: Create a draft GitHub Release and upload the zip asset.
         required: true
@@ -53,8 +54,28 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  preflight:
+    name: Release Preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Require main branch
+        run: |
+          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
+            echo "::error::Release workflow must run from main. Current ref is ${GITHUB_REF_NAME}."
+            exit 1
+          fi
+
+      - name: Require Developer ID for final release
+        if: ${{ inputs.channel == 'release' && inputs.signing != 'developer-id' }}
+        run: |
+          echo "::error::Final releases must use signing=developer-id."
+          exit 1
+
   ci:
     name: Selected CI
+    needs: [preflight]
     if: ${{ inputs.ci_suite != 'skip' }}
     uses: ./.github/workflows/ci-checks.yml
     with:
@@ -63,8 +84,11 @@ jobs:
   package:
     name: Package Release Artifact
     runs-on: macos-26
-    needs: [ci]
-    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    needs: [preflight, ci]
+    if: ${{ always() && needs.preflight.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    environment:
+      name: release-signing
+      deployment: false
     timeout-minutes: 30
 
     steps:
@@ -73,6 +97,21 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
+
+      - name: Remove unused runner Homebrew taps
+        run: |
+          bash .github/scripts/remove_unused_homebrew_taps.sh aws/tap azure/bicep
+
+      - name: Verify generated Xcode project is current
+        run: |
+          if ! command -v xcodegen >/dev/null; then
+            brew install xcodegen
+          fi
+          xcodegen generate --quiet
+          if ! git diff --exit-code -- MacActivity.xcodeproj; then
+            echo "::error::MacActivity.xcodeproj is out of sync with project.yml. Run xcodegen generate."
+            exit 1
+          fi
 
       - name: Resolve build number
         id: build
@@ -111,7 +150,38 @@ jobs:
           swift --version
           xcodebuild -version
 
+      - name: Import Developer ID certificate
+        if: ${{ inputs.signing == 'developer-id' }}
+        env:
+          DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 }}
+          DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD }}
+          BUILD_KEYCHAIN_PASSWORD: ${{ secrets.BUILD_KEYCHAIN_PASSWORD }}
+        run: |
+          if [[ -z "${DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64}" ]]; then
+            echo "::error::DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64 secret is required."
+            exit 1
+          fi
+          if [[ -z "${DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD}" ]]; then
+            echo "::error::DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD secret is required."
+            exit 1
+          fi
+
+          certificate_path="${RUNNER_TEMP}/developer-id-application.p12"
+          keychain_path="${RUNNER_TEMP}/macactivity-signing.keychain-db"
+          keychain_password="${BUILD_KEYCHAIN_PASSWORD:-$(uuidgen)}"
+
+          echo -n "${DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64}" | base64 --decode > "${certificate_path}"
+          security create-keychain -p "${keychain_password}" "${keychain_path}"
+          security set-keychain-settings -lut 21600 "${keychain_path}"
+          security unlock-keychain -p "${keychain_password}" "${keychain_path}"
+          security import "${certificate_path}" -P "${DEVELOPER_ID_APPLICATION_CERTIFICATE_PASSWORD}" -A -t cert -f pkcs12 -k "${keychain_path}"
+          security list-keychains -d user -s "${keychain_path}"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "${keychain_password}" "${keychain_path}"
+
       - name: Build Release app
+        env:
+          MAC_ACTIVITY_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
+          MAC_ACTIVITY_DEVELOPER_ID_IDENTITY: ${{ vars.DEVELOPER_ID_APPLICATION_IDENTITY }}
         run: |
           signing_arg="--${{ inputs.signing }}-signing"
           MAC_ACTIVITY_DERIVED_DATA="${RUNNER_TEMP}/MacActivityRelease" \
@@ -136,16 +206,102 @@ jobs:
             exit 1
           fi
 
+      - name: Notarize Developer ID app
+        if: ${{ inputs.signing == 'developer-id' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          if [[ -z "${APPLE_ID}" ]]; then
+            echo "::error::APPLE_ID secret is required."
+            exit 1
+          fi
+          if [[ -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
+            echo "::error::APPLE_APP_SPECIFIC_PASSWORD secret is required."
+            exit 1
+          fi
+          if [[ -z "${APPLE_TEAM_ID}" ]]; then
+            echo "::error::APPLE_TEAM_ID variable is required."
+            exit 1
+          fi
+
+          app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
+          notarization_zip="${RUNNER_TEMP}/MacActivity-notarization.zip"
+          ditto -c -k --keepParent "${app}" "${notarization_zip}"
+
+          xcrun notarytool submit "${notarization_zip}" \
+            --apple-id "${APPLE_ID}" \
+            --team-id "${APPLE_TEAM_ID}" \
+            --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
+            --wait
+          xcrun stapler staple "${app}"
+          xcrun stapler validate "${app}"
+          spctl --assess --type execute -vv "${app}"
+
       - name: Package zip
         id: package
         run: |
-          app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
+          products_dir="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release"
+          app="${products_dir}/Mac Activity.app"
           mkdir -p dist
           zip_path="dist/${{ steps.release.outputs.artifact_stem }}.zip"
           ditto -c -k --keepParent "${app}" "${zip_path}"
           shasum -a 256 "${zip_path}" > "${zip_path}.sha256"
-          echo "zip_path=${zip_path}" >> "${GITHUB_OUTPUT}"
-          echo "checksum_path=${zip_path}.sha256" >> "${GITHUB_OUTPUT}"
+
+          dsym_zip_path="dist/${{ steps.release.outputs.artifact_stem }}-dSYM.zip"
+          dsym_staging="${RUNNER_TEMP}/MacActivity-dSYMs"
+          rm -rf "${dsym_staging}"
+          mkdir -p "${dsym_staging}"
+          dsym_count=0
+
+          while IFS= read -r -d '' dsym_path; do
+            ditto "${dsym_path}" "${dsym_staging}/$(basename "${dsym_path}")"
+            dsym_count=$((dsym_count + 1))
+          done < <(find "${products_dir}" -maxdepth 1 -name "*.dSYM" -print0)
+
+          if [[ "${dsym_count}" -gt 0 ]]; then
+            ditto -c -k --keepParent "${dsym_staging}" "${dsym_zip_path}"
+            shasum -a 256 "${dsym_zip_path}" > "${dsym_zip_path}.sha256"
+          else
+            echo "::error::No dSYM bundles found to package."
+            exit 1
+          fi
+
+          {
+            echo "zip_path=${zip_path}"
+            echo "checksum_path=${zip_path}.sha256"
+            echo "dsym_path=${dsym_zip_path}"
+            echo "dsym_checksum_path=${dsym_zip_path}.sha256"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Write release notes prefix
+        id: notes
+        run: |
+          notes_path="dist/${{ steps.release.outputs.artifact_stem }}-release-notes.md"
+          zip_checksum="$(awk '{print $1}' "${{ steps.package.outputs.checksum_path }}")"
+          dsym_checksum="unavailable"
+          if [[ -f "${{ steps.package.outputs.dsym_checksum_path }}" ]]; then
+            dsym_checksum="$(awk '{print $1}' "${{ steps.package.outputs.dsym_checksum_path }}")"
+          fi
+
+          cat > "${notes_path}" <<EOF
+          ## Release Summary
+
+          - Tag: \`${{ steps.release.outputs.tag }}\`
+          - Target: \`${{ steps.target.outputs.sha }}\`
+          - Channel: \`${{ inputs.channel }}\`
+          - Version: \`${{ steps.release.outputs.version }}\`
+          - Build: \`${{ steps.release.outputs.build }}\`
+          - CI suite: \`${{ inputs.ci_suite }}\`
+          - Signing: \`${{ inputs.signing }}\`
+          - Artifact: \`${{ steps.release.outputs.artifact_stem }}.zip\`
+          - SHA256: \`${zip_checksum}\`
+          - dSYM SHA256: \`${dsym_checksum}\`
+
+          EOF
+
+          echo "notes_path=${notes_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v6
@@ -154,6 +310,9 @@ jobs:
           path: |
             ${{ steps.package.outputs.zip_path }}
             ${{ steps.package.outputs.checksum_path }}
+            ${{ steps.package.outputs.dsym_path }}
+            ${{ steps.package.outputs.dsym_checksum_path }}
+            ${{ steps.notes.outputs.notes_path }}
           if-no-files-found: error
 
       - name: Create GitHub Release
@@ -165,6 +324,9 @@ jobs:
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           ZIP_PATH: ${{ steps.package.outputs.zip_path }}
           CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
+          DSYM_PATH: ${{ steps.package.outputs.dsym_path }}
+          DSYM_CHECKSUM_PATH: ${{ steps.package.outputs.dsym_checksum_path }}
+          NOTES_PATH: ${{ steps.notes.outputs.notes_path }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
           LATEST: ${{ steps.release.outputs.latest }}
         run: |
@@ -172,9 +334,12 @@ jobs:
             "${TAG}"
             "${ZIP_PATH}"
             "${CHECKSUM_PATH}"
+            "${DSYM_PATH}"
+            "${DSYM_CHECKSUM_PATH}"
             --title "${TITLE}"
             --target "${TARGET_SHA}"
             --generate-notes
+            --notes "$(cat "${NOTES_PATH}")"
             --latest="${LATEST}"
             --draft
           )

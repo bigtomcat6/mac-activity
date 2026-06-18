@@ -15,3 +15,8 @@ xcuserdata/
 
 # Local machine config
 .netrc
+
+# Python caches
+__pycache__/
+*.pyc
+.pytest_cache/

@@ -32,6 +32,8 @@ Options:
   --skip-quit        Install without asking a running app instance to quit.
   --local-signing    Sign to run locally. This is the default.
   --project-signing  Use the project signing settings instead of local signing.
+  --developer-id-signing
+                    Sign with a Developer ID Application certificate.
   -h, --help         Show this help text.
 
 Environment:
@@ -80,6 +82,9 @@ while [[ $# -gt 0 ]]; do
     --project-signing)
       SIGNING_MODE="project"
       ;;
+    --developer-id-signing)
+      SIGNING_MODE="developer-id"
+      ;;
     -h|--help)
       usage
       exit 0
@@ -97,8 +102,13 @@ case "${SIGNING_MODE}" in
     ;;
   project)
     ;;
+  developer-id)
+    if [[ -z "${MAC_ACTIVITY_DEVELOPMENT_TEAM:-}" ]]; then
+      die "MAC_ACTIVITY_DEVELOPMENT_TEAM is required for Developer ID signing"
+    fi
+    ;;
   *)
-    die "MAC_ACTIVITY_SIGNING must be 'local' or 'project', got '${SIGNING_MODE}'"
+    die "MAC_ACTIVITY_SIGNING must be 'local', 'project', or 'developer-id', got '${SIGNING_MODE}'"
     ;;
 esac
 
@@ -157,6 +167,13 @@ build_release_app() {
       CODE_SIGN_STYLE=Manual
       CODE_SIGN_IDENTITY=-
       DEVELOPMENT_TEAM=
+    )
+  elif [[ "${SIGNING_MODE}" == "developer-id" ]]; then
+    build_args+=(
+      CODE_SIGN_STYLE=Manual
+      CODE_SIGN_IDENTITY="${MAC_ACTIVITY_DEVELOPER_ID_IDENTITY:-Developer ID Application}"
+      DEVELOPMENT_TEAM="${MAC_ACTIVITY_DEVELOPMENT_TEAM}"
+      ENABLE_HARDENED_RUNTIME=YES
     )
   fi
 
