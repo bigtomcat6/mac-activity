@@ -67,7 +67,7 @@ class ReleasePolicyTests(unittest.TestCase):
 
         tests_section = workflow.split("\n  tests:", 1)[1].split("\n  coverage:", 1)[0]
         self.assertIn("needs: [swiftpm-tests, xcode-tests]", tests_section)
-        self.assertNotIn("\n    name:", tests_section)
+        self.assertIn("name: Tests", tests_section)
 
         coverage_section = workflow.split("\n  coverage:", 1)[1].split("\n  lint:", 1)[0]
         self.assertIn("needs: [tests, swiftpm-tests]", coverage_section)

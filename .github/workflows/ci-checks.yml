@@ -114,6 +114,7 @@ jobs:
             CODE_SIGNING_REQUIRED=NO
 
   tests:
+    name: Tests
     runs-on: ubuntu-latest
     needs: [swiftpm-tests, xcode-tests]
     if: ${{ always() }}
@@ -165,7 +166,7 @@ jobs:
     steps:
       - name: Download SwiftPM coverage
         continue-on-error: true
-        uses: actions/download-artifact@v6
+        uses: actions/download-artifact@v8
         with:
           name: swiftpm-coverage
           path: coverage
