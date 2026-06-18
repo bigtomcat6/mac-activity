@@ -15,33 +15,7 @@ concurrency:
 
 jobs:
   test:
-    name: SwiftPM + Xcode Tests
-    runs-on: macos-26
-    timeout-minutes: 20
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-
-      - name: Show toolchain versions
-        run: |
-          swift --version
-          xcodebuild -version
-
-      - name: Run SwiftPM tests
-        run: |
-          swift test \
-            --cache-path /tmp/swiftpm-cache \
-            --scratch-path /tmp/swiftpm-build
-
-      - name: Run Xcode tests
-        run: |
-          xcodebuild test \
-            -project MacActivity.xcodeproj \
-            -scheme MacActivity \
-            -destination "platform=macOS" \
-            -derivedDataPath /tmp/DerivedData \
-            -resultBundlePath /tmp/xcode-test-results \
-            CODE_SIGN_IDENTITY="" \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO
+    name: Run CI Checks
+    uses: ./.github/workflows/ci-checks.yml
+    with:
+      suite: full

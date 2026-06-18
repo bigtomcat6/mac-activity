@@ -31,6 +31,7 @@
 		3DBC7E06E7664EDC37008F87 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBDE27C632732B8D69B540E /* AppLocalization.swift */; };
 		3F60AD2BBC32608CE8F87545 /* PreferencesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECAE9B17ED4BB6141029863B /* PreferencesController.swift */; };
 		4073C864AB0C5CFFC22AD0C9 /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B87283E6D09D63E041FCDE7 /* main.swift */; };
+		44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */; };
 		481D37333B0C15E0EE471191 /* LazyShellControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */; };
 		4A5640B4C2F6695CF03B960A /* AppPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */; };
 		4A9A7DD1DAB5CE77F209FE77 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 41DEBECB80588EDCB2B826B3 /* Localizable.strings */; };
@@ -155,6 +156,7 @@
 		24963319103DEB56F52E3199 /* DashboardTrendReadoutFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendReadoutFormatterTests.swift; sourceTree = "<group>"; };
 		28B16690F3A93F5DF6A08150 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SummaryFormatterTests.swift; sourceTree = "<group>"; };
+		32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryProviderTests.swift; sourceTree = "<group>"; };
 		36396300E73F3D423CCDC77C /* MetricsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStore.swift; sourceTree = "<group>"; };
 		399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryProvider.swift; sourceTree = "<group>"; };
 		3A45145799F0B2FCD4EEB53E /* TrashCleanupStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashCleanupStatusView.swift; sourceTree = "<group>"; };
@@ -434,6 +436,7 @@
 			isa = PBXGroup;
 			children = (
 				782F556D94AA82856902F0AD /* ActiveAppMemoryProvidingTests.swift */,
+				32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */,
 				4C28EA386891B5D88473C012 /* DashboardModelTests.swift */,
 				9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */,
 				B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */,
@@ -654,6 +657,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7D184325401391E30FCB55B5 /* ActiveAppMemoryProvidingTests.swift in Sources */,
+				44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */,
 				29B0CBE169F75666C6DBB021 /* DashboardModelTests.swift in Sources */,
 				F20363F876BE2F8C2CA12F53 /* DiskCleanupServiceTests.swift in Sources */,
 				9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */,

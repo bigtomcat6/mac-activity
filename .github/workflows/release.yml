@@ -1,0 +1,184 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel to produce.
+        required: true
+        type: choice
+        default: beta
+        options:
+          - alpha
+          - beta
+          - rc
+          - release
+      version:
+        description: Marketing version in MAJOR.MINOR.PATCH form, for example 0.2.0.
+        required: true
+        type: string
+      build:
+        description: Build number. Leave empty to use the workflow run number.
+        required: false
+        type: string
+      ci_suite:
+        description: CI checks to run before packaging.
+        required: true
+        type: choice
+        default: full
+        options:
+          - full
+          - swiftpm
+          - xcode
+          - skip
+      signing:
+        description: Signing mode for the app bundle.
+        required: true
+        type: choice
+        default: local
+        options:
+          - local
+          - project
+      create_github_release:
+        description: Create a draft GitHub Release and upload the zip asset.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.channel }}-${{ inputs.version }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Selected CI
+    if: ${{ inputs.ci_suite != 'skip' }}
+    uses: ./.github/workflows/ci-checks.yml
+    with:
+      suite: ${{ inputs.ci_suite }}
+
+  package:
+    name: Package Release Artifact
+    runs-on: macos-26
+    needs: [ci]
+    if: ${{ always() && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Resolve build number
+        id: build
+        run: |
+          build="${{ inputs.build }}"
+          if [[ -z "${build}" ]]; then
+            build="${GITHUB_RUN_NUMBER}"
+          fi
+          echo "build=${build}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check release conflicts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/plan_release.py \
+            --channel "${{ inputs.channel }}" \
+            --version "${{ inputs.version }}" \
+            --build "${{ steps.build.outputs.build }}" \
+            --remote
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          python3 .github/scripts/prepare_release_metadata.py \
+            --channel "${{ inputs.channel }}" \
+            --version "${{ inputs.version }}" \
+            --build "${{ steps.build.outputs.build }}" \
+            --xcconfig Configuration/Shared.xcconfig
+
+      - name: Resolve release target commit
+        id: target
+        run: echo "sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
+
+      - name: Show toolchain versions
+        run: |
+          swift --version
+          xcodebuild -version
+
+      - name: Build Release app
+        run: |
+          signing_arg="--${{ inputs.signing }}-signing"
+          MAC_ACTIVITY_DERIVED_DATA="${RUNNER_TEMP}/MacActivityRelease" \
+            scripts/install-local-release.command \
+              --build-only \
+              --skip-launch \
+              --skip-quit \
+              "${signing_arg}"
+
+      - name: Validate bundle version
+        run: |
+          app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
+          info_plist="${app}/Contents/Info.plist"
+          actual_version="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${info_plist}")"
+          actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
+          if [[ "${actual_version}" != "${{ steps.release.outputs.version }}" ]]; then
+            echo "::error::Expected CFBundleShortVersionString ${{ steps.release.outputs.version }}, got ${actual_version}"
+            exit 1
+          fi
+          if [[ "${actual_build}" != "${{ steps.release.outputs.build }}" ]]; then
+            echo "::error::Expected CFBundleVersion ${{ steps.release.outputs.build }}, got ${actual_build}"
+            exit 1
+          fi
+
+      - name: Package zip
+        id: package
+        run: |
+          app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
+          mkdir -p dist
+          zip_path="dist/${{ steps.release.outputs.artifact_stem }}.zip"
+          ditto -c -k --keepParent "${app}" "${zip_path}"
+          shasum -a 256 "${zip_path}" > "${zip_path}.sha256"
+          echo "zip_path=${zip_path}" >> "${GITHUB_OUTPUT}"
+          echo "checksum_path=${zip_path}.sha256" >> "${GITHUB_OUTPUT}"
+
+      - name: Upload workflow artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: ${{ steps.release.outputs.artifact_stem }}
+          path: |
+            ${{ steps.package.outputs.zip_path }}
+            ${{ steps.package.outputs.checksum_path }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        if: ${{ inputs.create_github_release }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TITLE: ${{ steps.release.outputs.title }}
+          TARGET_SHA: ${{ steps.target.outputs.sha }}
+          ZIP_PATH: ${{ steps.package.outputs.zip_path }}
+          CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          LATEST: ${{ steps.release.outputs.latest }}
+        run: |
+          args=(
+            "${TAG}"
+            "${ZIP_PATH}"
+            "${CHECKSUM_PATH}"
+            --title "${TITLE}"
+            --target "${TARGET_SHA}"
+            --generate-notes
+            --latest="${LATEST}"
+            --draft
+          )
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"

@@ -1,0 +1,17 @@
+included:
+  - Sources
+  - Tests
+  - Tools
+
+excluded:
+  - .build
+  - DerivedData
+
+disabled_rules:
+  - line_length
+  - function_body_length
+  - file_length
+  - type_body_length
+
+strict: false
+reporter: github-actions-logging

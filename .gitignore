@@ -5,6 +5,7 @@
 /.build
 /Packages
 DerivedData/
+coverage/
 default.profraw
 *.profraw
 xcuserdata/
