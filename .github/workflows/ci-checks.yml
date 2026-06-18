@@ -252,44 +252,65 @@ jobs:
           LINT_STATUS: ${{ needs.lint.outputs.status }}
           LINT_EXIT_CODE: ${{ needs.lint.outputs.exit_code }}
         run: |
-          result_label() {
+          status_badge() {
             case "$1" in
-              success) echo "PASS" ;;
-              failure) echo "FAIL" ;;
-              cancelled) echo "CANCELLED" ;;
-              skipped) echo "SKIP" ;;
-              *) echo "${1:-UNKNOWN}" ;;
+              success) echo "✅" ;;
+              failure) echo "❌" ;;
+              cancelled) echo "⏹️" ;;
+              skipped) echo "⏭️" ;;
+              *) echo "❔" ;;
             esac
           }
 
-          coverage_detail="Not run"
-          coverage_result="$(result_label "${COVERAGE_RESULT}")"
+          result_text() {
+            case "$1" in
+              success) echo "passed" ;;
+              failure) echo "failed" ;;
+              cancelled) echo "cancelled" ;;
+              skipped) echo "skipped" ;;
+              *) echo "${1:-unknown}" ;;
+            esac
+          }
+
+          tests_badge="$(status_badge "${TESTS_RESULT}")"
+          tests_text="$(result_text "${TESTS_RESULT}")"
+          swiftpm_text="$(result_text "${SWIFTPM_RESULT}")"
+          xcode_text="$(result_text "${XCODE_RESULT}")"
+
+          coverage_badge="$(status_badge "${COVERAGE_RESULT}")"
+          coverage_text="not run"
           if [[ "${COVERAGE_STATUS}" == "reported" ]]; then
-            coverage_detail="Line coverage ${COVERAGE_PERCENT}%"
+            coverage_badge="✅"
+            coverage_text="${COVERAGE_PERCENT}% line coverage"
           elif [[ "${COVERAGE_RESULT}" == "success" ]]; then
-            coverage_result="WARN"
-            coverage_detail="Coverage artifact was unavailable or incomplete"
+            coverage_badge="⚠️"
+            coverage_text="coverage unavailable"
+          elif [[ "${COVERAGE_RESULT}" != "skipped" ]]; then
+            coverage_text="$(result_text "${COVERAGE_RESULT}")"
           fi
 
-          lint_result="$(result_label "${LINT_RESULT}")"
-          lint_detail="Not run"
+          lint_badge="$(status_badge "${LINT_RESULT}")"
+          lint_text="not run"
           if [[ "${LINT_STATUS}" == "clean" ]]; then
-            lint_detail="No SwiftLint issues"
+            lint_badge="✅"
+            lint_text="clean"
           elif [[ "${LINT_STATUS}" == "issues" ]]; then
-            lint_result="WARN"
-            lint_detail="SwiftLint exited ${LINT_EXIT_CODE}; advisory only"
+            lint_badge="⚠️"
+            lint_text="advisory issues (exit ${LINT_EXIT_CODE})"
+          elif [[ "${LINT_RESULT}" != "skipped" ]]; then
+            lint_text="$(result_text "${LINT_RESULT}")"
           fi
 
           {
-            echo "# CI Summary"
+            echo "# CI Dashboard"
             echo
-            echo "Suite: \`${SUITE}\`"
+            echo "**Suite:** \`${SUITE}\`"
             echo
-            echo "| Check | Result | Details |"
-            echo "| --- | --- | --- |"
-            echo "| SwiftPM tests | $(result_label "${SWIFTPM_RESULT}") | Runs \`swift test --enable-code-coverage\` |"
-            echo "| Xcode tests | $(result_label "${XCODE_RESULT}") | Runs project drift check and \`xcodebuild test\` |"
-            echo "| tests | $(result_label "${TESTS_RESULT}") | Required gate for selected test suite |"
-            echo "| Coverage | ${coverage_result} | ${coverage_detail} |"
-            echo "| Lint | ${lint_result} | ${lint_detail} |"
+            echo "## 🧪 Tests: ${tests_badge} ${tests_text}"
+            echo
+            echo "SwiftPM: ${swiftpm_text}; Xcode: ${xcode_text}"
+            echo
+            echo "## 📈 Coverage: ${coverage_badge} ${coverage_text}"
+            echo
+            echo "## 🧹 Lint: ${lint_badge} ${lint_text}"
           } >> "${GITHUB_STEP_SUMMARY}"

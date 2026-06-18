@@ -78,7 +78,14 @@ class ReleasePolicyTests(unittest.TestCase):
         summary_section = workflow.split("\n  ci-summary:", 1)[1]
         self.assertIn("needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]", summary_section)
         self.assertIn("GITHUB_STEP_SUMMARY", summary_section)
-        self.assertIn("| Check | Result | Details |", summary_section)
+        self.assertIn("# CI Dashboard", summary_section)
+        self.assertIn("🧪", summary_section)
+        self.assertIn("📈", summary_section)
+        self.assertIn("🧹", summary_section)
+        self.assertIn("Tests:", summary_section)
+        self.assertIn("Coverage:", summary_section)
+        self.assertIn("Lint:", summary_section)
+        self.assertNotIn("| Check | Result | Details |", summary_section)
 
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (
