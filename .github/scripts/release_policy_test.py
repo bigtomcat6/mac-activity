@@ -46,6 +46,14 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("xcodegen generate --quiet", package_section)
         self.assertIn("git diff --exit-code -- MacActivity.xcodeproj", package_section)
 
+    def test_release_workflow_uses_release_signing_environment(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        package_section = workflow.split("\n  package:", 1)[1]
+
+        self.assertIn("environment:", package_section)
+        self.assertIn("name: release-signing", package_section)
+        self.assertIn("deployment: false", package_section)
+
     def test_release_workflow_packages_symbols_and_release_notes(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 

@@ -86,6 +86,9 @@ jobs:
     runs-on: macos-26
     needs: [preflight, ci]
     if: ${{ always() && needs.preflight.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    environment:
+      name: release-signing
+      deployment: false
     timeout-minutes: 30
 
     steps:
