@@ -15,9 +15,9 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "60913B69C0E8352404812349"
-               BuildableName = "MacActivityApp.app"
-               BlueprintName = "MacActivityApp"
+               BlueprintIdentifier = "742D2D18AB5819DAE937E70C"
+               BuildableName = "Mac Activity.app"
+               BlueprintName = "Mac Activity"
                ReferencedContainer = "container:MacActivity.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
@@ -47,9 +47,9 @@
       <MacroExpansion>
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "60913B69C0E8352404812349"
-            BuildableName = "MacActivityApp.app"
-            BlueprintName = "MacActivityApp"
+            BlueprintIdentifier = "742D2D18AB5819DAE937E70C"
+            BuildableName = "Mac Activity.app"
+            BlueprintName = "Mac Activity"
             ReferencedContainer = "container:MacActivity.xcodeproj">
          </BuildableReference>
       </MacroExpansion>
@@ -94,9 +94,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "60913B69C0E8352404812349"
-            BuildableName = "MacActivityApp.app"
-            BlueprintName = "MacActivityApp"
+            BlueprintIdentifier = "742D2D18AB5819DAE937E70C"
+            BuildableName = "Mac Activity.app"
+            BlueprintName = "Mac Activity"
             ReferencedContainer = "container:MacActivity.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
@@ -113,9 +113,9 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "60913B69C0E8352404812349"
-            BuildableName = "MacActivityApp.app"
-            BlueprintName = "MacActivityApp"
+            BlueprintIdentifier = "742D2D18AB5819DAE937E70C"
+            BuildableName = "Mac Activity.app"
+            BlueprintName = "Mac Activity"
             ReferencedContainer = "container:MacActivity.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>

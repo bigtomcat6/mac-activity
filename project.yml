@@ -41,7 +41,7 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.core
         INFOPLIST_FILE: Configuration/MacActivityCore-Info.plist
         SKIP_INSTALL: YES
-  MacActivityApp:
+  "Mac Activity":
     type: application
     platform: macOS
     deploymentTarget: "13.0"
@@ -88,7 +88,7 @@ targets:
     sources:
       - path: Tests/MacActivityAppTests
     dependencies:
-      - target: MacActivityApp
+      - target: "Mac Activity"
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -99,11 +99,11 @@ schemes:
   MacActivity:
     build:
       targets:
-        MacActivityApp: all
+        "Mac Activity": all
         MacActivityCore: all
     run:
       config: Debug
-      executable: MacActivityApp
+      executable: "Mac Activity"
       debugEnabled: true
     test:
       config: Debug
@@ -113,7 +113,7 @@ schemes:
         - MacActivityAppTests
     profile:
       config: Release
-      executable: MacActivityApp
+      executable: "Mac Activity"
     analyze:
       config: Debug
     archive:
