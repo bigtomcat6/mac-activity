@@ -302,15 +302,15 @@ jobs:
           fi
 
           {
-            echo "# CI Dashboard"
+            echo "#Summary"
             echo
-            echo "**Suite:** \`${SUITE}\`"
+            echo "> **Suite:** \`${SUITE}\`"
             echo
-            echo "## 🧪 Tests: ${tests_badge} ${tests_text}"
+            echo "- 🧪 Tests: ${tests_badge} ${tests_text}"
+            echo "  - SwiftPM: ${swiftpm_text}
+            echo "  - Xcode: ${xcode_text}"
             echo
-            echo "SwiftPM: ${swiftpm_text}; Xcode: ${xcode_text}"
+            echo "- 📈 Coverage: ${coverage_badge} ${coverage_text}"
             echo
-            echo "## 📈 Coverage: ${coverage_badge} ${coverage_text}"
-            echo
-            echo "## 🧹 Lint: ${lint_badge} ${lint_text}"
+            echo "- 🧹 Lint: ${lint_badge} ${lint_text}"
           } >> "${GITHUB_STEP_SUMMARY}"
