@@ -18,6 +18,7 @@ SECTION_ORDER = (
     ("performance", "## ⚡ Performance"),
 )
 OTHER_SECTION = "## Other Changes"
+SKIP_LABEL = "skip-release-notes"
 CONVENTIONAL_TITLE_PREFIX = re.compile(r"^[a-zA-Z]+(?:\([^)]+\))?!?:\s+")
 TERMINAL_PUNCTUATION = (".", "!", "?", ")", "]", "`")
 
@@ -41,7 +42,13 @@ def section_for_labels(labels: tuple[str, ...]) -> str:
     for label, section in SECTION_ORDER:
         if label in normalized_labels:
             return section
+    if "other" in normalized_labels:
+        return OTHER_SECTION
     return OTHER_SECTION
+
+
+def is_skipped(labels: tuple[str, ...]) -> bool:
+    return SKIP_LABEL in {normalize_label(label) for label in labels}
 
 
 def release_note_title(title: str) -> str:
@@ -93,6 +100,8 @@ def render_release_notes(pull_requests: list[PullRequest]) -> str:
     grouped[OTHER_SECTION] = []
 
     for pr in pull_requests:
+        if is_skipped(pr.labels):
+            continue
         grouped[section_for_labels(pr.labels)].append(release_note_entry(pr))
 
     sections = []

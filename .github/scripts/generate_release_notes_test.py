@@ -64,6 +64,46 @@ class GenerateReleaseNotesTests(unittest.TestCase):
 
         self.assertEqual(section, "## ✨ Features")
 
+    def test_other_label_maps_to_other_changes(self):
+        section = generate_release_notes.section_for_labels(("other",))
+
+        self.assertEqual(section, "## Other Changes")
+
+    def test_skip_release_notes_label_omits_pull_request(self):
+        notes = generate_release_notes.render_release_notes(
+            [
+                generate_release_notes.PullRequest(
+                    number=5,
+                    title="ci: update workflow runner",
+                    labels=("skip-release-notes",),
+                ),
+                generate_release_notes.PullRequest(
+                    number=6,
+                    title="feat: add release packaging",
+                    labels=("feature",),
+                ),
+            ]
+        )
+
+        self.assertEqual(
+            notes,
+            "## ✨ Features\n\n"
+            "- Add release packaging. (#6)\n",
+        )
+
+    def test_skip_release_notes_takes_priority_over_release_labels(self):
+        notes = generate_release_notes.render_release_notes(
+            [
+                generate_release_notes.PullRequest(
+                    number=6,
+                    title="feat: internal workflow helper",
+                    labels=("feature", "skip-release-notes"),
+                ),
+            ]
+        )
+
+        self.assertEqual(notes, "")
+
     def test_deduplicates_pull_requests_from_multiple_commits(self):
         pull_requests = generate_release_notes.unique_pull_requests(
             [
