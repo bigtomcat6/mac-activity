@@ -6,6 +6,7 @@
 /Packages
 DerivedData/
 coverage/
+dist/
 default.profraw
 *.profraw
 xcuserdata/
