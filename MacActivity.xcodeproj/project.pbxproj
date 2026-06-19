@@ -30,6 +30,7 @@
 		3F60AD2BBC32608CE8F87545 /* PreferencesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECAE9B17ED4BB6141029863B /* PreferencesController.swift */; };
 		40CE3A305988195A3041D2A8 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A8D20F98149046273836B /* StatusItemController.swift */; };
 		44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */; };
+		45A7297E010B7FBDC275DADA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */; };
 		481D37333B0C15E0EE471191 /* LazyShellControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */; };
 		4A3E337DABE4743A0C235838 /* MacActivityCore.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; };
 		4F1AE1B7F44F2D9407FA4746 /* SMCSensorReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */; };
@@ -171,6 +172,7 @@
 		4C28EA386891B5D88473C012 /* DashboardModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModelTests.swift; sourceTree = "<group>"; };
 		4CC85A29241CC6F902A0531F /* MetricProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricProvider.swift; sourceTree = "<group>"; };
 		4DBDE27C632732B8D69B540E /* AppLocalization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalization.swift; sourceTree = "<group>"; };
+		524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarSummaryLayoutTests.swift; sourceTree = "<group>"; };
 		55B02C737DA82873951C86D0 /* AppLocalizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalizationController.swift; sourceTree = "<group>"; };
 		5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryReleaseServiceTests.swift; sourceTree = "<group>"; };
@@ -280,6 +282,7 @@
 		45AEBBDF8DC041B6C22684B8 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */,
 				CB12314953BA1B61C565D4FA /* InfoPlist.strings */,
 				41DEBECB80588EDCB2B826B3 /* Localizable.strings */,
 			);
@@ -625,6 +628,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				45A7297E010B7FBDC275DADA /* Assets.xcassets in Resources */,
 				FDA041119F4EA5173CC7C14D /* InfoPlist.strings in Resources */,
 				0C235C5AB692A21728D0BA55 /* Localizable.strings in Resources */,
 			);
