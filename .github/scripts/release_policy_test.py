@@ -57,12 +57,15 @@ class ReleasePolicyTests(unittest.TestCase):
     def test_release_workflow_packages_symbols_and_release_notes(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
+        self.assertIn(".dmg", workflow)
         self.assertIn("-dSYM.zip", workflow)
-        self.assertIn("Write release notes prefix", workflow)
-        self.assertIn("Release Summary", workflow)
-        self.assertIn("dSYM SHA256", workflow)
+        self.assertIn("-SHA256SUMS.txt", workflow)
+        self.assertIn("Generate release notes", workflow)
+        self.assertIn("generate_release_notes.py", workflow)
         self.assertIn('DSYM_PATH: ${{ steps.package.outputs.dsym_path }}', workflow)
+        self.assertIn('CHECKSUMS_PATH: ${{ steps.package.outputs.checksums_path }}', workflow)
         self.assertIn('--notes "$(cat "${NOTES_PATH}")"', workflow)
+        self.assertNotIn("--generate-notes", workflow)
 
     def test_release_workflow_supports_developer_id_notarization(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()

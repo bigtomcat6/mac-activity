@@ -12,7 +12,7 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
         )
 
         self.assertEqual(metadata["tag"], "v1.2.3")
-        self.assertEqual(metadata["title"], "Mac Activity 1.2.3")
+        self.assertEqual(metadata["title"], "1.2.3")
         self.assertEqual(metadata["prerelease"], "false")
         self.assertEqual(metadata["latest"], "true")
         self.assertEqual(metadata["artifact_stem"], "MacActivity-v1.2.3")
@@ -25,7 +25,7 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
         )
 
         self.assertEqual(metadata["tag"], "v1.2.3-beta.45")
-        self.assertEqual(metadata["title"], "Mac Activity 1.2.3 Beta 45")
+        self.assertEqual(metadata["title"], "1.2.3-beta.45")
         self.assertEqual(metadata["prerelease"], "true")
         self.assertEqual(metadata["latest"], "false")
         self.assertEqual(metadata["artifact_stem"], "MacActivity-v1.2.3-beta.45")

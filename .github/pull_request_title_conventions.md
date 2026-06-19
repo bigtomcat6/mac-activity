@@ -34,8 +34,9 @@ letter, and does not end with a period.
 
 ## Changelog Rules
 
-`feat`, `fix`, and `perf` normally appear in release notes. Add `(no-changelog)`
-only when the change is intentionally internal.
+`feat`, `fix`, and `perf` normally appear in release notes. Use the
+`skip-release-notes` label for PRs that should not appear in release notes,
+including CI-only, docs-only, and test-only changes.
 
 Examples:
 
@@ -44,5 +45,6 @@ feat(metrics): Add hardware battery percentage preference
 fix(dashboard): Keep swap card visible when total swap is zero
 perf(app): Reduce status item redraw work
 ci(release): Add PR metadata checks
-refactor(core): Simplify metric snapshot formatting (no-changelog)
+docs: Update release checklist
+test(release): Cover release metadata parsing
 ```

@@ -26,23 +26,22 @@ def build_metadata(channel, version, build):
 
     if channel == "release":
         suffix = ""
-        title_suffix = ""
         prerelease = "false"
         latest = "true"
     else:
         suffix = f"-{channel}.{build}"
-        title_suffix = f" {channel.upper() if channel == 'rc' else channel.title()} {build}"
         prerelease = "true"
         latest = "false"
 
     tag = f"v{version}{suffix}"
+    release_title = tag.removeprefix("v")
     return {
         "app_name": APP_NAME,
         "channel": channel,
         "version": version,
         "build": build,
         "tag": tag,
-        "title": f"{APP_NAME} {version}{title_suffix}",
+        "title": release_title,
         "prerelease": prerelease,
         "latest": latest,
         "artifact_stem": f"MacActivity-{tag}",

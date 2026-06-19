@@ -41,13 +41,14 @@ on:
           - project
           - developer-id
       create_github_release:
-        description: Create a draft GitHub Release and upload the zip asset.
+        description: Create a draft GitHub Release and upload release assets.
         required: true
         type: boolean
         default: false
 
 permissions:
   contents: write
+  pull-requests: read
 
 concurrency:
   group: ${{ github.workflow }}-${{ inputs.channel }}-${{ inputs.version }}
@@ -239,7 +240,7 @@ jobs:
           xcrun stapler validate "${app}"
           spctl --assess --type execute -vv "${app}"
 
-      - name: Package zip
+      - name: Package release artifacts
         id: package
         run: |
           products_dir="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release"
@@ -247,7 +248,6 @@ jobs:
           mkdir -p dist
           zip_path="dist/${{ steps.release.outputs.artifact_stem }}.zip"
           ditto -c -k --keepParent "${app}" "${zip_path}"
-          shasum -a 256 "${zip_path}" > "${zip_path}.sha256"
 
           dsym_zip_path="dist/${{ steps.release.outputs.artifact_stem }}-dSYM.zip"
           dsym_staging="${RUNNER_TEMP}/MacActivity-dSYMs"
@@ -262,44 +262,46 @@ jobs:
 
           if [[ "${dsym_count}" -gt 0 ]]; then
             ditto -c -k --keepParent "${dsym_staging}" "${dsym_zip_path}"
-            shasum -a 256 "${dsym_zip_path}" > "${dsym_zip_path}.sha256"
           else
             echo "::error::No dSYM bundles found to package."
             exit 1
           fi
 
+          dmg_path="dist/${{ steps.release.outputs.artifact_stem }}.dmg"
+          hdiutil create \
+            -volname "${{ steps.release.outputs.title }}" \
+            -srcfolder "${app}" \
+            -format UDZO \
+            -ov \
+            "${dmg_path}"
+
+          checksums_path="dist/${{ steps.release.outputs.artifact_stem }}-SHA256SUMS.txt"
+          (
+            cd dist
+            shasum -a 256 \
+              "$(basename "${dmg_path}")" \
+              "$(basename "${zip_path}")" \
+              "$(basename "${dsym_zip_path}")" \
+              > "$(basename "${checksums_path}")"
+          )
+
           {
             echo "zip_path=${zip_path}"
-            echo "checksum_path=${zip_path}.sha256"
             echo "dsym_path=${dsym_zip_path}"
-            echo "dsym_checksum_path=${dsym_zip_path}.sha256"
+            echo "dmg_path=${dmg_path}"
+            echo "checksums_path=${checksums_path}"
           } >> "${GITHUB_OUTPUT}"
 
-      - name: Write release notes prefix
+      - name: Generate release notes
         id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           notes_path="dist/${{ steps.release.outputs.artifact_stem }}-release-notes.md"
-          zip_checksum="$(awk '{print $1}' "${{ steps.package.outputs.checksum_path }}")"
-          dsym_checksum="unavailable"
-          if [[ -f "${{ steps.package.outputs.dsym_checksum_path }}" ]]; then
-            dsym_checksum="$(awk '{print $1}' "${{ steps.package.outputs.dsym_checksum_path }}")"
-          fi
-
-          cat > "${notes_path}" <<EOF
-          ## Release Summary
-
-          - Tag: \`${{ steps.release.outputs.tag }}\`
-          - Target: \`${{ steps.target.outputs.sha }}\`
-          - Channel: \`${{ inputs.channel }}\`
-          - Version: \`${{ steps.release.outputs.version }}\`
-          - Build: \`${{ steps.release.outputs.build }}\`
-          - CI suite: \`${{ inputs.ci_suite }}\`
-          - Signing: \`${{ inputs.signing }}\`
-          - Artifact: \`${{ steps.release.outputs.artifact_stem }}.zip\`
-          - SHA256: \`${zip_checksum}\`
-          - dSYM SHA256: \`${dsym_checksum}\`
-
-          EOF
+          python3 .github/scripts/generate_release_notes.py \
+            --repo "${GITHUB_REPOSITORY}" \
+            --target "${{ steps.target.outputs.sha }}" \
+            --output "${notes_path}"
 
           echo "notes_path=${notes_path}" >> "${GITHUB_OUTPUT}"
 
@@ -309,9 +311,9 @@ jobs:
           name: ${{ steps.release.outputs.artifact_stem }}
           path: |
             ${{ steps.package.outputs.zip_path }}
-            ${{ steps.package.outputs.checksum_path }}
             ${{ steps.package.outputs.dsym_path }}
-            ${{ steps.package.outputs.dsym_checksum_path }}
+            ${{ steps.package.outputs.dmg_path }}
+            ${{ steps.package.outputs.checksums_path }}
             ${{ steps.notes.outputs.notes_path }}
           if-no-files-found: error
 
@@ -323,22 +325,21 @@ jobs:
           TITLE: ${{ steps.release.outputs.title }}
           TARGET_SHA: ${{ steps.target.outputs.sha }}
           ZIP_PATH: ${{ steps.package.outputs.zip_path }}
-          CHECKSUM_PATH: ${{ steps.package.outputs.checksum_path }}
           DSYM_PATH: ${{ steps.package.outputs.dsym_path }}
-          DSYM_CHECKSUM_PATH: ${{ steps.package.outputs.dsym_checksum_path }}
+          DMG_PATH: ${{ steps.package.outputs.dmg_path }}
+          CHECKSUMS_PATH: ${{ steps.package.outputs.checksums_path }}
           NOTES_PATH: ${{ steps.notes.outputs.notes_path }}
           PRERELEASE: ${{ steps.release.outputs.prerelease }}
           LATEST: ${{ steps.release.outputs.latest }}
         run: |
           args=(
             "${TAG}"
+            "${DMG_PATH}"
             "${ZIP_PATH}"
-            "${CHECKSUM_PATH}"
             "${DSYM_PATH}"
-            "${DSYM_CHECKSUM_PATH}"
+            "${CHECKSUMS_PATH}"
             --title "${TITLE}"
             --target "${TARGET_SHA}"
-            --generate-notes
             --notes "$(cat "${NOTES_PATH}")"
             --latest="${LATEST}"
             --draft
