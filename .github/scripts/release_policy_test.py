@@ -1,4 +1,5 @@
 import re
+import struct
 import unittest
 from pathlib import Path
 
@@ -66,6 +67,29 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn('CHECKSUMS_PATH: ${{ steps.package.outputs.checksums_path }}', workflow)
         self.assertIn('--notes "$(cat "${NOTES_PATH}")"', workflow)
         self.assertNotIn("--generate-notes", workflow)
+
+    def test_release_workflow_uses_styled_dmg_script_and_repository_background(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        package_section = workflow.split("- name: Package release artifacts", 1)[1]
+
+        self.assertIn(".github/scripts/create_dmg.sh", package_section)
+        self.assertIn("assets/dmg/background.png", package_section)
+        self.assertNotIn("-srcfolder \"${app}\"", package_section)
+
+    def test_styled_dmg_uses_compact_cropped_background_layout(self):
+        script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
+        background = REPO_ROOT / "assets" / "dmg" / "background.png"
+
+        with background.open("rb") as image:
+            self.assertEqual(image.read(8), b"\x89PNG\r\n\x1a\n")
+            image.read(8)
+            width, height = struct.unpack(">II", image.read(8))
+
+        self.assertEqual((width, height), (627, 560))
+        self.assertIn("WINDOW_WIDTH=627", script)
+        self.assertIn("WINDOW_HEIGHT=560", script)
+        self.assertIn("APP_Y=290", script)
+        self.assertIn("APPLICATIONS_Y=290", script)
 
     def test_release_workflow_supports_developer_id_notarization(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()

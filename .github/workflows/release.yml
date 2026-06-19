@@ -268,12 +268,11 @@ jobs:
           fi
 
           dmg_path="dist/${{ steps.release.outputs.artifact_stem }}.dmg"
-          hdiutil create \
-            -volname "${{ steps.release.outputs.title }}" \
-            -srcfolder "${app}" \
-            -format UDZO \
-            -ov \
-            "${dmg_path}"
+          .github/scripts/create_dmg.sh \
+            --app "${app}" \
+            --output "${dmg_path}" \
+            --volume-name "${{ steps.release.outputs.title }}" \
+            --background assets/dmg/background.png
 
           checksums_path="dist/${{ steps.release.outputs.artifact_stem }}-SHA256SUMS.txt"
           (

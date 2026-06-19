@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Mac Activity app icon">
+  <defs>
+    <linearGradient id="bg" x1="122" y1="71" x2="880" y2="949" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="0.56" stop-color="#F8F8FC"/>
+      <stop offset="1" stop-color="#F0F1F7"/>
+    </linearGradient>
+
+    <linearGradient id="monitorGradient" x1="220" y1="320" x2="820" y2="704" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2F82FF"/>
+      <stop offset="0.52" stop-color="#7063F7"/>
+      <stop offset="1" stop-color="#A747F0"/>
+    </linearGradient>
+
+    <linearGradient id="monitorHighlight" x1="256" y1="312" x2="768" y2="780" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.24"/>
+      <stop offset="0.45" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <filter id="outerShadow" x="-60" y="-40" width="1144" height="1144" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="28" stdDeviation="30" flood-color="#1C1D24" flood-opacity="0.18"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="8" flood-color="#1C1D24" flood-opacity="0.08"/>
+    </filter>
+
+    <filter id="symbolShadow" x="170" y="270" width="684" height="542" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="18" stdDeviation="20" flood-color="#4F46E5" flood-opacity="0.22"/>
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#3446C5" flood-opacity="0.16"/>
+    </filter>
+  </defs>
+
+  <!-- App icon tile -->
+  <rect x="74" y="64" width="876" height="876" rx="168" fill="url(#bg)" filter="url(#outerShadow)"/>
+  <rect x="92" y="82" width="840" height="840" rx="150" stroke="#FFFFFF" stroke-opacity="0.9" stroke-width="2"/>
+
+  <g transform="translate(0 -36)">
+    <!-- Minimal monitor symbol -->
+    <g filter="url(#symbolShadow)">
+      <rect x="214" y="312" width="596" height="380" rx="54" fill="url(#monitorGradient)"/>
+      <path d="M462 692H562L581 752H443L462 692Z" fill="url(#monitorGradient)"/>
+      <rect x="368" y="752" width="288" height="48" rx="24" fill="url(#monitorGradient)"/>
+      <rect x="214" y="312" width="596" height="380" rx="54" fill="url(#monitorHighlight)"/>
+    </g>
+
+    <!-- Activity waveform -->
+    <path d="M292 516H402C422 516 435 512 444 494L478 428C489 408 517 408 528 430L573 616C583 636 611 636 621 616L669 526C681 503 707 503 719 526L738 562C748 580 761 580 771 562L798 516H812"
+          stroke="#FFFFFF"
+          stroke-width="38"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+          opacity="0.98"/>
+
+    <!-- Subtle ambient light -->
+    <ellipse cx="512" cy="416" rx="306" ry="164" fill="#FFFFFF" opacity="0.07"/>
+  </g>
+</svg>
