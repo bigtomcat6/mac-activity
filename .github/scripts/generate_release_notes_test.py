@@ -69,7 +69,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
 
         self.assertEqual(section, "## Other Changes")
 
-    def test_skip_release_notes_label_omits_pull_request(self):
+    def test_skip_release_notes_label_omits_ci_docs_and_test_only_pull_requests(self):
         notes = generate_release_notes.render_release_notes(
             [
                 generate_release_notes.PullRequest(
@@ -79,6 +79,16 @@ class GenerateReleaseNotesTests(unittest.TestCase):
                 ),
                 generate_release_notes.PullRequest(
                     number=6,
+                    title="docs: update release checklist",
+                    labels=("skip-release-notes",),
+                ),
+                generate_release_notes.PullRequest(
+                    number=7,
+                    title="test: cover release metadata parsing",
+                    labels=("skip-release-notes",),
+                ),
+                generate_release_notes.PullRequest(
+                    number=8,
                     title="feat: add release packaging",
                     labels=("feature",),
                 ),
@@ -88,7 +98,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertEqual(
             notes,
             "## ✨ Features\n\n"
-            "- Add release packaging. (#6)\n",
+            "- Add release packaging. (#8)\n",
         )
 
     def test_skip_release_notes_takes_priority_over_release_labels(self):
