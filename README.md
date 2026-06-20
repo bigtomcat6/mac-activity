@@ -36,7 +36,7 @@ Implemented providers:
 
 ```bash
 git clone https://github.com/bigtomcat6/mac-activity.git
-cd MacActivity/mac-activity
+cd mac-activity
 ```
 
 ### Build in Xcode
@@ -67,6 +67,16 @@ swift test
 - Clicking the menu bar item opens the dashboard popover.
 - You can disable the menu bar item in Preferences; the app remains reachable until you re-enable it.
 - When launched with menu bar hidden, the app can still be recovered from the preferences flow.
+
+## Documentation
+
+- [Documentation index](docs/README.md)
+- [User guide](docs/user-guide.md)
+- [Development guide](docs/development.md)
+- [Contributing guide](docs/CONTRIBUTING.md)
+- [Support guide](docs/SUPPORT.md)
+- [Security policy](docs/SECURITY.md)
+- [Release guide](docs/release.md)
 
 ## Configuration
 
