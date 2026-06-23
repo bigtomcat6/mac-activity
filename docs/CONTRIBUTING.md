@@ -5,11 +5,11 @@ validation, and reproducible bug reports.
 
 ## Before You Start
 
-- For usage questions, read [SUPPORT.md](SUPPORT.md).
-- For security-sensitive reports, read [SECURITY.md](SECURITY.md) and avoid
+- For usage questions, read [SUPPORT.md](/docs/SUPPORT.md).
+- For security-sensitive reports, read [SECURITY.md](/docs/SECURITY.md) and avoid
   public issue details.
-- For release workflow changes, read [release.md](release.md).
-- For local setup, read [development.md](development.md).
+- For release workflow changes, read [release.md](/docs/release.md).
+- For local setup, read [development.md](/docs/development.md).
 
 ## Issues
 
@@ -97,7 +97,7 @@ Every PR should make its release impact explicit in the PR template.
 - Apply one release-note label before merge when a PR should appear in release
   notes.
 
-See [release.md](release.md) for the label taxonomy.
+See [release.md](/docs/release.md) for the label taxonomy.
 
 ## Review Expectations
 

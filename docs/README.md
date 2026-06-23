@@ -33,6 +33,10 @@ contributor, maintainer, and release documentation.
   release-note behavior changes.
 - Update [CONTRIBUTING.md](CONTRIBUTING.md) when pull request expectations,
   title rules, or review requirements change.
+- In GitHub community health files such as `CONTRIBUTING.md`, `SUPPORT.md`, and
+  `SECURITY.md`, use repository-root-relative links such as
+  `/docs/SUPPORT.md`. GitHub can render those files in special repository views
+  where sibling relative links resolve from the repository root.
 
 ## Writing Style
 

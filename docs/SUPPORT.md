@@ -6,9 +6,9 @@ Use this guide to choose the right support path for MacActivity.
 
 Start with:
 
-- [README.md](../README.md)
-- [User guide](user-guide.md)
-- [Development guide](development.md), for local build or test questions
+- [README.md](/README.md)
+- [User guide](/docs/user-guide.md)
+- [Development guide](/docs/development.md), for local build or test questions
 
 If the answer is still unclear, open a GitHub issue and describe what you are
 trying to do.
@@ -45,7 +45,7 @@ Open a GitHub issue with:
 ## Security Reports
 
 Do not file public issues for vulnerabilities or privacy-sensitive reports. See
-[SECURITY.md](SECURITY.md).
+[SECURITY.md](/docs/SECURITY.md).
 
 ## Out of Scope
 
