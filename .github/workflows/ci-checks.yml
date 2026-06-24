@@ -63,22 +63,35 @@ jobs:
               --scratch-path /tmp/swiftpm-build |
               tail -n 1
           )"
+          coverage_dir="$(dirname "${coverage_path}")"
+          profdata_path="${coverage_dir}/default.profdata"
+          xctest_path="$(find /tmp/swiftpm-build -name "*.xctest" -type d -print -quit)"
+          test_binary="${xctest_path}/Contents/MacOS/$(basename "${xctest_path}" .xctest)"
           cp "${coverage_path}" coverage/swiftpm-codecov.json
+          xcrun llvm-cov export \
+            -format=lcov \
+            "${test_binary}" \
+            -instr-profile "${profdata_path}" \
+            > coverage/swiftpm.lcov
 
       - name: Upload SwiftPM coverage
         uses: actions/upload-artifact@v6
         with:
           name: swiftpm-coverage
-          path: coverage/swiftpm-codecov.json
+          path: |
+            coverage/swiftpm-codecov.json
+            coverage/swiftpm.lcov
           if-no-files-found: error
 
       - name: Upload SwiftPM coverage to Codecov
         if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
         uses: codecov/codecov-action@v7
         with:
-          files: coverage/swiftpm-codecov.json
+          files: coverage/swiftpm.lcov
           flags: swiftpm
           name: swiftpm
+          override_branch: ${{ github.head_ref || github.ref_name }}
+          override_pr: ${{ github.event.number }}
           disable_search: true
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
