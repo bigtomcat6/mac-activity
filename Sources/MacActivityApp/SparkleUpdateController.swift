@@ -83,7 +83,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return candidateItems.first { $0.candidate == bestCandidate }?.item ?? SUAppcastItem.empty()
     }
 
-    private static func hasSparkleConfiguration(in bundle: Bundle) -> Bool {
+    static func hasSparkleConfiguration(in bundle: Bundle) -> Bool {
         guard let publicKey = cleanInfoValue("SUPublicEDKey", in: bundle),
               !publicKey.isEmpty,
               let feedURLString = cleanInfoValue("SUFeedURL", in: bundle),
@@ -94,7 +94,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return true
     }
 
-    private static func currentReleaseVersion(in bundle: Bundle) -> ReleaseVersion? {
+    static func currentReleaseVersion(in bundle: Bundle) -> ReleaseVersion? {
         guard let releaseTag = releaseTag(in: bundle) else {
             return nil
         }
@@ -102,7 +102,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return try? ReleaseVersion(releaseTag)
     }
 
-    private static func releaseTag(in bundle: Bundle) -> String? {
+    static func releaseTag(in bundle: Bundle) -> String? {
         if let releaseTag = cleanInfoValue(releaseTagInfoKey, in: bundle), !releaseTag.isEmpty {
             return releaseTag
         }
@@ -127,7 +127,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return try? UpdateCandidate(version: releaseVersionString, build: item.versionString)
     }
 
-    private static func releaseVersionString(
+    static func releaseVersionString(
         displayVersionString: String,
         versionString: String,
         channel: String?
@@ -146,7 +146,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return "\(displayVersionString)-\(updateChannel.rawValue).\(versionString)"
     }
 
-    private static func cleanInfoValue(_ key: String, in bundle: Bundle) -> String? {
+    static func cleanInfoValue(_ key: String, in bundle: Bundle) -> String? {
         guard let value = bundle.object(forInfoDictionaryKey: key) as? String else {
             return nil
         }

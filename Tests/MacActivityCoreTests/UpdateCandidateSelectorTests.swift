@@ -111,4 +111,42 @@ final class UpdateCandidateSelectorTests: XCTestCase {
 
         XCTAssertEqual(selected?.version.rawValue, "v26.1.0-alpha.3")
     }
+
+    func testInvalidReleaseVersionsAreRejected() {
+        XCTAssertThrowsError(try ReleaseVersion("26.0"))
+        XCTAssertThrowsError(try ReleaseVersion("26.0.0-rc.1"))
+        XCTAssertThrowsError(try ReleaseVersion("26.0.0-beta"))
+        XCTAssertThrowsError(try ReleaseVersion("26.0.0-release.1"))
+    }
+
+    func testReleaseVersionOrderingUsesBaseChannelAndPrereleaseNumber() throws {
+        XCTAssertLessThan(try ReleaseVersion("v26.0.0-alpha.2"), try ReleaseVersion("v26.0.0-alpha.3"))
+        XCTAssertLessThan(try ReleaseVersion("v26.0.0-alpha.3"), try ReleaseVersion("v26.0.0-beta.1"))
+        XCTAssertLessThan(try ReleaseVersion("v26.0.0-beta.3"), try ReleaseVersion("v26.0.0"))
+        XCTAssertLessThan(try ReleaseVersion("v26.0.0"), try ReleaseVersion("v26.0.1"))
+        XCTAssertLessThan(try ReleaseVersion("v26.0.1"), try ReleaseVersion("v26.1.0"))
+        XCTAssertLessThan(try ReleaseVersion("v26.1.0"), try ReleaseVersion("v27.0.0"))
+    }
+
+    func testHigherBuildWinsWhenVersionMatches() throws {
+        let current = try ReleaseVersion("v26.0.0")
+        let candidates = [
+            try UpdateCandidate(version: "v26.0.1", build: "20"),
+            try UpdateCandidate(version: "v26.0.1", build: "21"),
+        ]
+
+        let selected = UpdateCandidateSelector.bestCandidate(
+            currentVersion: current,
+            selectedChannel: .release,
+            candidates: candidates
+        )
+
+        XCTAssertEqual(selected?.build, 21)
+    }
+
+    func testNonnumericBuildDefaultsToZero() throws {
+        let candidate = try UpdateCandidate(version: "v26.0.1", build: "latest")
+
+        XCTAssertEqual(candidate.build, 0)
+    }
 }
