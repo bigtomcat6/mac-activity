@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg)](https://codecov.io/gh/bigtomcat6/mac-activity)
-[![Release](https://img.shields.io/github/v/release/bigtomcat6/mac-activity?include_prereleases=true&sort=semver)](https://github.com/bigtomcat6/mac-activity/releases)
+[![Release](https://img.shields.io/github/v/release/bigtomcat6/mac-activity?include_prereleases&sort=semver)](https://github.com/bigtomcat6/mac-activity/releases)
 [![License](https://img.shields.io/github/license/bigtomcat6/mac-activity)](./LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white)
 
