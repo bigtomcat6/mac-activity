@@ -32,7 +32,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         let preferencesWindowController = LazyPreferencesWindowController { [preferencesController] in
             return PreferencesWindowController(
-                preferencesController: preferencesController
+                preferencesController: preferencesController,
+                checkForUpdates: { [weak self] in
+                    self?.checkForUpdates()
+                }
             )
         }
         let dashboardPopoverController = LazyDashboardPopoverController { [weak self] in
@@ -134,6 +137,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func checkForUpdates() {
+        guard let url = URL(string: "https://github.com/bigtomcat6/mac-activity/releases") else {
+            return
+        }
+
+        NSWorkspace.shared.open(url)
     }
 
     private func terminateApplication() {

@@ -4,6 +4,20 @@ import MacActivityCore
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
     @ObservedObject private var localizationController = AppLocalizationController.shared
+    @State private var isUpdateChannelExpanded = false
+
+    private let versionInfo: PreferencesVersionInfo
+    private let checkForUpdates: () -> Void
+
+    init(
+        preferencesController: PreferencesController,
+        versionInfo: PreferencesVersionInfo = .current(),
+        checkForUpdates: @escaping () -> Void = {}
+    ) {
+        self.preferencesController = preferencesController
+        self.versionInfo = versionInfo
+        self.checkForUpdates = checkForUpdates
+    }
 
     private var metricRows: [MetricKind] {
         MetricKind.summaryOrder
@@ -12,6 +26,8 @@ struct PreferencesView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
+                updateHeader
+
                 Toggle(
                     AppLocalization.string(.preferencesLaunchAtLogin),
                     isOn: Binding(
@@ -145,5 +161,84 @@ struct PreferencesView: View {
             .frame(maxWidth: .infinity, alignment: .topLeading)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private var updateHeader: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 6) {
+                Text(AppLocalization.string(.preferencesCurrentVersion))
+                    .foregroundStyle(.secondary)
+
+                Text(versionInfo.displayText)
+                    .monospacedDigit()
+
+                Button {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        isUpdateChannelExpanded.toggle()
+                    }
+                } label: {
+                    Image(systemName: isUpdateChannelExpanded ? "chevron.up" : "chevron.down")
+                        .imageScale(.small)
+                }
+                .buttonStyle(.borderless)
+                .help(
+                    AppLocalization.string(
+                        isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
+                    )
+                )
+                .accessibilityLabel(
+                    AppLocalization.string(
+                        isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
+                    )
+                )
+
+                Spacer(minLength: 12)
+
+                Button(AppLocalization.string(.preferencesCheckForUpdates), action: checkForUpdates)
+            }
+
+            if isUpdateChannelExpanded {
+                HStack(spacing: 8) {
+                    Text(AppLocalization.string(.preferencesUpdateChannel))
+
+                    Picker(
+                        AppLocalization.string(.preferencesUpdateChannel),
+                        selection: Binding(
+                            get: { preferencesController.state.updateChannel },
+                            set: { preferencesController.setUpdateChannel($0) }
+                        )
+                    ) {
+                        ForEach(UpdateChannel.allCases, id: \.self) { channel in
+                            Text(AppLocalization.updateChannelTitle(for: channel))
+                                .tag(channel)
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(width: 120)
+                }
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+    }
+}
+
+struct PreferencesVersionInfo: Equatable {
+    var shortVersion: String
+    var build: String?
+
+    var displayText: String {
+        let trimmedBuild = build?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let trimmedBuild, trimmedBuild.isEmpty == false else {
+            return shortVersion
+        }
+
+        return "\(shortVersion) (\(trimmedBuild))"
+    }
+
+    static func current(bundle: Bundle = .main) -> PreferencesVersionInfo {
+        let shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
+        let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        return PreferencesVersionInfo(shortVersion: shortVersion, build: build)
     }
 }
