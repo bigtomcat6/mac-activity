@@ -1,0 +1,151 @@
+name: Publish Sparkle appcast
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to publish into the Sparkle appcast.
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  appcast:
+    name: Publish Sparkle appcast
+    runs-on: macos-26
+    environment:
+      name: release-signing
+      deployment: false
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Resolve appcast release
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: |
+          if [[ -z "${RELEASE_TAG}" ]]; then
+            echo "::error::A release tag is required."
+            exit 1
+          fi
+
+          publish=true
+          channel=release
+          if [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            channel=release
+          elif [[ "${RELEASE_TAG}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-(alpha|beta)\.[1-9][0-9]*$ ]]; then
+            channel="${BASH_REMATCH[1]}"
+          else
+            echo "::notice::${RELEASE_TAG} is not an alpha, beta, or release updater tag; skipping appcast."
+            publish=false
+          fi
+
+          {
+            echo "tag=${RELEASE_TAG}"
+            echo "channel=${channel}"
+            echo "publish=${publish}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Download release archive
+        if: ${{ steps.release.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          archive_dir="${RUNNER_TEMP}/sparkle-archives"
+          mkdir -p "${archive_dir}"
+
+          asset_name="MacActivity-${TAG}.zip"
+          gh release download "${TAG}" --pattern "${asset_name}" --dir "${archive_dir}" --clobber
+          if [[ ! -f "${archive_dir}/${asset_name}" ]]; then
+            echo "::error::Expected release asset ${asset_name}."
+            exit 1
+          fi
+
+          gh release view "${TAG}" --json body --jq '.body // ""' \
+            > "${archive_dir}/MacActivity-${TAG}.md"
+
+      - name: Build Sparkle appcast tool
+        if: ${{ steps.release.outputs.publish == 'true' }}
+        run: |
+          swift package resolve
+          tool_build_dir="${RUNNER_TEMP}/SparkleToolBuild"
+          xcodebuild \
+            -project .build/checkouts/Sparkle/Sparkle.xcodeproj \
+            -scheme generate_appcast \
+            -configuration Release \
+            -derivedDataPath "${tool_build_dir}" \
+            -quiet \
+            build
+
+      - name: Publish Sparkle appcast
+        if: ${{ steps.release.outputs.publish == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          TAG: ${{ steps.release.outputs.tag }}
+          CHANNEL: ${{ steps.release.outputs.channel }}
+        run: |
+          if [[ -z "${SPARKLE_ED_PRIVATE_KEY}" ]]; then
+            echo "::error::SPARKLE_ED_PRIVATE_KEY secret is required."
+            exit 1
+          fi
+
+          archive_dir="${RUNNER_TEMP}/sparkle-archives"
+          pages_dir="${RUNNER_TEMP}/gh-pages"
+          generate_appcast="${RUNNER_TEMP}/SparkleToolBuild/Build/Products/Release/generate_appcast"
+
+          if [[ ! -x "${generate_appcast}" ]]; then
+            echo "::error::generate_appcast was not built."
+            exit 1
+          fi
+
+          gh auth setup-git
+          if git ls-remote --exit-code --heads origin gh-pages >/dev/null 2>&1; then
+            git clone --branch gh-pages "https://github.com/${GITHUB_REPOSITORY}.git" "${pages_dir}"
+          else
+            git init "${pages_dir}"
+            git -C "${pages_dir}" checkout -b gh-pages
+            git -C "${pages_dir}" remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          fi
+
+          if [[ -f "${pages_dir}/appcast.xml" ]]; then
+            cp "${pages_dir}/appcast.xml" "${archive_dir}/appcast.xml"
+          fi
+
+          channel_args=()
+          if [[ "${CHANNEL}" != "release" ]]; then
+            channel_args=(--channel "${CHANNEL}")
+          fi
+
+          download_url_prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          printf '%s' "${SPARKLE_ED_PRIVATE_KEY}" | "${generate_appcast}" --ed-key-file - \
+            --download-url-prefix "${download_url_prefix}" \
+            --maximum-versions 20 \
+            "${channel_args[@]}" \
+            -o "${pages_dir}/appcast.xml" \
+            "${archive_dir}"
+
+          git -C "${pages_dir}" config user.name "github-actions[bot]"
+          git -C "${pages_dir}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${pages_dir}" add appcast.xml
+          if git -C "${pages_dir}" diff --cached --quiet; then
+            echo "Appcast is already current."
+            exit 0
+          fi
+
+          git -C "${pages_dir}" commit -m "Update Sparkle appcast for ${TAG}"
+          git -C "${pages_dir}" push origin HEAD:gh-pages

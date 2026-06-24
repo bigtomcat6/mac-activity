@@ -84,6 +84,30 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn('--notes "$(cat "${NOTES_PATH}")"', workflow)
         self.assertNotIn("--generate-notes", workflow)
 
+    def test_release_workflow_publishes_signed_sparkle_appcast(self):
+        workflow_path = REPO_ROOT / ".github" / "workflows" / "appcast.yml"
+        self.assertTrue(workflow_path.exists())
+        workflow = workflow_path.read_text()
+
+        self.assertIn("Publish Sparkle appcast", workflow)
+        appcast_section = workflow.split("name: Publish Sparkle appcast", 1)[1]
+
+        self.assertIn("release:", workflow)
+        self.assertIn("types: [published]", workflow)
+        self.assertIn("SPARKLE_ED_PRIVATE_KEY", appcast_section)
+        self.assertIn("generate_appcast", appcast_section)
+        self.assertIn("--ed-key-file -", appcast_section)
+        self.assertIn("--download-url-prefix", appcast_section)
+        self.assertIn("gh-pages", appcast_section)
+        self.assertIn("appcast.xml", appcast_section)
+
+    def test_release_workflow_validates_internal_release_tag(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        validation_section = workflow.split("- name: Validate bundle version", 1)[1].split("- name: Notarize", 1)[0]
+
+        self.assertIn("MacActivityReleaseTag", validation_section)
+        self.assertIn("steps.release.outputs.tag", validation_section)
+
     def test_release_workflow_uses_styled_dmg_script_and_repository_background(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         package_section = workflow.split("- name: Package release artifacts", 1)[1]

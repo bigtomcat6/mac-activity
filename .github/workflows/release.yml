@@ -205,12 +205,17 @@ jobs:
           info_plist="${app}/Contents/Info.plist"
           actual_version="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${info_plist}")"
           actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
+          actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
           if [[ "${actual_version}" != "${{ steps.release.outputs.version }}" ]]; then
             echo "::error::Expected CFBundleShortVersionString ${{ steps.release.outputs.version }}, got ${actual_version}"
             exit 1
           fi
           if [[ "${actual_build}" != "${{ steps.release.outputs.build }}" ]]; then
             echo "::error::Expected CFBundleVersion ${{ steps.release.outputs.build }}, got ${actual_build}"
+            exit 1
+          fi
+          if [[ "${actual_release_tag}" != "${{ steps.release.outputs.tag }}" ]]; then
+            echo "::error::Expected MacActivityReleaseTag ${{ steps.release.outputs.tag }}, got ${actual_release_tag}"
             exit 1
           fi
 

@@ -56,9 +56,10 @@ def replace_setting(text, key, value):
     return updated
 
 
-def update_xcconfig(text, version, build):
+def update_xcconfig(text, version, build, release_tag):
     updated = replace_setting(text, "MARKETING_VERSION", version)
-    return replace_setting(updated, "CURRENT_PROJECT_VERSION", build)
+    updated = replace_setting(updated, "CURRENT_PROJECT_VERSION", build)
+    return replace_setting(updated, "MAC_ACTIVITY_RELEASE_TAG", release_tag)
 
 
 def write_github_output(metadata, output_path):
@@ -92,6 +93,7 @@ def main(argv=None):
             xcconfig_path.read_text(encoding="utf-8"),
             args.version,
             args.build,
+            metadata["tag"],
         )
         xcconfig_path.write_text(updated, encoding="utf-8")
         if args.output:
