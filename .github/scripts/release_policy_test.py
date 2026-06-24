@@ -145,6 +145,8 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("uses: codecov/codecov-action@v7", workflow)
         self.assertIn("files: coverage/swiftpm-codecov.json", workflow)
         self.assertIn("flags: swiftpm", workflow)
+        self.assertIn("override_branch: ${{ github.head_ref || github.ref_name }}", workflow)
+        self.assertIn("override_pr: ${{ github.event.number }}", workflow)
         self.assertIn("disable_search: true", workflow)
         self.assertIn("fail_ci_if_error: true", workflow)
         self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", workflow)
