@@ -81,6 +81,7 @@ jobs:
     uses: ./.github/workflows/ci-checks.yml
     with:
       suite: ${{ inputs.ci_suite }}
+    secrets: inherit
 
   package:
     name: Package Release Artifact

@@ -39,6 +39,13 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs: [preflight]", workflow)
         self.assertIn("needs: [preflight, ci]", workflow)
 
+    def test_release_ci_job_inherits_secrets_for_reusable_checks(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        ci_section = workflow.split("\n  ci:", 1)[1].split("\n  package:", 1)[0]
+
+        self.assertIn("uses: ./.github/workflows/ci-checks.yml", ci_section)
+        self.assertIn("secrets: inherit", ci_section)
+
     def test_release_package_checks_project_drift_even_when_ci_is_skipped(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         package_section = workflow.split("\n  package:", 1)[1]
@@ -127,7 +134,24 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("name: Run CI Checks", workflow)
         self.assertIn("uses: ./.github/workflows/ci-checks.yml", workflow)
         self.assertIn("suite: full", workflow)
+        self.assertIn("secrets: inherit", workflow)
         self.assertNotIn("required-ci:", workflow)
+
+    def test_reusable_ci_uploads_swiftpm_coverage_to_codecov(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()
+
+        self.assertIn("CODECOV_TOKEN:", workflow)
+        self.assertIn("Upload SwiftPM coverage to Codecov", workflow)
+        self.assertIn("uses: codecov/codecov-action@v7", workflow)
+        self.assertIn("files: coverage/swiftpm-codecov.json", workflow)
+        self.assertIn("flags: swiftpm", workflow)
+        self.assertIn("disable_search: true", workflow)
+        self.assertIn("fail_ci_if_error: true", workflow)
+        self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", workflow)
+        self.assertLess(
+            workflow.index("Upload SwiftPM coverage"),
+            workflow.index("Upload SwiftPM coverage to Codecov"),
+        )
 
     def test_ci_checks_runs_tests_in_parallel_then_reports_advisory_jobs(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()

@@ -8,6 +8,10 @@ on:
         required: false
         type: string
         default: full
+    secrets:
+      CODECOV_TOKEN:
+        description: Codecov upload token.
+        required: false
   workflow_dispatch:
     inputs:
       suite:
@@ -67,6 +71,17 @@ jobs:
           name: swiftpm-coverage
           path: coverage/swiftpm-codecov.json
           if-no-files-found: error
+
+      - name: Upload SwiftPM coverage to Codecov
+        if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
+        uses: codecov/codecov-action@v7
+        with:
+          files: coverage/swiftpm-codecov.json
+          flags: swiftpm
+          name: swiftpm
+          disable_search: true
+          fail_ci_if_error: true
+          token: ${{ secrets.CODECOV_TOKEN }}
 
   xcode-tests:
     name: Xcode Tests
