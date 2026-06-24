@@ -73,7 +73,7 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
-  -f signing=local \
+  -f signing=developer-id \
   -f create_github_release=false
 ```
 
@@ -99,12 +99,12 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
-  -f signing=local \
+  -f signing=developer-id \
   -f create_github_release=true
 ```
 
 ## Distribution Notes
 
 `signing=local` creates an ad-hoc signed app suitable for workflow artifacts and
-internal smoke checks. Use `signing=project` only after the repository has the
-required signing identity and runner secrets for distribution signing.
+internal smoke checks only. GitHub Release assets must use `signing=developer-id`
+so the app is Developer ID signed, notarized, stapled, and Gatekeeper-assessed.

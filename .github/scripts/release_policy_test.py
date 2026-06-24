@@ -39,6 +39,15 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs: [preflight]", workflow)
         self.assertIn("needs: [preflight, ci]", workflow)
 
+    def test_release_workflow_requires_developer_id_for_github_release_assets(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        preflight_section = workflow.split("\n  preflight:", 1)[1].split("\n  ci:", 1)[0]
+
+        self.assertIn("Require Developer ID for GitHub Release assets", preflight_section)
+        self.assertIn("inputs.create_github_release", preflight_section)
+        self.assertIn("inputs.signing != 'developer-id'", preflight_section)
+        self.assertIn("GitHub Release assets must use signing=developer-id.", preflight_section)
+
     def test_release_ci_job_inherits_secrets_for_reusable_checks(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         ci_section = workflow.split("\n  ci:", 1)[1].split("\n  package:", 1)[0]
@@ -110,6 +119,22 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("xcrun stapler staple", workflow)
         self.assertIn("spctl --assess --type execute", workflow)
         self.assertIn("Final releases must use signing=developer-id", workflow)
+
+    def test_create_release_skill_uses_developer_id_for_draft_release(self):
+        skill = (REPO_ROOT / ".agents" / "skills" / "create-release" / "SKILL.md").read_text()
+        phase_2 = skill.split("## Phase 2: Draft GitHub Release", 1)[1].split("## Distribution Notes", 1)[0]
+
+        self.assertIn("-f signing=developer-id", phase_2)
+        self.assertNotIn("-f signing=local", phase_2)
+        self.assertIn("GitHub Release assets must use `signing=developer-id`", skill)
+
+    def test_release_workflows_doc_uses_developer_id_for_draft_release(self):
+        doc = (REPO_ROOT / ".github" / "release-workflows.md").read_text()
+        draft_release_section = doc.split("After that dry run passes", 1)[1]
+
+        self.assertIn("-f signing=developer-id", draft_release_section)
+        self.assertNotIn("-f signing=local", draft_release_section)
+        self.assertIn("GitHub Release assets must use `signing=developer-id`", doc)
 
     def test_release_workflow_never_pushes_version_commits(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
