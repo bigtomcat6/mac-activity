@@ -73,6 +73,7 @@ class ReleasePolicyTests(unittest.TestCase):
         package_section = workflow.split("- name: Package release artifacts", 1)[1]
 
         self.assertIn(".github/scripts/create_dmg.sh", package_section)
+        self.assertIn('--volume-name "${{ steps.release.outputs.app_name }} ${{ steps.release.outputs.title }}"', package_section)
         self.assertIn("assets/dmg/background.png", package_section)
         self.assertNotIn("-srcfolder \"${app}\"", package_section)
 
