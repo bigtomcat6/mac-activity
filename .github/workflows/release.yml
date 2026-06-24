@@ -74,6 +74,12 @@ jobs:
           echo "::error::Final releases must use signing=developer-id."
           exit 1
 
+      - name: Require Developer ID for GitHub Release assets
+        if: ${{ inputs.create_github_release && inputs.signing != 'developer-id' }}
+        run: |
+          echo "::error::GitHub Release assets must use signing=developer-id."
+          exit 1
+
   ci:
     name: Selected CI
     needs: [preflight]
