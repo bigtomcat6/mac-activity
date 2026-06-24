@@ -1,5 +1,6 @@
 import MacActivityCore
 import XCTest
+@preconcurrency import Sparkle
 @testable import MacActivityApp
 
 @MainActor
@@ -11,8 +12,9 @@ final class SparkleUpdateControllerTests: XCTestCase {
     }
 
     func testControllerWithoutSparkleConfigurationDoesNotStartUpdater() throws {
+        let preferencesController = makePreferencesController()
         let controller = SparkleUpdateController(
-            preferencesController: makePreferencesController(),
+            preferencesController: preferencesController,
             bundle: try makeBundle(info: [
                 "CFBundleShortVersionString": "26.0.0",
                 "CFBundleVersion": "1",
@@ -20,6 +22,9 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
 
         XCTAssertFalse(controller.checkForUpdates())
+        XCTAssertEqual(controller.allowedChannels(), [])
+        preferencesController.setUpdateChannel(.beta)
+        XCTAssertEqual(controller.allowedChannels(), ["beta"])
     }
 
     func testSparkleConfigurationRequiresUsablePublicKeyAndFeedURL() throws {
@@ -114,6 +119,92 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
     }
 
+    func testUpdateCandidateBuildsFromSparkleMetadata() {
+        let candidate = SparkleUpdateController.updateCandidate(
+            for: SparkleAppcastCandidateInput(
+                displayVersionString: "v26.0.0",
+                versionString: "7",
+                channel: "alpha"
+            )
+        )
+
+        XCTAssertEqual(candidate?.version.rawValue, "v26.0.0-alpha.7")
+        XCTAssertEqual(candidate?.build, 7)
+    }
+
+    func testUpdateCandidateRejectsInvalidDisplayVersion() {
+        let candidate = SparkleUpdateController.updateCandidate(
+            for: SparkleAppcastCandidateInput(
+                displayVersionString: "invalid",
+                versionString: "7",
+                channel: nil
+            )
+        )
+
+        XCTAssertNil(candidate)
+    }
+
+    func testAppcastCandidateInputCopiesSparkleItemMetadata() throws {
+        let item = try makeAppcastItem(
+            displayVersionString: "v26.0.0",
+            versionString: "7",
+            channel: "alpha"
+        )
+
+        let input = SparkleUpdateController.appcastCandidateInput(for: item)
+
+        XCTAssertEqual(
+            input,
+            SparkleAppcastCandidateInput(
+                displayVersionString: "v26.0.0",
+                versionString: "7",
+                channel: "alpha"
+            )
+        )
+    }
+
+    func testBestCandidateIndexSkipsInvalidItemsAndReturnsMatchingInputIndex() throws {
+        let index = SparkleUpdateController.bestCandidateIndex(
+            currentVersion: try ReleaseVersion("v26.0.0-alpha.1"),
+            selectedChannel: .alpha,
+            candidates: [
+                SparkleAppcastCandidateInput(
+                    displayVersionString: "invalid",
+                    versionString: "1",
+                    channel: nil
+                ),
+                SparkleAppcastCandidateInput(
+                    displayVersionString: "v26.0.0",
+                    versionString: "2",
+                    channel: "beta"
+                ),
+                SparkleAppcastCandidateInput(
+                    displayVersionString: "v26.0.0",
+                    versionString: "3",
+                    channel: "alpha"
+                ),
+            ]
+        )
+
+        XCTAssertEqual(index, 1)
+    }
+
+    func testBestCandidateIndexReturnsNilWhenNoCandidateIsEligible() throws {
+        let index = SparkleUpdateController.bestCandidateIndex(
+            currentVersion: try ReleaseVersion("v26.0.0"),
+            selectedChannel: .release,
+            candidates: [
+                SparkleAppcastCandidateInput(
+                    displayVersionString: "v26.0.0",
+                    versionString: "1",
+                    channel: "alpha"
+                ),
+            ]
+        )
+
+        XCTAssertNil(index)
+    }
+
     private func makePreferencesController() -> PreferencesController {
         PreferencesController(
             store: InMemoryPreferencesStore(initial: .default),
@@ -137,6 +228,26 @@ final class SparkleUpdateControllerTests: XCTestCase {
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
         return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func makeAppcastItem(
+        displayVersionString: String,
+        versionString: String,
+        channel: String?
+    ) throws -> SUAppcastItem {
+        var dictionary: [String: Any] = [
+            "sparkle:version": versionString,
+            "sparkle:shortVersionString": displayVersionString,
+            "enclosure": [
+                "url": "https://example.com/MacActivity_\(versionString).zip",
+            ],
+        ]
+        dictionary["sparkle:channel"] = channel
+
+        var failureReason: NSString?
+        let item = SUAppcastItem(dictionary: dictionary, failureReason: &failureReason)
+        XCTAssertNil(failureReason)
+        return try XCTUnwrap(item)
     }
 }
 

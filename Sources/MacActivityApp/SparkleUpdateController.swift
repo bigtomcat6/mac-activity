@@ -55,7 +55,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
     }
 
     func allowedChannels(for updater: SPUUpdater) -> Set<String> {
-        Self.allowedSparkleChannels(for: preferencesController.state.updateChannel)
+        allowedChannels()
     }
 
     func bestValidUpdate(in appcast: SUAppcast, for updater: SPUUpdater) -> SUAppcastItem? {
@@ -63,16 +63,9 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
             return nil
         }
 
-        let candidateItems = appcast.items.compactMap { item -> (item: SUAppcastItem, candidate: UpdateCandidate)? in
-            guard let candidate = Self.updateCandidate(for: item) else {
-                return nil
-            }
-
-            return (item, candidate)
-        }
-
-        let candidates = candidateItems.map(\.candidate)
-        guard let bestCandidate = UpdateCandidateSelector.bestCandidate(
+        let items = appcast.items
+        let candidates = items.map(Self.appcastCandidateInput(for:))
+        guard let bestIndex = Self.bestCandidateIndex(
             currentVersion: currentVersion,
             selectedChannel: preferencesController.state.updateChannel,
             candidates: candidates
@@ -80,7 +73,11 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
             return SUAppcastItem.empty()
         }
 
-        return candidateItems.first { $0.candidate == bestCandidate }?.item ?? SUAppcastItem.empty()
+        return items[bestIndex]
+    }
+
+    func allowedChannels() -> Set<String> {
+        Self.allowedSparkleChannels(for: preferencesController.state.updateChannel)
     }
 
     static func hasSparkleConfiguration(in bundle: Bundle) -> Bool {
@@ -115,16 +112,40 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return "v\(shortVersion)"
     }
 
-    private static func updateCandidate(for item: SUAppcastItem) -> UpdateCandidate? {
-        guard let releaseVersionString = releaseVersionString(
-            displayVersionString: item.displayVersionString,
-            versionString: item.versionString,
-            channel: item.channel
+    static func bestCandidateIndex(
+        currentVersion: ReleaseVersion,
+        selectedChannel: UpdateChannel,
+        candidates: [SparkleAppcastCandidateInput]
+    ) -> Int? {
+        let indexedCandidates = candidates.enumerated().compactMap { offset, input -> (offset: Int, candidate: UpdateCandidate)? in
+            guard let candidate = updateCandidate(for: input) else {
+                return nil
+            }
+
+            return (offset, candidate)
+        }
+        let updateCandidates = indexedCandidates.map(\.candidate)
+        guard let bestCandidate = UpdateCandidateSelector.bestCandidate(
+            currentVersion: currentVersion,
+            selectedChannel: selectedChannel,
+            candidates: updateCandidates
         ) else {
             return nil
         }
 
-        return try? UpdateCandidate(version: releaseVersionString, build: item.versionString)
+        return indexedCandidates.first { $0.candidate == bestCandidate }?.offset
+    }
+
+    static func updateCandidate(for input: SparkleAppcastCandidateInput) -> UpdateCandidate? {
+        guard let releaseVersionString = releaseVersionString(
+            displayVersionString: input.displayVersionString,
+            versionString: input.versionString,
+            channel: input.channel
+        ) else {
+            return nil
+        }
+
+        return try? UpdateCandidate(version: releaseVersionString, build: input.versionString)
     }
 
     static func releaseVersionString(
@@ -154,4 +175,18 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         return trimmed.contains("$(") ? nil : trimmed
     }
+
+    static func appcastCandidateInput(for item: SUAppcastItem) -> SparkleAppcastCandidateInput {
+        SparkleAppcastCandidateInput(
+            displayVersionString: item.displayVersionString,
+            versionString: item.versionString,
+            channel: item.channel
+        )
+    }
+}
+
+struct SparkleAppcastCandidateInput: Equatable {
+    let displayVersionString: String
+    let versionString: String
+    let channel: String?
 }

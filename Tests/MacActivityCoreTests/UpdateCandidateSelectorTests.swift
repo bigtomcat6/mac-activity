@@ -112,6 +112,37 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         XCTAssertEqual(selected?.version.rawValue, "v26.1.0-alpha.3")
     }
 
+    func testHigherChannelCanAdvanceWithinSameBaseVersion() throws {
+        let current = try ReleaseVersion("v26.1.0-alpha.2")
+        let candidates = [
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "41"),
+        ]
+
+        let selected = UpdateCandidateSelector.bestCandidate(
+            currentVersion: current,
+            selectedChannel: .beta,
+            candidates: candidates
+        )
+
+        XCTAssertEqual(selected?.version.rawValue, "v26.1.0-beta.1")
+    }
+
+    func testHigherSameChannelVersionWinsBeforeBuildNumber() throws {
+        let current = try ReleaseVersion("v26.0.0")
+        let candidates = [
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "50"),
+            try UpdateCandidate(version: "v26.1.0-beta.2", build: "40"),
+        ]
+
+        let selected = UpdateCandidateSelector.bestCandidate(
+            currentVersion: current,
+            selectedChannel: .beta,
+            candidates: candidates
+        )
+
+        XCTAssertEqual(selected?.version.rawValue, "v26.1.0-beta.2")
+    }
+
     func testInvalidReleaseVersionsAreRejected() {
         XCTAssertThrowsError(try ReleaseVersion("26.0"))
         XCTAssertThrowsError(try ReleaseVersion("26.0.0-rc.1"))

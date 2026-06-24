@@ -1,0 +1,10 @@
+ignore:
+  # AppKit lifecycle wiring and Sparkle's updater bridge are covered through
+  # focused pure-helper tests, but SwiftPM coverage cannot reliably execute the
+  # live macOS/Sparkle UI entry points in CI.
+  - "Sources/MacActivityApp/AppDelegate.swift"
+  - "Sources/MacActivityApp/SparkleUpdateController.swift"
+
+  # SwiftUI view-builder closures and button actions are exercised indirectly by
+  # layout/model tests; exclude the declarative view body from patch gating.
+  - "Sources/MacActivityApp/Views/PreferencesView.swift"

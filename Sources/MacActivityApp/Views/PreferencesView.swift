@@ -12,10 +12,12 @@ struct PreferencesView: View {
     init(
         preferencesController: PreferencesController,
         versionInfo: PreferencesVersionInfo = .current(),
-        checkForUpdates: @escaping () -> Void = {}
+        isUpdateChannelExpanded: Bool = false,
+        checkForUpdates: @escaping () -> Void
     ) {
         self.preferencesController = preferencesController
         self.versionInfo = versionInfo
+        self._isUpdateChannelExpanded = State(initialValue: isUpdateChannelExpanded)
         self.checkForUpdates = checkForUpdates
     }
 
@@ -173,9 +175,7 @@ struct PreferencesView: View {
                     .monospacedDigit()
 
                 Button {
-                    withAnimation(.easeInOut(duration: 0.16)) {
-                        isUpdateChannelExpanded.toggle()
-                    }
+                    toggleUpdateChannelExpanded()
                 } label: {
                     Image(systemName: isUpdateChannelExpanded ? "chevron.up" : "chevron.down")
                         .imageScale(.small)
@@ -209,8 +209,7 @@ struct PreferencesView: View {
                         )
                     ) {
                         ForEach(UpdateChannel.allCases, id: \.self) { channel in
-                            Text(AppLocalization.updateChannelTitle(for: channel))
-                                .tag(channel)
+                            updateChannelOption(for: channel)
                         }
                     }
                     .labelsHidden()
@@ -220,6 +219,18 @@ struct PreferencesView: View {
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
+    }
+
+    func toggleUpdateChannelExpanded() {
+        withAnimation(.easeInOut(duration: 0.16)) {
+            isUpdateChannelExpanded.toggle()
+        }
+    }
+
+    @ViewBuilder
+    func updateChannelOption(for channel: UpdateChannel) -> some View {
+        Text(AppLocalization.updateChannelTitle(for: channel))
+            .tag(channel)
     }
 }
 

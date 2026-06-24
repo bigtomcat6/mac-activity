@@ -9,7 +9,7 @@ final class PreferencesWindowController: NSWindowController {
 
     init(
         preferencesController: PreferencesController,
-        checkForUpdates: @escaping () -> Void = {}
+        checkForUpdates: @escaping () -> Void
     ) {
         let rootView = PreferencesView(
             preferencesController: preferencesController,

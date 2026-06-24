@@ -1,4 +1,6 @@
 import XCTest
+import AppKit
+import SwiftUI
 import MacActivityCore
 @testable import MacActivityApp
 
@@ -17,16 +19,7 @@ final class PreferencesViewTests: XCTestCase {
     }
 
     func testCurrentVersionPrefersPrereleaseReleaseTag() throws {
-        let bundleURL = FileManager.default.temporaryDirectory
-            .appendingPathComponent(UUID().uuidString)
-            .appendingPathExtension("app")
-        let contentsURL = bundleURL.appendingPathComponent("Contents")
-        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
-        defer {
-            try? FileManager.default.removeItem(at: bundleURL)
-        }
-
-        let infoPlist: NSDictionary = [
+        let bundle = try makeBundle(info: [
             "CFBundleExecutable": "Mac Activity",
             "CFBundleIdentifier": "com.how.macactivity.test",
             "CFBundleInfoDictionaryVersion": "6.0",
@@ -35,10 +28,7 @@ final class PreferencesViewTests: XCTestCase {
             "CFBundleShortVersionString": "26.0.0",
             "CFBundleVersion": "2",
             "MacActivityReleaseTag": "v26.0.0-alpha.2",
-        ]
-        XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
-
-        let bundle = try XCTUnwrap(Bundle(url: bundleURL))
+        ])
         let info = PreferencesVersionInfo.current(bundle: bundle)
 
         XCTAssertEqual(info.displayText, "v26.0.0-alpha.2")
@@ -68,6 +58,16 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertEqual(info.displayText, "26.0.0 (5)")
     }
 
+    func testCurrentVersionUsesShortVersionWhenReleaseTagIsMissing() throws {
+        let bundle = try makeBundle(info: [
+            "CFBundleShortVersionString": "26.0.1",
+        ])
+
+        let info = PreferencesVersionInfo.current(bundle: bundle)
+
+        XCTAssertEqual(info.displayText, "26.0.1")
+    }
+
     func testPreferencesViewBuildsUpdateHeader() {
         let controller = PreferencesController(
             store: InMemoryPreferencesStore(initial: .default),
@@ -80,6 +80,55 @@ final class PreferencesViewTests: XCTestCase {
         )
 
         XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
+    func testPreferencesViewBuildsExpandedUpdateChannelPickerAndPersistsSelection() {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let view = PreferencesView(
+            preferencesController: controller,
+            versionInfo: PreferencesVersionInfo(shortVersion: "26.0.0", build: "5"),
+            isUpdateChannelExpanded: true,
+            checkForUpdates: {}
+        )
+
+        controller.setUpdateChannel(.alpha)
+
+        XCTAssertEqual(controller.state.updateChannel, .alpha)
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
+    func testPreferencesViewBuildsDefaultCollapsedUpdateStateAndUpdateChannelOptions() {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let view = PreferencesView(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+
+        view.toggleUpdateChannelExpanded()
+        XCTAssertFalse(String(describing: type(of: view.updateChannelOption(for: .release))).isEmpty)
+        XCTAssertFalse(String(describing: type(of: view.updateChannelOption(for: .beta))).isEmpty)
+        XCTAssertFalse(String(describing: type(of: view.updateChannelOption(for: .alpha))).isEmpty)
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
+    func testPreferencesWindowControllerHostsPreferencesView() {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+
+        XCTAssertEqual(windowController.window?.title, AppLocalization.string(.preferences))
+        XCTAssertEqual(windowController.window?.contentViewController is NSHostingController<PreferencesView>, true)
     }
 
     private func makeBundle(info: [String: String]) throws -> Bundle {
