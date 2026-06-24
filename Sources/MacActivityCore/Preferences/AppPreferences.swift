@@ -55,12 +55,6 @@ private enum LegacyDiskCleanupScope: String, Codable {
     }
 }
 
-public enum UpdateChannel: String, CaseIterable, Codable, Sendable {
-    case alpha
-    case beta
-    case release
-}
-
 public struct AppPreferences: Equatable, Codable, Sendable {
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]

@@ -239,6 +239,24 @@ struct PreferencesVersionInfo: Equatable {
     static func current(bundle: Bundle = .main) -> PreferencesVersionInfo {
         let shortVersion = bundle.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0"
         let build = bundle.object(forInfoDictionaryKey: "CFBundleVersion") as? String
+        if let releaseTag = cleanInfoValue("MacActivityReleaseTag", in: bundle),
+           releaseTag != "v\(shortVersion)" {
+            return PreferencesVersionInfo(shortVersion: releaseTag, build: nil)
+        }
+
         return PreferencesVersionInfo(shortVersion: shortVersion, build: build)
+    }
+
+    private static func cleanInfoValue(_ key: String, in bundle: Bundle) -> String? {
+        guard let value = bundle.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, !trimmed.contains("$(") else {
+            return nil
+        }
+
+        return trimmed
     }
 }

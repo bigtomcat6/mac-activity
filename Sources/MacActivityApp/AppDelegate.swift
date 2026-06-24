@@ -15,6 +15,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dashboardPopoverController: LazyDashboardPopoverController?
     private var preferencesWindowController: LazyPreferencesWindowController?
     private var presentationCoordinator: AppPresentationCoordinator?
+    private var sparkleUpdateController: SparkleUpdateController?
     private var scheduler: MetricsScheduler?
     private var cancellables: Set<AnyCancellable> = []
 
@@ -26,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppLocalizationController.shared.applyPreferredLanguageIdentifier(
             preferencesController.state.preferredLanguageIdentifier
         )
+        let sparkleUpdateController = SparkleUpdateController(preferencesController: preferencesController)
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
@@ -77,6 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.dashboardPopoverController = dashboardPopoverController
         self.statusItemController = statusItemController
         self.presentationCoordinator = presentationCoordinator
+        self.sparkleUpdateController = sparkleUpdateController
         self.scheduler = scheduler
 
         samplingController.onProfileChange = { [weak scheduler] (profile: MetricsSamplingProfile) in
@@ -140,6 +143,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func checkForUpdates() {
+        if sparkleUpdateController?.checkForUpdates() == true {
+            return
+        }
+
         guard let url = URL(string: "https://github.com/bigtomcat6/mac-activity/releases") else {
             return
         }
