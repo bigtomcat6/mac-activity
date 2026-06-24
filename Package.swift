@@ -35,6 +35,9 @@ let package = Package(
             targets: ["DebugDiskCleanup"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
+    ],
     targets: [
         .target(
             name: "MacActivityCore",
@@ -42,7 +45,10 @@ let package = Package(
         ),
         .executableTarget(
             name: "MacActivityApp",
-            dependencies: ["MacActivityCore"],
+            dependencies: [
+                "MacActivityCore",
+                .product(name: "Sparkle", package: "Sparkle"),
+            ],
             path: "Sources/MacActivityApp",
             resources: [
                 .process("Resources"),

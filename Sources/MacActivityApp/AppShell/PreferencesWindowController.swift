@@ -8,10 +8,12 @@ final class PreferencesWindowController: NSWindowController {
     private var cancellables: Set<AnyCancellable> = []
 
     init(
-        preferencesController: PreferencesController
+        preferencesController: PreferencesController,
+        checkForUpdates: @escaping () -> Void
     ) {
         let rootView = PreferencesView(
-            preferencesController: preferencesController
+            preferencesController: preferencesController,
+            checkForUpdates: checkForUpdates
         )
         let hostingController = NSHostingController(rootView: rootView)
         let window = NSWindow(contentViewController: hostingController)

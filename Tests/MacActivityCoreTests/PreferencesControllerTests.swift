@@ -56,6 +56,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.showsHardwareBatteryPercentage, true)
     }
 
+    func testUpdateChannelPersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setUpdateChannel(.beta)
+
+        XCTAssertEqual(controller.state.updateChannel, .beta)
+        XCTAssertEqual(store.savedValues.last?.updateChannel, .beta)
+    }
+
     func testPreferredLanguageIdentifierPersistsToPreferencesState() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

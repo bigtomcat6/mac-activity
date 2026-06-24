@@ -37,6 +37,11 @@
 "temperature.dashboard.battery" = "电池温度";
 
 "preferences.launchAtLogin" = "登录时启动";
+"preferences.currentVersion" = "当前版本";
+"preferences.checkForUpdates" = "检查更新";
+"preferences.showUpdateChannel" = "显示更新频道";
+"preferences.hideUpdateChannel" = "隐藏更新频道";
+"preferences.updateChannel" = "选择更新频道";
 "preferences.language" = "语言";
 "preferences.languageHelp" = "控制偏好设置和仪表盘的显示语言。";
 "preferences.temperatureSource" = "温度来源";
@@ -51,6 +56,9 @@
 "language.system" = "跟随系统";
 "language.english" = "English";
 "language.simplifiedChinese" = "简体中文";
+"update.channel.alpha" = "Alpha";
+"update.channel.beta" = "Beta";
+"update.channel.release" = "Release";
 "diskCleanup.category.userCaches" = "缓存";
 "diskCleanup.category.trash" = "废纸篓";
 "diskCleanup.category.userLogs" = "日志";

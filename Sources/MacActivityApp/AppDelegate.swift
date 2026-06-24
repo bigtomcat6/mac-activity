@@ -3,9 +3,19 @@ import Combine
 import MacActivityCore
 
 @MainActor
+protocol UpdateChecking: AnyObject {
+    func checkForUpdates() -> Bool
+}
+
+extension SparkleUpdateController: UpdateChecking {}
+
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private static let releasesURL = URL(string: "https://github.com/bigtomcat6/mac-activity/releases")!
+
     private let metricsStore = MetricsStore()
     private let launchService: LaunchAtLoginServicing = AppDelegate.makeLaunchService()
+    private let releasePageOpener: (URL) -> Void
 
     private var preferencesController: PreferencesController?
     private var samplingController: AppSamplingController?
@@ -15,8 +25,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var dashboardPopoverController: LazyDashboardPopoverController?
     private var preferencesWindowController: LazyPreferencesWindowController?
     private var presentationCoordinator: AppPresentationCoordinator?
+    private var sparkleUpdateController: UpdateChecking?
     private var scheduler: MetricsScheduler?
     private var cancellables: Set<AnyCancellable> = []
+
+    override init() {
+        self.releasePageOpener = { url in
+            NSWorkspace.shared.open(url)
+        }
+        super.init()
+    }
+
+    init(
+        sparkleUpdateController: UpdateChecking? = nil,
+        releasePageOpener: @escaping (URL) -> Void
+    ) {
+        self.sparkleUpdateController = sparkleUpdateController
+        self.releasePageOpener = releasePageOpener
+        super.init()
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let preferencesController = PreferencesController(
@@ -26,13 +53,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppLocalizationController.shared.applyPreferredLanguageIdentifier(
             preferencesController.state.preferredLanguageIdentifier
         )
+        let sparkleUpdateController = SparkleUpdateController(preferencesController: preferencesController)
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
-        let preferencesWindowController = LazyPreferencesWindowController { [preferencesController] in
+        let checkForUpdates = makeCheckForUpdatesAction()
+        let preferencesWindowController = LazyPreferencesWindowController { [preferencesController, checkForUpdates] in
             return PreferencesWindowController(
-                preferencesController: preferencesController
+                preferencesController: preferencesController,
+                checkForUpdates: checkForUpdates
             )
         }
         let dashboardPopoverController = LazyDashboardPopoverController { [weak self] in
@@ -74,6 +104,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.dashboardPopoverController = dashboardPopoverController
         self.statusItemController = statusItemController
         self.presentationCoordinator = presentationCoordinator
+        self.sparkleUpdateController = sparkleUpdateController
         self.scheduler = scheduler
 
         samplingController.onProfileChange = { [weak scheduler] (profile: MetricsSamplingProfile) in
@@ -134,6 +165,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApplication.shared.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    func checkForUpdates() {
+        if sparkleUpdateController?.checkForUpdates() == true {
+            return
+        }
+
+        releasePageOpener(Self.releasesURL)
+    }
+
+    func makeCheckForUpdatesAction() -> () -> Void {
+        { [weak self] in
+            self?.checkForUpdates()
+        }
     }
 
     private func terminateApplication() {
