@@ -271,7 +271,7 @@ jobs:
           .github/scripts/create_dmg.sh \
             --app "${app}" \
             --output "${dmg_path}" \
-            --volume-name "${{ steps.release.outputs.title }}" \
+            --volume-name "${{ steps.release.outputs.app_name }} ${{ steps.release.outputs.title }}" \
             --background assets/dmg/background.png
 
           checksums_path="dist/${{ steps.release.outputs.artifact_stem }}-SHA256SUMS.txt"
