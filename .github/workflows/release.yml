@@ -280,7 +280,11 @@ jobs:
           echo "Notary submission id: ${notary_submission_id}"
 
           if [[ -n "${notary_submission_id}" ]]; then
-            if ! xcrun notarytool log "${notary_submission_id}" --output-format json | tee "${notary_log_output}"; then
+            if ! xcrun notarytool log "${notary_submission_id}" \
+              --apple-id "${APPLE_ID}" \
+              --team-id "${APPLE_TEAM_ID}" \
+              --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
+              --output-format json | tee "${notary_log_output}"; then
               echo "::warning::Unable to fetch detailed notary log for ${notary_submission_id}."
             fi
           fi
