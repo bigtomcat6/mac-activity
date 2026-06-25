@@ -160,7 +160,16 @@ xcrun stapler validate "${artifact_path}"
 spctl_status=""
 if spctl_status="$(spctl --status 2>&1)"; then
   log "Running Gatekeeper assessment for ${artifact_path}"
-  spctl --assess --type "${assessment_type}" -vv "${artifact_path}"
+  assessment_output=""
+  if assessment_output="$(spctl --assess --type "${assessment_type}" -vv "${artifact_path}" 2>&1)"; then
+    printf '%s\n' "${assessment_output}"
+  elif [[ "${artifact_kind}" == "dmg" && "${assessment_output}" == *"source=Insufficient Context"* ]]; then
+    printf '%s\n' "${assessment_output}"
+    warn "spctl reported insufficient context for DMG assessment after successful notarization and stapling; continuing"
+  else
+    printf '%s\n' "${assessment_output}" >&2
+    exit 3
+  fi
 elif [[ "${spctl_status}" == *"disabled"* ]]; then
   warn "Gatekeeper assessments are disabled; skipping spctl assessment for ${artifact_path}"
 else
