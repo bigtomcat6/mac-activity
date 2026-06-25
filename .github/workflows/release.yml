@@ -257,23 +257,23 @@ jobs:
           fi
 
           notary_id="$(python3 - "${notary_submit_output}" <<'PY'
-import json
-import sys
+          import json
+          import sys
 
-try:
-    data = json.load(open(sys.argv[1]))
-except Exception as error:
-    print("", end="")
-    raise SystemExit(0)
+          try:
+              data = json.load(open(sys.argv[1]))
+          except Exception:
+              print("", end="")
+              raise SystemExit(0)
 
-status = ""
-submission_id = ""
-if isinstance(data, dict):
-    status = data.get("status", "")
-    submission_id = data.get("id", "")
-print(status, submission_id)
-PY
-)"
+          status = ""
+          submission_id = ""
+          if isinstance(data, dict):
+              status = data.get("status", "")
+              submission_id = data.get("id", "")
+          print(status, submission_id)
+          PY
+          )"
           notary_status="${notary_id%% *}"
           notary_submission_id="${notary_id#* }"
           echo "Notary submission status: ${notary_status}"
