@@ -241,13 +241,55 @@ jobs:
 
           app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
           notarization_zip="${RUNNER_TEMP}/MacActivity-notarization.zip"
+          notary_submit_output="${RUNNER_TEMP}/MacActivity-notarytool-submit.json"
+          notary_log_output="${RUNNER_TEMP}/MacActivity-notarytool-log.json"
+
           ditto -c -k --keepParent "${app}" "${notarization_zip}"
 
-          xcrun notarytool submit "${notarization_zip}" \
+          if ! xcrun notarytool submit "${notarization_zip}" \
             --apple-id "${APPLE_ID}" \
             --team-id "${APPLE_TEAM_ID}" \
             --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
-            --wait
+            --wait \
+            --output-format json | tee "${notary_submit_output}"; then
+            echo "::error::notarytool submit failed before returning a status."
+            exit 1
+          fi
+
+          notary_id="$(python3 - "${notary_submit_output}" <<'PY'
+import json
+import sys
+
+try:
+    data = json.load(open(sys.argv[1]))
+except Exception as error:
+    print("", end="")
+    raise SystemExit(0)
+
+status = ""
+submission_id = ""
+if isinstance(data, dict):
+    status = data.get("status", "")
+    submission_id = data.get("id", "")
+print(status, submission_id)
+PY
+)"
+          notary_status="${notary_id%% *}"
+          notary_submission_id="${notary_id#* }"
+          echo "Notary submission status: ${notary_status}"
+          echo "Notary submission id: ${notary_submission_id}"
+
+          if [[ -n "${notary_submission_id}" ]]; then
+            if ! xcrun notarytool log "${notary_submission_id}" --output-format json | tee "${notary_log_output}"; then
+              echo "::warning::Unable to fetch detailed notary log for ${notary_submission_id}."
+            fi
+          fi
+
+          if [[ "${notary_status}" != "Accepted" ]]; then
+            echo "::error::Notarytool returned non-success status: ${notary_status}"
+            exit 1
+          fi
+
           xcrun stapler staple "${app}"
           xcrun stapler validate "${app}"
           spctl --assess --type execute -vv "${app}"
