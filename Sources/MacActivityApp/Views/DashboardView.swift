@@ -37,6 +37,7 @@ enum DashboardChartHeightBehavior: Equatable {
 
 enum DashboardOverviewSlot: Equatable {
     case usage
+    case storage
     case metric(MetricKind)
 }
 
@@ -47,13 +48,20 @@ enum DashboardOverviewLayout {
         GridItem(.flexible(minimum: 0), spacing: 12),
         GridItem(.flexible(minimum: 0), spacing: 12),
     ]
-    static let topRowHeight = DashboardCardLayout.compactChartMinHeight
+    static let topSplitCardHeight = compactTrendCardHeight
+    static let topRowHeight = topSplitCardHeight * 2 + sectionSpacing
     static let usageLabelColumnWidth: CGFloat = 54
     static let usageValueColumnWidth: CGFloat = 44
     static let usageRowSpacing: CGFloat = 10
     static let usageBarHeight: CGFloat = 8
     static let usageContentMaxWidth: CGFloat = 180
     static let usageCardContentAlignment: Alignment = .center
+    static let storageBarHeight: CGFloat = usageBarHeight
+    static let storageDetailColumnCount = 2
+    static let storageDetailColumnSpacing: CGFloat = 12
+    static let storageDetailContentAlignment: Alignment = .center
+    static let storageDetailTextAlignment: TextAlignment = .center
+    static let storageDetailSpacing: CGFloat = 4
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
@@ -72,7 +80,8 @@ enum DashboardOverviewLayout {
     static func topRowSlots(for metrics: [DashboardMetric]) -> [DashboardOverviewSlot] {
         let byKind = metricsByKind(metrics)
         var slots: [DashboardOverviewSlot] = []
-        if hasUsageMetric(in: byKind) { slots.append(.usage) }
+        if hasComputeUsageMetric(in: byKind) { slots.append(.usage) }
+        if hasStorageUsageMetric(in: byKind) { slots.append(.storage) }
         if byKind[.memory] != nil { slots.append(.metric(.memory)) }
         return slots
     }
@@ -93,11 +102,23 @@ enum DashboardOverviewLayout {
     }
 
     static func hasUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
-        !usageMetricKinds(in: metricsByKind).isEmpty
+        hasComputeUsageMetric(in: metricsByKind) || hasStorageUsageMetric(in: metricsByKind)
     }
 
-    static func usageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
-        [.cpu, .gpu, .disk, .swap].filter { metricsByKind[$0] != nil }
+    static func hasComputeUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
+        !computeUsageMetricKinds(in: metricsByKind).isEmpty
+    }
+
+    static func hasStorageUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
+        !storageUsageMetricKinds(in: metricsByKind).isEmpty
+    }
+
+    static func computeUsageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
+        [.cpu, .gpu].filter { metricsByKind[$0] != nil }
+    }
+
+    static func storageUsageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
+        [.disk, .swap].filter { metricsByKind[$0] != nil }
     }
 
     static func usageProgress(for value: String) -> Double {
@@ -105,6 +126,13 @@ enum DashboardOverviewLayout {
             .replacingOccurrences(of: "%", with: "")
         guard let percent = Double(percentText) else { return 0 }
         return min(max(percent / 100, 0), 1)
+    }
+
+    static func usageProgress(for metric: DashboardMetric) -> Double {
+        if let progress = metric.progress {
+            return min(max(progress, 0), 1)
+        }
+        return usageProgress(for: metric.value)
     }
 
     static let usageHeaderTitle: String? = nil
@@ -465,17 +493,38 @@ private struct OverviewDashboardContent: View {
         DashboardOverviewLayout.hasUsageMetric(in: metricsByKind) || metricsByKind[.memory] != nil
     }
 
+    private var computeUsageMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.computeUsageMetricKinds(in: metricsByKind).compactMap { metricsByKind[$0] }
+    }
+
+    private var storageUsageMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.storageUsageMetricKinds(in: metricsByKind).compactMap { metricsByKind[$0] }
+    }
+
     @ViewBuilder
     private var topRegion: some View {
         if hasTopRegion {
             LazyVGrid(columns: DashboardOverviewLayout.topRowColumns, spacing: DashboardOverviewLayout.sectionSpacing) {
-                if DashboardOverviewLayout.hasUsageMetric(in: metricsByKind) {
-                    ResourceUsageCard(
-                        metrics: DashboardOverviewLayout.usageMetricKinds(in: metricsByKind).compactMap {
-                            metricsByKind[$0]
+                if !computeUsageMetrics.isEmpty || !storageUsageMetrics.isEmpty {
+                    VStack(spacing: DashboardOverviewLayout.sectionSpacing) {
+                        if !computeUsageMetrics.isEmpty {
+                            ResourceUsageCard(metrics: computeUsageMetrics)
+                                .frame(
+                                    height: storageUsageMetrics.isEmpty
+                                        ? DashboardOverviewLayout.topRowHeight
+                                        : DashboardOverviewLayout.topSplitCardHeight
+                                )
                         }
-                    )
-                        .frame(height: DashboardOverviewLayout.topRowHeight)
+                        if !storageUsageMetrics.isEmpty {
+                            StorageUsageCard(metrics: storageUsageMetrics)
+                                .frame(
+                                    height: computeUsageMetrics.isEmpty
+                                        ? DashboardOverviewLayout.topRowHeight
+                                        : DashboardOverviewLayout.topSplitCardHeight
+                                )
+                        }
+                    }
+                    .frame(height: DashboardOverviewLayout.topRowHeight, alignment: .top)
                 }
                 if let memory = metricsByKind[.memory] {
                     MetricCard(metric: memory)
@@ -905,7 +954,7 @@ private struct ResourceUsageCard: View {
         .padding(DashboardCardLayout.regularCardInsets)
         .frame(
             maxWidth: .infinity,
-            minHeight: DashboardCardLayout.compactChartMinHeight,
+            minHeight: DashboardOverviewLayout.topSplitCardHeight,
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: DashboardOverviewLayout.usageCardContentAlignment
         )
@@ -916,6 +965,117 @@ private struct ResourceUsageCard: View {
     }
 }
 
+private struct StorageUsageCard: View {
+    let metrics: [DashboardMetric]
+    @State private var isCardHovered = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            StorageSegmentedUsageBar(metrics: metrics)
+                .frame(height: DashboardOverviewLayout.storageBarHeight)
+
+            HStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailColumnSpacing) {
+                ForEach(metrics.prefix(DashboardOverviewLayout.storageDetailColumnCount)) { metric in
+                    StorageUsageDetailColumn(metric: metric)
+                }
+            }
+            .frame(
+                maxWidth: .infinity,
+                maxHeight: .infinity,
+                alignment: DashboardOverviewLayout.storageDetailContentAlignment
+            )
+        }
+        .frame(maxWidth: DashboardOverviewLayout.usageContentMaxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(DashboardCardLayout.regularCardInsets)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DashboardOverviewLayout.topSplitCardHeight,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
+            alignment: .center
+        )
+        .dashboardCardChrome(isHovered: isCardHovered)
+        .onHover { hovering in
+            isCardHovered = hovering
+        }
+    }
+}
+
+private struct StorageSegmentedUsageBar: View {
+    @Environment(\.appearsActive) private var appearsActive
+    let metrics: [DashboardMetric]
+    @State private var displayedProgress: [MetricKind: Double] = [:]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let segmentCount = max(metrics.count, 1)
+            let segmentWidth = proxy.size.width / CGFloat(segmentCount)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.08))
+
+                ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
+                    let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
+                    let progress = displayedProgress[metric.kind] ?? targetProgress
+
+                    Rectangle()
+                        .fill(
+                            DashboardOverviewChrome.emphasisFillColor(
+                                baseColor: DashboardMetricColor.color(for: metric.kind),
+                                opacity: DashboardOverviewChrome.usageFillOpacity,
+                                appearsActive: appearsActive
+                            )
+                        )
+                        .frame(width: segmentWidth * progress)
+                        .offset(x: segmentWidth * CGFloat(index))
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .accessibilityLabel(Text("Disk and Swap usage"))
+        .accessibilityValue(Text(metrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
+        .onAppear {
+            displayedProgress = Dictionary(
+                uniqueKeysWithValues: metrics.map { ($0.kind, DashboardOverviewLayout.usageProgress(for: $0)) }
+            )
+        }
+        .onChange(of: metrics.map { "\($0.kind.rawValue):\($0.progress ?? -1)" }) { _ in
+            withAnimation(DashboardMotion.valueAnimation) {
+                displayedProgress = Dictionary(
+                    uniqueKeysWithValues: metrics.map { ($0.kind, DashboardOverviewLayout.usageProgress(for: $0)) }
+                )
+            }
+        }
+    }
+}
+
+private struct StorageUsageDetailColumn: View {
+    let metric: DashboardMetric
+
+    var body: some View {
+        VStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailSpacing) {
+            Text(metric.title)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                .lineLimit(1)
+                .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+
+            Text(metric.detail ?? metric.value)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+        }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: DashboardOverviewLayout.storageDetailContentAlignment
+        )
+    }
+}
+
 private struct UsageBarRow: View {
     @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
@@ -923,7 +1083,7 @@ private struct UsageBarRow: View {
     @State private var displayedProgress: Double?
 
     var body: some View {
-        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric.value)
+        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
             Text(metric.title)
