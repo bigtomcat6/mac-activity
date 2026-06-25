@@ -62,11 +62,15 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage, .metric(.memory)]
+            [.usage, .storage, .metric(.memory)]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
-            [.cpu, .gpu, .disk, .swap]
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.cpu, .gpu]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.disk, .swap]
         )
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
@@ -102,10 +106,14 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage]
+            [.storage]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            []
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
             [.disk, .swap]
         )
     }
@@ -133,6 +141,24 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageCardContentAlignment, Alignment.center)
     }
 
+    func testOverviewTopRowHeightFitsSplitUsageCards() {
+        XCTAssertEqual(DashboardOverviewLayout.topSplitCardHeight, DashboardOverviewLayout.compactTrendCardHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
+    }
+
+    func testOverviewUsageProgressPrefersStructuredProgressAndClamps() {
+        let metric = DashboardMetric(kind: .disk, title: "Disk", value: "Collecting", progress: 0.42)
+        let highMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: 1.5)
+        let lowMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: -0.25)
+
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: metric), 0.42, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: highMetric), 1.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: lowMetric), 0.0, accuracy: 0.001)
+    }
+
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
@@ -141,6 +167,15 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testOverviewUsageCardHeaderIsHidden() {
         XCTAssertNil(DashboardOverviewLayout.usageHeaderTitle)
+    }
+
+    func testOverviewStorageCardUsesStableCompactGeometry() {
+        XCTAssertEqual(DashboardOverviewLayout.storageBarHeight, 8)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnCount, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnSpacing, 12)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailContentAlignment, Alignment.center)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailTextAlignment, .center)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
     }
 
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
@@ -198,7 +233,10 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
-        XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowHeight,
