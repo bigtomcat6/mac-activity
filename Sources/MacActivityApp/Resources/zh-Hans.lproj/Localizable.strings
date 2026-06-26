@@ -48,6 +48,7 @@
 "preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
 "preferences.hardwareBatteryPercentage" = "显示硬件电池百分比";
 "preferences.hardwareBatteryPercentageHelp" = "可用时使用 AppleSmartBattery 的原始容量；不可用时回退为系统百分比。";
+"preferences.processApplicationIdentifier" = "在“活跃”进程列表中显示应用 ID";
 "preferences.diskCleanupScope" = "清理范围";
 "preferences.diskCleanupHelp" = "控制 Actives 磁盘清理会扫描和删除的内容。";
 "preferences.menuBarMetrics" = "菜单栏指标";
