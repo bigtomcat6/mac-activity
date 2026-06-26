@@ -15,6 +15,7 @@ APP_X=185
 APP_Y=290
 APPLICATIONS_X=442
 APPLICATIONS_Y=290
+APPLICATIONS_ALIAS_NAME="Applications"
 
 WORK_DIR=""
 
@@ -23,7 +24,7 @@ usage() {
 Usage: .github/scripts/create_dmg.sh --app APP --output DMG --volume-name NAME --background PNG
 
 Creates a styled macOS installer DMG with the app bundle, an Applications
-shortcut, and a Finder background image.
+alias, and a Finder background image.
 USAGE
 }
 
@@ -50,6 +51,24 @@ absolute_output_path() {
   mkdir -p "${dir}"
   dir="$(cd "${dir}" && pwd)"
   printf '%s/%s\n' "${dir}" "${base}"
+}
+
+create_applications_alias() {
+  local alias_path="${STAGING_DIR}/${APPLICATIONS_ALIAS_NAME}"
+
+  rm -f "${alias_path}"
+  /usr/bin/osascript - "${STAGING_DIR}" >/dev/null <<'OSA'
+on run argv
+  set outputFolder to POSIX file (item 1 of argv) as alias
+  tell application "Finder"
+    make new alias file to POSIX file "/Applications" at outputFolder with properties {name:"Applications"}
+  end tell
+end run
+OSA
+
+  [[ -f "${alias_path}" ]] || die "failed to create Applications alias"
+  [[ ! -L "${alias_path}" ]] || die "Applications alias must not be a symlink"
+  file "${alias_path}" | grep -q "MacOS Alias file" || die "Applications item is not a Finder alias"
 }
 
 cleanup() {
@@ -96,6 +115,7 @@ done
 [[ -f "${BACKGROUND_PATH}" ]] || die "background image not found: ${BACKGROUND_PATH}"
 command -v npx >/dev/null || die "npx is required to run appdmg"
 command -v python3 >/dev/null || die "python3 is required to write the appdmg spec"
+command -v osascript >/dev/null || die "osascript is required to create the Applications alias"
 
 APP_PATH="$(absolute_existing_path "${APP_PATH}")"
 BACKGROUND_PATH="$(absolute_existing_path "${BACKGROUND_PATH}")"
@@ -110,8 +130,9 @@ SPEC_PATH="${STAGING_DIR}/appdmg.json"
 mkdir -p "${STAGING_DIR}"
 ditto "${APP_PATH}" "${STAGING_DIR}/${APP_BASENAME}"
 ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_BASENAME}"
+create_applications_alias
 
-python3 - "${SPEC_PATH}" "${VOLUME_NAME}" "${APP_BASENAME}" "${BACKGROUND_BASENAME}" \
+python3 - "${SPEC_PATH}" "${VOLUME_NAME}" "${APP_BASENAME}" "${BACKGROUND_BASENAME}" "${APPLICATIONS_ALIAS_NAME}" \
   "${WINDOW_WIDTH}" "${WINDOW_HEIGHT}" "${ICON_SIZE}" \
   "${APP_X}" "${APP_Y}" "${APPLICATIONS_X}" "${APPLICATIONS_Y}" <<'PY'
 import json
@@ -123,6 +144,7 @@ from pathlib import Path
     volume_name,
     app_name,
     background_name,
+    applications_alias_name,
     window_width,
     window_height,
     icon_size,
@@ -154,8 +176,8 @@ spec = {
         {
             "x": int(applications_x),
             "y": int(applications_y),
-            "type": "link",
-            "path": "/Applications",
+            "type": "file",
+            "path": applications_alias_name,
         },
         {
             "x": 900,

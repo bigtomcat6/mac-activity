@@ -317,8 +317,18 @@ jobs:
             echo "::error::Expected Mac Activity.app at DMG root."
             exit 1
           fi
-          if [[ ! -L "${mount_point}/Applications" ]]; then
-            echo "::error::Expected Applications symlink at DMG root."
+
+          applications_alias="${mount_point}/Applications"
+          if [[ ! -f "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias at DMG root."
+            exit 1
+          fi
+          if [[ -L "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias, got symlink."
+            exit 1
+          fi
+          if ! file "${applications_alias}" | grep -q "MacOS Alias file"; then
+            echo "::error::Applications item is not a Finder alias."
             exit 1
           fi
 
