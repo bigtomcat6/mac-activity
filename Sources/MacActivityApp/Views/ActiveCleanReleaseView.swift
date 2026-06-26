@@ -3,12 +3,21 @@ import SwiftUI
 struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
     let refreshTrigger: Int
+    let usedMemoryBytes: UInt64
+    let showsApplicationIdentifier: Bool
     @State private var confirmingQuitProcessIdentifier: pid_t?
     @State private var diskCleanupConfirmationState: DiskCleanupConfirmationState = .inactive
 
-    init(model: ActiveCleanupModel, refreshTrigger: Int = 0) {
+    init(
+        model: ActiveCleanupModel,
+        refreshTrigger: Int = 0,
+        usedMemoryBytes: UInt64 = 0,
+        showsApplicationIdentifier: Bool = true
+    ) {
         self.model = model
         self.refreshTrigger = refreshTrigger
+        self.usedMemoryBytes = usedMemoryBytes
+        self.showsApplicationIdentifier = showsApplicationIdentifier
     }
 
     var body: some View {
@@ -25,6 +34,8 @@ struct ActiveCleanReleaseView: View {
 
             ActiveProcessMemoryList(
                 model: model,
+                usedMemoryBytes: usedMemoryBytes,
+                showsApplicationIdentifier: showsApplicationIdentifier,
                 confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
             )
                 .accessibilityIdentifier("actives-clean-release-processes")

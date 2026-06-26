@@ -392,6 +392,60 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
     }
 
+    func testRenderedDashboardCanStartOnActivesTab() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 23)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: AppPreferences.default.selectedSummaryMetrics,
+                    showsProcessApplicationIdentifier: true
+                )
+            ),
+            openPreferences: {},
+            quitApplication: {},
+            initialSelectedTab: .actives
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 170)))
+    }
+
+    func testActivesCurrentUsedMemoryComesFromMemoryMetricLatestSample() {
+        let metrics = [
+            DashboardMetric(
+                kind: .memory,
+                title: "Memory",
+                value: "6.0GB/10.0GB (60%)",
+                memoryTrend: DashboardMemoryTrend(samples: [
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 1),
+                        pressurePercent: 50,
+                        usedBytes: 5_000,
+                        totalBytes: 10_000
+                    ),
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 2),
+                        pressurePercent: 60,
+                        usedBytes: 6_000,
+                        totalBytes: 10_000
+                    ),
+                ])
+            )
+        ]
+
+        XCTAssertEqual(DashboardView.currentUsedMemoryBytes(in: metrics), 6_000)
+        XCTAssertNil(DashboardView.currentUsedMemoryBytes(in: []))
+    }
+
     func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {
         let activeColor = try XCTUnwrap(
             Self.renderedColor(
@@ -714,9 +768,9 @@ final class DashboardCardLayoutTests: XCTestCase {
         }
     }
 
-    private static func preferencesController() -> PreferencesController {
+    private static func preferencesController(initial: AppPreferences = .default) -> PreferencesController {
         PreferencesController(
-            store: DashboardCardLayoutPreferencesStore(initial: .default),
+            store: DashboardCardLayoutPreferencesStore(initial: initial),
             launchService: NoopLaunchAtLoginService()
         )
     }

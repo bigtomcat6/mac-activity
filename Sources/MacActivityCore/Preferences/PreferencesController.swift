@@ -46,6 +46,11 @@ public final class PreferencesController: ObservableObject {
         try? store.save(state)
     }
 
+    public func setShowsProcessApplicationIdentifier(_ showsProcessApplicationIdentifier: Bool) {
+        state.showsProcessApplicationIdentifier = showsProcessApplicationIdentifier
+        try? store.save(state)
+    }
+
     public func setUpdateChannel(_ updateChannel: UpdateChannel) {
         state.updateChannel = updateChannel
         try? store.save(state)

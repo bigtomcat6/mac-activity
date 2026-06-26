@@ -117,6 +117,22 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
     }
 
+    func testPreferencesViewCanPersistProcessApplicationIdentifierToggle() {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let view = PreferencesView(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+
+        controller.setShowsProcessApplicationIdentifier(true)
+
+        XCTAssertTrue(controller.state.showsProcessApplicationIdentifier)
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
     func testPreferencesWindowControllerHostsPreferencesView() {
         let controller = PreferencesController(
             store: InMemoryPreferencesStore(initial: .default),

@@ -6,8 +6,8 @@ enum ActiveProcessMemoryLayout {
     static let trailingActionWidth: CGFloat = 72
     static let outerCornerRadius: CGFloat = ActiveCleanupChrome.cornerRadius
 
-    static func progress(bytes: UInt64, maxBytes: UInt64) -> Double {
-        guard maxBytes > 0 else { return 0 }
-        return min(1, max(0, Double(bytes) / Double(maxBytes)))
+    static func progress(bytes: UInt64, usedMemoryBytes: UInt64) -> Double {
+        guard usedMemoryBytes > 0 else { return 0 }
+        return min(1, max(0, Double(bytes) / Double(usedMemoryBytes)))
     }
 }

@@ -335,6 +335,20 @@ struct DashboardView: View {
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
+    init(
+        dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
+        openPreferences: @escaping () -> Void,
+        quitApplication: @escaping () -> Void,
+        initialSelectedTab: DashboardTab = .overview
+    ) {
+        self.dashboardModel = dashboardModel
+        self.preferencesController = preferencesController
+        self.openPreferences = openPreferences
+        self.quitApplication = quitApplication
+        self._selectedTab = State(initialValue: initialSelectedTab)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -447,7 +461,12 @@ struct DashboardView: View {
     }
 
     private var activesContent: some View {
-        ActiveCleanReleaseView(model: activeCleanupModel, refreshTrigger: activesRefreshTrigger)
+        ActiveCleanReleaseView(
+            model: activeCleanupModel,
+            refreshTrigger: activesRefreshTrigger,
+            usedMemoryBytes: Self.currentUsedMemoryBytes(in: dashboardModel.metrics) ?? 0,
+            showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
+        )
             .padding(18)
     }
 
@@ -466,6 +485,10 @@ struct DashboardView: View {
 
     static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
         selectedTab == .actives ? currentTrigger + 1 : currentTrigger
+    }
+
+    static func currentUsedMemoryBytes(in metrics: [DashboardMetric]) -> UInt64? {
+        metrics.first { $0.kind == .memory }?.memoryTrend?.samples.last?.usedBytes
     }
 
     private func applyDiskCleanupCategories(_ categories: [DiskCleanupCategoryKind], refreshActives: Bool) {

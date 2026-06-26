@@ -45,6 +45,14 @@ final class LocalizationTests: XCTestCase {
             AppLocalization.string(.preferencesHardwareBatteryPercentageHelp, bundle: simplifiedChinese),
             "可用时使用 AppleSmartBattery 的原始容量；不可用时回退为系统百分比。"
         )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: english),
+            "Show application ID in Actives process list"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: simplifiedChinese),
+            "在“活跃”进程列表中显示应用 ID"
+        )
         XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: english), "Update channel")
         XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: simplifiedChinese), "选择更新频道")
         XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: english), "Alpha")

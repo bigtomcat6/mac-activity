@@ -16,6 +16,7 @@ final class PreferencesStoreTests: XCTestCase {
             preferredLanguageIdentifier: "zh-Hans",
             diskCleanupCategories: [.userCaches, .trash, .userLogs],
             showsHardwareBatteryPercentage: true,
+            showsProcessApplicationIdentifier: false,
             updateChannel: .alpha
         )
 
@@ -31,6 +32,7 @@ final class PreferencesStoreTests: XCTestCase {
             [.cpu, .gpu, .memory, .vram, .temperature, .fan, .network]
         )
         XCTAssertFalse(AppPreferences.default.showsHardwareBatteryPercentage)
+        XCTAssertFalse(AppPreferences.default.showsProcessApplicationIdentifier)
         XCTAssertEqual(AppPreferences.default.updateChannel, .release)
     }
 
@@ -101,6 +103,22 @@ final class PreferencesStoreTests: XCTestCase {
         let loaded = store.load()
 
         XCTAssertFalse(loaded.showsHardwareBatteryPercentage)
+    }
+
+    func testLoadDefaultsProcessApplicationIdentifierToFalseWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let legacyData = Data(
+            #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":false,"temperatureSource":"smc"}"#
+                .utf8
+        )
+        userDefaults.set(legacyData, forKey: "mac-activity.preferences")
+
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertFalse(loaded.showsProcessApplicationIdentifier)
     }
 
     func testLoadDefaultsUpdateChannelToReleaseWhenMissingFromStoredPreferences() throws {

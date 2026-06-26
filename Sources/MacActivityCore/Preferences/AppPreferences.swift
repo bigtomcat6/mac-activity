@@ -62,6 +62,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var preferredLanguageIdentifier: String?
     public var diskCleanupCategories: [DiskCleanupCategoryKind]
     public var showsHardwareBatteryPercentage: Bool
+    public var showsProcessApplicationIdentifier: Bool
     public var updateChannel: UpdateChannel
 
     public init(
@@ -71,6 +72,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         preferredLanguageIdentifier: String? = nil,
         diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: Bool = false,
+        showsProcessApplicationIdentifier: Bool = false,
         updateChannel: UpdateChannel = .release
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
@@ -79,6 +81,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.preferredLanguageIdentifier = preferredLanguageIdentifier
         self.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: Set(diskCleanupCategories))
         self.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
+        self.showsProcessApplicationIdentifier = showsProcessApplicationIdentifier
         self.updateChannel = updateChannel
     }
 
@@ -89,6 +92,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case preferredLanguageIdentifier
         case diskCleanupCategories
         case showsHardwareBatteryPercentage
+        case showsProcessApplicationIdentifier
         case updateChannel
         case diskCleanupScope
     }
@@ -110,6 +114,10 @@ public struct AppPreferences: Equatable, Codable, Sendable {
             Bool.self,
             forKey: .showsHardwareBatteryPercentage
         ) ?? false
+        self.showsProcessApplicationIdentifier = try container.decodeIfPresent(
+            Bool.self,
+            forKey: .showsProcessApplicationIdentifier
+        ) ?? false
         self.updateChannel = try container.decodeIfPresent(UpdateChannel.self, forKey: .updateChannel) ?? .release
     }
 
@@ -121,6 +129,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encodeIfPresent(preferredLanguageIdentifier, forKey: .preferredLanguageIdentifier)
         try container.encode(diskCleanupCategories, forKey: .diskCleanupCategories)
         try container.encode(showsHardwareBatteryPercentage, forKey: .showsHardwareBatteryPercentage)
+        try container.encode(showsProcessApplicationIdentifier, forKey: .showsProcessApplicationIdentifier)
         try container.encode(updateChannel, forKey: .updateChannel)
     }
 
@@ -138,6 +147,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         preferredLanguageIdentifier: nil,
         diskCleanupCategories: defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: false,
+        showsProcessApplicationIdentifier: false,
         updateChannel: .release
     )
 }
