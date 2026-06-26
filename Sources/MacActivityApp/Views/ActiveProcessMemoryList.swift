@@ -3,13 +3,19 @@ import MacActivityCore
 
 struct ActiveProcessMemoryList: View {
     @ObservedObject var model: ActiveCleanupModel
+    let usedMemoryBytes: UInt64
+    let showsApplicationIdentifier: Bool
     @Binding var confirmingQuitProcessIdentifier: pid_t?
 
     init(
         model: ActiveCleanupModel,
+        usedMemoryBytes: UInt64 = 0,
+        showsApplicationIdentifier: Bool = true,
         confirmingQuitProcessIdentifier: Binding<pid_t?> = .constant(nil)
     ) {
         self.model = model
+        self.usedMemoryBytes = usedMemoryBytes
+        self.showsApplicationIdentifier = showsApplicationIdentifier
         self._confirmingQuitProcessIdentifier = confirmingQuitProcessIdentifier
     }
 
@@ -46,14 +52,13 @@ struct ActiveProcessMemoryList: View {
     }
 
     private var processRows: some View {
-        let maxBytes = model.apps.map(\.residentMemoryBytes).max() ?? 0
-
-        return VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
             ForEach(model.apps) { app in
                 ActiveProcessMemoryRow(
                     app: app,
-                    maxBytes: maxBytes,
+                    usedMemoryBytes: usedMemoryBytes,
                     isQuitPending: model.isQuitPending(for: app.processIdentifier),
+                    showsApplicationIdentifier: showsApplicationIdentifier,
                     confirmingQuitProcessIdentifier: $confirmingQuitProcessIdentifier
                 ) {
                     model.quit(app)

@@ -65,22 +65,25 @@ struct ActiveProcessQuitButtonConfiguration: Equatable {
 struct ActiveProcessMemoryRow: View {
     @Environment(\.appearsActive) private var appearsActive
     let app: ActiveAppMemoryEntry
-    let maxBytes: UInt64
+    let usedMemoryBytes: UInt64
     let isQuitPending: Bool
+    let showsApplicationIdentifier: Bool
     private let quit: () -> Void
     @Binding private var confirmingQuitProcessIdentifier: pid_t?
     @State private var isHovered = false
 
     init(
         app: ActiveAppMemoryEntry,
-        maxBytes: UInt64,
+        usedMemoryBytes: UInt64,
         isQuitPending: Bool = false,
+        showsApplicationIdentifier: Bool = true,
         confirmingQuitProcessIdentifier: Binding<pid_t?> = .constant(nil),
         quit: @escaping () -> Void
     ) {
         self.app = app
-        self.maxBytes = maxBytes
+        self.usedMemoryBytes = usedMemoryBytes
         self.isQuitPending = isQuitPending
+        self.showsApplicationIdentifier = showsApplicationIdentifier
         self._confirmingQuitProcessIdentifier = confirmingQuitProcessIdentifier
         self.quit = quit
     }
@@ -89,7 +92,7 @@ struct ActiveProcessMemoryRow: View {
         GeometryReader { proxy in
             let progressWidth = proxy.size.width * ActiveProcessMemoryLayout.progress(
                 bytes: app.residentMemoryBytes,
-                maxBytes: maxBytes
+                usedMemoryBytes: usedMemoryBytes
             )
 
             ZStack(alignment: .leading) {
@@ -106,10 +109,15 @@ struct ActiveProcessMemoryRow: View {
                                 .font(.caption.weight(.semibold))
                                 .lineLimit(1)
 
-                            Text(app.bundleIdentifier ?? AppLocalization.string(.processFallbackName, Int(app.processIdentifier)))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
+                            if let identifier = Self.identifierText(
+                                for: app,
+                                showsApplicationIdentifier: showsApplicationIdentifier
+                            ) {
+                                Text(identifier)
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                                    .lineLimit(1)
+                            }
                         }
 
                         Spacer(minLength: 8)
@@ -295,6 +303,15 @@ struct ActiveProcessMemoryRow: View {
     }
 
     static let quitConfirmationTimeoutNanoseconds: UInt64 = 3_000_000_000
+
+    static func identifierText(
+        for app: ActiveAppMemoryEntry,
+        showsApplicationIdentifier: Bool,
+        bundle: Bundle? = nil
+    ) -> String? {
+        guard showsApplicationIdentifier else { return nil }
+        return app.bundleIdentifier ?? AppLocalization.string(.processFallbackName, Int(app.processIdentifier), bundle: bundle)
+    }
 
     static func iconSource(
         for app: ActiveAppMemoryEntry,

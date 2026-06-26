@@ -104,6 +104,14 @@ struct PreferencesView: View {
                         .foregroundStyle(.secondary)
                 }
 
+                Toggle(
+                    AppLocalization.string(.preferencesProcessApplicationIdentifier),
+                    isOn: Binding(
+                        get: { preferencesController.state.showsProcessApplicationIdentifier },
+                        set: { preferencesController.setShowsProcessApplicationIdentifier($0) }
+                    )
+                )
+
                 VStack(alignment: .leading, spacing: 8) {
                     Text(AppLocalization.string(.preferencesDiskCleanupScope))
                         .font(.headline)
