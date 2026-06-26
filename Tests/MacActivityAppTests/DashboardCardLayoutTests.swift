@@ -184,6 +184,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
     }
 
+    func testOverviewStorageCardShowsDetailsAboveUsageBar() {
+        XCTAssertEqual(DashboardOverviewLayout.storageCardContentOrder, [.details, .bar])
+    }
+
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .temperature))
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .fan))

@@ -41,6 +41,11 @@ enum DashboardOverviewSlot: Equatable {
     case metric(MetricKind)
 }
 
+enum DashboardStorageCardContent: Hashable {
+    case details
+    case bar
+}
+
 enum DashboardOverviewLayout {
     static let sectionSpacing: CGFloat = 12
     static let topRowColumns = [GridItem(.flexible()), GridItem(.flexible())]
@@ -62,6 +67,7 @@ enum DashboardOverviewLayout {
     static let storageDetailContentAlignment: Alignment = .center
     static let storageDetailTextAlignment: TextAlignment = .center
     static let storageDetailSpacing: CGFloat = 4
+    static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
@@ -982,19 +988,9 @@ private struct StorageUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            StorageSegmentedUsageBar(metrics: metrics)
-                .frame(height: DashboardOverviewLayout.storageBarHeight)
-
-            HStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailColumnSpacing) {
-                ForEach(metrics.prefix(DashboardOverviewLayout.storageDetailColumnCount)) { metric in
-                    StorageUsageDetailColumn(metric: metric)
-                }
+            ForEach(DashboardOverviewLayout.storageCardContentOrder, id: \.self) { content in
+                storageContent(content)
             }
-            .frame(
-                maxWidth: .infinity,
-                maxHeight: .infinity,
-                alignment: DashboardOverviewLayout.storageDetailContentAlignment
-            )
         }
         .frame(maxWidth: DashboardOverviewLayout.usageContentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
@@ -1009,6 +1005,34 @@ private struct StorageUsageCard: View {
         .onHover { hovering in
             isCardHovered = hovering
         }
+    }
+
+    @ViewBuilder
+    private func storageContent(_ content: DashboardStorageCardContent) -> some View {
+        switch content {
+        case .details:
+            storageDetails
+        case .bar:
+            storageBar
+        }
+    }
+
+    private var storageDetails: some View {
+        HStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailColumnSpacing) {
+            ForEach(metrics.prefix(DashboardOverviewLayout.storageDetailColumnCount)) { metric in
+                StorageUsageDetailColumn(metric: metric)
+            }
+        }
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: DashboardOverviewLayout.storageDetailContentAlignment
+        )
+    }
+
+    private var storageBar: some View {
+        StorageSegmentedUsageBar(metrics: metrics)
+            .frame(height: DashboardOverviewLayout.storageBarHeight)
     }
 }
 
