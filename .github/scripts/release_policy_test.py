@@ -132,16 +132,38 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("APP_Y=290", script)
         self.assertIn("APPLICATIONS_Y=290", script)
 
+    def test_styled_dmg_uses_finder_applications_alias_icon(self):
+        script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
+
+        self.assertIn("APPLICATIONS_ALIAS_NAME=\"Applications\"", script)
+        self.assertIn("make new alias file to POSIX file \"/Applications\"", script)
+        self.assertIn('"path": applications_alias_name', script)
+        self.assertNotIn('"type": "link"', script)
+        self.assertNotIn("ApplicationsFolderIcon.icns", script)
+        self.assertNotIn("Rez -append", script)
+        self.assertNotIn("SetFile -a C", script)
+
+    def test_release_workflow_validates_applications_finder_alias(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        validation_section = workflow.split("- name: Validate packaged disk image contents", 1)[1].split("- name: Generate release checksums", 1)[0]
+
+        self.assertIn("MacOS Alias file", validation_section)
+        self.assertIn('[[ -L "${applications_alias}" ]]', validation_section)
+        self.assertNotIn("com.apple.ResourceFork", validation_section)
+        self.assertNotIn("custom icon flag", validation_section)
+
     def test_release_workflow_supports_developer_id_notarization(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        notarize_script = (REPO_ROOT / ".github" / "scripts" / "notarize_and_staple.sh").read_text()
 
         self.assertIn("- developer-id", workflow)
         self.assertIn("Import Developer ID certificate", workflow)
         self.assertIn("DEVELOPER_ID_APPLICATION_CERTIFICATE_BASE64", workflow)
         self.assertIn("Notarize Developer ID app", workflow)
-        self.assertIn("xcrun notarytool submit", workflow)
-        self.assertIn("xcrun stapler staple", workflow)
-        self.assertIn("spctl --assess --type execute", workflow)
+        self.assertIn(".github/scripts/notarize_and_staple.sh --path", workflow)
+        self.assertIn("xcrun notarytool submit", notarize_script)
+        self.assertIn("xcrun stapler staple", notarize_script)
+        self.assertIn('spctl --assess --type "${assessment_type}"', notarize_script)
         self.assertIn("Final releases must use signing=developer-id", workflow)
 
     def test_create_release_skill_uses_developer_id_for_draft_release(self):
