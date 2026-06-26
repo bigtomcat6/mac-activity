@@ -342,6 +342,54 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testRenderedOverviewDisplaysSplitStorageCardForDiskAndSwapMetrics() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 25)),
+                .gpu(GPUReading(usagePercent: 50)),
+                .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 21)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: model.metrics),
+            [.usage, .storage, .metric(.memory)]
+        )
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 90, y: 128)))
+
+        let storageOnlyStore = MetricsStore()
+        storageOnlyStore.apply(
+            [
+                .disk(DiskReading(usedBytes: 400, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 100, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 22)
+        )
+        let storageOnlyModel = DashboardModel(store: storageOnlyStore)
+        let storageOnlyContent = DashboardView(
+            dashboardModel: storageOnlyModel,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(DashboardOverviewLayout.topRowSlots(for: storageOnlyModel.metrics), [.storage])
+        XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
+    }
+
     func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {
         let activeColor = try XCTUnwrap(
             Self.renderedColor(
