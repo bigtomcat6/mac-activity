@@ -62,11 +62,15 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage, .metric(.memory)]
+            [.usage, .storage, .metric(.memory)]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
-            [.cpu, .gpu, .disk, .swap]
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.cpu, .gpu]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.disk, .swap]
         )
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
@@ -102,10 +106,14 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage]
+            [.storage]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            []
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
             [.disk, .swap]
         )
     }
@@ -133,6 +141,26 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageCardContentAlignment, Alignment.center)
     }
 
+    func testOverviewTopRowHeightFitsSplitUsageCards() {
+        XCTAssertEqual(DashboardOverviewLayout.topSplitCardHeight, DashboardOverviewLayout.compactTrendCardHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
+    }
+
+    func testOverviewUsageProgressPrefersStructuredProgressAndClamps() {
+        let metric = DashboardMetric(kind: .disk, title: "Disk", value: "Collecting", progress: 0.42)
+        let highMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: 1.5)
+        let lowMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: -0.25)
+        let textOnlyMetric = DashboardMetric(kind: .disk, title: "Disk", value: "62%")
+
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: metric), 0.42, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: highMetric), 1.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: lowMetric), 0.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: textOnlyMetric), 0.62, accuracy: 0.001)
+    }
+
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendChartHeight, 44)
         XCTAssertEqual(DashboardOverviewLayout.sectionSpacing, 12)
@@ -141,6 +169,25 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testOverviewUsageCardHeaderIsHidden() {
         XCTAssertNil(DashboardOverviewLayout.usageHeaderTitle)
+    }
+
+    func testOverviewStorageCardUsesStableCompactGeometry() {
+        XCTAssertEqual(DashboardOverviewLayout.storageBarHeight, 8)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnCount, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnSpacing, 12)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailContentAlignment, Alignment.center)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailTextAlignment, .center)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
+    }
+
+    func testOverviewStorageDetailUsesNativeSymbolsForDiskAndSwap() {
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .disk), "externaldrive")
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .swap), "memorychip")
+        XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
+    }
+
+    func testOverviewStorageCardShowsDetailsAboveUsageBar() {
+        XCTAssertEqual(DashboardOverviewLayout.storageCardContentOrder, [.details, .bar])
     }
 
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
@@ -198,7 +245,10 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
-        XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowHeight,
@@ -292,6 +342,54 @@ final class DashboardCardLayoutTests: XCTestCase {
             Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
             "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
         )
+    }
+
+    func testRenderedOverviewDisplaysSplitStorageCardForDiskAndSwapMetrics() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 25)),
+                .gpu(GPUReading(usagePercent: 50)),
+                .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 21)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: model.metrics),
+            [.usage, .storage, .metric(.memory)]
+        )
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 90, y: 128)))
+
+        let storageOnlyStore = MetricsStore()
+        storageOnlyStore.apply(
+            [
+                .disk(DiskReading(usedBytes: 400, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 100, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 22)
+        )
+        let storageOnlyModel = DashboardModel(store: storageOnlyStore)
+        let storageOnlyContent = DashboardView(
+            dashboardModel: storageOnlyModel,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(DashboardOverviewLayout.topRowSlots(for: storageOnlyModel.metrics), [.storage])
+        XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
     }
 
     func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {

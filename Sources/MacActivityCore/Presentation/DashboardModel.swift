@@ -70,6 +70,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var value: String
     public var secondaryText: String?
     public var detail: String?
+    public var progress: Double?
     public var style: DashboardMetricStyle
     public var trend: DashboardTrend?
     public var memoryTrend: DashboardMemoryTrend?
@@ -84,6 +85,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         value: String,
         secondaryText: String? = nil,
         detail: String? = nil,
+        progress: Double? = nil,
         style: DashboardMetricStyle = .value,
         trend: DashboardTrend? = nil,
         memoryTrend: DashboardMemoryTrend? = nil
@@ -93,6 +95,7 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         self.value = value
         self.secondaryText = secondaryText
         self.detail = detail
+        self.progress = progress
         self.style = style
         self.trend = trend
         self.memoryTrend = memoryTrend
@@ -202,25 +205,61 @@ public final class DashboardModel: ObservableObject {
 
         if let cpu = snapshot.cpu {
             items.append(
-                DashboardMetric(kind: .cpu, title: MetricKind.cpu.title, value: "\(Int(cpu.usagePercent.rounded()))%", style: .chart, trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100)))
+                DashboardMetric(
+                    kind: .cpu,
+                    title: MetricKind.cpu.title,
+                    value: "\(Int(cpu.usagePercent.rounded()))%",
+                    progress: progressFraction(for: cpu.usagePercent),
+                    style: .chart,
+                    trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100))
+                )
             )
         }
 
         if let gpu = snapshot.gpu {
             items.append(
-                DashboardMetric(kind: .gpu, title: MetricKind.gpu.title, value: "\(Int(gpu.usagePercent.rounded()))%", style: .chart, trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100)))
+                DashboardMetric(
+                    kind: .gpu,
+                    title: MetricKind.gpu.title,
+                    value: "\(Int(gpu.usagePercent.rounded()))%",
+                    progress: progressFraction(for: gpu.usagePercent),
+                    style: .chart,
+                    trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100))
+                )
             )
         }
 
         if let disk = snapshot.disk {
             items.append(
-                DashboardMetric(kind: .disk, title: MetricKind.disk.title, value: DashboardMetricTextFormatter.formatPercent(disk.usagePercent), style: .chart, trend: trend(from: history, kind: .disk, scale: .fixed(lowerBound: 0, upperBound: 100)))
+                DashboardMetric(
+                    kind: .disk,
+                    title: MetricKind.disk.title,
+                    value: DashboardMetricTextFormatter.formatPercent(disk.usagePercent),
+                    detail: DashboardMetricTextFormatter.formatUsageDetail(
+                        usedBytes: disk.usedBytes,
+                        percent: disk.usagePercent
+                    ),
+                    progress: progressFraction(for: disk.usagePercent),
+                    style: .chart,
+                    trend: trend(from: history, kind: .disk, scale: .fixed(lowerBound: 0, upperBound: 100))
+                )
             )
         }
 
         if let swap = snapshot.swap {
             items.append(
-                DashboardMetric(kind: .swap, title: MetricKind.swap.title, value: DashboardMetricTextFormatter.formatPercent(swap.usagePercent), style: .chart, trend: trend(from: history, kind: .swap, scale: .fixed(lowerBound: 0, upperBound: 100)))
+                DashboardMetric(
+                    kind: .swap,
+                    title: MetricKind.swap.title,
+                    value: DashboardMetricTextFormatter.formatPercent(swap.usagePercent),
+                    detail: DashboardMetricTextFormatter.formatUsageDetail(
+                        usedBytes: swap.usedBytes,
+                        percent: swap.usagePercent
+                    ),
+                    progress: progressFraction(for: swap.usagePercent),
+                    style: .chart,
+                    trend: trend(from: history, kind: .swap, scale: .fixed(lowerBound: 0, upperBound: 100))
+                )
             )
         }
 
@@ -295,6 +334,10 @@ public final class DashboardModel: ObservableObject {
     }
 
     nonisolated private static func formatTemperature(_ value: Double) -> String { String(format: "%.1f C", value) }
+
+    nonisolated private static func progressFraction(for percent: Double) -> Double {
+        min(max(percent / 100, 0), 1)
+    }
 
     nonisolated private static func batteryTrend(
         from history: MetricsHistory,
@@ -375,6 +418,9 @@ public enum DashboardMetricTextFormatter {
     public static func formatMemoryBytes(_ value: UInt64) -> String { formatBinaryBytes(Double(value)) }
     public static func formatMemoryGB(_ value: UInt64) -> String { String(format: "%.1fGB", Double(value) / 1_073_741_824) }
     public static func formatPercent(_ value: Double) -> String { "\(Int(value.rounded()))%" }
+    public static func formatUsageDetail(usedBytes: UInt64, percent: Double) -> String {
+        "\(formatBytes(usedBytes)) (\(formatPercent(percent)))"
+    }
     public static func formatMemorySummary(usedBytes: UInt64, totalBytes: UInt64, percent: Double) -> String {
         "\(formatMemoryGB(usedBytes))/\(formatMemoryGB(totalBytes)) (\(Int(percent.rounded()))%)"
     }
