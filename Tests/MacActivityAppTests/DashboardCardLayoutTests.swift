@@ -178,6 +178,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
     }
 
+    func testOverviewStorageDetailUsesNativeSymbolsForDiskAndSwap() {
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .disk), "externaldrive")
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .swap), "memorychip")
+        XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
+    }
+
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .temperature))
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .fan))

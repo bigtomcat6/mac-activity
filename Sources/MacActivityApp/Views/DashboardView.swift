@@ -121,6 +121,17 @@ enum DashboardOverviewLayout {
         [.disk, .swap].filter { metricsByKind[$0] != nil }
     }
 
+    static func storageDetailIconName(for kind: MetricKind) -> String? {
+        switch kind {
+        case .disk:
+            return "externaldrive"
+        case .swap:
+            return "memorychip"
+        default:
+            return nil
+        }
+    }
+
     static func usageProgress(for value: String) -> Double {
         let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "%", with: "")
@@ -1055,11 +1066,19 @@ private struct StorageUsageDetailColumn: View {
 
     var body: some View {
         VStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            Text(metric.title)
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
-                .lineLimit(1)
-                .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+            HStack(spacing: 4) {
+                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
+                    Image(systemName: iconName)
+                        .font(.caption2.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+
+                Text(metric.title)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+            }
+            .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
 
             Text(metric.detail ?? metric.value)
                 .font(.caption2.monospacedDigit().weight(.semibold))
