@@ -64,8 +64,9 @@ enum DashboardOverviewLayout {
     static let usageValueColumnWidth: CGFloat = 44
     static let usageRowSpacing: CGFloat = 10
     static let usageBarHeight: CGFloat = 8
-    static let usageContentMaxWidth: CGFloat = 180
+    static let usageContentMaxWidth = CGFloat.infinity
     static let usageCardContentAlignment: Alignment = .center
+    static let storageContentMaxWidth: CGFloat = 180
     static let storageBarHeight: CGFloat = usageBarHeight
     static let storageDetailColumnCount = 2
     static let storageDetailColumnSpacing: CGFloat = 12
@@ -1019,7 +1020,7 @@ private struct StorageUsageCard: View {
                 storageContent(content)
             }
         }
-        .frame(maxWidth: DashboardOverviewLayout.usageContentMaxWidth, alignment: .leading)
+        .frame(maxWidth: DashboardOverviewLayout.storageContentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(DashboardCardLayout.regularCardInsets)
         .frame(

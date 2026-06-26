@@ -133,8 +133,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageBarHeight, 8)
     }
 
-    func testOverviewUsageCardCentersRowsWithinBoundedContentWidth() {
-        XCTAssertEqual(DashboardOverviewLayout.usageContentMaxWidth, 180)
+    func testOverviewUsageCardRowsFillAvailableCardWidth() {
+        XCTAssertTrue(DashboardOverviewLayout.usageContentMaxWidth.isInfinite)
+    }
+
+    func testOverviewStorageCardKeepsBoundedContentWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.storageContentMaxWidth, 180)
     }
 
     func testOverviewUsageCardCentersContentWithinCardFrame() {
