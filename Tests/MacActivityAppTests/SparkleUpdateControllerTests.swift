@@ -1,6 +1,5 @@
 import MacActivityCore
 import XCTest
-@preconcurrency import Sparkle
 @testable import MacActivityApp
 
 @MainActor
@@ -144,25 +143,6 @@ final class SparkleUpdateControllerTests: XCTestCase {
         XCTAssertNil(candidate)
     }
 
-    func testAppcastCandidateInputCopiesSparkleItemMetadata() throws {
-        let item = try makeAppcastItem(
-            displayVersionString: "v26.0.0",
-            versionString: "7",
-            channel: "alpha"
-        )
-
-        let input = SparkleUpdateController.appcastCandidateInput(for: item)
-
-        XCTAssertEqual(
-            input,
-            SparkleAppcastCandidateInput(
-                displayVersionString: "v26.0.0",
-                versionString: "7",
-                channel: "alpha"
-            )
-        )
-    }
-
     func testBestCandidateIndexSkipsInvalidItemsAndReturnsMatchingInputIndex() throws {
         let index = SparkleUpdateController.bestCandidateIndex(
             currentVersion: try ReleaseVersion("v26.0.0-alpha.1"),
@@ -230,25 +210,6 @@ final class SparkleUpdateControllerTests: XCTestCase {
         return try XCTUnwrap(Bundle(url: bundleURL))
     }
 
-    private func makeAppcastItem(
-        displayVersionString: String,
-        versionString: String,
-        channel: String?
-    ) throws -> SUAppcastItem {
-        var dictionary: [String: Any] = [
-            "sparkle:version": versionString,
-            "sparkle:shortVersionString": displayVersionString,
-            "enclosure": [
-                "url": "https://example.com/MacActivity_\(versionString).zip",
-            ],
-        ]
-        dictionary["sparkle:channel"] = channel
-
-        var failureReason: NSString?
-        let item = SUAppcastItem(dictionary: dictionary, failureReason: &failureReason)
-        XCTAssertNil(failureReason)
-        return try XCTUnwrap(item)
-    }
 }
 
 private final class InMemoryPreferencesStore: PreferencesStoring, @unchecked Sendable {

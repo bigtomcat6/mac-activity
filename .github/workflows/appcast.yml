@@ -12,6 +12,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  pages: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.release.tag_name || inputs.tag }}
@@ -25,6 +27,9 @@ jobs:
       name: release-signing
       deployment: false
     timeout-minutes: 20
+    outputs:
+      pages_changed: ${{ steps.publish.outputs.pages_changed }}
+      publish: ${{ steps.release.outputs.publish }}
 
     steps:
       - name: Checkout
@@ -88,10 +93,12 @@ jobs:
             -scheme generate_appcast \
             -configuration Release \
             -derivedDataPath "${tool_build_dir}" \
+            SWIFT_SUPPRESS_WARNINGS=YES \
             -quiet \
             build
 
       - name: Publish Sparkle appcast
+        id: publish
         if: ${{ steps.release.outputs.publish == 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
@@ -143,9 +150,56 @@ jobs:
           git -C "${pages_dir}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git -C "${pages_dir}" add appcast.xml
           if git -C "${pages_dir}" diff --cached --quiet; then
+            echo "pages_changed=false" >> "${GITHUB_OUTPUT}"
             echo "Appcast is already current."
             exit 0
           fi
 
           git -C "${pages_dir}" commit -m "Update Sparkle appcast for ${TAG}"
           git -C "${pages_dir}" push origin HEAD:gh-pages
+          echo "pages_changed=true" >> "${GITHUB_OUTPUT}"
+
+  deploy-pages:
+    name: Deploy GitHub Pages
+    runs-on: ubuntu-latest
+    needs: [appcast]
+    if: ${{ needs.appcast.outputs.publish == 'true' && needs.appcast.outputs.pages_changed == 'true' }}
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 10
+
+    steps:
+      - name: Check Pages build type
+        id: pages
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          build_type="$(gh api "repos/${GITHUB_REPOSITORY}/pages" --jq '.build_type')"
+          echo "build_type=${build_type}" >> "${GITHUB_OUTPUT}"
+
+      - name: Skip legacy Pages source
+        if: ${{ steps.pages.outputs.build_type != 'workflow' }}
+        run: |
+          echo "::notice::GitHub Pages is still using legacy branch deployments; set the Pages source to GitHub Actions to use this job."
+
+      - name: Checkout gh-pages
+        if: ${{ steps.pages.outputs.build_type == 'workflow' }}
+        uses: actions/checkout@v7
+        with:
+          ref: gh-pages
+
+      - name: Configure Pages
+        if: ${{ steps.pages.outputs.build_type == 'workflow' }}
+        uses: actions/configure-pages@v6
+
+      - name: Upload Pages artifact
+        if: ${{ steps.pages.outputs.build_type == 'workflow' }}
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: .
+
+      - name: Deploy to GitHub Pages
+        if: ${{ steps.pages.outputs.build_type == 'workflow' }}
+        id: deployment
+        uses: actions/deploy-pages@v5

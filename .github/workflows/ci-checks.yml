@@ -33,6 +33,9 @@ jobs:
     runs-on: macos-26
     if: ${{ inputs.suite == 'full' || inputs.suite == 'swiftpm' }}
     timeout-minutes: 20
+    outputs:
+      line_coverage_percent: ${{ steps.coverage.outputs.line_coverage_percent }}
+      status: ${{ steps.coverage.outputs.status }}
 
     steps:
       - name: Checkout
@@ -82,6 +85,37 @@ jobs:
             coverage/swiftpm-codecov.json
             coverage/swiftpm.lcov
           if-no-files-found: error
+
+      - name: Summarize SwiftPM coverage
+        id: coverage
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          coverage_path = Path("coverage/swiftpm-codecov.json")
+          status = "unavailable"
+          percent_text = ""
+
+          try:
+              data = json.loads(coverage_path.read_text(encoding="utf-8"))
+              lines = data.get("data", [{}])[0].get("totals", {}).get("lines", {})
+              percent = lines.get("percent")
+              if isinstance(percent, (int, float)):
+                  percent_text = f"{percent:.2f}"
+                  status = "reported"
+                  print(f"Line coverage: {percent_text}%")
+              else:
+                  print("::warning::SwiftPM coverage JSON did not include line coverage percent.")
+          except Exception as error:
+              print(f"::warning::Unable to summarize SwiftPM coverage: {error}")
+
+          with output_path.open("a", encoding="utf-8") as output:
+              output.write(f"line_coverage_percent={percent_text}\n")
+              output.write(f"status={status}\n")
+          PY
 
       - name: Upload SwiftPM coverage to Codecov
         if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
@@ -181,55 +215,6 @@ jobs:
 
           exit "${failed}"
 
-  coverage:
-    name: Coverage
-    runs-on: ubuntu-latest
-    needs: [tests, swiftpm-tests]
-    if: ${{ always() && needs.tests.result == 'success' && (inputs.suite == 'full' || inputs.suite == 'swiftpm') }}
-    timeout-minutes: 5
-    outputs:
-      line_coverage_percent: ${{ steps.coverage.outputs.line_coverage_percent }}
-      status: ${{ steps.coverage.outputs.status }}
-
-    steps:
-      - name: Download SwiftPM coverage
-        continue-on-error: true
-        uses: actions/download-artifact@v8
-        with:
-          name: swiftpm-coverage
-          path: coverage
-
-      - name: Summarize SwiftPM coverage
-        id: coverage
-        run: |
-          python3 - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          output_path = Path(os.environ["GITHUB_OUTPUT"])
-          coverage_path = Path("coverage/swiftpm-codecov.json")
-          status = "unavailable"
-          percent_text = ""
-
-          try:
-              data = json.loads(coverage_path.read_text(encoding="utf-8"))
-              lines = data.get("data", [{}])[0].get("totals", {}).get("lines", {})
-              percent = lines.get("percent")
-              if isinstance(percent, (int, float)):
-                  percent_text = f"{percent:.2f}"
-                  status = "reported"
-                  print(f"Line coverage: {percent_text}%")
-              else:
-                  print("::warning::SwiftPM coverage JSON did not include line coverage percent.")
-          except Exception as error:
-              print(f"::warning::Unable to summarize SwiftPM coverage: {error}")
-
-          with output_path.open("a", encoding="utf-8") as output:
-              output.write(f"line_coverage_percent={percent_text}\n")
-              output.write(f"status={status}\n")
-          PY
-
   lint:
     name: Lint
     runs-on: macos-26
@@ -271,7 +256,7 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]
+    needs: [swiftpm-tests, xcode-tests, tests, lint]
     if: ${{ always() }}
     timeout-minutes: 5
 
@@ -282,9 +267,9 @@ jobs:
           SWIFTPM_RESULT: ${{ needs.swiftpm-tests.result }}
           XCODE_RESULT: ${{ needs.xcode-tests.result }}
           TESTS_RESULT: ${{ needs.tests.result }}
-          COVERAGE_RESULT: ${{ needs.coverage.result }}
-          COVERAGE_STATUS: ${{ needs.coverage.outputs.status }}
-          COVERAGE_PERCENT: ${{ needs.coverage.outputs.line_coverage_percent }}
+          COVERAGE_RESULT: ${{ needs.swiftpm-tests.result }}
+          COVERAGE_STATUS: ${{ needs.swiftpm-tests.outputs.status }}
+          COVERAGE_PERCENT: ${{ needs.swiftpm-tests.outputs.line_coverage_percent }}
           LINT_RESULT: ${{ needs.lint.result }}
           LINT_STATUS: ${{ needs.lint.outputs.status }}
           LINT_EXIT_CODE: ${{ needs.lint.outputs.exit_code }}
