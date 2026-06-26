@@ -26,7 +26,12 @@ enum DashboardCardLayout {
     }
 
     static func chartHeightBehavior(for kind: MetricKind) -> DashboardChartHeightBehavior {
-        kind == .network ? .fillsRemainingHeight : .fixed(compactChartHeight)
+        switch kind {
+        case .memory, .network:
+            .fillsRemainingHeight
+        default:
+            .fixed(compactChartHeight)
+        }
     }
 }
 
@@ -1308,22 +1313,13 @@ private struct MetricCard: View {
             case .memoryStackedChart:
                 if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
                     RAMSegmentBars(trend: memoryTrend)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
                     if let latestSample = memoryTrend.samples.last {
                         RAMSegmentLegend(sample: latestSample)
                     }
                 } else {
-                    DashboardTrendChart(
-                        metric: metric,
-                        color: color,
-                        isCardHovered: isCardHovered,
-                        showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                            for: metric.kind,
-                            isCompactOverviewChart: false
-                        )
-                    )
-                        .id(metric.id)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                    trendChart
                 }
             case .value:
                 Rectangle()

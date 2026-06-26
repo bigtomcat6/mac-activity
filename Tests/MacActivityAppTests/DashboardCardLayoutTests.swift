@@ -227,6 +227,10 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
         XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .memory),
+            .fillsRemainingHeight
+        )
+        XCTAssertEqual(
             DashboardCardLayout.chartHeightBehavior(for: .network),
             .fillsRemainingHeight
         )
