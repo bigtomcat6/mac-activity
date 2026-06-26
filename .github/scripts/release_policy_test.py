@@ -96,10 +96,19 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("types: [published]", workflow)
         self.assertIn("SPARKLE_ED_PRIVATE_KEY", appcast_section)
         self.assertIn("generate_appcast", appcast_section)
+        self.assertIn("SWIFT_SUPPRESS_WARNINGS=YES", appcast_section)
         self.assertIn("--ed-key-file -", appcast_section)
         self.assertIn("--download-url-prefix", appcast_section)
         self.assertIn("gh-pages", appcast_section)
         self.assertIn("appcast.xml", appcast_section)
+        self.assertIn("pages_changed: ${{ steps.publish.outputs.pages_changed }}", appcast_section)
+        self.assertIn("deploy-pages:", appcast_section)
+        self.assertIn("needs: [appcast]", appcast_section)
+        self.assertIn("Check Pages build type", appcast_section)
+        self.assertIn("steps.pages.outputs.build_type == 'workflow'", appcast_section)
+        self.assertIn("uses: actions/checkout@v7", appcast_section)
+        self.assertIn("uses: actions/upload-pages-artifact@v5", appcast_section)
+        self.assertIn("uses: actions/deploy-pages@v5", appcast_section)
 
     def test_release_workflow_validates_internal_release_tag(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
@@ -235,22 +244,25 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("swiftpm-tests:", workflow)
         self.assertIn("xcode-tests:", workflow)
         self.assertIn("tests:", workflow)
-        self.assertIn("coverage:", workflow)
+        self.assertNotIn("\n  coverage:\n", workflow)
         self.assertIn("lint:", workflow)
         self.assertIn("ci-summary:", workflow)
 
-        tests_section = workflow.split("\n  tests:", 1)[1].split("\n  coverage:", 1)[0]
+        swiftpm_section = workflow.split("\n  swiftpm-tests:", 1)[1].split("\n  xcode-tests:", 1)[0]
+        self.assertIn("line_coverage_percent: ${{ steps.coverage.outputs.line_coverage_percent }}", swiftpm_section)
+        self.assertIn("Summarize SwiftPM coverage", swiftpm_section)
+        self.assertNotIn("download-artifact", swiftpm_section)
+
+        tests_section = workflow.split("\n  tests:", 1)[1].split("\n  lint:", 1)[0]
         self.assertIn("needs: [swiftpm-tests, xcode-tests]", tests_section)
         self.assertIn("name: Tests", tests_section)
-
-        coverage_section = workflow.split("\n  coverage:", 1)[1].split("\n  lint:", 1)[0]
-        self.assertIn("needs: [tests, swiftpm-tests]", coverage_section)
 
         lint_section = workflow.split("\n  lint:", 1)[1].split("\n  ci-summary:", 1)[0]
         self.assertIn("needs: [tests]", lint_section)
 
         summary_section = workflow.split("\n  ci-summary:", 1)[1]
-        self.assertIn("needs: [swiftpm-tests, xcode-tests, tests, coverage, lint]", summary_section)
+        self.assertIn("needs: [swiftpm-tests, xcode-tests, tests, lint]", summary_section)
+        self.assertIn("COVERAGE_STATUS: ${{ needs.swiftpm-tests.outputs.status }}", summary_section)
         self.assertIn("GITHUB_STEP_SUMMARY", summary_section)
         self.assertIn("# Summary", summary_section)
         self.assertIn("🧪", summary_section)
