@@ -56,6 +56,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.showsHardwareBatteryPercentage, true)
     }
 
+    func testProcessApplicationIdentifierPreferencePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setShowsProcessApplicationIdentifier(true)
+
+        XCTAssertEqual(controller.state.showsProcessApplicationIdentifier, true)
+        XCTAssertEqual(store.savedValues.last?.showsProcessApplicationIdentifier, true)
+    }
+
     func testUpdateChannelPersistsToPreferencesState() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

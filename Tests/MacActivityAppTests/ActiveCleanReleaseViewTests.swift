@@ -42,10 +42,10 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             isTerminable: true
         )
 
-        let activeRow = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+        let activeRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
             .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
             .environment(\.appearsActive, true)
-        let inactiveRow = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+        let inactiveRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
             .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
             .environment(\.appearsActive, false)
 
@@ -88,7 +88,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             isTerminable: true
         )
 
-        let row = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+        let row = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
             .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
             .environment(\.appearsActive, true)
 
@@ -113,7 +113,7 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             isTerminable: true
         )
 
-        let row = ActiveProcessMemoryRow(app: app, maxBytes: 1_000, quit: {})
+        let row = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
             .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
             .environment(\.appearsActive, true)
 
@@ -177,6 +177,47 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(
             ActiveProcessMemoryRow.trailingContentAlignment(for: .quitting),
             .trailing
+        )
+    }
+
+    func testProcessIdentifierTextCanBeHiddenByPreference() {
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            residentMemoryBytes: 1_024,
+            isTerminable: true
+        )
+        let fallbackApp = ActiveAppMemoryEntry(
+            processIdentifier: 2_105,
+            name: "Helper",
+            bundleIdentifier: nil,
+            residentMemoryBytes: 1_024,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.identifierText(
+                for: app,
+                showsApplicationIdentifier: true,
+                bundle: Self.englishBundle
+            ),
+            "com.apple.Safari"
+        )
+        XCTAssertEqual(
+            ActiveProcessMemoryRow.identifierText(
+                for: fallbackApp,
+                showsApplicationIdentifier: true,
+                bundle: Self.englishBundle
+            ),
+            "Process 2,105"
+        )
+        XCTAssertNil(
+            ActiveProcessMemoryRow.identifierText(
+                for: app,
+                showsApplicationIdentifier: false,
+                bundle: Self.englishBundle
+            )
         )
     }
 

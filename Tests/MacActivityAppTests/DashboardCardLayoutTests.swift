@@ -392,6 +392,33 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
     }
 
+    func testActivesCurrentUsedMemoryComesFromMemoryMetricLatestSample() {
+        let metrics = [
+            DashboardMetric(
+                kind: .memory,
+                title: "Memory",
+                value: "6.0GB/10.0GB (60%)",
+                memoryTrend: DashboardMemoryTrend(samples: [
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 1),
+                        pressurePercent: 50,
+                        usedBytes: 5_000,
+                        totalBytes: 10_000
+                    ),
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 2),
+                        pressurePercent: 60,
+                        usedBytes: 6_000,
+                        totalBytes: 10_000
+                    ),
+                ])
+            )
+        ]
+
+        XCTAssertEqual(DashboardView.currentUsedMemoryBytes(in: metrics), 6_000)
+        XCTAssertNil(DashboardView.currentUsedMemoryBytes(in: []))
+    }
+
     func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {
         let activeColor = try XCTUnwrap(
             Self.renderedColor(
