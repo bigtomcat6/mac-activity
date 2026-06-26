@@ -153,10 +153,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         let metric = DashboardMetric(kind: .disk, title: "Disk", value: "Collecting", progress: 0.42)
         let highMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: 1.5)
         let lowMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: -0.25)
+        let textOnlyMetric = DashboardMetric(kind: .disk, title: "Disk", value: "62%")
 
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: metric), 0.42, accuracy: 0.001)
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: highMetric), 1.0, accuracy: 0.001)
         XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: lowMetric), 0.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: textOnlyMetric), 0.62, accuracy: 0.001)
     }
 
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {

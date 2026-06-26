@@ -984,7 +984,6 @@ private struct ResourceUsageCard: View {
 
 private struct StorageUsageCard: View {
     let metrics: [DashboardMetric]
-    @State private var isCardHovered = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -1001,10 +1000,7 @@ private struct StorageUsageCard: View {
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: .center
         )
-        .dashboardCardChrome(isHovered: isCardHovered)
-        .onHover { hovering in
-            isCardHovered = hovering
-        }
+        .dashboardCardChrome()
     }
 
     @ViewBuilder
@@ -1039,7 +1035,6 @@ private struct StorageUsageCard: View {
 private struct StorageSegmentedUsageBar: View {
     @Environment(\.appearsActive) private var appearsActive
     let metrics: [DashboardMetric]
-    @State private var displayedProgress: [MetricKind: Double] = [:]
 
     var body: some View {
         GeometryReader { proxy in
@@ -1051,8 +1046,7 @@ private struct StorageSegmentedUsageBar: View {
                     .fill(Color.primary.opacity(0.08))
 
                 ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
-                    let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
-                    let progress = displayedProgress[metric.kind] ?? targetProgress
+                    let progress = DashboardOverviewLayout.usageProgress(for: metric)
 
                     Rectangle()
                         .fill(
@@ -1070,18 +1064,7 @@ private struct StorageSegmentedUsageBar: View {
         }
         .accessibilityLabel(Text("Disk and Swap usage"))
         .accessibilityValue(Text(metrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
-        .onAppear {
-            displayedProgress = Dictionary(
-                uniqueKeysWithValues: metrics.map { ($0.kind, DashboardOverviewLayout.usageProgress(for: $0)) }
-            )
-        }
-        .onChange(of: metrics.map { "\($0.kind.rawValue):\($0.progress ?? -1)" }) { _ in
-            withAnimation(DashboardMotion.valueAnimation) {
-                displayedProgress = Dictionary(
-                    uniqueKeysWithValues: metrics.map { ($0.kind, DashboardOverviewLayout.usageProgress(for: $0)) }
-                )
-            }
-        }
+        .animation(DashboardMotion.valueAnimation, value: metrics)
     }
 }
 
