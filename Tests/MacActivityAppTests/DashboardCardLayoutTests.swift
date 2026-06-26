@@ -2,7 +2,7 @@ import CoreGraphics
 import AppKit
 import SwiftUI
 import XCTest
-import MacActivityCore
+@testable import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
@@ -398,6 +398,33 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(DashboardOverviewLayout.topRowSlots(for: storageOnlyModel.metrics), [.storage])
         XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
+    }
+
+    func testRenderedOverviewFallsBackToTrendChartForEmptyMemoryStackedMetric() throws {
+        let model = DashboardModel(
+            store: MetricsStore(),
+            metricsBuilder: { _, _, _, _ in
+                [
+                    DashboardMetric(
+                        kind: .memory,
+                        title: "Memory",
+                        value: "Collecting",
+                        style: .memoryStackedChart,
+                        trend: DashboardTrend(samples: [], scale: .fixed(lowerBound: 0, upperBound: 100)),
+                        memoryTrend: DashboardMemoryTrend(samples: [])
+                    ),
+                ]
+            }
+        )
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 270, y: 128)))
     }
 
     func testRenderedDashboardCanStartOnActivesTab() throws {
