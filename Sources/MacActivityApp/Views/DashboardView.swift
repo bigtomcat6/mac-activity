@@ -26,7 +26,12 @@ enum DashboardCardLayout {
     }
 
     static func chartHeightBehavior(for kind: MetricKind) -> DashboardChartHeightBehavior {
-        kind == .network ? .fillsRemainingHeight : .fixed(compactChartHeight)
+        switch kind {
+        case .memory, .network:
+            .fillsRemainingHeight
+        default:
+            .fixed(compactChartHeight)
+        }
     }
 }
 
@@ -59,8 +64,9 @@ enum DashboardOverviewLayout {
     static let usageValueColumnWidth: CGFloat = 44
     static let usageRowSpacing: CGFloat = 10
     static let usageBarHeight: CGFloat = 8
-    static let usageContentMaxWidth: CGFloat = 180
+    static let usageContentMaxWidth = CGFloat.infinity
     static let usageCardContentAlignment: Alignment = .center
+    static let storageContentMaxWidth: CGFloat = 180
     static let storageBarHeight: CGFloat = usageBarHeight
     static let storageDetailColumnCount = 2
     static let storageDetailColumnSpacing: CGFloat = 12
@@ -1014,7 +1020,7 @@ private struct StorageUsageCard: View {
                 storageContent(content)
             }
         }
-        .frame(maxWidth: DashboardOverviewLayout.usageContentMaxWidth, alignment: .leading)
+        .frame(maxWidth: DashboardOverviewLayout.storageContentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(DashboardCardLayout.regularCardInsets)
         .frame(
@@ -1308,22 +1314,13 @@ private struct MetricCard: View {
             case .memoryStackedChart:
                 if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
                     RAMSegmentBars(trend: memoryTrend)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
                     if let latestSample = memoryTrend.samples.last {
                         RAMSegmentLegend(sample: latestSample)
                     }
                 } else {
-                    DashboardTrendChart(
-                        metric: metric,
-                        color: color,
-                        isCardHovered: isCardHovered,
-                        showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                            for: metric.kind,
-                            isCompactOverviewChart: false
-                        )
-                    )
-                        .id(metric.id)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                    trendChart
                 }
             case .value:
                 Rectangle()
