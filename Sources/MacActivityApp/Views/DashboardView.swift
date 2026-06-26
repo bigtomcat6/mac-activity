@@ -335,6 +335,20 @@ struct DashboardView: View {
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
+    init(
+        dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
+        openPreferences: @escaping () -> Void,
+        quitApplication: @escaping () -> Void,
+        initialSelectedTab: DashboardTab = .overview
+    ) {
+        self.dashboardModel = dashboardModel
+        self.preferencesController = preferencesController
+        self.openPreferences = openPreferences
+        self.quitApplication = quitApplication
+        self._selectedTab = State(initialValue: initialSelectedTab)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header

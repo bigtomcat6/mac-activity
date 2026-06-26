@@ -31,6 +31,51 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["diskCleanup", "processes"])
     }
 
+    func testPageBodyForwardsProcessDisplayInputs() {
+        let model = ActiveCleanupModel(
+            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
+            memoryService: ViewMemoryReleaseServiceRecorder(
+                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
+            ),
+            diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
+            appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 2))
+        )
+        let view = ActiveCleanReleaseView(
+            model: model,
+            usedMemoryBytes: 4_096,
+            showsApplicationIdentifier: false
+        )
+
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
+    func testProcessListBodyForwardsProcessDisplayInputs() async {
+        let model = ActiveCleanupModel(
+            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
+            memoryService: ViewMemoryReleaseServiceRecorder(
+                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
+            ),
+            diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
+            appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 2))
+        )
+
+        await model.refreshVisibleCleanReleaseSections()
+
+        let view = ActiveProcessMemoryList(
+            model: model,
+            usedMemoryBytes: 4_096,
+            showsApplicationIdentifier: false
+        )
+
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+        XCTAssertNotNil(
+            Self.renderedColor(
+                of: view.frame(width: 360, height: 120),
+                atTopLeft: CGPoint(x: 20, y: 20)
+            )
+        )
+    }
+
 
     func testRenderedProcessProgressUsesNeutralToneWhenWindowIsInactive() throws {
         let app = ActiveAppMemoryEntry(
