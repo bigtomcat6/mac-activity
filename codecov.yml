@@ -1,3 +1,10 @@
+coverage:
+  status:
+    patch:
+      default:
+        target: 100%
+        threshold: 0%
+
 ignore:
   # AppKit lifecycle wiring and Sparkle's updater bridge are covered through
   # focused pure-helper tests, but SwiftPM coverage cannot reliably execute the
