@@ -8,6 +8,7 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
         metadata = prepare_release_metadata.build_metadata(
             channel="release",
             version="1.2.3",
+            prerelease=None,
             build="45",
         )
 
@@ -21,14 +22,17 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
         metadata = prepare_release_metadata.build_metadata(
             channel="beta",
             version="1.2.3",
+            prerelease="4",
             build="45",
         )
 
-        self.assertEqual(metadata["tag"], "v1.2.3-beta.45")
-        self.assertEqual(metadata["title"], "1.2.3-beta.45")
+        self.assertEqual(metadata["tag"], "v1.2.3-beta.4")
+        self.assertEqual(metadata["title"], "1.2.3-beta.4")
+        self.assertEqual(metadata["prerelease_number"], "4")
+        self.assertEqual(metadata["build"], "45")
         self.assertEqual(metadata["prerelease"], "true")
         self.assertEqual(metadata["latest"], "false")
-        self.assertEqual(metadata["artifact_stem"], "MacActivity-v1.2.3-beta.45")
+        self.assertEqual(metadata["artifact_stem"], "MacActivity-v1.2.3-beta.4")
 
     def test_updates_shared_xcconfig_versions(self):
         updated = prepare_release_metadata.update_xcconfig(
@@ -56,6 +60,25 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
             prepare_release_metadata.build_metadata(
                 channel="rc",
                 version="1.2",
+                prerelease="1",
+                build="45",
+            )
+
+    def test_rejects_missing_prerelease_for_prerelease_channel(self):
+        with self.assertRaises(ValueError):
+            prepare_release_metadata.build_metadata(
+                channel="beta",
+                version="1.2.3",
+                prerelease=None,
+                build="45",
+            )
+
+    def test_rejects_prerelease_for_final_release(self):
+        with self.assertRaises(ValueError):
+            prepare_release_metadata.build_metadata(
+                channel="release",
+                version="1.2.3",
+                prerelease="1",
                 build="45",
             )
 

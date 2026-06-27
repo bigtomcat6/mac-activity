@@ -12,24 +12,31 @@ VERSION_PATTERN = re.compile(r"^\d+\.\d+\.\d+$")
 BUILD_PATTERN = re.compile(r"^[1-9]\d*$")
 
 
-def validate(channel, version, build):
+def validate(channel, version, prerelease, build):
     if channel not in ALLOWED_CHANNELS:
         raise ValueError(f"channel must be one of: {', '.join(ALLOWED_CHANNELS)}")
     if not VERSION_PATTERN.fullmatch(version):
         raise ValueError("version must use MAJOR.MINOR.PATCH, for example 1.2.3")
     if not BUILD_PATTERN.fullmatch(build):
         raise ValueError("build must be a positive integer")
+    if channel == "release":
+        if prerelease not in (None, ""):
+            raise ValueError("prerelease must be empty for release channel")
+    elif not prerelease or not BUILD_PATTERN.fullmatch(prerelease):
+        raise ValueError("prerelease must be a positive integer")
 
 
-def build_metadata(channel, version, build):
-    validate(channel, version, build)
+def build_metadata(channel, version, prerelease, build):
+    validate(channel, version, prerelease, build)
 
     if channel == "release":
         suffix = ""
         prerelease = "false"
+        prerelease_number = ""
         latest = "true"
     else:
-        suffix = f"-{channel}.{build}"
+        suffix = f"-{channel}.{prerelease}"
+        prerelease_number = prerelease
         prerelease = "true"
         latest = "false"
 
@@ -40,6 +47,7 @@ def build_metadata(channel, version, build):
         "channel": channel,
         "version": version,
         "build": build,
+        "prerelease_number": prerelease_number,
         "tag": tag,
         "title": release_title,
         "prerelease": prerelease,
@@ -74,6 +82,7 @@ def parse_args(argv=None):
     )
     parser.add_argument("--channel", choices=ALLOWED_CHANNELS, required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--prerelease")
     parser.add_argument("--build", required=True)
     parser.add_argument("--xcconfig", required=True)
     parser.add_argument(
@@ -87,7 +96,7 @@ def parse_args(argv=None):
 def main(argv=None):
     args = parse_args(argv)
     try:
-        metadata = build_metadata(args.channel, args.version, args.build)
+        metadata = build_metadata(args.channel, args.version, args.prerelease, args.build)
         xcconfig_path = Path(args.xcconfig)
         updated = update_xcconfig(
             xcconfig_path.read_text(encoding="utf-8"),
