@@ -1,6 +1,3 @@
-<!-- MacActivityReleaseTag: v26.0.0-beta.2 -->
-<!-- MacActivityBundleBuild: 3 -->
-<!-- MacActivityPrerelease: 2 -->
 ## ✨ Features
 
 - Add storage detail icons and dynamic usage ordering. (#58)
