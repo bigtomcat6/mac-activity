@@ -99,8 +99,12 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("SWIFT_SUPPRESS_WARNINGS=YES", appcast_section)
         self.assertIn("--ed-key-file -", appcast_section)
         self.assertIn("--download-url-prefix", appcast_section)
+        self.assertIn('releases/download/${TAG}/"', appcast_section)
         self.assertIn("gh-pages", appcast_section)
         self.assertIn("appcast.xml", appcast_section)
+        self.assertIn('release_notes_name="MacActivity-${TAG}.md"', appcast_section)
+        self.assertIn('cp "${archive_dir}/${release_notes_name}" "${pages_dir}/${release_notes_name}"', appcast_section)
+        self.assertIn('git -C "${pages_dir}" add appcast.xml "${release_notes_name}"', appcast_section)
         self.assertIn("pages_changed: ${{ steps.publish.outputs.pages_changed }}", appcast_section)
         self.assertIn("deploy-pages:", appcast_section)
         self.assertIn("needs: [appcast]", appcast_section)
@@ -109,6 +113,9 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("uses: actions/checkout@v7", appcast_section)
         self.assertIn("uses: actions/upload-pages-artifact@v5", appcast_section)
         self.assertIn("uses: actions/deploy-pages@v5", appcast_section)
+
+        deploy_section = appcast_section.split("deploy-pages:", 1)[1]
+        self.assertNotIn("name: github-pages", deploy_section)
 
     def test_release_workflow_validates_internal_release_tag(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
