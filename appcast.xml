@@ -10,7 +10,7 @@
             <sparkle:shortVersionString>26.0.0</sparkle:shortVersionString>
             <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
             <sparkle:releaseNotesLink>https://bigtomcat6.github.io/mac-activity/MacActivity-v26.0.0-alpha.2.md</sparkle:releaseNotesLink>
-            <enclosure url="https://github.com/bigtomcat6/mac-activity/releases/download/MacActivity-v26.0.0-alpha.2.zip" length="3287286" type="application/octet-stream" sparkle:edSignature="38Mu7v5yzjyrxDzkD2Z9FRJeRuKBC6iqu1QcpVZlCZGSx390tF4FDmb+4vzjS0RYIEXiVUXeiljO/Pp+o528CA=="/>
+            <enclosure url="https://github.com/bigtomcat6/mac-activity/releases/download/v26.0.0-alpha.2/MacActivity-v26.0.0-alpha.2.zip" length="3287286" type="application/octet-stream" sparkle:edSignature="38Mu7v5yzjyrxDzkD2Z9FRJeRuKBC6iqu1QcpVZlCZGSx390tF4FDmb+4vzjS0RYIEXiVUXeiljO/Pp+o528CA=="/>
         </item>
         <item>
             <title>26.0.0</title>
