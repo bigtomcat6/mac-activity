@@ -17,8 +17,12 @@ on:
         description: Marketing version in MAJOR.MINOR.PATCH form, for example 0.2.0.
         required: true
         type: string
+      prerelease:
+        description: Prerelease number for alpha, beta, or rc tags. Leave empty for final release.
+        required: false
+        type: string
       build:
-        description: Build number. Leave empty to use the workflow run number.
+        description: Bundle build number for CFBundleVersion and Sparkle. Leave empty to use the workflow run number.
         required: false
         type: string
       ci_suite:
@@ -80,6 +84,19 @@ jobs:
           echo "::error::GitHub Release assets must use signing=developer-id."
           exit 1
 
+      - name: Validate prerelease input
+        run: |
+          prerelease="${{ inputs.prerelease }}"
+          if [[ "${{ inputs.channel }}" == "release" ]]; then
+            if [[ -n "${prerelease}" ]]; then
+              echo "::error::Final releases must leave prerelease empty."
+              exit 1
+            fi
+          elif [[ ! "${prerelease}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::Alpha, beta, and rc releases require a positive prerelease number."
+            exit 1
+          fi
+
   ci:
     name: Selected CI
     needs: [preflight]
@@ -137,6 +154,7 @@ jobs:
           python3 .github/scripts/plan_release.py \
             --channel "${{ inputs.channel }}" \
             --version "${{ inputs.version }}" \
+            --prerelease "${{ inputs.prerelease }}" \
             --build "${{ steps.build.outputs.build }}" \
             --remote
 
@@ -146,6 +164,7 @@ jobs:
           python3 .github/scripts/prepare_release_metadata.py \
             --channel "${{ inputs.channel }}" \
             --version "${{ inputs.version }}" \
+            --prerelease "${{ inputs.prerelease }}" \
             --build "${{ steps.build.outputs.build }}" \
             --xcconfig Configuration/Shared.xcconfig
 
@@ -358,6 +377,17 @@ jobs:
             --repo "${GITHUB_REPOSITORY}" \
             --target "${{ steps.target.outputs.sha }}" \
             --output "${notes_path}"
+
+          metadata_path="${notes_path}.metadata"
+          {
+            echo "<!-- MacActivityReleaseTag: ${{ steps.release.outputs.tag }} -->"
+            echo "<!-- MacActivityBundleBuild: ${{ steps.release.outputs.build }} -->"
+            if [[ -n "${{ steps.release.outputs.prerelease_number }}" ]]; then
+              echo "<!-- MacActivityPrerelease: ${{ steps.release.outputs.prerelease_number }} -->"
+            fi
+            cat "${notes_path}"
+          } > "${metadata_path}"
+          mv "${metadata_path}" "${notes_path}"
 
           echo "notes_path=${notes_path}" >> "${GITHUB_OUTPUT}"
 

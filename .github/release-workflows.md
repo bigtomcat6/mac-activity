@@ -21,8 +21,12 @@ Use the `Release` workflow from GitHub Actions or the GitHub CLI.
 | `rc` | `v26.0.0-rc.1` | prerelease |
 | `release` | `v26.0.0` | latest release |
 
-`version` must be `MAJOR.MINOR.PATCH`. `build` must be a positive integer; when
-left empty, the workflow uses the GitHub run number.
+`version` must be `MAJOR.MINOR.PATCH`. For alpha, beta, and rc builds,
+`prerelease` is the tag suffix sequence number, such as `2` in
+`v26.0.0-beta.2`; leave it empty for final releases. `build` is the bundle
+`CFBundleVersion` and Sparkle version. It must keep increasing across the whole
+version train and can differ from the prerelease number; when left empty, the
+workflow uses the GitHub run number.
 
 MacActivity uses calendar-versioned release trains. The first public alpha is
 `26.0.0-alpha.1`; the matching final release is `26.0.0`.
@@ -63,11 +67,13 @@ tags, published releases, and draft releases:
 python3 .github/scripts/plan_release.py \
   --channel alpha \
   --version 26.0.0 \
+  --prerelease 1 \
   --build 1 \
   --remote
 ```
 
-When version or build has not been chosen yet, ask for a suggestion:
+When version, prerelease, or build has not been chosen yet, ask for a
+suggestion:
 
 ```bash
 python3 .github/scripts/plan_release.py \
@@ -113,6 +119,7 @@ gh workflow run release.yml \
   --ref main \
   -f channel=alpha \
   -f version=26.0.0 \
+  -f prerelease=1 \
   -f build=1 \
   -f ci_suite=full \
   -f signing=developer-id \
@@ -127,6 +134,7 @@ gh workflow run release.yml \
   --ref main \
   -f channel=alpha \
   -f version=26.0.0 \
+  -f prerelease=1 \
   -f build=1 \
   -f ci_suite=full \
   -f signing=developer-id \
