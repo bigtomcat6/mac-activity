@@ -9,6 +9,8 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
 
     private let preferencesController: PreferencesController
     private let bundle: Bundle
+    private let versionDisplay: MacActivitySparkleVersionDisplay
+    private let userDriverDelegate: MacActivitySparkleUserDriverDelegate
     private var cancellables: Set<AnyCancellable> = []
 
     private lazy var updaterController: SPUStandardUpdaterController? = {
@@ -19,13 +21,15 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         return SPUStandardUpdaterController(
             startingUpdater: true,
             updaterDelegate: self,
-            userDriverDelegate: nil
+            userDriverDelegate: userDriverDelegate
         )
     }()
 
     init(preferencesController: PreferencesController, bundle: Bundle = .main) {
         self.preferencesController = preferencesController
         self.bundle = bundle
+        versionDisplay = MacActivitySparkleVersionDisplay(bundle: bundle)
+        userDriverDelegate = MacActivitySparkleUserDriverDelegate(versionDisplay: versionDisplay)
         super.init()
 
         preferencesController.$state
@@ -189,4 +193,79 @@ struct SparkleAppcastCandidateInput: Equatable {
     let displayVersionString: String
     let versionString: String
     let channel: String?
+}
+
+final class MacActivitySparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {
+    private let versionDisplay: MacActivitySparkleVersionDisplay
+
+    init(versionDisplay: MacActivitySparkleVersionDisplay) {
+        self.versionDisplay = versionDisplay
+        super.init()
+    }
+
+    func standardUserDriverRequestsVersionDisplayer() -> (any SUVersionDisplay)? {
+        versionDisplay
+    }
+}
+
+final class MacActivitySparkleVersionDisplay: NSObject, SUVersionDisplay {
+    private let displayVersion: String
+
+    init(bundle: Bundle = .main) {
+        let shortVersion = Self.cleanInfoValue(
+            "CFBundleShortVersionString",
+            in: bundle
+        ) ?? "0.0.0"
+        displayVersion = Self.bundleDisplayVersion(
+            shortVersion: shortVersion,
+            releaseTag: Self.releaseTag(in: bundle, shortVersion: shortVersion)
+        )
+        super.init()
+    }
+
+    static func bundleDisplayVersion(shortVersion: String, releaseTag: String?) -> String {
+        let releaseTag = releaseTag?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let releaseTag,
+              !releaseTag.isEmpty,
+              !releaseTag.contains("$("),
+              releaseTag != "v\(shortVersion)" else {
+            return shortVersion
+        }
+
+        return releaseTag.hasPrefix("v") ? String(releaseTag.dropFirst()) : releaseTag
+    }
+
+    func formatUpdateVersion(
+        fromUpdate update: SUAppcastItem,
+        andBundleDisplayVersion inOutBundleDisplayVersion: AutoreleasingUnsafeMutablePointer<NSString>,
+        withBundleVersion bundleVersion: String
+    ) -> String {
+        inOutBundleDisplayVersion.pointee = displayVersion as NSString
+        return update.displayVersionString
+    }
+
+    func formatBundleDisplayVersion(
+        _ bundleDisplayVersion: String,
+        withBundleVersion bundleVersion: String,
+        matchingUpdate: SUAppcastItem?
+    ) -> String {
+        displayVersion
+    }
+
+    private static func releaseTag(in bundle: Bundle, shortVersion: String) -> String? {
+        if let releaseTag = cleanInfoValue("MacActivityReleaseTag", in: bundle) {
+            return releaseTag
+        }
+
+        return "v\(shortVersion)"
+    }
+
+    private static func cleanInfoValue(_ key: String, in bundle: Bundle) -> String? {
+        guard let value = bundle.object(forInfoDictionaryKey: key) as? String else {
+            return nil
+        }
+
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty || trimmed.contains("$(") ? nil : trimmed
+    }
 }
