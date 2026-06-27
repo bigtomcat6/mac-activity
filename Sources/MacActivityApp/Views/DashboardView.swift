@@ -913,7 +913,7 @@ struct RAMSegmentBarsLayout {
         return min(bucketCount - 1, slotIndex * bucketCount / slotCount)
     }
 
-    private static func compactedSampleSlots(
+    static func compactedSampleSlots(
         _ slots: [RAMSegmentBarSlot],
         slotCount: Int
     ) -> [RAMSegmentBarSlot] {
@@ -1088,9 +1088,14 @@ struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
     var id: Kind { kind }
 }
 
-private struct RAMSegmentBars: View {
+struct RAMSegmentBars: View {
     let trend: DashboardMemoryTrend
     @State private var hoveredSlotIndex: Int?
+
+    init(trend: DashboardMemoryTrend, hoveredSlotIndex: Int? = nil) {
+        self.trend = trend
+        self._hoveredSlotIndex = State(initialValue: hoveredSlotIndex)
+    }
 
     var body: some View {
         GeometryReader { proxy in

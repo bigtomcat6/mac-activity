@@ -156,6 +156,10 @@ final class MetricsSchedulerTests: XCTestCase {
             11 * 60
         )
         XCTAssertEqual(
+            MetricsSamplingProfile.background.interval(for: .memory, defaultCadence: .medium),
+            MetricsSamplingProfile.energySaver.interval(for: .memory, defaultCadence: .medium)
+        )
+        XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .temperature, defaultCadence: .medium),
             10
         )
