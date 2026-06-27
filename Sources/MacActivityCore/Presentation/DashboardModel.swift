@@ -260,10 +260,7 @@ public final class DashboardModel: ObservableObject {
                     kind: .swap,
                     title: MetricKind.swap.title,
                     value: DashboardMetricTextFormatter.formatPercent(swap.usagePercent),
-                    detail: DashboardMetricTextFormatter.formatUsageDetail(
-                        usedBytes: swap.usedBytes,
-                        percent: swap.usagePercent
-                    ),
+                    detail: DashboardMetricTextFormatter.formatBytes(swap.usedBytes),
                     usedBytes: swap.usedBytes,
                     totalBytes: swap.totalBytes,
                     progress: progressFraction(for: swap.usagePercent),
