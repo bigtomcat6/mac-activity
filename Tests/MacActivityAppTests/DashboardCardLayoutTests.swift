@@ -1158,12 +1158,16 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testRAMSegmentBarsLayoutCompactsDenseHistoryAndPreservesLatestSampleSemantics() {
-        let samples = (0..<40).map { minute in
-            DashboardMemoryTrendSample(
-                timestamp: Date(timeIntervalSince1970: TimeInterval(minute * 60 + 5)),
-                pressurePercent: Double(minute),
-                usedBytes: UInt64(minute),
-                totalBytes: 1_000
+        var samples: [DashboardMemoryTrendSample] = []
+        for minute in 0..<40 {
+            let timestamp = Date(timeIntervalSince1970: TimeInterval(minute * 60 + 5))
+            samples.append(
+                DashboardMemoryTrendSample(
+                    timestamp: timestamp,
+                    pressurePercent: Double(minute),
+                    usedBytes: UInt64(minute),
+                    totalBytes: 1_000
+                )
             )
         }
 
@@ -1177,7 +1181,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(slots.last?.valueSemantics, .latestSample)
         XCTAssertEqual(slots.last?.sample?.timestamp, Date(timeIntervalSince1970: 39 * 60 + 5))
         XCTAssertEqual(slots.last?.sample?.usedBytes, 39)
-        XCTAssertEqual(slots.compactMap(\.sample).count, 12)
+        XCTAssertEqual(slots.compactMap { $0.sample }.count, 12)
     }
 
     func testRAMSegmentBarsLayoutDropsEmptyCompactedGroups() {
