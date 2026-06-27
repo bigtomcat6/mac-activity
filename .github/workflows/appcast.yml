@@ -147,6 +147,11 @@ jobs:
             "${archive_dir}"
 
           release_notes_name="MacActivity-${TAG}.md"
+          python3 .github/scripts/prepare_appcast_publication.py \
+            --appcast "${pages_dir}/appcast.xml" \
+            --release-notes "${archive_dir}/${release_notes_name}" \
+            --tag "${TAG}"
+
           cp "${archive_dir}/${release_notes_name}" "${pages_dir}/${release_notes_name}"
 
           git -C "${pages_dir}" config user.name "github-actions[bot]"
