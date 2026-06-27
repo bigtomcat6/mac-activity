@@ -118,6 +118,30 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
     }
 
+    func testSparkleBundleDisplayVersionUsesReleaseTagForPrerelease() {
+        XCTAssertEqual(
+            MacActivitySparkleVersionDisplay.bundleDisplayVersion(
+                shortVersion: "26.0.0",
+                releaseTag: "v26.0.0-beta.1"
+            ),
+            "26.0.0-beta.1"
+        )
+        XCTAssertEqual(
+            MacActivitySparkleVersionDisplay.bundleDisplayVersion(
+                shortVersion: "26.0.0",
+                releaseTag: "v26.0.0"
+            ),
+            "26.0.0"
+        )
+        XCTAssertEqual(
+            MacActivitySparkleVersionDisplay.bundleDisplayVersion(
+                shortVersion: "26.0.0",
+                releaseTag: "$(MAC_ACTIVITY_RELEASE_TAG)"
+            ),
+            "26.0.0"
+        )
+    }
+
     func testUpdateCandidateBuildsFromSparkleMetadata() {
         let candidate = SparkleUpdateController.updateCandidate(
             for: SparkleAppcastCandidateInput(
