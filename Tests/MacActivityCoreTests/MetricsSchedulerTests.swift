@@ -130,7 +130,15 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(memoryCount, 2)
     }
 
-    func testBackgroundProfileRefreshesLiveMetricsEveryTwoSecondsAndSupportMetricsEveryTenSeconds() {
+    func testRealtimeProfileSamplesMemoryEveryTwoSeconds() {
+        XCTAssertEqual(MemoryProvider().cadence, .medium)
+        XCTAssertEqual(
+            MetricsSamplingProfile.realtime.interval(for: .memory, defaultCadence: MemoryProvider().cadence),
+            2
+        )
+    }
+
+    func testBackgroundProfileRefreshesLiveMetricsEveryTwoSecondsAndMemoryEveryElevenMinutes() {
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .cpu, defaultCadence: .fast),
             2
@@ -145,7 +153,7 @@ final class MetricsSchedulerTests: XCTestCase {
         )
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .memory, defaultCadence: .medium),
-            10
+            11 * 60
         )
         XCTAssertEqual(
             MetricsSamplingProfile.background.interval(for: .temperature, defaultCadence: .medium),
@@ -171,6 +179,10 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(
             MetricsSamplingProfile.energySaver.interval(for: .network, defaultCadence: .fast),
             2
+        )
+        XCTAssertEqual(
+            MetricsSamplingProfile.energySaver.interval(for: .memory, defaultCadence: .medium),
+            11 * 60
         )
         XCTAssertEqual(
             MetricsSamplingProfile.energySaver.interval(for: .temperature, defaultCadence: .slow),
