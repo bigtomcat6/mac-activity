@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="/assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
+</p>
+
 # Mac Activity
 
 [![CI](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml)
