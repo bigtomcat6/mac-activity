@@ -70,6 +70,8 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var value: String
     public var secondaryText: String?
     public var detail: String?
+    public var usedBytes: UInt64?
+    public var totalBytes: UInt64?
     public var progress: Double?
     public var style: DashboardMetricStyle
     public var trend: DashboardTrend?
@@ -85,6 +87,8 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         value: String,
         secondaryText: String? = nil,
         detail: String? = nil,
+        usedBytes: UInt64? = nil,
+        totalBytes: UInt64? = nil,
         progress: Double? = nil,
         style: DashboardMetricStyle = .value,
         trend: DashboardTrend? = nil,
@@ -95,6 +99,8 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         self.value = value
         self.secondaryText = secondaryText
         self.detail = detail
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
         self.progress = progress
         self.style = style
         self.trend = trend
@@ -239,6 +245,8 @@ public final class DashboardModel: ObservableObject {
                         usedBytes: disk.usedBytes,
                         percent: disk.usagePercent
                     ),
+                    usedBytes: disk.usedBytes,
+                    totalBytes: disk.totalBytes,
                     progress: progressFraction(for: disk.usagePercent),
                     style: .chart,
                     trend: trend(from: history, kind: .disk, scale: .fixed(lowerBound: 0, upperBound: 100))
@@ -256,6 +264,8 @@ public final class DashboardModel: ObservableObject {
                         usedBytes: swap.usedBytes,
                         percent: swap.usagePercent
                     ),
+                    usedBytes: swap.usedBytes,
+                    totalBytes: swap.totalBytes,
                     progress: progressFraction(for: swap.usagePercent),
                     style: .chart,
                     trend: trend(from: history, kind: .swap, scale: .fixed(lowerBound: 0, upperBound: 100))

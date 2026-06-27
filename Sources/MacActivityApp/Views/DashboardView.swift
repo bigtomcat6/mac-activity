@@ -51,6 +51,14 @@ enum DashboardStorageCardContent: Hashable {
     case bar
 }
 
+struct DashboardStorageUsageSegment: Equatable, Identifiable, Sendable {
+    var kind: MetricKind
+    var startProgress: Double
+    var widthProgress: Double
+
+    var id: MetricKind { kind }
+}
+
 enum DashboardOverviewLayout {
     static let sectionSpacing: CGFloat = 12
     static let topRowColumns = [GridItem(.flexible()), GridItem(.flexible())]
@@ -148,14 +156,54 @@ enum DashboardOverviewLayout {
         let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "%", with: "")
         guard let percent = Double(percentText) else { return 0 }
-        return min(max(percent / 100, 0), 1)
+        return clampedProgress(percent / 100)
     }
 
     static func usageProgress(for metric: DashboardMetric) -> Double {
         if let progress = metric.progress {
-            return min(max(progress, 0), 1)
+            return clampedProgress(progress)
         }
         return usageProgress(for: metric.value)
+    }
+
+    static func storageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        guard let diskTotalBytes = metrics.first(where: { $0.kind == .disk })?.totalBytes,
+              diskTotalBytes > 0 else {
+            return equalSlotStorageUsageSegments(for: metrics)
+        }
+
+        var startProgress = 0.0
+        return metrics.map { metric in
+            let widthProgress = min(storageWidthProgress(for: metric, diskTotalBytes: diskTotalBytes), max(0, 1 - startProgress))
+            let segment = DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: startProgress,
+                widthProgress: widthProgress
+            )
+            startProgress = clampedProgress(startProgress + widthProgress)
+            return segment
+        }
+    }
+
+    private static func equalSlotStorageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        let segmentCount = max(metrics.count, 1)
+        let segmentWidth = 1 / Double(segmentCount)
+        return metrics.enumerated().map { index, metric in
+            DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: segmentWidth * Double(index),
+                widthProgress: segmentWidth * usageProgress(for: metric)
+            )
+        }
+    }
+
+    private static func storageWidthProgress(for metric: DashboardMetric, diskTotalBytes: UInt64) -> Double {
+        guard let usedBytes = metric.usedBytes else { return usageProgress(for: metric) }
+        return clampedProgress(Double(usedBytes) / Double(diskTotalBytes))
+    }
+
+    private static func clampedProgress(_ progress: Double) -> Double {
+        min(max(progress, 0), 1)
     }
 
     static let usageHeaderTitle: String? = nil
@@ -1067,26 +1115,23 @@ private struct StorageSegmentedUsageBar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let segmentCount = max(metrics.count, 1)
-            let segmentWidth = proxy.size.width / CGFloat(segmentCount)
+            let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.08))
 
-                ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
-                    let progress = DashboardOverviewLayout.usageProgress(for: metric)
-
+                ForEach(segments) { segment in
                     Rectangle()
                         .fill(
                             DashboardOverviewChrome.emphasisFillColor(
-                                baseColor: DashboardMetricColor.color(for: metric.kind),
+                                baseColor: DashboardMetricColor.color(for: segment.kind),
                                 opacity: DashboardOverviewChrome.usageFillOpacity,
                                 appearsActive: appearsActive
                             )
                         )
-                        .frame(width: segmentWidth * progress)
-                        .offset(x: segmentWidth * CGFloat(index))
+                        .frame(width: proxy.size.width * segment.widthProgress)
+                        .offset(x: proxy.size.width * segment.startProgress)
                 }
             }
             .clipShape(Capsule())
