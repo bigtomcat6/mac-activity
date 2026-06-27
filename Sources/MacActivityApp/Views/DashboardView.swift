@@ -783,12 +783,7 @@ private struct OverviewDashboardContent: View {
 }
 
 struct RAMSegmentBarsLayout {
-    static let rollingWindowDuration: TimeInterval = 5 * 60
     private static let bucketDuration: TimeInterval = 60
-
-    static var bucketCount: Int {
-        max(1, Int(rollingWindowDuration / bucketDuration))
-    }
 
     static func displaySampleBudget(for containerSize: CGSize) -> Int {
         guard containerSize.width > 0 else { return 1 }
@@ -801,39 +796,45 @@ struct RAMSegmentBarsLayout {
         referenceDate: Date
     ) -> [RAMSegmentBarSlot] {
         let slotCount = displaySampleBudget(for: containerSize)
+        let visibleSamples = samples
+            .filter { $0.timestamp <= referenceDate }
+            .sorted { $0.timestamp < $1.timestamp }
         let latestBucketStart = bucketStart(containing: referenceDate)
-        let bucketStarts = (0..<bucketCount).map { index in
-            latestBucketStart.addingTimeInterval(TimeInterval(index - bucketCount + 1) * bucketDuration)
+
+        guard let oldestSample = visibleSamples.first else {
+            return placeholderSlots(for: [latestBucketStart], slotCount: slotCount)
         }
+
+        let bucketStarts = bucketStarts(
+            from: bucketStart(containing: oldestSample.timestamp),
+            through: latestBucketStart
+        )
         let samplesByBucket = Dictionary(
-            uniqueKeysWithValues: bucketStarts.map { bucketStart in
-                (
-                    bucketStart,
-                    averagedSample(
-                        samplesInBucket(
-                            startingAt: bucketStart,
-                            samples: samples,
-                            referenceDate: referenceDate
-                        ),
-                        bucketStart: bucketStart
-                    )
-                )
+            uniqueKeysWithValues: bucketStarts.compactMap { bucketStart -> (Date, DashboardMemoryTrendSample)? in
+                guard let sample = averagedSample(
+                    samplesInBucket(
+                        startingAt: bucketStart,
+                        samples: visibleSamples,
+                        referenceDate: referenceDate
+                    ),
+                    bucketStart: bucketStart
+                ) else {
+                    return nil
+                }
+
+                return (bucketStart, sample)
             }
         )
         let latestSample = samplesInBucket(
             startingAt: latestBucketStart,
-            samples: samples,
+            samples: visibleSamples,
             referenceDate: referenceDate
         ).max { $0.timestamp < $1.timestamp }
 
-        return (0..<slotCount).map { slotIndex in
-            let bucketIndex = bucketIndex(forSlotIndex: slotIndex, slotCount: slotCount)
-            let bucketStart = bucketStarts[bucketIndex]
-            guard slotIndex == representativeSlotIndex(forBucketIndex: bucketIndex, slotCount: slotCount) else {
-                return RAMSegmentBarSlot(bucketStart: bucketStart, sample: nil)
-            }
-
+        let placeholderSlots = placeholderSlots(for: bucketStarts, slotCount: slotCount)
+        let sampledSlots = bucketStarts.compactMap { bucketStart -> RAMSegmentBarSlot? in
             if bucketStart == latestBucketStart {
+                guard let latestSample else { return nil }
                 return RAMSegmentBarSlot(
                     bucketStart: latestBucketStart,
                     sample: latestSample,
@@ -841,8 +842,15 @@ struct RAMSegmentBarsLayout {
                 )
             }
 
-            return RAMSegmentBarSlot(bucketStart: bucketStart, sample: samplesByBucket[bucketStart] ?? nil)
+            guard let sample = samplesByBucket[bucketStart] else { return nil }
+            return RAMSegmentBarSlot(bucketStart: bucketStart, sample: sample)
         }
+
+        guard !sampledSlots.isEmpty else { return placeholderSlots }
+
+        let compactedSlots = compactedSampleSlots(sampledSlots, slotCount: slotCount)
+        let leadingPlaceholderCount = max(0, slotCount - compactedSlots.count)
+        return Array(placeholderSlots.prefix(leadingPlaceholderCount)) + compactedSlots
     }
 
     static func tooltipTimeLabel(for slot: RAMSegmentBarSlot) -> String {
@@ -867,6 +875,25 @@ struct RAMSegmentBarsLayout {
         return Date(timeIntervalSinceReferenceDate: bucketInterval)
     }
 
+    private static func bucketStarts(from start: Date, through end: Date) -> [Date] {
+        let bucketCount = max(1, Int(end.timeIntervalSince(start) / bucketDuration) + 1)
+        return (0..<bucketCount).map { index in
+            start.addingTimeInterval(TimeInterval(index) * bucketDuration)
+        }
+    }
+
+    private static func placeholderSlots(for bucketStarts: [Date], slotCount: Int) -> [RAMSegmentBarSlot] {
+        guard !bucketStarts.isEmpty else { return [] }
+        return (0..<slotCount).map { slotIndex in
+            let bucketIndex = bucketIndex(
+                forSlotIndex: slotIndex,
+                slotCount: slotCount,
+                bucketCount: bucketStarts.count
+            )
+            return RAMSegmentBarSlot(bucketStart: bucketStarts[bucketIndex], sample: nil)
+        }
+    }
+
     private static func samplesInBucket(
         startingAt bucketStart: Date,
         samples: [DashboardMemoryTrendSample],
@@ -880,14 +907,35 @@ struct RAMSegmentBarsLayout {
         }
     }
 
-    private static func bucketIndex(forSlotIndex slotIndex: Int, slotCount: Int) -> Int {
+    private static func bucketIndex(forSlotIndex slotIndex: Int, slotCount: Int, bucketCount: Int) -> Int {
+        guard bucketCount > 1 else { return 0 }
         guard slotCount > 1 else { return bucketCount - 1 }
         return min(bucketCount - 1, slotIndex * bucketCount / slotCount)
     }
 
-    private static func representativeSlotIndex(forBucketIndex bucketIndex: Int, slotCount: Int) -> Int {
-        let upperBound = ((bucketIndex + 1) * slotCount + bucketCount - 1) / bucketCount
-        return min(slotCount - 1, max(0, upperBound - 1))
+    private static func compactedSampleSlots(
+        _ slots: [RAMSegmentBarSlot],
+        slotCount: Int
+    ) -> [RAMSegmentBarSlot] {
+        guard slots.count > slotCount else { return slots }
+
+        return (0..<slotCount).compactMap { slotIndex in
+            let startIndex = slotIndex * slots.count / slotCount
+            let endIndex = min(slots.count, (slotIndex + 1) * slots.count / slotCount)
+            let bucketSlots = Array(slots[startIndex..<endIndex])
+
+            if slotIndex == slotCount - 1,
+               bucketSlots.last?.valueSemantics == .latestSample {
+                return bucketSlots.last
+            }
+
+            guard let bucketStart = bucketSlots.first?.bucketStart,
+                  let sample = averagedSample(bucketSlots.compactMap(\.sample), bucketStart: bucketStart) else {
+                return nil
+            }
+
+            return RAMSegmentBarSlot(bucketStart: bucketStart, sample: sample)
+        }
     }
 
     private static func averagedSample(
