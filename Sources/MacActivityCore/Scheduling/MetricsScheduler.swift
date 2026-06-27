@@ -1,6 +1,7 @@
 import Foundation
 
 public struct MetricsSamplingProfile: Equatable, Sendable {
+    private static let inactiveMemorySamplingInterval = 11 * 60
     private let cadenceOverrides: [MetricKind: Int]
 
     public init(cadenceOverrides: [MetricKind: Int] = [:]) {
@@ -39,7 +40,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .gpu: 2,
             .disk: 60,
             .swap: 60,
-            .memory: 10,
+            .memory: inactiveMemorySamplingInterval,
             .vram: 10,
             .network: 2,
             .battery: 10,
@@ -53,7 +54,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .gpu: 2,
             .disk: 120,
             .swap: 120,
-            .memory: 60,
+            .memory: inactiveMemorySamplingInterval,
             .vram: 120,
             .network: 2,
             .battery: 120,
