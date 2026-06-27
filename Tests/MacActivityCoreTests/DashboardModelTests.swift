@@ -64,12 +64,16 @@ final class DashboardModelTests: XCTestCase {
         let disk = try! XCTUnwrap(metrics.first { $0.kind == .disk })
         XCTAssertEqual(disk.title, "Disk")
         XCTAssertEqual(disk.value, "75%")
+        XCTAssertEqual(disk.usedBytes, 750)
+        XCTAssertEqual(disk.totalBytes, 1_000)
         XCTAssertEqual(try! XCTUnwrap(disk.progress), 0.75, accuracy: 0.001)
         XCTAssertEqual(disk.detail, "750 B (75%)")
 
         let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
         XCTAssertEqual(swap.title, "Swap")
         XCTAssertEqual(swap.value, "25%")
+        XCTAssertEqual(swap.usedBytes, 256)
+        XCTAssertEqual(swap.totalBytes, 1_024)
         XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
         XCTAssertEqual(swap.detail, "256 B (25%)")
     }

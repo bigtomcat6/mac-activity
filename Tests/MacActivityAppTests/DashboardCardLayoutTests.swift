@@ -194,6 +194,35 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.storageCardContentOrder, [.details, .bar])
     }
 
+    func testOverviewStorageSegmentsUseDiskTotalAsSharedDenominatorAndStayAdjacent() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: metrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.8),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.8, widthProgress: 0.1),
+            ]
+        )
+    }
+
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .temperature))
         XCTAssertTrue(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .fan))
