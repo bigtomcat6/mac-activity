@@ -31,6 +31,30 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("prepare_release_metadata.py"),
         )
 
+    def test_release_workflow_separates_prerelease_number_from_bundle_build(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        workflow_dispatch = workflow.split("permissions:", 1)[0]
+        conflict_section = workflow.split("- name: Check release conflicts", 1)[1].split("- name: Prepare release metadata", 1)[0]
+        metadata_section = workflow.split("- name: Prepare release metadata", 1)[1].split("- name: Resolve release target commit", 1)[0]
+
+        self.assertIn("prerelease:", workflow_dispatch)
+        self.assertIn("--prerelease", conflict_section)
+        self.assertIn("${{ inputs.prerelease }}", conflict_section)
+        self.assertIn("--prerelease", metadata_section)
+        self.assertIn("${{ inputs.prerelease }}", metadata_section)
+        self.assertIn("CFBundleVersion", workflow)
+        self.assertIn("steps.release.outputs.build", workflow)
+        self.assertIn("Validate prerelease input", workflow)
+        self.assertIn("Final releases must leave prerelease empty.", workflow)
+        self.assertIn("require a positive prerelease number", workflow)
+
+    def test_release_workflow_embeds_bundle_build_metadata_in_release_notes(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        notes_section = workflow.split("- name: Generate release notes", 1)[1].split("- name: Upload workflow artifact", 1)[0]
+
+        self.assertIn("MacActivityBundleBuild", notes_section)
+        self.assertIn("steps.release.outputs.build", notes_section)
+
     def test_release_workflow_requires_main_before_ci_and_packaging(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
@@ -187,6 +211,8 @@ class ReleasePolicyTests(unittest.TestCase):
         phase_2 = skill.split("## Phase 2: Draft GitHub Release", 1)[1].split("## Distribution Notes", 1)[0]
 
         self.assertIn("-f signing=developer-id", phase_2)
+        self.assertIn("-f prerelease=1", phase_2)
+        self.assertIn("--prerelease 1", skill)
         self.assertNotIn("-f signing=local", phase_2)
         self.assertIn("GitHub Release assets must use `signing=developer-id`", skill)
 
@@ -195,6 +221,8 @@ class ReleasePolicyTests(unittest.TestCase):
         draft_release_section = doc.split("After that dry run passes", 1)[1]
 
         self.assertIn("-f signing=developer-id", draft_release_section)
+        self.assertIn("-f prerelease=1", draft_release_section)
+        self.assertIn("--prerelease 1", doc)
         self.assertNotIn("-f signing=local", draft_release_section)
         self.assertIn("GitHub Release assets must use `signing=developer-id`", doc)
 
