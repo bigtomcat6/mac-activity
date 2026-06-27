@@ -1,13 +1,21 @@
-# Mac Activity
+<p align="center">
+  <img src="/assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
+</p>
 
-[![CI](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml)
-[![Docs Links](https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml/badge.svg?branch=main)](https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml)
-[![codecov](https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg)](https://codecov.io/gh/bigtomcat6/mac-activity)
-[![License](https://img.shields.io/github/license/bigtomcat6/mac-activity)](/LICENSE)
-![macOS](https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white)
+<h1 align="center">Mac Activity</h1>
 
-[![Stable](https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=!*-*&sort=semver&label=stable)](https://github.com/bigtomcat6/mac-activity/releases)
-[![Pre-release](https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release)](https://github.com/bigtomcat6/mac-activity/releases)
+<p align="center">
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml/badge.svg?branch=main" alt="Docs Links"></a>
+  <a href="https://codecov.io/gh/bigtomcat6/mac-activity"><img src="https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg" alt="codecov"></a>
+  <a href="/LICENSE"><img src="https://img.shields.io/github/license/bigtomcat6/mac-activity" alt="License"></a>
+  <img src="https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white" alt="macOS 13.0+">
+</p>
+
+<p align="center">
+  <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=!*-*&sort=semver&label=stable" alt="Stable"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release" alt="Pre-release"></a>
+</p>
 
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.
 
