@@ -138,7 +138,7 @@ jobs:
             channel_args=(--channel "${CHANNEL}")
           fi
 
-          download_url_prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+          download_url_prefix="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/"
           printf '%s' "${SPARKLE_ED_PRIVATE_KEY}" | "${generate_appcast}" --ed-key-file - \
             --download-url-prefix "${download_url_prefix}" \
             --maximum-versions 20 \
@@ -146,9 +146,12 @@ jobs:
             -o "${pages_dir}/appcast.xml" \
             "${archive_dir}"
 
+          release_notes_name="MacActivity-${TAG}.md"
+          cp "${archive_dir}/${release_notes_name}" "${pages_dir}/${release_notes_name}"
+
           git -C "${pages_dir}" config user.name "github-actions[bot]"
           git -C "${pages_dir}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git -C "${pages_dir}" add appcast.xml
+          git -C "${pages_dir}" add appcast.xml "${release_notes_name}"
           if git -C "${pages_dir}" diff --cached --quiet; then
             echo "pages_changed=false" >> "${GITHUB_OUTPUT}"
             echo "Appcast is already current."
@@ -164,9 +167,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [appcast]
     if: ${{ needs.appcast.outputs.publish == 'true' && needs.appcast.outputs.pages_changed == 'true' }}
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     timeout-minutes: 10
 
     steps:
