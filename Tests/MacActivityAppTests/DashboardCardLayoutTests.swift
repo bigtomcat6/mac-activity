@@ -177,10 +177,16 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testOverviewStorageCardUsesStableCompactGeometry() {
         XCTAssertEqual(DashboardOverviewLayout.storageBarHeight, 8)
-        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnCount, 2)
-        XCTAssertEqual(DashboardOverviewLayout.storageDetailColumnSpacing, 12)
-        XCTAssertEqual(DashboardOverviewLayout.storageDetailContentAlignment, Alignment.center)
-        XCTAssertEqual(DashboardOverviewLayout.storageDetailTextAlignment, .center)
+        XCTAssertEqual(DashboardOverviewLayout.storageContentSpacing, 0)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowCount, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowHeight, 14)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowSpacing, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailBarSpacing, 4)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailMarkerWidth, 1)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconCenterOffset, 7)
+        XCTAssertEqual(DashboardOverviewLayout.storageSwapMinimumVisibleWidth, 0.02)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailContentAlignment, Alignment.leading)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailTextAlignment, .leading)
         XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
     }
 
@@ -214,12 +220,209 @@ final class DashboardCardLayoutTests: XCTestCase {
             ),
         ]
 
+        let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(segments[0].kind, .disk)
+        XCTAssertEqual(segments[0].startProgress, 0.0, accuracy: 0.001)
+        XCTAssertEqual(segments[0].widthProgress, 0.8, accuracy: 0.001)
+        XCTAssertEqual(segments[1].kind, .swap)
+        XCTAssertEqual(segments[1].startProgress, 0.8, accuracy: 0.001)
+        XCTAssertEqual(segments[1].widthProgress, 0.1, accuracy: 0.001)
+    }
+
+    func testOverviewStorageSegmentsUseMinimumVisibleWidthOnlyForNonzeroSmallSwap() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "0%",
+                usedBytes: 0,
+                totalBytes: 1_000,
+                progress: 0.0
+            ),
+        ]
+
         XCTAssertEqual(
             DashboardOverviewLayout.storageUsageSegments(for: metrics),
             [
-                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.8),
-                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.8, widthProgress: 0.1),
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.0),
             ]
+        )
+
+        let smallSwapMetrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "1%",
+                usedBytes: 10,
+                totalBytes: 1_000,
+                progress: 0.01
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: smallSwapMetrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.02),
+            ]
+        )
+    }
+
+    func testOverviewStorageLabelsUseSegmentStartsAcrossTwoRows() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageLabels(for: metrics),
+            [
+                DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0, endProgress: 0.8),
+                DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1, endProgress: 0.9),
+            ]
+        )
+    }
+
+    func testOverviewStorageConnectorsStartBelowTheirLabelRows() {
+        let labels = [
+            DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0),
+            DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1),
+        ]
+
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorYPosition(for: labels[0]), 14, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[0]), 20, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorYPosition(for: labels[1]), 30, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[1]), 4, accuracy: 0.001)
+    }
+
+    func testOverviewStorageDetailMarkersAlignDiskWithIconAndSwapWithSegmentEnd() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+        let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+        let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
+        let swapLabel = labels[1]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: diskLabel,
+                containerWidth: 180
+            ),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: diskLabel,
+                containerWidth: 180
+            ),
+            7,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
+            480,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
+            540,
+            accuracy: 0.001
+        )
+    }
+
+    func testOverviewStorageSwapLabelFallsBackToTrailingWhenStartLeavesTooLittleRoom() {
+        let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
+        let swapLabel = DashboardStorageUsageLabel(kind: .swap, startProgress: 0.9, rowIndex: 1)
+
+        XCTAssertFalse(
+            DashboardOverviewLayout.storageDetailUsesTrailingFallback(
+                for: diskLabel,
+                containerWidth: 180
+            )
+        )
+        XCTAssertTrue(
+            DashboardOverviewLayout.storageDetailUsesTrailingFallback(
+                for: swapLabel,
+                containerWidth: 180
+            )
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowWidth(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            180,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowAlignment(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            .trailing
         )
     }
 
@@ -508,6 +711,30 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(DashboardView.currentUsedMemoryBytes(in: metrics), 6_000)
         XCTAssertNil(DashboardView.currentUsedMemoryBytes(in: []))
+    }
+
+    func testSwapMetricUsesOrangeTint() throws {
+        let swapColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardMetricColor.color(for: .swap))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let orangeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(.orange)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(swapColor, orangeColor, tolerance: 0.02),
+            "Expected Swap metric tint to be orange. swap=\(Self.debugColor(swapColor)) orange=\(Self.debugColor(orangeColor))"
+        )
     }
 
     func testOverviewUsageBarFillChangesToneWhenWindowIsInactive() throws {

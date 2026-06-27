@@ -75,7 +75,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(swap.usedBytes, 256)
         XCTAssertEqual(swap.totalBytes, 1_024)
         XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
-        XCTAssertEqual(swap.detail, "256 B (25%)")
+        XCTAssertEqual(swap.detail, "256 B")
     }
 
     func testModelBuildsZeroSwapUsageDetailWithoutDividingByTotal() async {
@@ -94,7 +94,7 @@ final class DashboardModelTests: XCTestCase {
         let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
         XCTAssertEqual(swap.value, "0%")
         XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.0, accuracy: 0.001)
-        XCTAssertEqual(swap.detail, "0 KB (0%)")
+        XCTAssertEqual(swap.detail, "0 KB")
     }
 
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
