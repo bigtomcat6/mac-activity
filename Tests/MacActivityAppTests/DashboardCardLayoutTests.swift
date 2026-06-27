@@ -976,7 +976,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testRAMSegmentBarsLayoutKeepsOriginalSlotBudgetWithMinuteBuckets() {
+    func testRAMSegmentBarsLayoutKeepsOriginalSlotBudgetWithoutSamples() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
             96
@@ -995,7 +995,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(slots.count, 20)
         XCTAssertEqual(
             Array(Set(slots.map(\.bucketStart))).sorted(),
-            [60, 120, 180, 240, 300].map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            [300].map { Date(timeIntervalSince1970: TimeInterval($0)) }
         )
         XCTAssertTrue(slots.allSatisfy { $0.sample == nil })
     }
@@ -1035,7 +1035,9 @@ final class DashboardCardLayoutTests: XCTestCase {
             containerSize: CGSize(width: 100, height: 60),
             referenceDate: Date(timeIntervalSince1970: 330)
         )
-        let averagedMinute = slots[15].sample
+        let averagedMinute = slots.first {
+            $0.bucketStart == Date(timeIntervalSince1970: 240) && $0.sample != nil
+        }?.sample
 
         XCTAssertEqual(averagedMinute?.timestamp, Date(timeIntervalSince1970: 240))
         XCTAssertEqual(averagedMinute?.usedBytes, 300)
@@ -1085,6 +1087,74 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(updatedSlots.last?.sample?.usedBytes, 200)
         XCTAssertEqual(firstSlots.last?.sample?.timestamp, Date(timeIntervalSince1970: 301))
         XCTAssertEqual(updatedSlots.last?.sample?.timestamp, Date(timeIntervalSince1970: 330))
+    }
+
+    func testRAMSegmentBarsLayoutCompactsSampledBucketsIntoTrailingAdjacentSlots() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 65),
+                pressurePercent: 10,
+                usedBytes: 100,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 245),
+                pressurePercent: 40,
+                usedBytes: 400,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 301),
+                pressurePercent: 50,
+                usedBytes: 500,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 305)
+        )
+
+        XCTAssertEqual(
+            slots.enumerated().compactMap { index, slot in
+                slot.sample == nil ? nil : index
+            },
+            [17, 18, 19]
+        )
+        XCTAssertEqual(slots[17].sample?.usedBytes, 100)
+        XCTAssertEqual(slots[18].sample?.usedBytes, 400)
+        XCTAssertEqual(slots[19].sample?.usedBytes, 500)
+    }
+
+    func testRAMSegmentBarsLayoutIncludesFullRetainedHistoryInsteadOfFiveMinuteWindow() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 305),
+                pressurePercent: 30,
+                usedBytes: 300,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 1_201),
+                pressurePercent: 50,
+                usedBytes: 500,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 1_205)
+        )
+
+        XCTAssertEqual(
+            slots.compactMap { $0.sample?.usedBytes },
+            [300, 500]
+        )
+        XCTAssertEqual(slots.last?.sample?.usedBytes, 500)
     }
 
     func testRAMSegmentTooltipTimeLabelShowsBucketEndForAveragesAndTimestampForLatestSample() {
@@ -1156,40 +1226,32 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(slots.filter { $0.bucketStart == Date(timeIntervalSince1970: 300) }.compactMap(\.sample).count, 0)
     }
 
-    func testRAMSegmentBarsLayoutIgnoresSamplesOutsideCurrentWindow() {
-        let staleSamples = [
+    func testRAMSegmentBarsLayoutIgnoresSamplesAfterReferenceDate() {
+        let samples = [
             DashboardMemoryTrendSample(
                 timestamp: Date(timeIntervalSince1970: 305),
                 pressurePercent: 30,
                 usedBytes: 300,
                 totalBytes: 1_000
             ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 1_210),
+                pressurePercent: 90,
+                usedBytes: 900,
+                totalBytes: 1_000
+            ),
         ]
 
-        let staleSlots = RAMSegmentBarsLayout.displaySlots(
-            for: staleSamples,
-            containerSize: CGSize(width: 100, height: 60),
-            referenceDate: Date(timeIntervalSince1970: 1_205)
-        )
-        let currentSlots = RAMSegmentBarsLayout.displaySlots(
-            for: staleSamples + [
-                DashboardMemoryTrendSample(
-                    timestamp: Date(timeIntervalSince1970: 1_201),
-                    pressurePercent: 50,
-                    usedBytes: 500,
-                    totalBytes: 1_000
-                ),
-            ],
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
             containerSize: CGSize(width: 100, height: 60),
             referenceDate: Date(timeIntervalSince1970: 1_205)
         )
 
         XCTAssertEqual(
-            Array(Set(staleSlots.map(\.bucketStart))).sorted(),
-            [960, 1_020, 1_080, 1_140, 1_200].map { Date(timeIntervalSince1970: TimeInterval($0)) }
+            slots.compactMap { $0.sample?.usedBytes },
+            [300]
         )
-        XCTAssertTrue(staleSlots.allSatisfy { $0.sample == nil })
-        XCTAssertEqual(currentSlots.last?.sample?.usedBytes, 500)
     }
 
     func testRAMSegmentBarsLayoutBuildsStackedSegmentsFromMemoryBreakdown() {
