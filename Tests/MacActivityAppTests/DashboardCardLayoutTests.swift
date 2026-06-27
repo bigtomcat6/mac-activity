@@ -255,7 +255,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             DashboardOverviewLayout.storageUsageSegments(for: metrics),
             [
                 DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
-                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.0),
             ]
         )
 
@@ -284,6 +283,39 @@ final class DashboardCardLayoutTests: XCTestCase {
                 DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
                 DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.02),
             ]
+        )
+    }
+
+    func testOverviewStorageLabelsAndConnectorsCollapseWhenSwapIsZero() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "0%",
+                usedBytes: 0,
+                totalBytes: 1_000,
+                progress: 0.0
+            ),
+        ]
+
+        let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+
+        XCTAssertEqual(labels.count, 1)
+        XCTAssertEqual(labels[0].kind, .disk)
+        XCTAssertEqual(labels[0].startProgress, 0.0, accuracy: 0.001)
+        XCTAssertEqual(labels[0].endProgress ?? -1, 0.4, accuracy: 0.001)
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageConnectorHeight(for: labels[0]),
+            DashboardOverviewLayout.storageDetailBarSpacing,
+            accuracy: 0.001
         )
     }
 
