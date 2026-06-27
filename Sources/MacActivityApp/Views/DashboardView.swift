@@ -51,6 +51,24 @@ enum DashboardStorageCardContent: Hashable {
     case bar
 }
 
+struct DashboardStorageUsageSegment: Equatable, Identifiable, Sendable {
+    var kind: MetricKind
+    var startProgress: Double
+    var widthProgress: Double
+
+    var id: MetricKind { kind }
+}
+
+struct DashboardStorageUsageLabel: Equatable, Identifiable, Sendable {
+    var kind: MetricKind
+    var startProgress: Double
+    var rowIndex: Int
+    var rowCount: Int = 2
+    var endProgress: Double?
+
+    var id: MetricKind { kind }
+}
+
 enum DashboardOverviewLayout {
     static let sectionSpacing: CGFloat = 12
     static let topRowColumns = [GridItem(.flexible()), GridItem(.flexible())]
@@ -67,12 +85,21 @@ enum DashboardOverviewLayout {
     static let usageContentMaxWidth = CGFloat.infinity
     static let usageCardContentAlignment: Alignment = .center
     static let storageContentMaxWidth: CGFloat = 180
+    static let storageContentSpacing: CGFloat = 0
     static let storageBarHeight: CGFloat = usageBarHeight
-    static let storageDetailColumnCount = 2
-    static let storageDetailColumnSpacing: CGFloat = 12
-    static let storageDetailContentAlignment: Alignment = .center
-    static let storageDetailTextAlignment: TextAlignment = .center
+    static let storageDetailRowCount = 2
+    static let storageDetailRowHeight: CGFloat = 14
+    static let storageDetailRowSpacing: CGFloat = 2
+    static let storageDetailBarSpacing: CGFloat = 4
+    static let storageDetailMarkerWidth: CGFloat = 1
+    static let storageDetailIconCenterOffset: CGFloat = 7
+    static let storageSwapMinimumVisibleWidth = 0.02
+    static let storageDetailMarkerOpacity: Double = 0.28
+    static let storageDetailTrailingFallbackMinimumWidth: CGFloat = 92
+    static let storageDetailContentAlignment: Alignment = .leading
+    static let storageDetailTextAlignment: TextAlignment = .leading
     static let storageDetailSpacing: CGFloat = 4
+    static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
     static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
@@ -130,7 +157,10 @@ enum DashboardOverviewLayout {
     }
 
     static func storageUsageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
-        [.disk, .swap].filter { metricsByKind[$0] != nil }
+        [.disk, .swap].filter { kind in
+            guard let metric = metricsByKind[kind] else { return false }
+            return isVisibleStorageMetric(metric)
+        }
     }
 
     static func storageDetailIconName(for kind: MetricKind) -> String? {
@@ -148,14 +178,141 @@ enum DashboardOverviewLayout {
         let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "%", with: "")
         guard let percent = Double(percentText) else { return 0 }
-        return min(max(percent / 100, 0), 1)
+        return clampedProgress(percent / 100)
     }
 
     static func usageProgress(for metric: DashboardMetric) -> Double {
         if let progress = metric.progress {
-            return min(max(progress, 0), 1)
+            return clampedProgress(progress)
         }
         return usageProgress(for: metric.value)
+    }
+
+    static func storageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        let visibleMetrics = visibleStorageUsageMetrics(in: metrics)
+        guard let diskTotalBytes = metrics.first(where: { $0.kind == .disk })?.totalBytes,
+              diskTotalBytes > 0 else {
+            return equalSlotStorageUsageSegments(for: visibleMetrics)
+        }
+
+        var startProgress = 0.0
+        return visibleMetrics.map { metric in
+            let widthProgress = min(storageWidthProgress(for: metric, diskTotalBytes: diskTotalBytes), max(0, 1 - startProgress))
+            let segment = DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: startProgress,
+                widthProgress: widthProgress
+            )
+            startProgress = clampedProgress(startProgress + widthProgress)
+            return segment
+        }
+    }
+
+    static func storageUsageLabels(for metrics: [DashboardMetric]) -> [DashboardStorageUsageLabel] {
+        let segments = storageUsageSegments(for: metrics)
+        return segments.enumerated().map { index, segment in
+            DashboardStorageUsageLabel(
+                kind: segment.kind,
+                startProgress: segment.startProgress,
+                rowIndex: index,
+                rowCount: segments.count,
+                endProgress: clampedProgress(segment.startProgress + segment.widthProgress)
+            )
+        }
+    }
+
+    static func visibleStorageUsageMetrics(in metrics: [DashboardMetric]) -> [DashboardMetric] {
+        metrics.filter(isVisibleStorageMetric)
+    }
+
+    static func storageDetailHeight(for metrics: [DashboardMetric]) -> CGFloat {
+        storageDetailHeight(rowCount: storageUsageLabels(for: metrics).count)
+    }
+
+    static func storageConnectorYPosition(for label: DashboardStorageUsageLabel) -> CGFloat {
+        CGFloat(label.rowIndex) * (storageDetailRowHeight + storageDetailRowSpacing) + storageDetailRowHeight
+    }
+
+    static func storageConnectorHeight(for label: DashboardStorageUsageLabel) -> CGFloat {
+        max(0, storageDetailHeight(rowCount: label.rowCount) - storageConnectorYPosition(for: label))
+    }
+
+    static func storageDetailUsesTrailingFallback(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Bool {
+        label.kind == .swap
+            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageDetailTrailingFallbackMinimumWidth
+    }
+
+    static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
+            ? 0
+            : storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
+    }
+
+    static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
+            ? containerWidth
+            : max(0, containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth))
+    }
+
+    static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : .leading
+    }
+
+    static func storageDetailRowTextAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> TextAlignment {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : storageDetailTextAlignment
+    }
+
+    static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        let markerProgress = label.kind == .swap ? label.endProgress ?? label.startProgress : label.startProgress
+        let iconOffset = label.kind == .swap || storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        return min(
+            max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
+            max(0, containerWidth - storageDetailMarkerWidth)
+        )
+    }
+
+    static func storageDetailRowAnchorXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        min(max(CGFloat(label.startProgress) * containerWidth, 0), containerWidth)
+    }
+
+    private static func equalSlotStorageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        let segmentCount = max(metrics.count, 1)
+        let segmentWidth = 1 / Double(segmentCount)
+        return metrics.enumerated().map { index, metric in
+            DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: segmentWidth * Double(index),
+                widthProgress: segmentWidth * usageProgress(for: metric)
+            )
+        }
+    }
+
+    private static func isVisibleStorageMetric(_ metric: DashboardMetric) -> Bool {
+        guard metric.kind == .swap else { return true }
+        if let usedBytes = metric.usedBytes {
+            return usedBytes > 0
+        }
+        return usageProgress(for: metric) > 0
+    }
+
+    private static func storageDetailHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return storageDetailRowHeight * CGFloat(rowCount)
+            + storageDetailRowSpacing * CGFloat(max(0, rowCount - 1))
+            + storageDetailBarSpacing
+    }
+
+    private static func storageWidthProgress(for metric: DashboardMetric, diskTotalBytes: UInt64) -> Double {
+        guard let usedBytes = metric.usedBytes else { return usageProgress(for: metric) }
+        let widthProgress = Double(usedBytes) / Double(diskTotalBytes)
+        guard metric.kind == .swap, usedBytes > 0 else {
+            return clampedProgress(widthProgress)
+        }
+        return clampedProgress(max(widthProgress, storageSwapMinimumVisibleWidth))
+    }
+
+    private static func clampedProgress(_ progress: Double) -> Double {
+        min(max(progress, 0), 1)
     }
 
     static let usageHeaderTitle: String? = nil
@@ -960,7 +1117,7 @@ enum DashboardMetricColor {
         case .disk:
             return .mint
         case .swap:
-            return .pink
+            return .orange
         case .memory:
             return .blue
         case .vram:
@@ -1015,7 +1172,7 @@ private struct StorageUsageCard: View {
     let metrics: [DashboardMetric]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: DashboardOverviewLayout.storageContentSpacing) {
             ForEach(DashboardOverviewLayout.storageCardContentOrder, id: \.self) { content in
                 storageContent(content)
             }
@@ -1043,16 +1200,9 @@ private struct StorageUsageCard: View {
     }
 
     private var storageDetails: some View {
-        HStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailColumnSpacing) {
-            ForEach(metrics.prefix(DashboardOverviewLayout.storageDetailColumnCount)) { metric in
-                StorageUsageDetailColumn(metric: metric)
-            }
-        }
-        .frame(
-            maxWidth: .infinity,
-            maxHeight: .infinity,
-            alignment: DashboardOverviewLayout.storageDetailContentAlignment
-        )
+        StorageUsageDetails(metrics: metrics)
+            .frame(height: DashboardOverviewLayout.storageDetailHeight(for: metrics))
+            .animation(DashboardMotion.valueAnimation, value: DashboardOverviewLayout.storageUsageLabels(for: metrics))
     }
 
     private var storageBar: some View {
@@ -1067,41 +1217,115 @@ private struct StorageSegmentedUsageBar: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let segmentCount = max(metrics.count, 1)
-            let segmentWidth = proxy.size.width / CGFloat(segmentCount)
+            let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
 
             ZStack(alignment: .leading) {
                 Capsule()
                     .fill(Color.primary.opacity(0.08))
 
-                ForEach(Array(metrics.enumerated()), id: \.element.id) { index, metric in
-                    let progress = DashboardOverviewLayout.usageProgress(for: metric)
-
+                ForEach(segments) { segment in
                     Rectangle()
                         .fill(
                             DashboardOverviewChrome.emphasisFillColor(
-                                baseColor: DashboardMetricColor.color(for: metric.kind),
+                                baseColor: DashboardMetricColor.color(for: segment.kind),
                                 opacity: DashboardOverviewChrome.usageFillOpacity,
                                 appearsActive: appearsActive
                             )
                         )
-                        .frame(width: segmentWidth * progress)
-                        .offset(x: segmentWidth * CGFloat(index))
+                        .frame(width: proxy.size.width * segment.widthProgress)
+                        .offset(x: proxy.size.width * segment.startProgress)
+                        .transition(.opacity)
                 }
             }
             .clipShape(Capsule())
         }
         .accessibilityLabel(Text("Disk and Swap usage"))
-        .accessibilityValue(Text(metrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
+        .accessibilityValue(Text(visibleMetrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
         .animation(DashboardMotion.valueAnimation, value: metrics)
+    }
+
+    private var visibleMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.visibleStorageUsageMetrics(in: metrics)
     }
 }
 
-private struct StorageUsageDetailColumn: View {
-    let metric: DashboardMetric
+private struct StorageUsageDetails: View {
+    let metrics: [DashboardMetric]
 
     var body: some View {
-        VStack(alignment: .center, spacing: DashboardOverviewLayout.storageDetailSpacing) {
+        GeometryReader { proxy in
+            let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+            ZStack(alignment: .topLeading) {
+                ForEach(labels) { label in
+                    Rectangle()
+                        .fill(Color.primary.opacity(DashboardOverviewLayout.storageDetailMarkerOpacity))
+                        .frame(
+                            width: DashboardOverviewLayout.storageDetailMarkerWidth,
+                            height: DashboardOverviewLayout.storageConnectorHeight(for: label)
+                        )
+                        .offset(
+                            x: DashboardOverviewLayout.storageDetailMarkerXPosition(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            ),
+                            y: DashboardOverviewLayout.storageConnectorYPosition(for: label)
+                        )
+                        .transition(.opacity)
+                }
+
+                ForEach(labels) { label in
+                    if let metric = metric(for: label) {
+                        let xPosition = DashboardOverviewLayout.storageDetailRowXPosition(
+                            for: label,
+                            containerWidth: proxy.size.width
+                        )
+                        StorageUsageDetailRow(
+                            metric: metric,
+                            alignment: DashboardOverviewLayout.storageDetailRowAlignment(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            ),
+                            textAlignment: DashboardOverviewLayout.storageDetailRowTextAlignment(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            )
+                        )
+                            .frame(
+                                width: DashboardOverviewLayout.storageDetailRowWidth(
+                                    for: label,
+                                    containerWidth: proxy.size.width
+                                ),
+                                height: DashboardOverviewLayout.storageDetailRowHeight,
+                                alignment: DashboardOverviewLayout.storageDetailRowAlignment(
+                                    for: label,
+                                    containerWidth: proxy.size.width
+                                )
+                            )
+                            .offset(
+                                x: xPosition,
+                                y: CGFloat(label.rowIndex)
+                                    * (DashboardOverviewLayout.storageDetailRowHeight + DashboardOverviewLayout.storageDetailRowSpacing)
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+                    }
+                }
+            }
+        }
+        .animation(DashboardMotion.valueAnimation, value: DashboardOverviewLayout.storageUsageLabels(for: metrics))
+    }
+
+    private func metric(for label: DashboardStorageUsageLabel) -> DashboardMetric? {
+        metrics.first { $0.kind == label.kind }
+    }
+}
+
+private struct StorageUsageDetailRow: View {
+    let metric: DashboardMetric
+    let alignment: Alignment
+    let textAlignment: TextAlignment
+
+    var body: some View {
+        HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
             HStack(spacing: 4) {
                 if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
                     Image(systemName: iconName)
@@ -1112,7 +1336,7 @@ private struct StorageUsageDetailColumn: View {
                 Text(metric.title)
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
-                    .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+                    .multilineTextAlignment(textAlignment)
             }
             .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
 
@@ -1120,13 +1344,14 @@ private struct StorageUsageDetailColumn: View {
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .multilineTextAlignment(DashboardOverviewLayout.storageDetailTextAlignment)
+                .minimumScaleFactor(0.65)
+                .multilineTextAlignment(textAlignment)
         }
+        .lineLimit(1)
         .frame(
             maxWidth: .infinity,
             maxHeight: .infinity,
-            alignment: DashboardOverviewLayout.storageDetailContentAlignment
+            alignment: alignment
         )
     }
 }
