@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml)
 [![codecov](https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg)](https://codecov.io/gh/bigtomcat6/mac-activity)
-[![License](https://img.shields.io/github/license/bigtomcat6/mac-activity)](./LICENSE)
+[![License](https://img.shields.io/github/license/bigtomcat6/mac-activity)](/LICENSE)
 ![macOS](https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white)
 
 [![Stable](https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=!*-*&sort=semver&label=stable)](https://github.com/bigtomcat6/mac-activity/releases)
@@ -21,6 +21,8 @@ It ships as:
 - Basic network trend visualization (download/upload sparkline).
 - Customizable menu bar metrics and launch behavior.
 - Launch at login toggle.
+- Actives cleanup surface for disk cleanup and process memory.
+- Sparkle-based update checks with release, beta, and alpha channels.
 - Per-metric sampling cadence (`fast`, `medium`, `slow`) and history tracking.
 - Unit tests for core scheduling, summary formatting, preferences, snapshot/history, and dashboard model behavior.
 
@@ -28,11 +30,15 @@ It ships as:
 
 Implemented providers:
 - CPU usage
+- GPU usage
+- Disk usage
+- Swap usage
 - Memory usage
+- VRAM usage
 - Network throughput (upload/download rates)
 - Battery percentage + charging status
-- Temperature *(MVP placeholder currently unavailable on many systems)*
-- Fan speed *(MVP placeholder currently unavailable on many systems)*
+- Temperature from CPU/SMC or Battery when available
+- Fan speed when available
 
 ## Requirements
 
@@ -78,13 +84,13 @@ swift test
 
 ## Documentation
 
-- [Documentation index](docs/README.md)
-- [User guide](docs/user-guide.md)
-- [Development guide](docs/development.md)
-- [Contributing guide](docs/CONTRIBUTING.md)
-- [Support guide](docs/SUPPORT.md)
-- [Security policy](docs/SECURITY.md)
-- [Release guide](docs/release.md)
+- [Documentation index](/docs/README.md)
+- [User guide](/docs/user-guide.md)
+- [Development guide](/docs/development.md)
+- [Contributing guide](/docs/CONTRIBUTING.md)
+- [Support guide](/docs/SUPPORT.md)
+- [Security policy](/docs/SECURITY.md)
+- [Release guide](/docs/release.md)
 
 ## Configuration
 
@@ -92,9 +98,15 @@ Open Preferences and you can:
 
 - Toggle **Show menu bar item**
 - Toggle **Launch at login**
+- Choose the display language
+- Choose the update channel and check for updates
+- Choose the temperature source
+- Show hardware battery percentage when available
+- Show app identifiers in Actives process rows
+- Choose Disk Cleanup categories
 - Choose which summary metrics appear in the menu bar
 
-Metric order is stable (CPU → Memory → Network → Battery → Temperature → Fan), while some metrics may be hidden when not available on the current machine.
+Metric order is stable (CPU -> GPU -> Disk -> Swap -> Memory -> VRAM -> Temperature -> Fan -> Network -> Battery), while some metrics may be hidden when not available on the current machine.
 
 ## Architecture
 
@@ -123,4 +135,4 @@ Contributions are welcome.
 
 ## License
 
-Licensed under the [Apache License 2.0](./LICENSE).
+Licensed under the [Apache License 2.0](/LICENSE).

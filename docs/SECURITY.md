@@ -1,7 +1,7 @@
 # Security Policy
 
-MacActivity handles local system metrics and cleanup actions. Security and
-privacy-sensitive reports should be handled privately.
+MacActivity handles local system metrics, updater metadata, and cleanup actions.
+Security and privacy-sensitive reports should be handled privately.
 
 ## Supported Versions
 
@@ -14,15 +14,16 @@ current `main` or the latest available artifact.
 ## Reporting a Vulnerability
 
 Do not open a public issue with exploit details, private data, crash logs that
-contain sensitive paths, or proof-of-concept code.
+contain sensitive paths, proof-of-concept code, signing material, or private
+Sparkle keys.
 
 Preferred reporting path:
 
 1. Use GitHub private vulnerability reporting if it is enabled for this
    repository.
-2. If private vulnerability reporting is not enabled, open a minimal public issue
-   asking for a private maintainer contact. Do not include technical details in
-   that issue.
+2. If private vulnerability reporting is not enabled, open a minimal public
+   issue asking for a private maintainer contact. Do not include technical
+   details in that issue.
 
 Include:
 
@@ -30,8 +31,9 @@ Include:
 - macOS version and hardware architecture.
 - Clear reproduction steps.
 - Expected and actual security impact.
-- Whether the issue involves cleanup deletion scope, launch-at-login behavior,
-  local file access, system metrics, app signing, or release artifacts.
+- Whether the issue involves cleanup deletion scope, process termination,
+  launch-at-login behavior, local file access, system metrics, app signing,
+  Sparkle updater metadata, or release artifacts.
 
 ## Disclosure
 

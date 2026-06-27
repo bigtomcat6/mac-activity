@@ -36,9 +36,10 @@ Before opening a PR:
 1. Rebase or merge the latest target branch.
 2. Run the focused tests for the changed area.
 3. Run broader tests when touching shared behavior, release automation, project
-   generation, localization, or app lifecycle code.
-4. Update docs in `docs/` when behavior, workflow, or support expectations
-   change.
+   generation, localization, updater behavior, cleanup behavior, or app
+   lifecycle code.
+4. Update docs under `docs/` when behavior, workflow, or
+   support expectations change.
 5. Fill out the PR template completely.
 
 ## PR Title Format

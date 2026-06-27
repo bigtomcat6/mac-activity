@@ -6,9 +6,9 @@ Use this guide to choose the right support path for MacActivity.
 
 Start with:
 
-- [README.md](/README.md)
 - [User guide](/docs/user-guide.md)
 - [Development guide](/docs/development.md), for local build or test questions
+- [Release guide](/docs/release.md), for release artifact or updater questions
 
 If the answer is still unclear, open a GitHub issue and describe what you are
 trying to do.
@@ -30,8 +30,15 @@ Open a GitHub issue for reproducible bugs. Include:
 For dashboard or metric issues, include which metric is wrong or unavailable
 and whether the issue changes after reopening the dashboard.
 
+For Actives process issues, include the affected app name, whether its bundle
+identifier is visible, and whether Quit was requested or confirmed.
+
 For cleanup issues, include the cleanup surface used, the selected cleanup
-scope, and whether files were locked, still in use, or protected by permissions.
+categories, and whether files were locked, still in use, too new for cache
+cleanup, or protected by permissions.
+
+For updater issues, include the current app version, selected update channel,
+release artifact source, and whether Check for Updates was run manually.
 
 ## Feature Requests
 
@@ -40,7 +47,8 @@ Open a GitHub issue with:
 - The problem the feature should solve.
 - The current workaround, if any.
 - The proposed user-visible behavior.
-- Any macOS permission, privacy, or hardware constraints you already know about.
+- Any macOS permission, privacy, hardware, signing, or updater constraints you
+  already know about.
 
 ## Security Reports
 

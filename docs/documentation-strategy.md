@@ -1,90 +1,69 @@
 # Documentation Strategy
 
-This note records the documentation model chosen for MacActivity after comparing
-GitHub's repository documentation guidance and several large open-source
-projects.
+This note records the documentation model for MacActivity and the current
+maintenance rules.
+
+## Current Decision
+
+The repository root is the documentation root:
+
+```text
+docs/
+```
+
+All durable project docs live in `docs/`. Do not add project docs under
+`docs/mac-activity` or any other nested docs tree.
 
 ## External Patterns Reviewed
 
-- GitHub Docs treats a repository README as the front door: it should explain
-  what the project does, why it is useful, how to get started, where to get help,
-  and who maintains it. GitHub also surfaces community health files such as
-  README, code of conduct, license, contribution guidelines, issue templates,
-  support resources, and security policy.
-- Kubernetes keeps its documentation repository README task-oriented: it links
-  contribution docs, localization docs, local preview commands, prerequisites,
-  troubleshooting, and maintainer contact paths.
-- React's documentation repository uses the README as a fast setup path with
-  prerequisites and local contribution instructions, while deeper documentation
-  lives outside the README.
-- Homebrew's README routes readers to the manual, installation,
-  troubleshooting, contribution guide, FAQ, blog, and license details instead of
-  duplicating all content in the repository README. Its prose guidelines put
-  understandability ahead of style for its own sake.
-- Swift's compiler repository uses `docs/README.md` as a curated index into the
-  rest of the repository documentation and points new contributors to the right
-  community channel when docs are not enough.
-- Node.js uses CONTRIBUTING.md to define contribution types, issue paths, pull
-  request process, governance expectations, and automation rules.
+The docs layout follows common open-source patterns:
 
-Primary references:
+- Keep the README short and task-oriented.
+- Use `docs/README.md` as the navigation index.
+- Split user, contributor, maintainer, support, and security information into
+  stable pages.
+- Keep release process details near workflow and automation details, but do not
+  duplicate scripts in prose.
+- Use precise paths and commands so docs can be reviewed with code changes.
 
-- GitHub Docs, community profiles:
-  https://docs.github.com/en/communities/setting-up-your-project-for-healthy-contributions/about-community-profiles-for-public-repositories
-- GitHub Docs, repository README:
-  https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-readmes
-- Kubernetes documentation repository:
-  https://github.com/kubernetes/website/
-- React documentation repository:
-  https://github.com/reactjs/react.dev
-- Homebrew repository and prose style:
-  https://github.com/Homebrew/brew and https://docs.brew.sh/Prose-Style-Guidelines
-- Swift documentation index:
-  https://github.com/swiftlang/swift/blob/main/docs/README.md
-- Node.js contributing guide:
-  https://github.com/nodejs/node/blob/main/CONTRIBUTING.md
+The Sparkle updater documentation also supports the release docs decision to
+treat `generate_appcast` as the canonical appcast generation and signing path.
 
 ## Local Diagnosis
 
-Before this documentation pass, MacActivity had a useful root README and several
-GitHub workflow notes, but it did not have a Git-tracked `docs/` information
-architecture for users, contributors, maintainers, security reports, and
-support.
+MacActivity already had code, workflow, and release behavior that deserved
+stable docs, but the documentation needed to be refreshed against the current
+project code.
 
 The main gaps were:
 
-- No canonical `docs/README.md` index.
-- No user guide for dashboard, preferences, metric availability, and cleanup
-  behavior.
-- No contributor guide that combines local expectations, PR title rules, release
-  impact rules, and documentation requirements.
-- No GitHub-recognizable support or security policy under `docs/`.
-- Release workflow knowledge existed, but it was not part of the main
-  documentation navigation.
+- No root `docs/README.md` index for project docs.
+- User docs did not cover GPU, Disk, Swap, VRAM, update channels, Actives quit
+  confirmation, or the process identifier preference.
+- Development docs did not describe the current project layout and focused debug
+  tools.
+- Release docs did not reflect the current Developer ID gate, DMG validation,
+  Sparkle appcast workflow, or cumulative update-channel policy.
 
 ## Chosen Model
 
-MacActivity should use the README as a short front door and keep durable
-documentation under `docs/`.
-
 Audience split:
 
-- Users start with [user-guide.md](user-guide.md) and [SUPPORT.md](SUPPORT.md).
-- Contributors start with [development.md](development.md) and
-  [CONTRIBUTING.md](CONTRIBUTING.md).
-- Maintainers use [release.md](release.md) for release planning, packaging, and
-  release notes.
-- Security reporters use [SECURITY.md](SECURITY.md).
-- Documentation maintainers use this file to preserve the rationale and backlog.
+- Users start with [user-guide.md](/docs/user-guide.md) and [SUPPORT.md](/docs/SUPPORT.md).
+- Contributors start with [development.md](/docs/development.md) and
+  [CONTRIBUTING.md](/docs/CONTRIBUTING.md).
+- Maintainers use [release.md](/docs/release.md) for release planning, signing,
+  packaging, GitHub Releases, appcast publishing, and release notes.
+- Security reporters use [SECURITY.md](/docs/SECURITY.md).
+- Documentation maintainers use this file to preserve the rationale and
+  backlog.
 
 ## Maintenance Rules
 
 - Every user-visible change should update the user guide or explicitly state why
   no user documentation is needed.
-- Every build, test, workflow, localization, or release process change should
-  update the matching developer or release guide.
-- Keep GitHub community-health files in `docs/` when possible so they are both
-  GitHub-recognizable and part of the same documentation tree.
+- Every build, test, workflow, localization, updater, or release process change
+  should update the matching developer or release guide.
 - Do not let generated plans, temporary scratch notes, or local agent state
   become permanent docs unless they are edited into a stable guide.
 
@@ -95,14 +74,14 @@ High value:
 - Add screenshots or short screen recordings for the menu bar, dashboard,
   preferences, and Actives cleanup flows once the visual surface stabilizes.
 - Add issue templates for bug reports and feature requests so reports collect
-  the diagnostics listed in [SUPPORT.md](SUPPORT.md).
-- Add a short code ownership map when module ownership becomes broader than the
-  current `MacActivityApp` and `MacActivityCore` split.
-- Add a troubleshooting section for release artifacts after Developer ID signing
-  and notarization are fully configured.
+  the diagnostics listed in [SUPPORT.md](/docs/SUPPORT.md).
+- Add a short code ownership map when ownership becomes broader than the current
+  `MacActivityApp` and `MacActivityCore` split.
+- Add a release artifact troubleshooting section after the first public
+  Developer ID release has enough real support data.
 
 Lower priority:
 
 - Add a style guide only after repeated documentation review issues appear.
-- Add a public documentation website only after the app has enough user-facing
-  surface to justify docs beyond GitHub Markdown.
+- Add a public documentation website only after GitHub Markdown is no longer
+  enough for the app's user-facing surface.

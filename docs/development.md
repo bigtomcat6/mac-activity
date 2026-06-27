@@ -4,6 +4,9 @@ This guide covers local development for MacActivity.
 
 ## Repository Layout
 
+The repository root contains the SwiftPM package, generated Xcode project,
+automation, and documentation.
+
 ```text
 .
 ├── Configuration/             # xcconfig, Info.plist, entitlements
@@ -25,8 +28,8 @@ This guide covers local development for MacActivity.
 - Xcode 16 or newer with a Swift 6 toolchain.
 - XcodeGen, when regenerating `MacActivity.xcodeproj` from `project.yml`.
 
-The package declares Swift tools version 6.2. Use the Xcode toolchain selected
-by `xcode-select` unless a task explicitly needs another toolchain.
+`Package.swift` declares Swift tools version 6.2 and depends on Sparkle from
+version 2.9.3.
 
 ## Clone
 
@@ -53,7 +56,7 @@ Run app and core tests from Xcode with the `MacActivity` scheme.
 
 ## SwiftPM Workflow
 
-Run the SwiftPM tests:
+Run SwiftPM tests:
 
 ```bash
 swift test
@@ -78,19 +81,47 @@ xcodebuild test \
   -destination 'platform=macOS'
 ```
 
+## Focused Debug Tools
+
+The project includes focused executables and command wrappers for local checks:
+
+- `DebugMemoryRelease`
+- `DebugActiveProcessMemory`
+- `DebugMemoryReleaseUI`
+- `DebugDiskCleanup`
+- `scripts/debug-memory-release.command`
+- `scripts/debug-active-process-memory.command`
+- `scripts/debug-memory-release-ui.command`
+- `scripts/debug-disk-cleanup.command`
+
+Use these for narrow cleanup or Actives checks before broad app validation.
+
 ## Architecture Notes
 
 `MacActivityCore` owns behavior that should be testable without the app shell:
 metric snapshots, history, providers, cleanup services, scheduling, formatting,
-preferences state, and presentation models.
+preferences state, update selection, and presentation models.
 
 `MacActivityApp` owns the macOS app shell: status item rendering, dashboard
-popover hosting, preferences window coordination, localization, and SwiftUI
-views.
+popover hosting, preferences window coordination, localization, Sparkle updater
+integration, and SwiftUI views.
 
 Prefer putting logic in `MacActivityCore` when it can be expressed without
 AppKit or SwiftUI. Keep app-shell code focused on lifecycle, presentation, and
 macOS integration.
+
+## Metrics
+
+Metric kinds currently include CPU, GPU, Disk, Swap, Memory, VRAM, Network,
+Battery, Temperature, and Fan.
+
+Sampling profiles tune cadence by app state:
+
+- `realtime`: provider defaults.
+- `balanced`: normal foreground sampling.
+- `background`: slower memory, disk, swap, VRAM, temperature, and fan updates.
+- `energySaver`: slowest nonessential sampling while keeping fast CPU and
+  network updates.
 
 ## Localization
 
@@ -109,11 +140,11 @@ When adding user-visible text:
 
 Update documentation in the same pull request as the behavior change:
 
-- User-visible app behavior: update [user-guide.md](user-guide.md).
+- User-visible app behavior: update [user-guide.md](/docs/user-guide.md).
 - Build, test, architecture, localization, or tooling changes: update this file.
-- Release workflow, versioning, artifact, or release-note behavior: update
-  [release.md](release.md).
-- PR policy or review requirements: update [CONTRIBUTING.md](CONTRIBUTING.md).
+- Release workflow, versioning, artifact, updater, or release-note behavior:
+  update [release.md](/docs/release.md).
+- PR policy or review requirements: update [CONTRIBUTING.md](/docs/CONTRIBUTING.md).
 
-Keep generated planning notes and temporary scratch files out of this repository
-unless they are intentionally promoted into `docs/`.
+Keep project docs under `docs/`. Do not add nested docs directories such as
+`docs/mac-activity`.
