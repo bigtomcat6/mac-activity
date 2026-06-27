@@ -286,6 +286,31 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testOverviewStorageSegmentsFallBackToEqualSlotsWithoutDiskTotalBytes() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                progress: 0.5
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: metrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.2),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.5, widthProgress: 0.25),
+            ]
+        )
+    }
+
     func testOverviewStorageLabelsAndConnectorsCollapseWhenSwapIsZero() {
         let metrics = [
             DashboardMetric(
