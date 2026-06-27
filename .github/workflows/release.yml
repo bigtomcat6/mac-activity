@@ -74,6 +74,12 @@ jobs:
           echo "::error::Final releases must use signing=developer-id."
           exit 1
 
+      - name: Require Developer ID for GitHub Release assets
+        if: ${{ inputs.create_github_release && inputs.signing != 'developer-id' }}
+        run: |
+          echo "::error::GitHub Release assets must use signing=developer-id."
+          exit 1
+
   ci:
     name: Selected CI
     needs: [preflight]
@@ -81,6 +87,7 @@ jobs:
     uses: ./.github/workflows/ci-checks.yml
     with:
       suite: ${{ inputs.ci_suite }}
+    secrets: inherit
 
   package:
     name: Package Release Artifact
@@ -198,12 +205,17 @@ jobs:
           info_plist="${app}/Contents/Info.plist"
           actual_version="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${info_plist}")"
           actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
+          actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
           if [[ "${actual_version}" != "${{ steps.release.outputs.version }}" ]]; then
             echo "::error::Expected CFBundleShortVersionString ${{ steps.release.outputs.version }}, got ${actual_version}"
             exit 1
           fi
           if [[ "${actual_build}" != "${{ steps.release.outputs.build }}" ]]; then
             echo "::error::Expected CFBundleVersion ${{ steps.release.outputs.build }}, got ${actual_build}"
+            exit 1
+          fi
+          if [[ "${actual_release_tag}" != "${{ steps.release.outputs.tag }}" ]]; then
+            echo "::error::Expected MacActivityReleaseTag ${{ steps.release.outputs.tag }}, got ${actual_release_tag}"
             exit 1
           fi
 
@@ -214,31 +226,8 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
         run: |
-          if [[ -z "${APPLE_ID}" ]]; then
-            echo "::error::APPLE_ID secret is required."
-            exit 1
-          fi
-          if [[ -z "${APPLE_APP_SPECIFIC_PASSWORD}" ]]; then
-            echo "::error::APPLE_APP_SPECIFIC_PASSWORD secret is required."
-            exit 1
-          fi
-          if [[ -z "${APPLE_TEAM_ID}" ]]; then
-            echo "::error::APPLE_TEAM_ID variable is required."
-            exit 1
-          fi
-
           app="${RUNNER_TEMP}/MacActivityRelease/Build/Products/Release/Mac Activity.app"
-          notarization_zip="${RUNNER_TEMP}/MacActivity-notarization.zip"
-          ditto -c -k --keepParent "${app}" "${notarization_zip}"
-
-          xcrun notarytool submit "${notarization_zip}" \
-            --apple-id "${APPLE_ID}" \
-            --team-id "${APPLE_TEAM_ID}" \
-            --password "${APPLE_APP_SPECIFIC_PASSWORD}" \
-            --wait
-          xcrun stapler staple "${app}"
-          xcrun stapler validate "${app}"
-          spctl --assess --type execute -vv "${app}"
+          .github/scripts/notarize_and_staple.sh --path "${app}"
 
       - name: Package release artifacts
         id: package
@@ -271,18 +260,10 @@ jobs:
           .github/scripts/create_dmg.sh \
             --app "${app}" \
             --output "${dmg_path}" \
-            --volume-name "${{ steps.release.outputs.title }}" \
+            --volume-name "${{ steps.release.outputs.app_name }} ${{ steps.release.outputs.title }}" \
             --background assets/dmg/background.png
 
           checksums_path="dist/${{ steps.release.outputs.artifact_stem }}-SHA256SUMS.txt"
-          (
-            cd dist
-            shasum -a 256 \
-              "$(basename "${dmg_path}")" \
-              "$(basename "${zip_path}")" \
-              "$(basename "${dsym_zip_path}")" \
-              > "$(basename "${checksums_path}")"
-          )
 
           {
             echo "zip_path=${zip_path}"
@@ -290,6 +271,82 @@ jobs:
             echo "dmg_path=${dmg_path}"
             echo "checksums_path=${checksums_path}"
           } >> "${GITHUB_OUTPUT}"
+
+      - name: Sign Developer ID disk image
+        if: ${{ inputs.signing == 'developer-id' }}
+        env:
+          DEVELOPER_ID_APPLICATION_IDENTITY: ${{ vars.DEVELOPER_ID_APPLICATION_IDENTITY }}
+        run: |
+          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          signing_identity="${DEVELOPER_ID_APPLICATION_IDENTITY:-Developer ID Application}"
+          codesign \
+            --force \
+            --sign "${signing_identity}" \
+            --timestamp \
+            "${dmg_path}"
+          codesign --verify --verbose=4 "${dmg_path}"
+          codesign -dvvv "${dmg_path}"
+
+      - name: Notarize Developer ID disk image
+        if: ${{ inputs.signing == 'developer-id' }}
+        env:
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+        run: |
+          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          .github/scripts/notarize_and_staple.sh --path "${dmg_path}"
+
+      - name: Validate packaged disk image contents
+        if: ${{ inputs.signing == 'developer-id' }}
+        run: |
+          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          mount_point="$(mktemp -d "${RUNNER_TEMP}/MacActivityMountedDMG.XXXXXX")"
+
+          cleanup() {
+            hdiutil detach "${mount_point}" >/dev/null 2>&1 || hdiutil detach "${mount_point}" -force >/dev/null 2>&1 || true
+            rm -rf "${mount_point}"
+          }
+
+          trap cleanup EXIT
+
+          hdiutil attach -readonly -nobrowse -mountpoint "${mount_point}" "${dmg_path}"
+
+          app="${mount_point}/Mac Activity.app"
+          if [[ ! -d "${app}" ]]; then
+            echo "::error::Expected Mac Activity.app at DMG root."
+            exit 1
+          fi
+
+          applications_alias="${mount_point}/Applications"
+          if [[ ! -f "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias at DMG root."
+            exit 1
+          fi
+          if [[ -L "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias, got symlink."
+            exit 1
+          fi
+          if ! file "${applications_alias}" | grep -q "MacOS Alias file"; then
+            echo "::error::Applications item is not a Finder alias."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+          syspolicy_check distribution "${app}"
+
+      - name: Generate release checksums
+        run: |
+          checksums_path="${{ steps.package.outputs.checksums_path }}"
+          (
+            cd dist
+            shasum -a 256 \
+              "$(basename "${{ steps.package.outputs.dmg_path }}")" \
+              "$(basename "${{ steps.package.outputs.zip_path }}")" \
+              "$(basename "${{ steps.package.outputs.dsym_path }}")" \
+              > "$(basename "${checksums_path}")"
+          )
 
       - name: Generate release notes
         id: notes

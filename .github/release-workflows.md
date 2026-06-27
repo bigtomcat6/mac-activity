@@ -90,9 +90,14 @@ It validates `CFBundleShortVersionString` and `CFBundleVersion`, creates DMG,
 zip, and dSYM zip artifacts, writes a single `SHA256SUMS.txt` manifest, and
 uploads them as workflow artifacts.
 
-`signing=local` uses ad-hoc signing for internal artifacts and smoke checks.
-`signing=project` is reserved for distribution signing after the required
-certificates and runner secrets are configured.
+`signing=local` uses ad-hoc signing for internal artifacts and smoke checks
+only. GitHub Release assets must use `signing=developer-id` so the app is
+Developer ID signed, notarized, stapled, and Gatekeeper-assessed. The Developer
+ID path requires the `release-signing` environment secrets and variables.
+
+`signing=project` uses the checked-in Xcode project signing settings, but it is
+not the distribution path unless the workflow is extended to notarize that
+output too.
 
 ## GitHub Release
 
@@ -110,7 +115,7 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
-  -f signing=local \
+  -f signing=developer-id \
   -f create_github_release=false
 ```
 
@@ -124,6 +129,6 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f build=1 \
   -f ci_suite=full \
-  -f signing=local \
+  -f signing=developer-id \
   -f create_github_release=true
 ```

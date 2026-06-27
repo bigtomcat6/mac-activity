@@ -41,12 +41,18 @@ enum AppLocalization {
         case temperatureDashboardCPU = "temperature.dashboard.cpu"
         case temperatureDashboardBattery = "temperature.dashboard.battery"
         case preferencesLaunchAtLogin = "preferences.launchAtLogin"
+        case preferencesCurrentVersion = "preferences.currentVersion"
+        case preferencesCheckForUpdates = "preferences.checkForUpdates"
+        case preferencesShowUpdateChannel = "preferences.showUpdateChannel"
+        case preferencesHideUpdateChannel = "preferences.hideUpdateChannel"
+        case preferencesUpdateChannel = "preferences.updateChannel"
         case preferencesLanguage = "preferences.language"
         case preferencesLanguageHelp = "preferences.languageHelp"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
         case preferencesHardwareBatteryPercentage = "preferences.hardwareBatteryPercentage"
         case preferencesHardwareBatteryPercentageHelp = "preferences.hardwareBatteryPercentageHelp"
+        case preferencesProcessApplicationIdentifier = "preferences.processApplicationIdentifier"
         case preferencesDiskCleanupScope = "preferences.diskCleanupScope"
         case preferencesDiskCleanupHelp = "preferences.diskCleanupHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
@@ -54,6 +60,9 @@ enum AppLocalization {
         case languageSystem = "language.system"
         case languageEnglish = "language.english"
         case languageSimplifiedChinese = "language.simplifiedChinese"
+        case updateChannelAlpha = "update.channel.alpha"
+        case updateChannelBeta = "update.channel.beta"
+        case updateChannelRelease = "update.channel.release"
         case diskCleanupCategoryUserCaches = "diskCleanup.category.userCaches"
         case diskCleanupCategoryTrash = "diskCleanup.category.trash"
         case diskCleanupCategoryUserLogs = "diskCleanup.category.userLogs"
@@ -240,6 +249,18 @@ enum AppLocalization {
             return string(.languageSimplifiedChinese, bundle: bundle)
         }
     }
+
+    static func updateChannelTitle(for channel: UpdateChannel, bundle: Bundle? = nil) -> String {
+        switch channel {
+        case .alpha:
+            return string(.updateChannelAlpha, bundle: bundle)
+        case .beta:
+            return string(.updateChannelBeta, bundle: bundle)
+        case .release:
+            return string(.updateChannelRelease, bundle: bundle)
+        }
+    }
+
     static func diskCleanupCategoryTitle(for kind: DiskCleanupCategoryKind, bundle: Bundle? = nil) -> String {
         switch kind {
         case .userCaches:

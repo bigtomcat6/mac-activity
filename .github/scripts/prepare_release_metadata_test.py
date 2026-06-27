@@ -32,14 +32,23 @@ class PrepareReleaseMetadataTests(unittest.TestCase):
 
     def test_updates_shared_xcconfig_versions(self):
         updated = prepare_release_metadata.update_xcconfig(
-            "MARKETING_VERSION = 0.1.0\nCURRENT_PROJECT_VERSION = 1\n",
+            (
+                "MARKETING_VERSION = 0.1.0\n"
+                "CURRENT_PROJECT_VERSION = 1\n"
+                "MAC_ACTIVITY_RELEASE_TAG = v0.1.0\n"
+            ),
             version="1.2.3",
             build="45",
+            release_tag="v1.2.3-beta.45",
         )
 
         self.assertEqual(
             updated,
-            "MARKETING_VERSION = 1.2.3\nCURRENT_PROJECT_VERSION = 45\n",
+            (
+                "MARKETING_VERSION = 1.2.3\n"
+                "CURRENT_PROJECT_VERSION = 45\n"
+                "MAC_ACTIVITY_RELEASE_TAG = v1.2.3-beta.45\n"
+            ),
         )
 
     def test_rejects_invalid_version(self):

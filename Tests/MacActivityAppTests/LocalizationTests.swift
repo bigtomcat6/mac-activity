@@ -11,6 +11,15 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.string(.preferences, bundle: english), "Preferences")
         XCTAssertEqual(AppLocalization.string(.preferences, bundle: simplifiedChinese), "偏好设置")
 
+        XCTAssertEqual(AppLocalization.string(.preferencesCurrentVersion, bundle: english), "Current version")
+        XCTAssertEqual(AppLocalization.string(.preferencesCurrentVersion, bundle: simplifiedChinese), "当前版本")
+        XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: english), "Check for Updates")
+        XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: simplifiedChinese), "检查更新")
+        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: english), "Show update channel")
+        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: simplifiedChinese), "显示更新频道")
+        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: english), "Hide update channel")
+        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: simplifiedChinese), "隐藏更新频道")
+
         XCTAssertEqual(AppLocalization.string(.live, bundle: english), "Live")
         XCTAssertEqual(AppLocalization.string(.live, bundle: simplifiedChinese), "实时")
 
@@ -36,6 +45,22 @@ final class LocalizationTests: XCTestCase {
             AppLocalization.string(.preferencesHardwareBatteryPercentageHelp, bundle: simplifiedChinese),
             "可用时使用 AppleSmartBattery 的原始容量；不可用时回退为系统百分比。"
         )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: english),
+            "Show application ID in Actives process list"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: simplifiedChinese),
+            "在“活跃”进程列表中显示应用 ID"
+        )
+        XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: english), "Update channel")
+        XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: simplifiedChinese), "选择更新频道")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: english), "Alpha")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .beta, bundle: english), "Beta")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .release, bundle: english), "Release")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: simplifiedChinese), "Alpha")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .beta, bundle: simplifiedChinese), "Beta")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .release, bundle: simplifiedChinese), "Release")
 
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: english), "Cleanup scope")
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: simplifiedChinese), "清理范围")

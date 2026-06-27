@@ -26,7 +26,12 @@ enum DashboardCardLayout {
     }
 
     static func chartHeightBehavior(for kind: MetricKind) -> DashboardChartHeightBehavior {
-        kind == .network ? .fillsRemainingHeight : .fixed(compactChartHeight)
+        switch kind {
+        case .memory, .network:
+            .fillsRemainingHeight
+        default:
+            .fixed(compactChartHeight)
+        }
     }
 }
 
@@ -37,7 +42,31 @@ enum DashboardChartHeightBehavior: Equatable {
 
 enum DashboardOverviewSlot: Equatable {
     case usage
+    case storage
     case metric(MetricKind)
+}
+
+enum DashboardStorageCardContent: Hashable {
+    case details
+    case bar
+}
+
+struct DashboardStorageUsageSegment: Equatable, Identifiable, Sendable {
+    var kind: MetricKind
+    var startProgress: Double
+    var widthProgress: Double
+
+    var id: MetricKind { kind }
+}
+
+struct DashboardStorageUsageLabel: Equatable, Identifiable, Sendable {
+    var kind: MetricKind
+    var startProgress: Double
+    var rowIndex: Int
+    var rowCount: Int = 2
+    var endProgress: Double?
+
+    var id: MetricKind { kind }
 }
 
 enum DashboardOverviewLayout {
@@ -47,13 +76,31 @@ enum DashboardOverviewLayout {
         GridItem(.flexible(minimum: 0), spacing: 12),
         GridItem(.flexible(minimum: 0), spacing: 12),
     ]
-    static let topRowHeight = DashboardCardLayout.compactChartMinHeight
+    static let topSplitCardHeight = compactTrendCardHeight
+    static let topRowHeight = topSplitCardHeight * 2 + sectionSpacing
     static let usageLabelColumnWidth: CGFloat = 54
     static let usageValueColumnWidth: CGFloat = 44
     static let usageRowSpacing: CGFloat = 10
     static let usageBarHeight: CGFloat = 8
-    static let usageContentMaxWidth: CGFloat = 180
+    static let usageContentMaxWidth = CGFloat.infinity
     static let usageCardContentAlignment: Alignment = .center
+    static let storageContentMaxWidth: CGFloat = 180
+    static let storageContentSpacing: CGFloat = 0
+    static let storageBarHeight: CGFloat = usageBarHeight
+    static let storageDetailRowCount = 2
+    static let storageDetailRowHeight: CGFloat = 14
+    static let storageDetailRowSpacing: CGFloat = 2
+    static let storageDetailBarSpacing: CGFloat = 4
+    static let storageDetailMarkerWidth: CGFloat = 1
+    static let storageDetailIconCenterOffset: CGFloat = 7
+    static let storageSwapMinimumVisibleWidth = 0.02
+    static let storageDetailMarkerOpacity: Double = 0.28
+    static let storageDetailTrailingFallbackMinimumWidth: CGFloat = 92
+    static let storageDetailContentAlignment: Alignment = .leading
+    static let storageDetailTextAlignment: TextAlignment = .leading
+    static let storageDetailSpacing: CGFloat = 4
+    static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
+    static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
@@ -72,7 +119,8 @@ enum DashboardOverviewLayout {
     static func topRowSlots(for metrics: [DashboardMetric]) -> [DashboardOverviewSlot] {
         let byKind = metricsByKind(metrics)
         var slots: [DashboardOverviewSlot] = []
-        if hasUsageMetric(in: byKind) { slots.append(.usage) }
+        if hasComputeUsageMetric(in: byKind) { slots.append(.usage) }
+        if hasStorageUsageMetric(in: byKind) { slots.append(.storage) }
         if byKind[.memory] != nil { slots.append(.metric(.memory)) }
         return slots
     }
@@ -93,18 +141,178 @@ enum DashboardOverviewLayout {
     }
 
     static func hasUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
-        !usageMetricKinds(in: metricsByKind).isEmpty
+        hasComputeUsageMetric(in: metricsByKind) || hasStorageUsageMetric(in: metricsByKind)
     }
 
-    static func usageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
-        [.cpu, .gpu, .disk, .swap].filter { metricsByKind[$0] != nil }
+    static func hasComputeUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
+        !computeUsageMetricKinds(in: metricsByKind).isEmpty
+    }
+
+    static func hasStorageUsageMetric(in metricsByKind: [MetricKind: DashboardMetric]) -> Bool {
+        !storageUsageMetricKinds(in: metricsByKind).isEmpty
+    }
+
+    static func computeUsageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
+        [.cpu, .gpu].filter { metricsByKind[$0] != nil }
+    }
+
+    static func storageUsageMetricKinds(in metricsByKind: [MetricKind: DashboardMetric]) -> [MetricKind] {
+        [.disk, .swap].filter { kind in
+            guard let metric = metricsByKind[kind] else { return false }
+            return isVisibleStorageMetric(metric)
+        }
+    }
+
+    static func storageDetailIconName(for kind: MetricKind) -> String? {
+        switch kind {
+        case .disk:
+            return "externaldrive"
+        case .swap:
+            return "memorychip"
+        default:
+            return nil
+        }
     }
 
     static func usageProgress(for value: String) -> Double {
         let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "%", with: "")
         guard let percent = Double(percentText) else { return 0 }
-        return min(max(percent / 100, 0), 1)
+        return clampedProgress(percent / 100)
+    }
+
+    static func usageProgress(for metric: DashboardMetric) -> Double {
+        if let progress = metric.progress {
+            return clampedProgress(progress)
+        }
+        return usageProgress(for: metric.value)
+    }
+
+    static func storageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        let visibleMetrics = visibleStorageUsageMetrics(in: metrics)
+        guard let diskTotalBytes = metrics.first(where: { $0.kind == .disk })?.totalBytes,
+              diskTotalBytes > 0 else {
+            return equalSlotStorageUsageSegments(for: visibleMetrics)
+        }
+
+        var startProgress = 0.0
+        return visibleMetrics.map { metric in
+            let widthProgress = min(storageWidthProgress(for: metric, diskTotalBytes: diskTotalBytes), max(0, 1 - startProgress))
+            let segment = DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: startProgress,
+                widthProgress: widthProgress
+            )
+            startProgress = clampedProgress(startProgress + widthProgress)
+            return segment
+        }
+    }
+
+    static func storageUsageLabels(for metrics: [DashboardMetric]) -> [DashboardStorageUsageLabel] {
+        let segments = storageUsageSegments(for: metrics)
+        return segments.enumerated().map { index, segment in
+            DashboardStorageUsageLabel(
+                kind: segment.kind,
+                startProgress: segment.startProgress,
+                rowIndex: index,
+                rowCount: segments.count,
+                endProgress: clampedProgress(segment.startProgress + segment.widthProgress)
+            )
+        }
+    }
+
+    static func visibleStorageUsageMetrics(in metrics: [DashboardMetric]) -> [DashboardMetric] {
+        metrics.filter(isVisibleStorageMetric)
+    }
+
+    static func storageDetailHeight(for metrics: [DashboardMetric]) -> CGFloat {
+        storageDetailHeight(rowCount: storageUsageLabels(for: metrics).count)
+    }
+
+    static func storageConnectorYPosition(for label: DashboardStorageUsageLabel) -> CGFloat {
+        CGFloat(label.rowIndex) * (storageDetailRowHeight + storageDetailRowSpacing) + storageDetailRowHeight
+    }
+
+    static func storageConnectorHeight(for label: DashboardStorageUsageLabel) -> CGFloat {
+        max(0, storageDetailHeight(rowCount: label.rowCount) - storageConnectorYPosition(for: label))
+    }
+
+    static func storageDetailUsesTrailingFallback(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Bool {
+        label.kind == .swap
+            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageDetailTrailingFallbackMinimumWidth
+    }
+
+    static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
+            ? 0
+            : storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
+    }
+
+    static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
+            ? containerWidth
+            : max(0, containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth))
+    }
+
+    static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : .leading
+    }
+
+    static func storageDetailRowTextAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> TextAlignment {
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : storageDetailTextAlignment
+    }
+
+    static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        let markerProgress = label.kind == .swap ? label.endProgress ?? label.startProgress : label.startProgress
+        let iconOffset = label.kind == .swap || storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        return min(
+            max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
+            max(0, containerWidth - storageDetailMarkerWidth)
+        )
+    }
+
+    static func storageDetailRowAnchorXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
+        min(max(CGFloat(label.startProgress) * containerWidth, 0), containerWidth)
+    }
+
+    private static func equalSlotStorageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
+        let segmentCount = max(metrics.count, 1)
+        let segmentWidth = 1 / Double(segmentCount)
+        return metrics.enumerated().map { index, metric in
+            DashboardStorageUsageSegment(
+                kind: metric.kind,
+                startProgress: segmentWidth * Double(index),
+                widthProgress: segmentWidth * usageProgress(for: metric)
+            )
+        }
+    }
+
+    private static func isVisibleStorageMetric(_ metric: DashboardMetric) -> Bool {
+        guard metric.kind == .swap else { return true }
+        if let usedBytes = metric.usedBytes {
+            return usedBytes > 0
+        }
+        return usageProgress(for: metric) > 0
+    }
+
+    private static func storageDetailHeight(rowCount: Int) -> CGFloat {
+        guard rowCount > 0 else { return 0 }
+        return storageDetailRowHeight * CGFloat(rowCount)
+            + storageDetailRowSpacing * CGFloat(max(0, rowCount - 1))
+            + storageDetailBarSpacing
+    }
+
+    private static func storageWidthProgress(for metric: DashboardMetric, diskTotalBytes: UInt64) -> Double {
+        guard let usedBytes = metric.usedBytes else { return usageProgress(for: metric) }
+        let widthProgress = Double(usedBytes) / Double(diskTotalBytes)
+        guard metric.kind == .swap, usedBytes > 0 else {
+            return clampedProgress(widthProgress)
+        }
+        return clampedProgress(max(widthProgress, storageSwapMinimumVisibleWidth))
+    }
+
+    private static func clampedProgress(_ progress: Double) -> Double {
+        min(max(progress, 0), 1)
     }
 
     static let usageHeaderTitle: String? = nil
@@ -290,6 +498,20 @@ struct DashboardView: View {
     let openPreferences: () -> Void
     let quitApplication: () -> Void
 
+    init(
+        dashboardModel: DashboardModel,
+        preferencesController: PreferencesController,
+        openPreferences: @escaping () -> Void,
+        quitApplication: @escaping () -> Void,
+        initialSelectedTab: DashboardTab = .overview
+    ) {
+        self.dashboardModel = dashboardModel
+        self.preferencesController = preferencesController
+        self.openPreferences = openPreferences
+        self.quitApplication = quitApplication
+        self._selectedTab = State(initialValue: initialSelectedTab)
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             header
@@ -402,7 +624,12 @@ struct DashboardView: View {
     }
 
     private var activesContent: some View {
-        ActiveCleanReleaseView(model: activeCleanupModel, refreshTrigger: activesRefreshTrigger)
+        ActiveCleanReleaseView(
+            model: activeCleanupModel,
+            refreshTrigger: activesRefreshTrigger,
+            usedMemoryBytes: Self.currentUsedMemoryBytes(in: dashboardModel.metrics) ?? 0,
+            showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
+        )
             .padding(18)
     }
 
@@ -421,6 +648,10 @@ struct DashboardView: View {
 
     static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
         selectedTab == .actives ? currentTrigger + 1 : currentTrigger
+    }
+
+    static func currentUsedMemoryBytes(in metrics: [DashboardMetric]) -> UInt64? {
+        metrics.first { $0.kind == .memory }?.memoryTrend?.samples.last?.usedBytes
     }
 
     private func applyDiskCleanupCategories(_ categories: [DiskCleanupCategoryKind], refreshActives: Bool) {
@@ -465,17 +696,38 @@ private struct OverviewDashboardContent: View {
         DashboardOverviewLayout.hasUsageMetric(in: metricsByKind) || metricsByKind[.memory] != nil
     }
 
+    private var computeUsageMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.computeUsageMetricKinds(in: metricsByKind).compactMap { metricsByKind[$0] }
+    }
+
+    private var storageUsageMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.storageUsageMetricKinds(in: metricsByKind).compactMap { metricsByKind[$0] }
+    }
+
     @ViewBuilder
     private var topRegion: some View {
         if hasTopRegion {
             LazyVGrid(columns: DashboardOverviewLayout.topRowColumns, spacing: DashboardOverviewLayout.sectionSpacing) {
-                if DashboardOverviewLayout.hasUsageMetric(in: metricsByKind) {
-                    ResourceUsageCard(
-                        metrics: DashboardOverviewLayout.usageMetricKinds(in: metricsByKind).compactMap {
-                            metricsByKind[$0]
+                if !computeUsageMetrics.isEmpty || !storageUsageMetrics.isEmpty {
+                    VStack(spacing: DashboardOverviewLayout.sectionSpacing) {
+                        if !computeUsageMetrics.isEmpty {
+                            ResourceUsageCard(metrics: computeUsageMetrics)
+                                .frame(
+                                    height: storageUsageMetrics.isEmpty
+                                        ? DashboardOverviewLayout.topRowHeight
+                                        : DashboardOverviewLayout.topSplitCardHeight
+                                )
                         }
-                    )
-                        .frame(height: DashboardOverviewLayout.topRowHeight)
+                        if !storageUsageMetrics.isEmpty {
+                            StorageUsageCard(metrics: storageUsageMetrics)
+                                .frame(
+                                    height: computeUsageMetrics.isEmpty
+                                        ? DashboardOverviewLayout.topRowHeight
+                                        : DashboardOverviewLayout.topSplitCardHeight
+                                )
+                        }
+                    }
+                    .frame(height: DashboardOverviewLayout.topRowHeight, alignment: .top)
                 }
                 if let memory = metricsByKind[.memory] {
                     MetricCard(metric: memory)
@@ -531,33 +783,11 @@ private struct OverviewDashboardContent: View {
 }
 
 struct RAMSegmentBarsLayout {
-    static let rollingWindowDuration: TimeInterval = 5 * 60
+    private static let bucketDuration: TimeInterval = 60
 
     static func displaySampleBudget(for containerSize: CGSize) -> Int {
         guard containerSize.width > 0 else { return 1 }
         return min(96, max(12, Int((containerSize.width / 5).rounded())))
-    }
-
-    static func displaySamples(
-        for samples: [DashboardMemoryTrendSample],
-        containerSize: CGSize,
-        referenceDate: Date
-    ) -> [DashboardMemoryTrendSample] {
-        let budget = displaySampleBudget(for: containerSize)
-        let windowStart = referenceDate.addingTimeInterval(-rollingWindowDuration)
-        let recentSamples = samples.filter {
-            $0.timestamp >= windowStart && $0.timestamp <= referenceDate
-        }
-
-        guard recentSamples.count > budget, budget > 1 else { return recentSamples }
-
-        let scale = Double(recentSamples.count - 1) / Double(budget - 1)
-        return (0..<budget).reduce(into: []) { result, index in
-            let sampleIndex = Int((Double(index) * scale).rounded())
-            guard recentSamples.indices.contains(sampleIndex),
-                  result.last?.timestamp != recentSamples[sampleIndex].timestamp else { return }
-            result.append(recentSamples[sampleIndex])
-        }
     }
 
     static func displaySlots(
@@ -565,17 +795,192 @@ struct RAMSegmentBarsLayout {
         containerSize: CGSize,
         referenceDate: Date
     ) -> [RAMSegmentBarSlot] {
-        let budget = displaySampleBudget(for: containerSize)
-        let displayedSamples = displaySamples(
-            for: samples,
-            containerSize: containerSize,
-            referenceDate: referenceDate
-        )
-        let emptySlotCount = max(0, budget - displayedSamples.count)
-        let emptySlots = Array(repeating: RAMSegmentBarSlot(sample: nil), count: emptySlotCount)
-        let sampleSlots = displayedSamples.map { RAMSegmentBarSlot(sample: $0) }
+        let slotCount = displaySampleBudget(for: containerSize)
+        let visibleSamples = samples
+            .filter { $0.timestamp <= referenceDate }
+            .sorted { $0.timestamp < $1.timestamp }
+        let latestBucketStart = bucketStart(containing: referenceDate)
 
-        return emptySlots + sampleSlots
+        guard let oldestSample = visibleSamples.first else {
+            return placeholderSlots(for: [latestBucketStart], slotCount: slotCount)
+        }
+
+        let bucketStarts = bucketStarts(
+            from: bucketStart(containing: oldestSample.timestamp),
+            through: latestBucketStart
+        )
+        let samplesByBucket = Dictionary(
+            uniqueKeysWithValues: bucketStarts.compactMap { bucketStart -> (Date, DashboardMemoryTrendSample)? in
+                guard let sample = averagedSample(
+                    samplesInBucket(
+                        startingAt: bucketStart,
+                        samples: visibleSamples,
+                        referenceDate: referenceDate
+                    ),
+                    bucketStart: bucketStart
+                ) else {
+                    return nil
+                }
+
+                return (bucketStart, sample)
+            }
+        )
+        let latestSample = samplesInBucket(
+            startingAt: latestBucketStart,
+            samples: visibleSamples,
+            referenceDate: referenceDate
+        ).max { $0.timestamp < $1.timestamp }
+
+        let placeholderSlots = placeholderSlots(for: bucketStarts, slotCount: slotCount)
+        let sampledSlots = bucketStarts.compactMap { bucketStart -> RAMSegmentBarSlot? in
+            if bucketStart == latestBucketStart {
+                guard let latestSample else { return nil }
+                return RAMSegmentBarSlot(
+                    bucketStart: latestBucketStart,
+                    sample: latestSample,
+                    valueSemantics: .latestSample
+                )
+            }
+
+            guard let sample = samplesByBucket[bucketStart] else { return nil }
+            return RAMSegmentBarSlot(bucketStart: bucketStart, sample: sample)
+        }
+
+        guard !sampledSlots.isEmpty else { return placeholderSlots }
+
+        let compactedSlots = compactedSampleSlots(sampledSlots, slotCount: slotCount)
+        let leadingPlaceholderCount = max(0, slotCount - compactedSlots.count)
+        return Array(placeholderSlots.prefix(leadingPlaceholderCount)) + compactedSlots
+    }
+
+    static func tooltipTimeLabel(for slot: RAMSegmentBarSlot) -> String {
+        switch slot.valueSemantics {
+        case .latestSample:
+            guard let timestamp = slot.sample?.timestamp else {
+                return bucketEndLabel(startingAt: slot.bucketStart)
+            }
+            return timestamp.formatted(.dateTime.hour().minute().second())
+        case .minuteAverage:
+            return bucketEndLabel(startingAt: slot.bucketStart)
+        }
+    }
+
+    private static func bucketEndLabel(startingAt bucketStart: Date) -> String {
+        let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
+        return bucketEnd.formatted(.dateTime.hour().minute())
+    }
+
+    private static func bucketStart(containing date: Date) -> Date {
+        let bucketInterval = floor(date.timeIntervalSinceReferenceDate / bucketDuration) * bucketDuration
+        return Date(timeIntervalSinceReferenceDate: bucketInterval)
+    }
+
+    private static func bucketStarts(from start: Date, through end: Date) -> [Date] {
+        let bucketCount = max(1, Int(end.timeIntervalSince(start) / bucketDuration) + 1)
+        return (0..<bucketCount).map { index in
+            start.addingTimeInterval(TimeInterval(index) * bucketDuration)
+        }
+    }
+
+    private static func placeholderSlots(for bucketStarts: [Date], slotCount: Int) -> [RAMSegmentBarSlot] {
+        guard !bucketStarts.isEmpty else { return [] }
+        return (0..<slotCount).map { slotIndex in
+            let bucketIndex = bucketIndex(
+                forSlotIndex: slotIndex,
+                slotCount: slotCount,
+                bucketCount: bucketStarts.count
+            )
+            return RAMSegmentBarSlot(bucketStart: bucketStarts[bucketIndex], sample: nil)
+        }
+    }
+
+    private static func samplesInBucket(
+        startingAt bucketStart: Date,
+        samples: [DashboardMemoryTrendSample],
+        referenceDate: Date
+    ) -> [DashboardMemoryTrendSample] {
+        let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
+        return samples.filter {
+            $0.timestamp >= bucketStart
+                && $0.timestamp < bucketEnd
+                && $0.timestamp <= referenceDate
+        }
+    }
+
+    private static func bucketIndex(forSlotIndex slotIndex: Int, slotCount: Int, bucketCount: Int) -> Int {
+        guard bucketCount > 1 else { return 0 }
+        guard slotCount > 1 else { return bucketCount - 1 }
+        return min(bucketCount - 1, slotIndex * bucketCount / slotCount)
+    }
+
+    static func compactedSampleSlots(
+        _ slots: [RAMSegmentBarSlot],
+        slotCount: Int
+    ) -> [RAMSegmentBarSlot] {
+        guard slots.count > slotCount else { return slots }
+
+        return (0..<slotCount).compactMap { slotIndex in
+            let startIndex = slotIndex * slots.count / slotCount
+            let endIndex = min(slots.count, (slotIndex + 1) * slots.count / slotCount)
+            let bucketSlots = Array(slots[startIndex..<endIndex])
+
+            if slotIndex == slotCount - 1,
+               bucketSlots.last?.valueSemantics == .latestSample {
+                return bucketSlots.last
+            }
+
+            guard let bucketStart = bucketSlots.first?.bucketStart,
+                  let sample = averagedSample(bucketSlots.compactMap(\.sample), bucketStart: bucketStart) else {
+                return nil
+            }
+
+            return RAMSegmentBarSlot(bucketStart: bucketStart, sample: sample)
+        }
+    }
+
+    private static func averagedSample(
+        _ samples: [DashboardMemoryTrendSample],
+        bucketStart: Date
+    ) -> DashboardMemoryTrendSample? {
+        guard !samples.isEmpty else { return nil }
+
+        let usedBytes = averageBytes(samples, \.usedBytes)
+        let totalBytes = averageBytes(samples, \.totalBytes)
+        let pressurePercent = totalBytes > 0
+            ? Double(usedBytes) / Double(totalBytes) * 100
+            : averagePressurePercent(samples)
+
+        return DashboardMemoryTrendSample(
+            timestamp: bucketStart,
+            pressurePercent: min(max(pressurePercent, 0), 100),
+            usedBytes: usedBytes,
+            totalBytes: totalBytes,
+            breakdown: MemoryBreakdown(
+                wiredBytes: averageBreakdownBytes(samples, \.wiredBytes),
+                activeBytes: averageBreakdownBytes(samples, \.activeBytes),
+                compressedBytes: averageBreakdownBytes(samples, \.compressedBytes),
+                cachedBytes: averageBreakdownBytes(samples, \.cachedBytes),
+                availableBytes: averageBreakdownBytes(samples, \.availableBytes)
+            )
+        )
+    }
+
+    private static func averageBytes(
+        _ samples: [DashboardMemoryTrendSample],
+        _ keyPath: KeyPath<DashboardMemoryTrendSample, UInt64>
+    ) -> UInt64 {
+        UInt64((Double(samples.reduce(UInt64(0)) { $0 + $1[keyPath: keyPath] }) / Double(samples.count)).rounded())
+    }
+
+    private static func averageBreakdownBytes(
+        _ samples: [DashboardMemoryTrendSample],
+        _ keyPath: KeyPath<MemoryBreakdown, UInt64>
+    ) -> UInt64 {
+        UInt64((Double(samples.reduce(UInt64(0)) { $0 + $1.breakdown[keyPath: keyPath] }) / Double(samples.count)).rounded())
+    }
+
+    private static func averagePressurePercent(_ samples: [DashboardMemoryTrendSample]) -> Double {
+        samples.reduce(0) { $0 + $1.pressurePercent } / Double(samples.count)
     }
 
     static func displaySegments(for sample: DashboardMemoryTrendSample) -> [RAMSegmentBarComponent] {
@@ -646,7 +1051,14 @@ struct RAMSegmentBarsLayout {
 }
 
 struct RAMSegmentBarSlot: Equatable, Sendable {
+    enum ValueSemantics: Equatable, Sendable {
+        case minuteAverage
+        case latestSample
+    }
+
+    var bucketStart: Date
     var sample: DashboardMemoryTrendSample?
+    var valueSemantics: ValueSemantics = .minuteAverage
 }
 
 struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
@@ -676,13 +1088,18 @@ struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
     var id: Kind { kind }
 }
 
-private struct RAMSegmentBars: View {
+struct RAMSegmentBars: View {
     let trend: DashboardMemoryTrend
     @State private var hoveredSlotIndex: Int?
 
+    init(trend: DashboardMemoryTrend, hoveredSlotIndex: Int? = nil) {
+        self.trend = trend
+        self._hoveredSlotIndex = State(initialValue: hoveredSlotIndex)
+    }
+
     var body: some View {
         GeometryReader { proxy in
-            let referenceDate = trend.samples.last?.timestamp ?? .now
+            let referenceDate = Date.now
             let slots = RAMSegmentBarsLayout.displaySlots(
                 for: trend.samples,
                 containerSize: proxy.size,
@@ -690,8 +1107,8 @@ private struct RAMSegmentBars: View {
             )
             let barWidth = RAMSegmentBarsLayout.barWidth(slotCount: slots.count, containerWidth: proxy.size.width)
             let spacing = RAMSegmentBarsLayout.spacing(slotCount: slots.count)
-            let hoveredSample = hoveredSlotIndex.flatMap { index in
-                slots.indices.contains(index) ? slots[index].sample : nil
+            let hoveredSlot = hoveredSlotIndex.flatMap { index in
+                slots.indices.contains(index) ? slots[index] : nil
             }
 
             ZStack(alignment: .topLeading) {
@@ -711,8 +1128,8 @@ private struct RAMSegmentBars: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 .animation(DashboardMotion.valueAnimation, value: slots)
 
-                if let hoveredSample, let hoveredSlotIndex {
-                    RAMSegmentTooltip(sample: hoveredSample)
+                if let hoveredSlot, hoveredSlot.sample != nil, let hoveredSlotIndex {
+                    RAMSegmentTooltip(slot: hoveredSlot)
                         .fixedSize()
                         .position(tooltipPosition(
                             slotIndex: hoveredSlotIndex,
@@ -824,23 +1241,30 @@ private struct RAMSegmentLegend: View {
 
 private struct RAMSegmentTooltip: View {
     @Environment(\.appearsActive) private var appearsActive
-    let sample: DashboardMemoryTrendSample
+    let slot: RAMSegmentBarSlot
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            ForEach(RAMSegmentBarsLayout.displaySegments(for: sample)) { segment in
-                HStack(spacing: 5) {
-                    RoundedRectangle(cornerRadius: 2, style: .continuous)
-                        .fill(
-                            DashboardOverviewChrome.memorySegmentColor(
-                                for: segment.kind,
-                                appearsActive: appearsActive
+        VStack(alignment: .leading, spacing: 4) {
+            Text(RAMSegmentBarsLayout.tooltipTimeLabel(for: slot))
+                .font(.caption2.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+
+            if let sample = slot.sample {
+                ForEach(RAMSegmentBarsLayout.displaySegments(for: sample)) { segment in
+                    HStack(spacing: 5) {
+                        RoundedRectangle(cornerRadius: 2, style: .continuous)
+                            .fill(
+                                DashboardOverviewChrome.memorySegmentColor(
+                                    for: segment.kind,
+                                    appearsActive: appearsActive
+                                )
                             )
-                        )
-                        .frame(width: 8, height: 8)
-                    Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
-                        .font(.caption2.monospacedDigit())
-                        .lineLimit(1)
+                            .frame(width: 8, height: 8)
+                        Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
+                            .font(.caption2.monospacedDigit())
+                            .lineLimit(1)
+                    }
                 }
             }
         }
@@ -865,7 +1289,7 @@ enum DashboardMetricColor {
         case .disk:
             return .mint
         case .swap:
-            return .pink
+            return .orange
         case .memory:
             return .blue
         case .vram:
@@ -905,7 +1329,7 @@ private struct ResourceUsageCard: View {
         .padding(DashboardCardLayout.regularCardInsets)
         .frame(
             maxWidth: .infinity,
-            minHeight: DashboardCardLayout.compactChartMinHeight,
+            minHeight: DashboardOverviewLayout.topSplitCardHeight,
             maxHeight: DashboardCardLayout.cardChromeMaxHeight,
             alignment: DashboardOverviewLayout.usageCardContentAlignment
         )
@@ -916,6 +1340,194 @@ private struct ResourceUsageCard: View {
     }
 }
 
+private struct StorageUsageCard: View {
+    let metrics: [DashboardMetric]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: DashboardOverviewLayout.storageContentSpacing) {
+            ForEach(DashboardOverviewLayout.storageCardContentOrder, id: \.self) { content in
+                storageContent(content)
+            }
+        }
+        .frame(maxWidth: DashboardOverviewLayout.storageContentMaxWidth, alignment: .leading)
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(DashboardCardLayout.regularCardInsets)
+        .frame(
+            maxWidth: .infinity,
+            minHeight: DashboardOverviewLayout.topSplitCardHeight,
+            maxHeight: DashboardCardLayout.cardChromeMaxHeight,
+            alignment: .center
+        )
+        .dashboardCardChrome()
+    }
+
+    @ViewBuilder
+    private func storageContent(_ content: DashboardStorageCardContent) -> some View {
+        switch content {
+        case .details:
+            storageDetails
+        case .bar:
+            storageBar
+        }
+    }
+
+    private var storageDetails: some View {
+        StorageUsageDetails(metrics: metrics)
+            .frame(height: DashboardOverviewLayout.storageDetailHeight(for: metrics))
+            .animation(DashboardMotion.valueAnimation, value: DashboardOverviewLayout.storageUsageLabels(for: metrics))
+    }
+
+    private var storageBar: some View {
+        StorageSegmentedUsageBar(metrics: metrics)
+            .frame(height: DashboardOverviewLayout.storageBarHeight)
+    }
+}
+
+private struct StorageSegmentedUsageBar: View {
+    @Environment(\.appearsActive) private var appearsActive
+    let metrics: [DashboardMetric]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.08))
+
+                ForEach(segments) { segment in
+                    Rectangle()
+                        .fill(
+                            DashboardOverviewChrome.emphasisFillColor(
+                                baseColor: DashboardMetricColor.color(for: segment.kind),
+                                opacity: DashboardOverviewChrome.usageFillOpacity,
+                                appearsActive: appearsActive
+                            )
+                        )
+                        .frame(width: proxy.size.width * segment.widthProgress)
+                        .offset(x: proxy.size.width * segment.startProgress)
+                        .transition(.opacity)
+                }
+            }
+            .clipShape(Capsule())
+        }
+        .accessibilityLabel(Text("Disk and Swap usage"))
+        .accessibilityValue(Text(visibleMetrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
+        .animation(DashboardMotion.valueAnimation, value: metrics)
+    }
+
+    private var visibleMetrics: [DashboardMetric] {
+        DashboardOverviewLayout.visibleStorageUsageMetrics(in: metrics)
+    }
+}
+
+private struct StorageUsageDetails: View {
+    let metrics: [DashboardMetric]
+
+    var body: some View {
+        GeometryReader { proxy in
+            let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+            ZStack(alignment: .topLeading) {
+                ForEach(labels) { label in
+                    Rectangle()
+                        .fill(Color.primary.opacity(DashboardOverviewLayout.storageDetailMarkerOpacity))
+                        .frame(
+                            width: DashboardOverviewLayout.storageDetailMarkerWidth,
+                            height: DashboardOverviewLayout.storageConnectorHeight(for: label)
+                        )
+                        .offset(
+                            x: DashboardOverviewLayout.storageDetailMarkerXPosition(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            ),
+                            y: DashboardOverviewLayout.storageConnectorYPosition(for: label)
+                        )
+                        .transition(.opacity)
+                }
+
+                ForEach(labels) { label in
+                    if let metric = metric(for: label) {
+                        let xPosition = DashboardOverviewLayout.storageDetailRowXPosition(
+                            for: label,
+                            containerWidth: proxy.size.width
+                        )
+                        StorageUsageDetailRow(
+                            metric: metric,
+                            alignment: DashboardOverviewLayout.storageDetailRowAlignment(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            ),
+                            textAlignment: DashboardOverviewLayout.storageDetailRowTextAlignment(
+                                for: label,
+                                containerWidth: proxy.size.width
+                            )
+                        )
+                            .frame(
+                                width: DashboardOverviewLayout.storageDetailRowWidth(
+                                    for: label,
+                                    containerWidth: proxy.size.width
+                                ),
+                                height: DashboardOverviewLayout.storageDetailRowHeight,
+                                alignment: DashboardOverviewLayout.storageDetailRowAlignment(
+                                    for: label,
+                                    containerWidth: proxy.size.width
+                                )
+                            )
+                            .offset(
+                                x: xPosition,
+                                y: CGFloat(label.rowIndex)
+                                    * (DashboardOverviewLayout.storageDetailRowHeight + DashboardOverviewLayout.storageDetailRowSpacing)
+                            )
+                            .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .topLeading)))
+                    }
+                }
+            }
+        }
+        .animation(DashboardMotion.valueAnimation, value: DashboardOverviewLayout.storageUsageLabels(for: metrics))
+    }
+
+    private func metric(for label: DashboardStorageUsageLabel) -> DashboardMetric? {
+        metrics.first { $0.kind == label.kind }
+    }
+}
+
+private struct StorageUsageDetailRow: View {
+    let metric: DashboardMetric
+    let alignment: Alignment
+    let textAlignment: TextAlignment
+
+    var body: some View {
+        HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
+            HStack(spacing: 4) {
+                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
+                    Image(systemName: iconName)
+                        .font(.caption2.weight(.semibold))
+                        .accessibilityHidden(true)
+                }
+
+                Text(metric.title)
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
+            }
+            .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+
+            Text(metric.detail ?? metric.value)
+                .font(.caption2.monospacedDigit().weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.65)
+                .multilineTextAlignment(textAlignment)
+        }
+        .lineLimit(1)
+        .frame(
+            maxWidth: .infinity,
+            maxHeight: .infinity,
+            alignment: alignment
+        )
+    }
+}
+
 private struct UsageBarRow: View {
     @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
@@ -923,7 +1535,7 @@ private struct UsageBarRow: View {
     @State private var displayedProgress: Double?
 
     var body: some View {
-        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric.value)
+        let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
             Text(metric.title)
@@ -1099,22 +1711,13 @@ private struct MetricCard: View {
             case .memoryStackedChart:
                 if let memoryTrend = metric.memoryTrend, !memoryTrend.samples.isEmpty {
                     RAMSegmentBars(trend: memoryTrend)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .layoutPriority(1)
                     if let latestSample = memoryTrend.samples.last {
                         RAMSegmentLegend(sample: latestSample)
                     }
                 } else {
-                    DashboardTrendChart(
-                        metric: metric,
-                        color: color,
-                        isCardHovered: isCardHovered,
-                        showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                            for: metric.kind,
-                            isCompactOverviewChart: false
-                        )
-                    )
-                        .id(metric.id)
-                        .frame(height: DashboardCardLayout.compactChartHeight)
+                    trendChart
                 }
             case .value:
                 Rectangle()

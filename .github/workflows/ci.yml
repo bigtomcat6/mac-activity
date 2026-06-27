@@ -19,3 +19,4 @@ jobs:
     uses: ./.github/workflows/ci-checks.yml
     with:
       suite: full
+    secrets: inherit

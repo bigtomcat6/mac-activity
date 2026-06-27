@@ -61,10 +61,40 @@ final class DashboardModelTests: XCTestCase {
         }
 
         XCTAssertEqual(metrics.map(\.kind), [.cpu, .gpu, .disk, .swap])
-        XCTAssertEqual(metrics.first { $0.kind == .disk }?.title, "Disk")
-        XCTAssertEqual(metrics.first { $0.kind == .disk }?.value, "75%")
-        XCTAssertEqual(metrics.first { $0.kind == .swap }?.title, "Swap")
-        XCTAssertEqual(metrics.first { $0.kind == .swap }?.value, "25%")
+        let disk = try! XCTUnwrap(metrics.first { $0.kind == .disk })
+        XCTAssertEqual(disk.title, "Disk")
+        XCTAssertEqual(disk.value, "75%")
+        XCTAssertEqual(disk.usedBytes, 750)
+        XCTAssertEqual(disk.totalBytes, 1_000)
+        XCTAssertEqual(try! XCTUnwrap(disk.progress), 0.75, accuracy: 0.001)
+        XCTAssertEqual(disk.detail, "750 B (75%)")
+
+        let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
+        XCTAssertEqual(swap.title, "Swap")
+        XCTAssertEqual(swap.value, "25%")
+        XCTAssertEqual(swap.usedBytes, 256)
+        XCTAssertEqual(swap.totalBytes, 1_024)
+        XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
+        XCTAssertEqual(swap.detail, "256 B")
+    }
+
+    func testModelBuildsZeroSwapUsageDetailWithoutDividingByTotal() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [.swap(SwapReading(usedBytes: 0, totalBytes: 0))],
+            timestamp: Date(timeIntervalSince1970: 12)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .swap }
+        }
+
+        let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
+        XCTAssertEqual(swap.value, "0%")
+        XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.0, accuracy: 0.001)
+        XCTAssertEqual(swap.detail, "0 KB")
     }
 
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {

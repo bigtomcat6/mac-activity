@@ -2,7 +2,7 @@ import CoreGraphics
 import AppKit
 import SwiftUI
 import XCTest
-import MacActivityCore
+@testable import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
@@ -62,11 +62,15 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage, .metric(.memory)]
+            [.usage, .storage, .metric(.memory)]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
-            [.cpu, .gpu, .disk, .swap]
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.cpu, .gpu]
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            [.disk, .swap]
         )
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowLeadingSlot(for: metrics),
@@ -102,10 +106,14 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             DashboardOverviewLayout.topRowSlots(for: metrics),
-            [.usage]
+            [.storage]
         )
         XCTAssertEqual(
-            DashboardOverviewLayout.usageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            DashboardOverviewLayout.computeUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
+            []
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageMetricKinds(in: DashboardOverviewLayout.metricsByKind(metrics)),
             [.disk, .swap]
         )
     }
@@ -125,12 +133,36 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.usageBarHeight, 8)
     }
 
-    func testOverviewUsageCardCentersRowsWithinBoundedContentWidth() {
-        XCTAssertEqual(DashboardOverviewLayout.usageContentMaxWidth, 180)
+    func testOverviewUsageCardRowsFillAvailableCardWidth() {
+        XCTAssertTrue(DashboardOverviewLayout.usageContentMaxWidth.isInfinite)
+    }
+
+    func testOverviewStorageCardKeepsBoundedContentWidth() {
+        XCTAssertEqual(DashboardOverviewLayout.storageContentMaxWidth, 180)
     }
 
     func testOverviewUsageCardCentersContentWithinCardFrame() {
         XCTAssertEqual(DashboardOverviewLayout.usageCardContentAlignment, Alignment.center)
+    }
+
+    func testOverviewTopRowHeightFitsSplitUsageCards() {
+        XCTAssertEqual(DashboardOverviewLayout.topSplitCardHeight, DashboardOverviewLayout.compactTrendCardHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
+    }
+
+    func testOverviewUsageProgressPrefersStructuredProgressAndClamps() {
+        let metric = DashboardMetric(kind: .disk, title: "Disk", value: "Collecting", progress: 0.42)
+        let highMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: 1.5)
+        let lowMetric = DashboardMetric(kind: .disk, title: "Disk", value: "38%", progress: -0.25)
+        let textOnlyMetric = DashboardMetric(kind: .disk, title: "Disk", value: "62%")
+
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: metric), 0.42, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: highMetric), 1.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: lowMetric), 0.0, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.usageProgress(for: textOnlyMetric), 0.62, accuracy: 0.001)
     }
 
     func testOverviewCompactTrendLayoutUsesTextLeftChartRightShape() {
@@ -141,6 +173,314 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testOverviewUsageCardHeaderIsHidden() {
         XCTAssertNil(DashboardOverviewLayout.usageHeaderTitle)
+    }
+
+    func testOverviewStorageCardUsesStableCompactGeometry() {
+        XCTAssertEqual(DashboardOverviewLayout.storageBarHeight, 8)
+        XCTAssertEqual(DashboardOverviewLayout.storageContentSpacing, 0)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowCount, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowHeight, 14)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailRowSpacing, 2)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailBarSpacing, 4)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailMarkerWidth, 1)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconCenterOffset, 7)
+        XCTAssertEqual(DashboardOverviewLayout.storageSwapMinimumVisibleWidth, 0.02)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailContentAlignment, Alignment.leading)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailTextAlignment, .leading)
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
+    }
+
+    func testOverviewStorageDetailUsesNativeSymbolsForDiskAndSwap() {
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .disk), "externaldrive")
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .swap), "memorychip")
+        XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
+    }
+
+    func testOverviewStorageCardShowsDetailsAboveUsageBar() {
+        XCTAssertEqual(DashboardOverviewLayout.storageCardContentOrder, [.details, .bar])
+    }
+
+    func testOverviewStorageSegmentsUseDiskTotalAsSharedDenominatorAndStayAdjacent() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+
+        let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
+
+        XCTAssertEqual(segments.count, 2)
+        XCTAssertEqual(segments[0].kind, .disk)
+        XCTAssertEqual(segments[0].startProgress, 0.0, accuracy: 0.001)
+        XCTAssertEqual(segments[0].widthProgress, 0.8, accuracy: 0.001)
+        XCTAssertEqual(segments[1].kind, .swap)
+        XCTAssertEqual(segments[1].startProgress, 0.8, accuracy: 0.001)
+        XCTAssertEqual(segments[1].widthProgress, 0.1, accuracy: 0.001)
+    }
+
+    func testOverviewStorageSegmentsUseMinimumVisibleWidthOnlyForNonzeroSmallSwap() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "0%",
+                usedBytes: 0,
+                totalBytes: 1_000,
+                progress: 0.0
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: metrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
+            ]
+        )
+
+        let smallSwapMetrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "1%",
+                usedBytes: 10,
+                totalBytes: 1_000,
+                progress: 0.01
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: smallSwapMetrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.02),
+            ]
+        )
+    }
+
+    func testOverviewStorageSegmentsFallBackToEqualSlotsWithoutDiskTotalBytes() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                progress: 0.5
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageSegments(for: metrics),
+            [
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.2),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.5, widthProgress: 0.25),
+            ]
+        )
+    }
+
+    func testOverviewStorageLabelsAndConnectorsCollapseWhenSwapIsZero() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "40%",
+                usedBytes: 400,
+                totalBytes: 1_000,
+                progress: 0.4
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "0%",
+                usedBytes: 0,
+                totalBytes: 1_000,
+                progress: 0.0
+            ),
+        ]
+
+        let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+
+        XCTAssertEqual(labels.count, 1)
+        XCTAssertEqual(labels[0].kind, .disk)
+        XCTAssertEqual(labels[0].startProgress, 0.0, accuracy: 0.001)
+        XCTAssertEqual(labels[0].endProgress ?? -1, 0.4, accuracy: 0.001)
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageConnectorHeight(for: labels[0]),
+            DashboardOverviewLayout.storageDetailBarSpacing,
+            accuracy: 0.001
+        )
+    }
+
+    func testOverviewStorageLabelsUseSegmentStartsAcrossTwoRows() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageUsageLabels(for: metrics),
+            [
+                DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0, endProgress: 0.8),
+                DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1, endProgress: 0.9),
+            ]
+        )
+    }
+
+    func testOverviewStorageConnectorsStartBelowTheirLabelRows() {
+        let labels = [
+            DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0),
+            DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1),
+        ]
+
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorYPosition(for: labels[0]), 14, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[0]), 20, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorYPosition(for: labels[1]), 30, accuracy: 0.001)
+        XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[1]), 4, accuracy: 0.001)
+    }
+
+    func testOverviewStorageDetailMarkersAlignDiskWithIconAndSwapWithSegmentEnd() {
+        let metrics = [
+            DashboardMetric(
+                kind: .disk,
+                title: "Disk",
+                value: "80%",
+                usedBytes: 800,
+                totalBytes: 1_000,
+                progress: 0.8
+            ),
+            DashboardMetric(
+                kind: .swap,
+                title: "Swap",
+                value: "50%",
+                usedBytes: 100,
+                totalBytes: 200,
+                progress: 0.5
+            ),
+        ]
+        let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
+        let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
+        let swapLabel = labels[1]
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: diskLabel,
+                containerWidth: 180
+            ),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: diskLabel,
+                containerWidth: 180
+            ),
+            7,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
+            480,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
+            540,
+            accuracy: 0.001
+        )
+    }
+
+    func testOverviewStorageSwapLabelFallsBackToTrailingWhenStartLeavesTooLittleRoom() {
+        let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
+        let swapLabel = DashboardStorageUsageLabel(kind: .swap, startProgress: 0.9, rowIndex: 1)
+
+        XCTAssertFalse(
+            DashboardOverviewLayout.storageDetailUsesTrailingFallback(
+                for: diskLabel,
+                containerWidth: 180
+            )
+        )
+        XCTAssertTrue(
+            DashboardOverviewLayout.storageDetailUsesTrailingFallback(
+                for: swapLabel,
+                containerWidth: 180
+            )
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            0,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowWidth(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            180,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowAlignment(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            .trailing
+        )
     }
 
     func testOverviewCompactTrendCardsUseAdaptiveTextWidthForRequestedMetrics() {
@@ -180,6 +520,10 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
         XCTAssertEqual(
+            DashboardCardLayout.chartHeightBehavior(for: .memory),
+            .fillsRemainingHeight
+        )
+        XCTAssertEqual(
             DashboardCardLayout.chartHeightBehavior(for: .network),
             .fillsRemainingHeight
         )
@@ -198,7 +542,10 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testOverviewRowsUseFixedHeightsToKeepSiblingCardsEven() {
-        XCTAssertEqual(DashboardOverviewLayout.topRowHeight, DashboardCardLayout.compactChartMinHeight)
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowHeight,
+            DashboardOverviewLayout.topSplitCardHeight * 2 + DashboardOverviewLayout.sectionSpacing
+        )
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
         XCTAssertEqual(
             DashboardOverviewLayout.secondRowHeight,
@@ -291,6 +638,159 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(
             Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
             "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
+        )
+    }
+
+    func testRenderedOverviewDisplaysSplitStorageCardForDiskAndSwapMetrics() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 25)),
+                .gpu(GPUReading(usagePercent: 50)),
+                .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 21)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(
+            DashboardOverviewLayout.topRowSlots(for: model.metrics),
+            [.usage, .storage, .metric(.memory)]
+        )
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 90, y: 128)))
+
+        let storageOnlyStore = MetricsStore()
+        storageOnlyStore.apply(
+            [
+                .disk(DiskReading(usedBytes: 400, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 100, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 22)
+        )
+        let storageOnlyModel = DashboardModel(store: storageOnlyStore)
+        let storageOnlyContent = DashboardView(
+            dashboardModel: storageOnlyModel,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertEqual(DashboardOverviewLayout.topRowSlots(for: storageOnlyModel.metrics), [.storage])
+        XCTAssertNotNil(Self.renderedColor(of: storageOnlyContent, atTopLeft: CGPoint(x: 90, y: 128)))
+    }
+
+    func testRenderedOverviewFallsBackToTrendChartForEmptyMemoryStackedMetric() throws {
+        let model = DashboardModel(
+            store: MetricsStore(),
+            metricsBuilder: { _, _, _, _ in
+                [
+                    DashboardMetric(
+                        kind: .memory,
+                        title: "Memory",
+                        value: "Collecting",
+                        style: .memoryStackedChart,
+                        trend: DashboardTrend(samples: [], scale: .fixed(lowerBound: 0, upperBound: 100)),
+                        memoryTrend: DashboardMemoryTrend(samples: [])
+                    ),
+                ]
+            }
+        )
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 270, y: 128)))
+    }
+
+    func testRenderedDashboardCanStartOnActivesTab() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 23)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: AppPreferences.default.selectedSummaryMetrics,
+                    showsProcessApplicationIdentifier: true
+                )
+            ),
+            openPreferences: {},
+            quitApplication: {},
+            initialSelectedTab: .actives
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 170)))
+    }
+
+    func testActivesCurrentUsedMemoryComesFromMemoryMetricLatestSample() {
+        let metrics = [
+            DashboardMetric(
+                kind: .memory,
+                title: "Memory",
+                value: "6.0GB/10.0GB (60%)",
+                memoryTrend: DashboardMemoryTrend(samples: [
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 1),
+                        pressurePercent: 50,
+                        usedBytes: 5_000,
+                        totalBytes: 10_000
+                    ),
+                    DashboardMemoryTrendSample(
+                        timestamp: Date(timeIntervalSince1970: 2),
+                        pressurePercent: 60,
+                        usedBytes: 6_000,
+                        totalBytes: 10_000
+                    ),
+                ])
+            )
+        ]
+
+        XCTAssertEqual(DashboardView.currentUsedMemoryBytes(in: metrics), 6_000)
+        XCTAssertNil(DashboardView.currentUsedMemoryBytes(in: []))
+    }
+
+    func testSwapMetricUsesOrangeTint() throws {
+        let swapColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardMetricColor.color(for: .swap))
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+        let orangeColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(.orange)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(swapColor, orangeColor, tolerance: 0.02),
+            "Expected Swap metric tint to be orange. swap=\(Self.debugColor(swapColor)) orange=\(Self.debugColor(orangeColor))"
         )
     }
 
@@ -476,7 +976,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testRAMSegmentBarsLayoutCapsSampleBudgetForDenseHistories() {
+    func testRAMSegmentBarsLayoutKeepsOriginalSlotBudgetWithoutSamples() {
         XCTAssertEqual(
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 1_000, height: 60)),
             96
@@ -485,67 +985,389 @@ final class DashboardCardLayoutTests: XCTestCase {
             RAMSegmentBarsLayout.displaySampleBudget(for: CGSize(width: 20, height: 60)),
             12
         )
-    }
 
-    func testRAMSegmentBarsLayoutDownsamplesChronologically() {
-        let samples = (0..<120).map { index in
-            DashboardMemoryTrendSample(
-                timestamp: Date(timeIntervalSince1970: TimeInterval(index)),
-                pressurePercent: Double(index),
-                usedBytes: UInt64(index),
-                totalBytes: 120
-            )
-        }
-
-        let displayed = RAMSegmentBarsLayout.displaySamples(
-            for: samples,
-            containerSize: CGSize(width: 60, height: 60),
-            referenceDate: Date(timeIntervalSince1970: 119)
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: [],
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 305)
         )
 
-        XCTAssertEqual(displayed.count, 12)
-        XCTAssertEqual(displayed.first?.timestamp, samples.first?.timestamp)
-        XCTAssertEqual(displayed.last?.timestamp, samples.last?.timestamp)
+        XCTAssertEqual(slots.count, 20)
+        XCTAssertEqual(
+            Array(Set(slots.map(\.bucketStart))).sorted(),
+            [300].map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        )
+        XCTAssertTrue(slots.allSatisfy { $0.sample == nil })
     }
 
-    func testRAMSegmentBarsLayoutFiltersToRecentRollingWindow() {
-        let samples = [0, 299, 300, 450, 600].map { offset in
+    func testRAMSegmentBarsLayoutAveragesSamplesInsideSameMinute() {
+        let samples = [
             DashboardMemoryTrendSample(
-                timestamp: Date(timeIntervalSince1970: TimeInterval(offset)),
-                pressurePercent: Double(offset),
-                usedBytes: UInt64(offset),
-                totalBytes: 1_000
-            )
-        }
+                timestamp: Date(timeIntervalSince1970: 241),
+                pressurePercent: 20,
+                usedBytes: 200,
+                totalBytes: 1_000,
+                breakdown: MemoryBreakdown(
+                    wiredBytes: 40,
+                    activeBytes: 120,
+                    compressedBytes: 40,
+                    cachedBytes: 200,
+                    availableBytes: 800
+                )
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 269),
+                pressurePercent: 40,
+                usedBytes: 400,
+                totalBytes: 1_000,
+                breakdown: MemoryBreakdown(
+                    wiredBytes: 80,
+                    activeBytes: 240,
+                    compressedBytes: 80,
+                    cachedBytes: 300,
+                    availableBytes: 600
+                )
+            ),
+        ]
 
-        let displayed = RAMSegmentBarsLayout.displaySamples(
+        let slots = RAMSegmentBarsLayout.displaySlots(
             for: samples,
             containerSize: CGSize(width: 100, height: 60),
-            referenceDate: Date(timeIntervalSince1970: 600)
+            referenceDate: Date(timeIntervalSince1970: 330)
         )
+        let averagedMinute = slots.first {
+            $0.bucketStart == Date(timeIntervalSince1970: 240) && $0.sample != nil
+        }?.sample
 
-        XCTAssertEqual(displayed.map(\.timestamp), samples.suffix(3).map(\.timestamp))
+        XCTAssertEqual(averagedMinute?.timestamp, Date(timeIntervalSince1970: 240))
+        XCTAssertEqual(averagedMinute?.usedBytes, 300)
+        XCTAssertEqual(averagedMinute?.totalBytes, 1_000)
+        XCTAssertEqual(averagedMinute?.pressurePercent ?? 0, 30, accuracy: 0.001)
+        XCTAssertEqual(averagedMinute?.breakdown.activeBytes, 180)
+        XCTAssertEqual(averagedMinute?.breakdown.compressedBytes, 60)
+        XCTAssertEqual(averagedMinute?.breakdown.wiredBytes, 60)
+        XCTAssertEqual(averagedMinute?.breakdown.cachedBytes, 250)
+        XCTAssertEqual(averagedMinute?.breakdown.availableBytes, 700)
+        XCTAssertEqual(slots.filter { $0.bucketStart == Date(timeIntervalSince1970: 240) }.compactMap(\.sample).count, 1)
     }
 
-    func testRAMSegmentBarsLayoutRightAnchorsSparseRecentSamplesInFixedSlots() {
-        let samples = [100, 160].map { offset in
+    func testRAMSegmentBarsLayoutRightmostSlotUsesLatestSampleAndLeavesOtherCurrentMinuteSlotsEmpty() {
+        let firstSamples = [
             DashboardMemoryTrendSample(
-                timestamp: Date(timeIntervalSince1970: TimeInterval(offset)),
-                pressurePercent: Double(offset),
-                usedBytes: UInt64(offset),
+                timestamp: Date(timeIntervalSince1970: 301),
+                pressurePercent: 80,
+                usedBytes: 800,
                 totalBytes: 1_000
+            ),
+        ]
+        let updatedSamples = firstSamples + [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 330),
+                pressurePercent: 20,
+                usedBytes: 200,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let firstSlots = RAMSegmentBarsLayout.displaySlots(
+            for: firstSamples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 330)
+        )
+        let updatedSlots = RAMSegmentBarsLayout.displaySlots(
+            for: updatedSamples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 330)
+        )
+
+        XCTAssertEqual(firstSlots.last?.sample?.usedBytes, 800)
+        XCTAssertNil(updatedSlots[16].sample)
+        XCTAssertNil(updatedSlots[17].sample)
+        XCTAssertNil(updatedSlots[18].sample)
+        XCTAssertEqual(updatedSlots.last?.sample?.usedBytes, 200)
+        XCTAssertEqual(firstSlots.last?.sample?.timestamp, Date(timeIntervalSince1970: 301))
+        XCTAssertEqual(updatedSlots.last?.sample?.timestamp, Date(timeIntervalSince1970: 330))
+    }
+
+    func testRAMSegmentBarsLayoutCompactsSampledBucketsIntoTrailingAdjacentSlots() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 65),
+                pressurePercent: 10,
+                usedBytes: 100,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 245),
+                pressurePercent: 40,
+                usedBytes: 400,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 301),
+                pressurePercent: 50,
+                usedBytes: 500,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 305)
+        )
+
+        XCTAssertEqual(
+            slots.enumerated().compactMap { index, slot in
+                slot.sample == nil ? nil : index
+            },
+            [17, 18, 19]
+        )
+        XCTAssertEqual(slots[17].sample?.usedBytes, 100)
+        XCTAssertEqual(slots[18].sample?.usedBytes, 400)
+        XCTAssertEqual(slots[19].sample?.usedBytes, 500)
+    }
+
+    func testRAMSegmentBarsLayoutIncludesFullRetainedHistoryInsteadOfFiveMinuteWindow() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 305),
+                pressurePercent: 30,
+                usedBytes: 300,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 1_201),
+                pressurePercent: 50,
+                usedBytes: 500,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 1_205)
+        )
+
+        XCTAssertEqual(
+            slots.compactMap { $0.sample?.usedBytes },
+            [300, 500]
+        )
+        XCTAssertEqual(slots.last?.sample?.usedBytes, 500)
+    }
+
+    func testRAMSegmentBarsLayoutCompactsDenseHistoryAndPreservesLatestSampleSemantics() {
+        var samples: [DashboardMemoryTrendSample] = []
+        for minute in 0..<40 {
+            let timestamp = Date(timeIntervalSince1970: TimeInterval(minute * 60 + 5))
+            samples.append(
+                DashboardMemoryTrendSample(
+                    timestamp: timestamp,
+                    pressurePercent: Double(minute),
+                    usedBytes: UInt64(minute),
+                    totalBytes: 1_000
+                )
             )
         }
 
         let slots = RAMSegmentBarsLayout.displaySlots(
             for: samples,
-            containerSize: CGSize(width: 60, height: 60),
-            referenceDate: Date(timeIntervalSince1970: 160)
+            containerSize: CGSize(width: 20, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 39 * 60 + 5)
         )
 
         XCTAssertEqual(slots.count, 12)
-        XCTAssertEqual(slots.prefix(10).compactMap(\.sample).count, 0)
-        XCTAssertEqual(slots.suffix(2).compactMap(\.sample).map(\.timestamp), samples.map(\.timestamp))
+        XCTAssertEqual(slots.last?.valueSemantics, .latestSample)
+        XCTAssertEqual(slots.last?.sample?.timestamp, Date(timeIntervalSince1970: 39 * 60 + 5))
+        XCTAssertEqual(slots.last?.sample?.usedBytes, 39)
+        XCTAssertEqual(slots.compactMap { $0.sample }.count, 12)
+    }
+
+    func testRAMSegmentBarsLayoutDropsEmptyCompactedGroups() {
+        let bucketStart = Date(timeIntervalSince1970: 60)
+        let slots = RAMSegmentBarsLayout.compactedSampleSlots(
+            [
+                RAMSegmentBarSlot(
+                    bucketStart: Date(timeIntervalSince1970: 0),
+                    sample: nil
+                ),
+                RAMSegmentBarSlot(
+                    bucketStart: bucketStart,
+                    sample: DashboardMemoryTrendSample(
+                        timestamp: bucketStart,
+                        pressurePercent: 40,
+                        usedBytes: 400,
+                        totalBytes: 1_000
+                    )
+                ),
+                RAMSegmentBarSlot(
+                    bucketStart: Date(timeIntervalSince1970: 120),
+                    sample: nil
+                ),
+            ],
+            slotCount: 2
+        )
+
+        XCTAssertEqual(slots.count, 1)
+        XCTAssertEqual(slots.first?.bucketStart, bucketStart)
+        XCTAssertEqual(slots.first?.sample?.usedBytes, 400)
+    }
+
+    func testRAMSegmentBarsLayoutAveragesPressureWhenTotalMemoryIsZero() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 241),
+                pressurePercent: 20,
+                usedBytes: 0,
+                totalBytes: 0
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 269),
+                pressurePercent: 60,
+                usedBytes: 0,
+                totalBytes: 0
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 330)
+        )
+        let averagedMinute = slots.first {
+            $0.bucketStart == Date(timeIntervalSince1970: 240) && $0.sample != nil
+        }?.sample
+
+        XCTAssertEqual(averagedMinute?.totalBytes, 0)
+        XCTAssertEqual(averagedMinute?.pressurePercent ?? 0, 40, accuracy: 0.001)
+    }
+
+    func testRAMSegmentTooltipTimeLabelShowsBucketEndForAveragesAndTimestampForLatestSample() {
+        let bucketStart = Date(timeIntervalSince1970: 300)
+        let latestTimestamp = Date(timeIntervalSince1970: 330)
+        let averagedSlot = RAMSegmentBarSlot(
+            bucketStart: bucketStart,
+            sample: DashboardMemoryTrendSample(
+                timestamp: bucketStart,
+                pressurePercent: 50,
+                usedBytes: 500,
+                totalBytes: 1_000
+            ),
+            valueSemantics: .minuteAverage
+        )
+        let latestSlot = RAMSegmentBarSlot(
+            bucketStart: bucketStart,
+            sample: DashboardMemoryTrendSample(
+                timestamp: latestTimestamp,
+                pressurePercent: 20,
+                usedBytes: 200,
+                totalBytes: 1_000
+            ),
+            valueSemantics: .latestSample
+        )
+        let emptyLatestSlot = RAMSegmentBarSlot(
+            bucketStart: bucketStart,
+            sample: nil,
+            valueSemantics: .latestSample
+        )
+
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.tooltipTimeLabel(for: averagedSlot),
+            bucketStart.addingTimeInterval(60).formatted(.dateTime.hour().minute())
+        )
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.tooltipTimeLabel(for: latestSlot),
+            latestTimestamp.formatted(.dateTime.hour().minute().second())
+        )
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.tooltipTimeLabel(for: emptyLatestSlot),
+            bucketStart.addingTimeInterval(60).formatted(.dateTime.hour().minute())
+        )
+    }
+
+    func testRenderedRAMSegmentBarsShowsTooltipForInitialHoveredSlot() {
+        let sample = DashboardMemoryTrendSample(
+            timestamp: Date(timeIntervalSince1970: 39 * 60 + 5),
+            pressurePercent: 50,
+            usedBytes: 500,
+            totalBytes: 1_000,
+            breakdown: MemoryBreakdown(
+                wiredBytes: 100,
+                activeBytes: 300,
+                compressedBytes: 100
+            )
+        )
+        let content = RAMSegmentBars(
+            trend: DashboardMemoryTrend(samples: [sample]),
+            hoveredSlotIndex: 19
+        )
+        .frame(width: 100, height: 60)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 78, y: 20)))
+    }
+
+    func testRAMSegmentBarsLayoutKeepsMissingMinutesEmpty() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 65),
+                pressurePercent: 10,
+                usedBytes: 100,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 245),
+                pressurePercent: 40,
+                usedBytes: 400,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 305)
+        )
+
+        XCTAssertEqual(
+            Array(Set(slots.map(\.bucketStart))).sorted(),
+            [60, 120, 180, 240, 300].map { Date(timeIntervalSince1970: TimeInterval($0)) }
+        )
+        XCTAssertEqual(
+            Array(Set(slots.compactMap { $0.sample?.usedBytes })).sorted(),
+            [100, 400]
+        )
+        XCTAssertEqual(slots.filter { $0.bucketStart == Date(timeIntervalSince1970: 120) }.compactMap(\.sample).count, 0)
+        XCTAssertEqual(slots.filter { $0.bucketStart == Date(timeIntervalSince1970: 180) }.compactMap(\.sample).count, 0)
+        XCTAssertEqual(slots.filter { $0.bucketStart == Date(timeIntervalSince1970: 300) }.compactMap(\.sample).count, 0)
+    }
+
+    func testRAMSegmentBarsLayoutIgnoresSamplesAfterReferenceDate() {
+        let samples = [
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 305),
+                pressurePercent: 30,
+                usedBytes: 300,
+                totalBytes: 1_000
+            ),
+            DashboardMemoryTrendSample(
+                timestamp: Date(timeIntervalSince1970: 1_210),
+                pressurePercent: 90,
+                usedBytes: 900,
+                totalBytes: 1_000
+            ),
+        ]
+
+        let slots = RAMSegmentBarsLayout.displaySlots(
+            for: samples,
+            containerSize: CGSize(width: 100, height: 60),
+            referenceDate: Date(timeIntervalSince1970: 1_205)
+        )
+
+        XCTAssertEqual(
+            slots.compactMap { $0.sample?.usedBytes },
+            [300]
+        )
     }
 
     func testRAMSegmentBarsLayoutBuildsStackedSegmentsFromMemoryBreakdown() {
@@ -616,9 +1438,9 @@ final class DashboardCardLayoutTests: XCTestCase {
         }
     }
 
-    private static func preferencesController() -> PreferencesController {
+    private static func preferencesController(initial: AppPreferences = .default) -> PreferencesController {
         PreferencesController(
-            store: DashboardCardLayoutPreferencesStore(initial: .default),
+            store: DashboardCardLayoutPreferencesStore(initial: initial),
             launchService: NoopLaunchAtLoginService()
         )
     }

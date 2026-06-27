@@ -37,12 +37,18 @@
 "temperature.dashboard.battery" = "Battery Temp";
 
 "preferences.launchAtLogin" = "Launch at login";
+"preferences.currentVersion" = "Current version";
+"preferences.checkForUpdates" = "Check for Updates";
+"preferences.showUpdateChannel" = "Show update channel";
+"preferences.hideUpdateChannel" = "Hide update channel";
+"preferences.updateChannel" = "Update channel";
 "preferences.language" = "Language";
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
 "preferences.hardwareBatteryPercentage" = "Show hardware battery percentage";
 "preferences.hardwareBatteryPercentageHelp" = "Uses raw AppleSmartBattery capacity when available; falls back to the system percentage.";
+"preferences.processApplicationIdentifier" = "Show application ID in Actives process list";
 "preferences.diskCleanupScope" = "Cleanup scope";
 "preferences.diskCleanupHelp" = "Controls what Actives Disk Cleanup scans and deletes.";
 "preferences.menuBarMetrics" = "Menu bar metrics";
@@ -51,6 +57,9 @@
 "language.system" = "Follow System";
 "language.english" = "English";
 "language.simplifiedChinese" = "Simplified Chinese";
+"update.channel.alpha" = "Alpha";
+"update.channel.beta" = "Beta";
+"update.channel.release" = "Release";
 "diskCleanup.category.userCaches" = "Caches";
 "diskCleanup.category.trash" = "Trash";
 "diskCleanup.category.userLogs" = "Logs";

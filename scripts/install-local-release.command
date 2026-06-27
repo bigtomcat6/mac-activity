@@ -174,6 +174,8 @@ build_release_app() {
       CODE_SIGN_IDENTITY="${MAC_ACTIVITY_DEVELOPER_ID_IDENTITY:-Developer ID Application}"
       DEVELOPMENT_TEAM="${MAC_ACTIVITY_DEVELOPMENT_TEAM}"
       ENABLE_HARDENED_RUNTIME=YES
+      CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+      OTHER_CODE_SIGN_FLAGS=--timestamp
     )
   fi
 
@@ -181,6 +183,39 @@ build_release_app() {
 
   log "Building ${SCHEME} (${CONFIGURATION}, ${ARCH}, signing=${SIGNING_MODE})"
   "${build_args[@]}"
+}
+
+developer_id_identity() {
+  printf '%s' "${MAC_ACTIVITY_DEVELOPER_ID_IDENTITY:-Developer ID Application}"
+}
+
+sign_developer_id_path() {
+  local path="$1"
+  shift
+
+  [[ -e "${path}" ]] || die "code signing target not found: ${path}"
+  /usr/bin/codesign \
+    --force \
+    --sign "$(developer_id_identity)" \
+    --options runtime \
+    --timestamp \
+    "$@" \
+    "${path}"
+}
+
+resign_developer_id_app() {
+  [[ "${SIGNING_MODE}" == "developer-id" ]] || return
+
+  local sparkle="${BUILT_APP}/Contents/Frameworks/Sparkle.framework/Versions/Current"
+
+  log "Re-signing nested Developer ID code"
+  sign_developer_id_path "${sparkle}/Autoupdate" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${sparkle}/Updater.app" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${sparkle}/XPCServices/Downloader.xpc" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${sparkle}/XPCServices/Installer.xpc" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/Sparkle.framework" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/MacActivityCore.framework" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${BUILT_APP}" --entitlements "${REPO_ROOT}/Configuration/MacActivity.entitlements"
 }
 
 quit_running_app() {
@@ -256,6 +291,7 @@ launch_app() {
 }
 
 build_release_app
+resign_developer_id_app
 validate_app "${BUILT_APP}"
 
 if [[ "${BUILD_ONLY}" == true ]]; then
