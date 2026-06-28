@@ -82,7 +82,7 @@ final class DiskCleanupServiceTests: XCTestCase {
 
         let result = await service.clean(categories: [.trash], now: Date())
 
-        XCTAssertEqual(result, .failed("Unable to delete selected disk cleanup items."))
+        XCTAssertEqual(result, .failed(.unableToDeleteItems))
         XCTAssertEqual(filesystem.removedItems(), [])
     }
 

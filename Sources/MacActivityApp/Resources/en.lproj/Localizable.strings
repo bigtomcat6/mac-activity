@@ -118,6 +118,7 @@
 "trash.subtitle.cleaned" = "Removed %d %@.";
 "trash.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
 "trash.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"trash.subtitle.failed.unableToDeleteItems" = "Unable to delete Trash items.";
 "trash.item.singular" = "item";
 "trash.item.plural" = "items";
 
@@ -136,6 +137,7 @@
 "diskCleanup.subtitle.cleaned" = "Removed %d %@.";
 "diskCleanup.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
 "diskCleanup.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"diskCleanup.subtitle.failed.unableToDeleteItems" = "Unable to delete selected disk cleanup items.";
 "diskCleanup.item.singular" = "item";
 "diskCleanup.item.plural" = "items";
 "diskCleanup.category.singular" = "category";

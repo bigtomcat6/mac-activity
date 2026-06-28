@@ -34,8 +34,13 @@ enum TrashState: Equatable {
     case cleanable(bytes: UInt64, itemCount: Int)
     case cleaning
     case cleaned(bytes: UInt64, itemCount: Int)
-    case failed(String)
+    case failed(TrashCleanupFailureReason)
     case partial(bytes: UInt64, deletedCount: Int, failedCount: Int, remainingBytes: UInt64?)
+}
+
+enum MemoryReleaseFailureReason: Equatable {
+    case message(String)
+    case exitCode(Int32)
 }
 
 enum MemoryState: Equatable {
@@ -46,7 +51,7 @@ enum MemoryState: Equatable {
     case noSignificantRelease(observedBytes: UInt64)
     case cooldown(remainingSeconds: TimeInterval)
     case unavailable
-    case failed(String)
+    case failed(MemoryReleaseFailureReason)
     case failedToReadMemory
 }
 
@@ -57,7 +62,7 @@ enum DiskCleanupState: Equatable {
     case cleanable(bytes: UInt64, itemCount: Int, categories: [DiskCleanupCategoryKind])
     case cleaning
     case cleaned(bytes: UInt64, itemCount: Int)
-    case failed(String)
+    case failed(DiskCleanupFailureReason)
     case partial(bytes: UInt64, deletedCount: Int, failedCount: Int, remainingBytes: UInt64?)
 }
 
@@ -227,7 +232,7 @@ final class ActiveCleanupModel: ObservableObject {
         case .unavailable:
             memoryState = .unavailable
         case .failed(let exitCode):
-            memoryState = .failed("Memory release failed with exit code \(exitCode).")
+            memoryState = .failed(.exitCode(exitCode))
         case .failedToReadMemory:
             memoryState = .failedToReadMemory
         }
@@ -293,7 +298,7 @@ final class ActiveCleanupModel: ObservableObject {
         case .cleanable(let remainingBytes, let remainingCount):
             return .cleanable(bytes: remainingBytes, itemCount: remainingCount)
         case .failed(let message):
-            return .failed(message)
+            return .failed(.message(message))
         }
     }
 
@@ -308,7 +313,7 @@ final class ActiveCleanupModel: ObservableObject {
                 categories: diskCleanupCategories
             )
         case .failed(let message):
-            return .failed(message)
+            return .failed(.message(message))
         }
     }
 
@@ -361,7 +366,7 @@ final class ActiveCleanupModel: ObservableObject {
         case .cleanable(let bytes, let itemCount):
             return .cleanable(bytes: bytes, itemCount: itemCount)
         case .failed(let message):
-            return .failed(message)
+            return .failed(.message(message))
         }
     }
 
@@ -376,7 +381,7 @@ final class ActiveCleanupModel: ObservableObject {
                 categories: diskCleanupCategories
             )
         case .failed(let message):
-            return .failed(message)
+            return .failed(.message(message))
         }
     }
 }

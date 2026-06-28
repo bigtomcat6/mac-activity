@@ -116,7 +116,7 @@ final class TrashCleanupServiceTests: XCTestCase {
 
         let result = await service.clean()
 
-        XCTAssertEqual(result, .failed("Unable to delete Trash items."))
+        XCTAssertEqual(result, .failed(.unableToDeleteItems))
         XCTAssertEqual(filesystem.removedItems(), [blocked])
     }
 

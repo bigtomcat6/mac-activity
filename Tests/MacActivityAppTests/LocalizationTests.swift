@@ -244,8 +244,16 @@ final class LocalizationTests: XCTestCase {
             "7.5 秒后再试。"
         )
         XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .failed(.exitCode(7)), bundle: simplifiedChinese),
+            "内存释放失败，退出代码 7。"
+        )
+        XCTAssertEqual(
             TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
             "确认后可移除 2 个项目。"
+        )
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: simplifiedChinese),
+            "无法删除废纸篓项目。"
         )
         XCTAssertEqual(
             TrashCleanupStatusView.subtitle(
@@ -267,6 +275,10 @@ final class LocalizationTests: XCTestCase {
                 bundle: simplifiedChinese
             ),
             "已选择 2 个项目，来自缓存、废纸篓、日志。"
+        )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: simplifiedChinese),
+            "无法删除已选择的磁盘清理项目。"
         )
         XCTAssertEqual(
             DiskCleanupStatusView.subtitle(
@@ -309,10 +321,115 @@ final class LocalizationTests: XCTestCase {
         AppLocalization.setPreferredLanguageIdentifier(nil)
     }
 
+    func testProductionUIStringsUseLocalizationResources() throws {
+        let packageRoot = Self.packageRootURL()
+        let sourceRoots = [
+            packageRoot.appendingPathComponent("Sources/MacActivityApp"),
+            packageRoot.appendingPathComponent("Sources/MacActivityCore"),
+        ]
+        var violations: [String] = []
+
+        for fileURL in try sourceRoots.flatMap(Self.swiftSourceFiles) {
+            let relativePath = Self.relativePath(for: fileURL, from: packageRoot)
+            let contents = try String(contentsOf: fileURL, encoding: .utf8)
+
+            for (lineOffset, line) in contents.components(separatedBy: .newlines).enumerated() {
+                guard Self.shouldScanProductionStringLine(line) else { continue }
+
+                for pattern in Self.hardcodedProductionStringPatterns {
+                    let range = NSRange(line.startIndex..<line.endIndex, in: line)
+                    for match in pattern.regex.matches(in: line, range: range) {
+                        guard match.numberOfRanges > 1,
+                              let literalRange = Range(match.range(at: 1), in: line) else {
+                            continue
+                        }
+
+                        let literal = String(line[literalRange])
+                        guard literal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+                            continue
+                        }
+
+                        violations.append(
+                            "\(relativePath):\(lineOffset + 1): \(pattern.name) uses \"\(literal)\""
+                        )
+                    }
+                }
+            }
+        }
+
+        XCTAssertTrue(
+            violations.isEmpty,
+            "Hard-coded production UI strings must use AppLocalization keys:\n\(violations.joined(separator: "\n"))"
+        )
+    }
+
     private func infoPlistStrings(forLanguageIdentifier language: String) throws -> [String: String] {
         let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
         let path = try XCTUnwrap(bundle.path(forResource: "InfoPlist", ofType: "strings"))
         let dictionary = try XCTUnwrap(NSDictionary(contentsOfFile: path) as? [String: String])
         return dictionary
+    }
+
+    private static let hardcodedProductionStringPatterns: [(name: String, regex: NSRegularExpression)] = [
+        ("Text literal", try! NSRegularExpression(pattern: #"\bText\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Button literal", try! NSRegularExpression(pattern: #"\bButton\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Label literal", try! NSRegularExpression(pattern: #"\bLabel\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Toggle literal", try! NSRegularExpression(pattern: #"\bToggle\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Picker literal", try! NSRegularExpression(pattern: #"\bPicker\s*\(\s*"((?:\\"|[^"])*)""#)),
+        (
+            "accessibility label literal",
+            try! NSRegularExpression(pattern: #"\.accessibilityLabel\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
+        ),
+        (
+            "accessibility value literal",
+            try! NSRegularExpression(pattern: #"\.accessibilityValue\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
+        ),
+        ("help literal", try! NSRegularExpression(pattern: #"\.help\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("tooltip literal", try! NSRegularExpression(pattern: #"\.toolTip\s*=\s*"((?:\\"|[^"])*)""#)),
+        ("title literal", try! NSRegularExpression(pattern: #"\.title\s*=\s*"((?:\\"|[^"])*)""#)),
+        ("failed literal", try! NSRegularExpression(pattern: #"\.failed\s*\(\s*"((?:\\"|[^"])*)""#)),
+    ]
+
+    private static func shouldScanProductionStringLine(_ line: String) -> Bool {
+        let allowedFragments = [
+            "CFBundle",
+            "MacActivityReleaseTag",
+            "SUPublicEDKey",
+            "SUFeedURL",
+            "fatalError",
+            "systemName:",
+        ]
+
+        return allowedFragments.contains { line.contains($0) } == false
+    }
+
+    private static func packageRootURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
+    private static func swiftSourceFiles(in directory: URL) throws -> [URL] {
+        guard let enumerator = FileManager.default.enumerator(
+            at: directory,
+            includingPropertiesForKeys: [.isRegularFileKey],
+            options: [.skipsHiddenFiles]
+        ) else {
+            return []
+        }
+
+        var files: [URL] = []
+        for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
+            files.append(fileURL)
+        }
+        return files.sorted { $0.path < $1.path }
+    }
+
+    private static func relativePath(for fileURL: URL, from rootURL: URL) -> String {
+        let rootPath = rootURL.standardizedFileURL.path + "/"
+        let filePath = fileURL.standardizedFileURL.path
+        guard filePath.hasPrefix(rootPath) else { return filePath }
+        return String(filePath.dropFirst(rootPath.count))
     }
 }

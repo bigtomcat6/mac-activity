@@ -118,6 +118,7 @@
 "trash.subtitle.cleaned" = "已移除 %d %@。";
 "trash.subtitle.partial" = "已移除 %d %@；%d %@无法删除。";
 "trash.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@无法删除。仍剩余 %@。";
+"trash.subtitle.failed.unableToDeleteItems" = "无法删除废纸篓项目。";
 "trash.item.singular" = "个项目";
 "trash.item.plural" = "个项目";
 
@@ -136,6 +137,7 @@
 "diskCleanup.subtitle.cleaned" = "已移除 %d %@。";
 "diskCleanup.subtitle.partial" = "已移除 %d %@；%d %@无法删除。";
 "diskCleanup.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@无法删除。仍剩余 %@。";
+"diskCleanup.subtitle.failed.unableToDeleteItems" = "无法删除已选择的磁盘清理项目。";
 "diskCleanup.item.singular" = "个项目";
 "diskCleanup.item.plural" = "个项目";
 "diskCleanup.category.singular" = "个分类";

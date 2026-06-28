@@ -195,8 +195,8 @@ struct DiskCleanupStatusView: View {
             return AppLocalization.string(.diskCleanupSubtitleCleaning, bundle: bundle)
         case .cleaned(_, let itemCount):
             return AppLocalization.string(.diskCleanupSubtitleCleaned, itemCount, itemLabel(for: itemCount, bundle: bundle), bundle: bundle)
-        case .failed(let message):
-            return message
+        case .failed(let reason):
+            return failureSubtitle(for: reason, bundle: bundle)
         case .partial(_, let deletedCount, let failedCount, let remainingBytes):
             if let remainingBytes {
                 return AppLocalization.string(
@@ -266,6 +266,15 @@ struct DiskCleanupStatusView: View {
 
     private static func itemLabel(for count: Int, bundle: Bundle? = nil) -> String {
         AppLocalization.string(count == 1 ? .diskCleanupItemSingular : .diskCleanupItemPlural, bundle: bundle)
+    }
+
+    private static func failureSubtitle(for reason: DiskCleanupFailureReason, bundle: Bundle? = nil) -> String {
+        switch reason {
+        case .message(let message):
+            return message
+        case .unableToDeleteItems:
+            return AppLocalization.string(.diskCleanupSubtitleFailedUnableToDeleteItems, bundle: bundle)
+        }
     }
 
     private static func categoryList(for categories: [DiskCleanupCategoryKind], bundle: Bundle? = nil) -> String {

@@ -773,7 +773,7 @@ private struct OverviewDashboardContent: View {
     }
 
     private var emptyState: some View {
-        Text("Waiting for the first metric sample.")
+        Text(AppLocalization.string(.dashboardWaitingFirstMetricSample))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
