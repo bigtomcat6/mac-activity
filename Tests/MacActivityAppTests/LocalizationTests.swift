@@ -239,6 +239,13 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testSwiftSourceFileDiscoveryReturnsEmptyForMissingDirectory() throws {
+        let missingDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+
+        XCTAssertEqual(try Self.swiftSourceFiles(in: missingDirectory), [])
+    }
+
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))

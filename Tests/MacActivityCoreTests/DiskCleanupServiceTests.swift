@@ -25,9 +25,7 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.trash, .userCaches, .userLogs], now: Date())
 
         guard case .cleanable(let summary) = result else {
-            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
-            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 6_144)
         XCTAssertEqual(summary.totalBytes, 6_144)
@@ -134,9 +132,7 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.userCaches], now: now)
 
         guard case .cleanable(let summary) = result else {
-            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
-            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 1_000)
         XCTAssertEqual(summary.selectedItemCount, 1)
@@ -191,9 +187,7 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.trash, .userCaches, .userLogs], now: Date())
 
         guard case .cleanable(let summary) = result else {
-            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
-            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 128)
         XCTAssertEqual(summary.accessIssueCount, 1)
