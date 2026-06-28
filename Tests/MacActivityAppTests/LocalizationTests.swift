@@ -79,6 +79,21 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testDashboardMetricTitlesAndDetailsLocalizeFromSemanticRoles() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+        let disk = DashboardMetric(kind: .disk, titleRole: .metric(.disk), value: "75%")
+        let battery = DashboardMetric(
+            kind: .battery,
+            titleRole: .metric(.battery),
+            value: "82%",
+            detailRole: .batteryCharging
+        )
+
+        XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: disk, bundle: simplifiedChinese), "磁盘")
+        XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: battery, bundle: simplifiedChinese), "电池")
+        XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: battery, bundle: simplifiedChinese), "正在充电")
+    }
+
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))

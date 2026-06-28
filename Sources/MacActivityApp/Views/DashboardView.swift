@@ -663,9 +663,9 @@ struct DashboardView: View {
 
     private var summaryText: String {
         let visible = dashboardModel.metrics.prefix(3).map { metric in
-            "\(metric.title) \(metric.value)"
+            "\(AppLocalization.dashboardMetricTitle(for: metric)) \(metric.value)"
         }
-        return visible.isEmpty ? "Waiting for the first sample" : visible.joined(separator: " · ")
+        return visible.isEmpty ? AppLocalization.string(.dashboardWaitingFirstSample) : visible.joined(separator: " · ")
     }
 }
 
@@ -1505,14 +1505,14 @@ private struct StorageUsageDetailRow: View {
                         .accessibilityHidden(true)
                 }
 
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
                     .multilineTextAlignment(textAlignment)
             }
             .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
 
-            Text(metric.detail ?? metric.value)
+            Text(AppLocalization.dashboardMetricDetail(for: metric) ?? metric.value)
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1538,7 +1538,7 @@ private struct UsageBarRow: View {
         let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
-            Text(metric.title)
+            Text(AppLocalization.dashboardMetricTitle(for: metric))
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
                 .frame(
@@ -1601,7 +1601,7 @@ private struct CompactTrendMetricCard: View {
                     isHovered: isCardHovered
                 ) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(metric.title)
+                    Text(AppLocalization.dashboardMetricTitle(for: metric))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1648,7 +1648,7 @@ private struct SlimTrendMetricCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -1698,7 +1698,7 @@ private struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .top) {
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
@@ -1732,7 +1732,7 @@ private struct MetricCard: View {
                     .clipShape(Capsule())
             }
 
-            if let detail = metric.detail, !isCompactChartCard {
+            if let detail = AppLocalization.dashboardMetricDetail(for: metric), !isCompactChartCard {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)

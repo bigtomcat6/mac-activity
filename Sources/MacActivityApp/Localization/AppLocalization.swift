@@ -324,6 +324,20 @@ enum AppLocalization {
         return metricTitle(for: metric.kind, bundle: bundle)
     }
 
+    static func dashboardMetricTitle(for metric: DashboardMetric, bundle: Bundle? = nil) -> String {
+        switch metric.titleRole {
+        case .metric(let kind):
+            return metricTitle(for: kind, bundle: bundle)
+        case .temperature(let source):
+            switch source {
+            case .smc:
+                return string(.temperatureDashboardCPU, bundle: bundle)
+            case .battery:
+                return string(.temperatureDashboardBattery, bundle: bundle)
+            }
+        }
+    }
+
     static func metricDetail(_ detail: String, bundle: Bundle? = nil) -> String {
         switch detail {
         case "Charging":
@@ -332,6 +346,21 @@ enum AppLocalization {
             return string(.metricBatteryOnBattery, bundle: bundle)
         default:
             return detail
+        }
+    }
+
+    static func dashboardMetricDetail(for metric: DashboardMetric, bundle: Bundle? = nil) -> String? {
+        guard let detailRole = metric.detailRole else {
+            return metric.detail
+        }
+
+        switch detailRole {
+        case .batteryCharging:
+            return string(.metricBatteryCharging, bundle: bundle)
+        case .batteryOnBattery:
+            return string(.metricBatteryOnBattery, bundle: bundle)
+        case .raw(let value):
+            return value
         }
     }
 
