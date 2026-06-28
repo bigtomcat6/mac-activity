@@ -32,9 +32,10 @@ jobs:
       publish: ${{ steps.release.outputs.publish }}
 
     steps:
-      - name: Checkout
+      - name: Checkout trusted tooling
         uses: actions/checkout@v6
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Resolve appcast release
@@ -44,6 +45,17 @@ jobs:
         run: |
           if [[ -z "${RELEASE_TAG}" ]]; then
             echo "::error::A release tag is required."
+            exit 1
+          fi
+
+          git fetch --force origin "+refs/heads/main:refs/remotes/origin/main" "+refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          tag_commit="$(git rev-list -n 1 "refs/tags/${RELEASE_TAG}")"
+          if [[ -z "${tag_commit}" ]]; then
+            echo "::error::Release tag ${RELEASE_TAG} does not resolve to a commit."
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "${tag_commit}" origin/main; then
+            echo "::error::Release tag ${RELEASE_TAG} must point to a commit reachable from main."
             exit 1
           fi
 
@@ -82,6 +94,34 @@ jobs:
 
           gh release view "${TAG}" --json body --jq '.body // ""' \
             > "${archive_dir}/MacActivity-${TAG}.md"
+
+      - name: Validate release archive
+        if: ${{ steps.release.outputs.publish == 'true' }}
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          archive_dir="${RUNNER_TEMP}/sparkle-archives"
+          expanded_dir="${RUNNER_TEMP}/sparkle-expanded"
+          rm -rf "${expanded_dir}"
+          mkdir -p "${expanded_dir}"
+
+          ditto -x -k "${archive_dir}/MacActivity-${TAG}.zip" "${expanded_dir}"
+          app="${expanded_dir}/Mac Activity.app"
+          info_plist="${app}/Contents/Info.plist"
+          if [[ ! -d "${app}" ]]; then
+            echo "::error::Expected Mac Activity.app in MacActivity-${TAG}.zip."
+            exit 1
+          fi
+
+          actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
+          if [[ "${actual_release_tag}" != "${TAG}" ]]; then
+            echo "::error::Expected MacActivityReleaseTag ${TAG}, got ${actual_release_tag}."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+          syspolicy_check distribution "${app}"
 
       - name: Build Sparkle appcast tool
         if: ${{ steps.release.outputs.publish == 'true' }}
