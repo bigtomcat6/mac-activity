@@ -243,6 +243,16 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("Run SwiftPM tests with coverage"),
         )
 
+    def test_pull_request_ci_checks_localization_coverage_table(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci-checks.yml").read_text()
+
+        self.assertIn("Check localization coverage table", workflow)
+        self.assertIn(".github/scripts/update_localization_coverage.py --check", workflow)
+        self.assertLess(
+            workflow.index("Check localization coverage table"),
+            workflow.index("Run SwiftPM tests with coverage"),
+        )
+
     def test_ci_workflow_uses_reusable_ci_checks(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
 
