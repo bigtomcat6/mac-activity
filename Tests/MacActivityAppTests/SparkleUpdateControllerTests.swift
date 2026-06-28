@@ -194,6 +194,33 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
     }
 
+    func testAppLanguageDrivesFoundationPreferredLocalizationsUsedBySparkle() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "AppleLanguages")
+        defer {
+            AppLocalizationController.shared.applyPreferredLanguageIdentifier(nil)
+            if let previous {
+                defaults.set(previous, forKey: "AppleLanguages")
+            } else {
+                defaults.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        SparkleLocalizationOverride.install()
+        defaults.set(["zh-Hans"], forKey: "AppleLanguages")
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier("en")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["zh_CN", "en"]).first, "en")
+
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["zh_CN", "en"]).first, "zh_CN")
+
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier(nil)
+
+        XCTAssertNil(SparkleLocalizationOverride.preferredLocalization(from: ["zh_CN", "en"]))
+    }
+
     func testUpdateCandidateBuildsFromSparkleMetadata() {
         let candidate = SparkleUpdateController.updateCandidate(
             for: SparkleAppcastCandidateInput(

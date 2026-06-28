@@ -289,6 +289,13 @@ enum AppLocalization {
         normalizedLanguageIdentifier(locale(for: configuredBundle()).identifier)
     }
 
+    static func explicitPreferredLanguageIdentifier() -> String? {
+        preferredLanguageLock.lock()
+        let preferredLanguageIdentifier = self.preferredLanguageIdentifier
+        preferredLanguageLock.unlock()
+        return preferredLanguageIdentifier
+    }
+
     static func metricTitle(for kind: MetricKind, bundle: Bundle? = nil) -> String {
         switch kind {
         case .cpu:

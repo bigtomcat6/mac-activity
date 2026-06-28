@@ -219,6 +219,17 @@ enum SparkleLocalizationOverride {
         }
 
         method_exchangeImplementations(original, replacement)
+
+        if let original = class_getClassMethod(
+            Bundle.self,
+            #selector(Bundle.preferredLocalizations(from:))
+        ),
+            let replacement = class_getClassMethod(
+                Bundle.self,
+                #selector(Bundle.macActivity_preferredLocalizations(from:))
+            ) {
+            method_exchangeImplementations(original, replacement)
+        }
     }()
 
     static func install() {
@@ -233,7 +244,7 @@ enum SparkleLocalizationOverride {
     ) -> String? {
         guard bundle.bundleIdentifier == sparkleBundleIdentifier,
               tableName == sparkleTableName,
-              let appLanguageIdentifier = AppLocalization.currentLanguageIdentifier(),
+              let appLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier(),
               let resourceIdentifier = sparkleResourceIdentifier(
                 for: appLanguageIdentifier,
                 in: bundle
@@ -246,12 +257,33 @@ enum SparkleLocalizationOverride {
         return languageBundle.localizedString(forKey: key, value: value, table: tableName)
     }
 
+    static func preferredLocalization(from localizations: [String]) -> String? {
+        guard let appLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier() else {
+            return nil
+        }
+
+        return resourceIdentifier(
+            for: appLanguageIdentifier,
+            in: localizations
+        )
+    }
+
     private static func sparkleResourceIdentifier(
         for languageIdentifier: String,
         in bundle: Bundle
     ) -> String? {
+        resourceIdentifier(
+            for: languageIdentifier,
+            in: bundle.localizations.filter { $0 != "Base" }
+        )
+    }
+
+    private static func resourceIdentifier(
+        for languageIdentifier: String,
+        in localizations: [String]
+    ) -> String? {
         var resources: [String: String] = [:]
-        for localization in bundle.localizations where localization != "Base" {
+        for localization in localizations where localization != "Base" {
             resources[canonicalLanguageIdentifier(localization), default: localization] = localization
         }
         guard let normalized = AppLocalization.normalizedLanguageIdentifier(languageIdentifier) else {
@@ -321,6 +353,16 @@ private extension Bundle {
         }
 
         return macActivity_localizedString(forKey: key, value: value, table: tableName)
+    }
+
+    @objc(macActivity_preferredLocalizationsFromArray:)
+    class func macActivity_preferredLocalizations(from localizationsArray: [String]) -> [String] {
+        let original = macActivity_preferredLocalizations(from: localizationsArray)
+        guard let preferred = SparkleLocalizationOverride.preferredLocalization(from: localizationsArray) else {
+            return original
+        }
+
+        return [preferred] + original.filter { $0 != preferred }
     }
 }
 
