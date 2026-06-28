@@ -56,6 +56,16 @@ public final class PreferencesController: ObservableObject {
         try? store.save(state)
     }
 
+    public func syncUpdateChannelWithInstalledVersion(_ installedVersion: ReleaseVersion) {
+        guard state.lastSyncedUpdateChannelReleaseTag != installedVersion.rawValue else {
+            return
+        }
+
+        state.updateChannel = installedVersion.channel
+        state.lastSyncedUpdateChannelReleaseTag = installedVersion.rawValue
+        try? store.save(state)
+    }
+
     public func setPreferredLanguageIdentifier(_ preferredLanguageIdentifier: String?) {
         state.preferredLanguageIdentifier = preferredLanguageIdentifier
         try? store.save(state)

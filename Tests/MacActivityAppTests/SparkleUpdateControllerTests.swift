@@ -26,6 +26,22 @@ final class SparkleUpdateControllerTests: XCTestCase {
         XCTAssertEqual(controller.allowedChannels(), ["beta"])
     }
 
+    func testControllerSyncsUpdateChannelWithInstalledReleaseTag() throws {
+        let preferencesController = makePreferencesController()
+
+        _ = SparkleUpdateController(
+            preferencesController: preferencesController,
+            bundle: try makeBundle(info: [
+                "CFBundleShortVersionString": "26.0.0",
+                "CFBundleVersion": "2",
+                "MacActivityReleaseTag": "v26.0.0-beta.2",
+            ])
+        )
+
+        XCTAssertEqual(preferencesController.state.updateChannel, .beta)
+        XCTAssertEqual(preferencesController.state.lastSyncedUpdateChannelReleaseTag, "v26.0.0-beta.2")
+    }
+
     func testSparkleConfigurationRequiresUsablePublicKeyAndFeedURL() throws {
         XCTAssertFalse(
             SparkleUpdateController.hasSparkleConfiguration(
