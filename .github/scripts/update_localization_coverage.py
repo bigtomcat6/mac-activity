@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import sys
 from dataclasses import dataclass
@@ -41,9 +42,17 @@ def main() -> int:
         action="store_true",
         help="fail if any localized resource is missing baseline keys",
     )
+    parser.add_argument(
+        "--badge-json-dir",
+        type=Path,
+        help="write one Shields.io endpoint JSON file per language",
+    )
     args = parser.parse_args()
 
     coverage = collect_coverage()
+
+    if args.badge_json_dir:
+        write_shields_endpoint_badges(coverage, args.badge_json_dir)
 
     if args.check:
         incomplete = incomplete_coverage(coverage)
@@ -155,6 +164,22 @@ def incomplete_coverage(coverage: list[Coverage]) -> list[Coverage]:
     ]
 
 
+def write_shields_endpoint_badges(coverage: list[Coverage], output_dir: Path) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    for row in coverage:
+        payload = {
+            "schemaVersion": 1,
+            "label": f"l10n {row.display_name}",
+            "message": format_percent(row.overall_present, row.overall_total),
+            "color": shields_color(row.overall_present, row.overall_total),
+        }
+        path = output_dir / f"{row.language_identifier}.json"
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+        )
+
+
 def format_ratio(present: int, total: int) -> str:
     if total == 0:
         return "n/a"
@@ -166,6 +191,17 @@ def format_percent(present: int, total: int) -> str:
         return "n/a"
     percent = present / total * 100
     return f"{percent:.0f}%"
+
+
+def shields_color(present: int, total: int) -> str:
+    if total == 0:
+        return "lightgrey"
+    percent = present / total * 100
+    if percent >= 100:
+        return "brightgreen"
+    if percent >= 90:
+        return "yellow"
+    return "red"
 
 
 if __name__ == "__main__":

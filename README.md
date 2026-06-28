@@ -18,6 +18,11 @@
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release" alt="Pre-release"></a>
 </p>
 
+<p align="center">
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbigtomcat6%2Fmac-activity%2Fbadges%2Flocalization%2Fen.json" alt="English localization coverage"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbigtomcat6%2Fmac-activity%2Fbadges%2Flocalization%2Fzh-Hans.json" alt="简体中文 localization coverage"></a>
+</p>
+
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.
 
 It ships as:
