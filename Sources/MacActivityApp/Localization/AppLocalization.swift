@@ -369,6 +369,40 @@ enum AppLocalization {
         return date.formatted(format.locale(locale(for: bundle ?? configuredBundle())))
     }
 
+    static func chartAxisLabel(for kind: MetricKind, value: Double, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
+            return DashboardMetricTextFormatter.formatPercent(value)
+        case .temperature:
+            return string(.chartTemperatureAxis, value, bundle: bundle)
+        case .fan:
+            return string(.chartFanAxis, Int(value.rounded()), bundle: bundle)
+        case .network:
+            return DashboardMetricTextFormatter.formatRate(abs(value))
+        }
+    }
+
+    static func chartPrimaryReadout(for kind: MetricKind, sample: DashboardTrendSample, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .network:
+            return "\(string(.networkUpload, bundle: bundle)) \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
+        case .temperature:
+            return string(.chartTemperatureReadout, sample.primaryValue, bundle: bundle)
+        case .fan:
+            return string(.chartFanReadout, Int(sample.primaryValue.rounded()), bundle: bundle)
+        default:
+            return DashboardMetricTextFormatter.formatPercent(sample.primaryValue)
+        }
+    }
+
+    static func chartSecondaryReadout(for kind: MetricKind, sample: DashboardTrendSample, bundle: Bundle? = nil) -> String? {
+        guard kind == .network else {
+            return nil
+        }
+
+        return "\(string(.networkDownload, bundle: bundle)) \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
+    }
+
     static func temperatureSourceTitle(for source: TemperatureSource, bundle: Bundle? = nil) -> String {
         switch source {
         case .smc:

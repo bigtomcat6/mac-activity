@@ -573,15 +573,15 @@ struct DashboardTrendChart: View {
     }
 
     private func axisLabel(for value: Double) -> String {
-        DashboardTrendReadoutFormatter.axisLabel(for: metric.kind, value: value)
+        AppLocalization.chartAxisLabel(for: metric.kind, value: value)
     }
 
     private func primaryReadout(for sample: DashboardTrendSample) -> String {
-        DashboardTrendReadoutFormatter.primaryReadout(for: metric.kind, sample: sample)
+        AppLocalization.chartPrimaryReadout(for: metric.kind, sample: sample)
     }
 
     private func secondaryReadout(for sample: DashboardTrendSample) -> String? {
-        DashboardTrendReadoutFormatter.secondaryReadout(for: metric.kind, sample: sample)
+        AppLocalization.chartSecondaryReadout(for: metric.kind, sample: sample)
     }
 
     private func timestampLabel(for date: Date?) -> String {
@@ -1285,41 +1285,5 @@ struct DashboardTrendChartLayout {
 
     static func animatesSampleChanges(for kind: MetricKind) -> Bool {
         true
-    }
-}
-
-enum DashboardTrendReadoutFormatter {
-    static func axisLabel(for kind: MetricKind, value: Double) -> String {
-        switch kind {
-        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
-            return "\(Int(value.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", value)
-        case .fan:
-            return "\(Int(value.rounded())) RPM"
-        case .network:
-            return DashboardMetricTextFormatter.formatRate(abs(value))
-        }
-    }
-
-    static func primaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String {
-        switch kind {
-        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
-            return "\(Int(sample.primaryValue.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", sample.primaryValue)
-        case .fan:
-            return "\(Int(sample.primaryValue.rounded())) RPM"
-        case .network:
-            return "↑ \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
-        }
-    }
-
-    static func secondaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String? {
-        guard kind == .network else {
-            return nil
-        }
-
-        return "↓ \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
     }
 }
