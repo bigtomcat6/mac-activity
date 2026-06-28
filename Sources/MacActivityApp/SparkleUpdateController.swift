@@ -32,6 +32,10 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         userDriverDelegate = MacActivitySparkleUserDriverDelegate(versionDisplay: versionDisplay)
         super.init()
 
+        if let currentVersion = Self.currentReleaseVersion(in: bundle) {
+            preferencesController.syncUpdateChannelWithInstalledVersion(currentVersion)
+        }
+
         preferencesController.$state
             .map(\.updateChannel)
             .removeDuplicates()

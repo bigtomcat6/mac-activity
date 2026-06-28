@@ -64,6 +64,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var showsHardwareBatteryPercentage: Bool
     public var showsProcessApplicationIdentifier: Bool
     public var updateChannel: UpdateChannel
+    public var lastSyncedUpdateChannelReleaseTag: String?
 
     public init(
         launchAtLoginEnabled: Bool,
@@ -73,7 +74,8 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: Bool = false,
         showsProcessApplicationIdentifier: Bool = false,
-        updateChannel: UpdateChannel = .release
+        updateChannel: UpdateChannel = .release,
+        lastSyncedUpdateChannelReleaseTag: String? = nil
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
@@ -83,6 +85,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
         self.showsProcessApplicationIdentifier = showsProcessApplicationIdentifier
         self.updateChannel = updateChannel
+        self.lastSyncedUpdateChannelReleaseTag = lastSyncedUpdateChannelReleaseTag
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -94,6 +97,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case showsHardwareBatteryPercentage
         case showsProcessApplicationIdentifier
         case updateChannel
+        case lastSyncedUpdateChannelReleaseTag
         case diskCleanupScope
     }
 
@@ -119,6 +123,10 @@ public struct AppPreferences: Equatable, Codable, Sendable {
             forKey: .showsProcessApplicationIdentifier
         ) ?? false
         self.updateChannel = try container.decodeIfPresent(UpdateChannel.self, forKey: .updateChannel) ?? .release
+        self.lastSyncedUpdateChannelReleaseTag = try container.decodeIfPresent(
+            String.self,
+            forKey: .lastSyncedUpdateChannelReleaseTag
+        )
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -131,6 +139,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(showsHardwareBatteryPercentage, forKey: .showsHardwareBatteryPercentage)
         try container.encode(showsProcessApplicationIdentifier, forKey: .showsProcessApplicationIdentifier)
         try container.encode(updateChannel, forKey: .updateChannel)
+        try container.encodeIfPresent(lastSyncedUpdateChannelReleaseTag, forKey: .lastSyncedUpdateChannelReleaseTag)
     }
 
     public static let diskCleanupCategoryOrder: [DiskCleanupCategoryKind] = [.userCaches, .trash, .userLogs]
