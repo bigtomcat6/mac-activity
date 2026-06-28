@@ -295,8 +295,9 @@ jobs:
         if: ${{ inputs.signing == 'developer-id' }}
         env:
           DEVELOPER_ID_APPLICATION_IDENTITY: ${{ vars.DEVELOPER_ID_APPLICATION_IDENTITY }}
+          DMG_PATH: ${{ steps.package.outputs.dmg_path }}
         run: |
-          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          dmg_path="${DMG_PATH}"
           signing_identity="${DEVELOPER_ID_APPLICATION_IDENTITY:-Developer ID Application}"
           codesign \
             --force \
@@ -312,14 +313,17 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ vars.APPLE_TEAM_ID }}
+          DMG_PATH: ${{ steps.package.outputs.dmg_path }}
         run: |
-          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          dmg_path="${DMG_PATH}"
           .github/scripts/notarize_and_staple.sh --path "${dmg_path}"
 
       - name: Validate packaged disk image contents
         if: ${{ inputs.signing == 'developer-id' }}
+        env:
+          DMG_PATH: ${{ steps.package.outputs.dmg_path }}
         run: |
-          dmg_path="${{ steps.package.outputs.dmg_path }}"
+          dmg_path="${DMG_PATH}"
           mount_point="$(mktemp -d "${RUNNER_TEMP}/MacActivityMountedDMG.XXXXXX")"
 
           cleanup() {
