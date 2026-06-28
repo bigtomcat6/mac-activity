@@ -82,6 +82,30 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.updateChannel, .beta)
     }
 
+    func testUpdateChannelSyncsOnlyWhenInstalledReleaseTagChanges() throws {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.syncUpdateChannelWithInstalledVersion(try ReleaseVersion("v26.0.0-beta.2"))
+
+        XCTAssertEqual(controller.state.updateChannel, .beta)
+        XCTAssertEqual(controller.state.lastSyncedUpdateChannelReleaseTag, "v26.0.0-beta.2")
+
+        controller.setUpdateChannel(.release)
+        controller.syncUpdateChannelWithInstalledVersion(try ReleaseVersion("v26.0.0-beta.2"))
+
+        XCTAssertEqual(controller.state.updateChannel, .release)
+
+        controller.syncUpdateChannelWithInstalledVersion(try ReleaseVersion("v26.0.0-alpha.3"))
+
+        XCTAssertEqual(controller.state.updateChannel, .alpha)
+        XCTAssertEqual(controller.state.lastSyncedUpdateChannelReleaseTag, "v26.0.0-alpha.3")
+        XCTAssertEqual(store.savedValues.last?.updateChannel, .alpha)
+    }
+
     func testPreferredLanguageIdentifierPersistsToPreferencesState() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(
