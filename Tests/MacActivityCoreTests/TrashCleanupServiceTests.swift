@@ -116,8 +116,19 @@ final class TrashCleanupServiceTests: XCTestCase {
 
         let result = await service.clean()
 
-        XCTAssertEqual(result, .failed("Unable to delete Trash items."))
+        XCTAssertEqual(result, .failed(.unableToDeleteItems))
         XCTAssertEqual(filesystem.removedItems(), [blocked])
+    }
+
+    func testCleanupReportsMessageWhenTrashDirectoryCannotBeRead() async {
+        let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
+        let filesystem = TrashFilesystemRecorder(contentsFailures: [trashURL: TestTrashError.denied])
+        let service = TrashCleanupService(trashDirectory: trashURL, filesystem: filesystem)
+
+        let result = await service.clean()
+
+        XCTAssertEqual(result, .failed(.message("denied")))
+        XCTAssertEqual(filesystem.removedItems(), [])
     }
 
     @MainActor

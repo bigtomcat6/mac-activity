@@ -1,4 +1,5 @@
 import SwiftUI
+import MacActivityCore
 
 struct TrashCleanupStatusView: View {
     @ObservedObject var model: ActiveCleanupModel
@@ -90,8 +91,8 @@ struct TrashCleanupStatusView: View {
             return AppLocalization.string(.trashSubtitleCleaning, bundle: bundle)
         case .cleaned(_, let itemCount):
             return AppLocalization.string(.trashSubtitleCleaned, itemCount, itemLabel(for: itemCount, bundle: bundle), bundle: bundle)
-        case .failed(let message):
-            return message
+        case .failed(let reason):
+            return failureSubtitle(for: reason, bundle: bundle)
         case .partial(_, let deletedCount, let failedCount, let remainingBytes):
             if let remainingBytes {
                 return AppLocalization.string(
@@ -121,5 +122,14 @@ struct TrashCleanupStatusView: View {
 
     private static func itemLabel(for count: Int, bundle: Bundle? = nil) -> String {
         AppLocalization.string(count == 1 ? .trashItemSingular : .trashItemPlural, bundle: bundle)
+    }
+
+    private static func failureSubtitle(for reason: TrashCleanupFailureReason, bundle: Bundle? = nil) -> String {
+        switch reason {
+        case .message(let message):
+            return message
+        case .unableToDeleteItems:
+            return AppLocalization.string(.trashSubtitleFailedUnableToDeleteItems, bundle: bundle)
+        }
     }
 }

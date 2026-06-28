@@ -1,31 +1,29 @@
 import Foundation
 
-enum AppLanguage: String, CaseIterable, Identifiable {
-    case system
-    case english
-    case simplifiedChinese
+struct AppLanguage: Hashable, Identifiable {
+    static let system = AppLanguage(canonicalLanguageIdentifier: nil)
 
-    var id: String { rawValue }
+    let preferredLanguageIdentifier: String?
 
-    var preferredLanguageIdentifier: String? {
-        switch self {
-        case .system:
-            return nil
-        case .english:
-            return "en"
-        case .simplifiedChinese:
-            return "zh-Hans"
-        }
+    var id: String {
+        preferredLanguageIdentifier ?? "system"
     }
 
     init(preferredLanguageIdentifier: String?) {
-        switch AppLocalization.normalizedLanguageIdentifier(preferredLanguageIdentifier)?.lowercased() {
-        case "en":
-            self = .english
-        case "zh-hans":
-            self = .simplifiedChinese
-        default:
-            self = .system
+        guard let normalized = AppLocalization.normalizedLanguageIdentifier(preferredLanguageIdentifier) else {
+            self.preferredLanguageIdentifier = nil
+            return
         }
+
+        self.preferredLanguageIdentifier = AppLocalization.availableLanguageIdentifier(matching: normalized)
+    }
+
+    private init(canonicalLanguageIdentifier: String?) {
+        self.preferredLanguageIdentifier = canonicalLanguageIdentifier
+    }
+
+    static func supportedLanguages(in bundle: Bundle? = nil) -> [AppLanguage] {
+        [.system] + AppLocalization.availableLanguageIdentifiers(in: bundle)
+            .map { AppLanguage(canonicalLanguageIdentifier: $0) }
     }
 }

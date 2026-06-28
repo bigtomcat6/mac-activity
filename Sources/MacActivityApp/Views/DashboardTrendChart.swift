@@ -194,8 +194,8 @@ struct DashboardTrendChart: View {
             if showsAreaFill {
                 ForEach(displaySamples, id: \.timestamp) { sample in
                     AreaMark(
-                        x: .value("Time", sample.timestamp),
-                        y: .value("Primary", sample.primaryValue)
+                        x: .value(AppLocalization.string(.chartDimensionTime), sample.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionPrimary), sample.primaryValue)
                     )
                     .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
                     .foregroundStyle(areaGradient)
@@ -203,11 +203,11 @@ struct DashboardTrendChart: View {
             }
 
             ForEach(primaryLinePoints) { point in
-                LineMark(
-                    x: .value("Time", point.timestamp),
-                    y: .value("Primary", point.value),
-                    series: .value("Series", point.series.rawValue)
-                )
+                    LineMark(
+                        x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
+                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
+                    )
                 .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(primaryLineGradient)
@@ -216,9 +216,9 @@ struct DashboardTrendChart: View {
             if !secondaryLinePoints.isEmpty {
                 ForEach(secondaryLinePoints) { point in
                     LineMark(
-                        x: .value("Time", point.timestamp),
-                        y: .value("Secondary", point.value),
-                        series: .value("Series", point.series.rawValue)
+                        x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionSecondary), point.value),
+                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
                     )
                     .interpolationMethod(secondaryInterpolationMethod)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
@@ -228,12 +228,12 @@ struct DashboardTrendChart: View {
 
             if let selectedSample {
                 if let baselineValue = DashboardTrendChartLayout.hoverBaselineValue(for: metric.kind) {
-                    RuleMark(y: .value("Baseline", baselineValue))
+                    RuleMark(y: .value(AppLocalization.string(.chartDimensionBaseline), baselineValue))
                         .foregroundStyle(Color.primary.opacity(0.28))
                         .lineStyle(StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [4, 3]))
                 }
 
-                RuleMark(x: .value("Selection", selectedSample.timestamp))
+                RuleMark(x: .value(AppLocalization.string(.chartDimensionSelection), selectedSample.timestamp))
                     .foregroundStyle(hoverRuleColor)
                     .lineStyle(hoverRuleStyle)
 
@@ -244,9 +244,9 @@ struct DashboardTrendChart: View {
                     )
                 ) { point in
                     PointMark(
-                        x: .value("Selection Time", point.timestamp),
+                        x: .value(AppLocalization.string(.chartDimensionSelectionTime), point.timestamp),
                         y: .value(
-                            "Selection Value",
+                            AppLocalization.string(.chartDimensionSelectionValue),
                             point.value
                         )
                     )
@@ -573,15 +573,24 @@ struct DashboardTrendChart: View {
     }
 
     private func axisLabel(for value: Double) -> String {
-        DashboardTrendReadoutFormatter.axisLabel(for: metric.kind, value: value)
+        AppLocalization.chartAxisLabel(for: metric.kind, value: value)
     }
 
     private func primaryReadout(for sample: DashboardTrendSample) -> String {
-        DashboardTrendReadoutFormatter.primaryReadout(for: metric.kind, sample: sample)
+        AppLocalization.chartPrimaryReadout(for: metric.kind, sample: sample)
     }
 
     private func secondaryReadout(for sample: DashboardTrendSample) -> String? {
-        DashboardTrendReadoutFormatter.secondaryReadout(for: metric.kind, sample: sample)
+        AppLocalization.chartSecondaryReadout(for: metric.kind, sample: sample)
+    }
+
+    private func seriesLabel(for series: DashboardTrendLineSeries) -> String {
+        switch series {
+        case .primary:
+            return AppLocalization.string(.chartDimensionPrimary)
+        case .secondary:
+            return AppLocalization.string(.chartDimensionSecondary)
+        }
     }
 
     private func timestampLabel(for date: Date?) -> String {
@@ -589,7 +598,7 @@ struct DashboardTrendChart: View {
             return "--:--"
         }
 
-        return date.formatted(.dateTime.hour().minute())
+        return AppLocalization.formattedTime(date)
     }
 
 }
@@ -1285,41 +1294,5 @@ struct DashboardTrendChartLayout {
 
     static func animatesSampleChanges(for kind: MetricKind) -> Bool {
         true
-    }
-}
-
-enum DashboardTrendReadoutFormatter {
-    static func axisLabel(for kind: MetricKind, value: Double) -> String {
-        switch kind {
-        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
-            return "\(Int(value.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", value)
-        case .fan:
-            return "\(Int(value.rounded())) RPM"
-        case .network:
-            return DashboardMetricTextFormatter.formatRate(abs(value))
-        }
-    }
-
-    static func primaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String {
-        switch kind {
-        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
-            return "\(Int(sample.primaryValue.rounded()))%"
-        case .temperature:
-            return String(format: "%.1f C", sample.primaryValue)
-        case .fan:
-            return "\(Int(sample.primaryValue.rounded())) RPM"
-        case .network:
-            return "↑ \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
-        }
-    }
-
-    static func secondaryReadout(for kind: MetricKind, sample: DashboardTrendSample) -> String? {
-        guard kind == .network else {
-            return nil
-        }
-
-        return "↓ \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
     }
 }

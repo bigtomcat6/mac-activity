@@ -103,32 +103,32 @@ struct DebugMemoryReleaseUI {
         switch options.scenario {
         case .released:
             title = format(
-                strings["memoryRelease.title.released"],
+                try localizedString("memoryRelease.title.released", in: strings, locale: options.locale),
                 arguments: [formattedBytes(options.bytes)],
                 locale: locale
             )
             subtitle = format(
-                strings["memoryRelease.subtitle.percentOfTotal"],
+                try localizedString("memoryRelease.subtitle.percentOfTotal", in: strings, locale: options.locale),
                 arguments: [options.percent],
                 locale: locale
             )
         case .zeroRelease:
-            title = strings["memoryRelease.title.noSignificantRelease"]
-                ?? "Memory Unchanged"
-            subtitle = strings["memoryRelease.subtitle.noSignificantRelease"]
-                ?? "No immediately releasable memory was found."
+            title = try localizedString("memoryRelease.title.noSignificantRelease", in: strings, locale: options.locale)
+            subtitle = try localizedString("memoryRelease.subtitle.noSignificantRelease", in: strings, locale: options.locale)
         case .cooldown:
-            title = strings["memoryRelease.title.cooldown"]
-                ?? "Release Cooling Down"
+            title = try localizedString("memoryRelease.title.cooldown", in: strings, locale: options.locale)
             subtitle = format(
-                strings["memoryRelease.subtitle.cooldown"],
+                try localizedString("memoryRelease.subtitle.cooldown", in: strings, locale: options.locale),
                 arguments: [options.remainingSeconds],
                 locale: locale
             )
         case .failed:
-            title = strings["memoryRelease.title.failed"]
-                ?? "Memory Release Failed"
-            subtitle = "Memory release failed with exit code 1."
+            title = try localizedString("memoryRelease.title.failed", in: strings, locale: options.locale)
+            subtitle = format(
+                try localizedString("memoryRelease.subtitle.failedWithExitCode", in: strings, locale: options.locale),
+                arguments: [1],
+                locale: locale
+            )
         }
 
         return DebugMemoryReleaseUIReport(
@@ -153,8 +153,19 @@ struct DebugMemoryReleaseUI {
         return dictionary
     }
 
-    private static func format(_ format: String?, arguments: [CVarArg], locale: Locale) -> String {
-        String(format: format ?? "", locale: locale, arguments: arguments)
+    private static func localizedString(
+        _ key: String,
+        in strings: [String: String],
+        locale: String
+    ) throws -> String {
+        guard let value = strings[key] else {
+            throw DebugMemoryReleaseUIError.missingString(key: key, locale: locale)
+        }
+        return value
+    }
+
+    private static func format(_ format: String, arguments: [CVarArg], locale: Locale) -> String {
+        String(format: format, locale: locale, arguments: arguments)
     }
 
     private static func formattedBytes(_ bytes: UInt64) -> String {
@@ -199,6 +210,7 @@ private enum DebugMemoryReleaseUIError: LocalizedError {
     case missingValue(argument: String)
     case invalidValue(argument: String, value: String)
     case missingStrings(locale: String)
+    case missingString(key: String, locale: String)
 
     var errorDescription: String? {
         switch self {
@@ -210,6 +222,8 @@ private enum DebugMemoryReleaseUIError: LocalizedError {
             return "Invalid value for \(argument): \(value)"
         case .missingStrings(let locale):
             return "Unable to load Localizable.strings for locale \(locale)"
+        case .missingString(let key, let locale):
+            return "Missing \(key) in Localizable.strings for locale \(locale)"
         }
     }
 }

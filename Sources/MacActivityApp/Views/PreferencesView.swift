@@ -25,6 +25,10 @@ struct PreferencesView: View {
         MetricKind.summaryOrder
     }
 
+    var localizationRefreshID: String {
+        localizationController.preferredLanguageIdentifier ?? "system"
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
@@ -55,12 +59,13 @@ struct PreferencesView: View {
                             }
                         )
                     ) {
-                        ForEach(AppLanguage.allCases) { language in
+                        ForEach(AppLanguage.supportedLanguages()) { language in
                             Text(AppLocalization.languageTitle(for: language))
                                 .tag(language)
                         }
                     }
                     .pickerStyle(.menu)
+                    .id("language-\(localizationRefreshID)")
 
                     Text(AppLocalization.string(.preferencesLanguageHelp))
                         .font(.footnote)
@@ -84,6 +89,7 @@ struct PreferencesView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .id("temperature-\(localizationRefreshID)")
 
                     Text(AppLocalization.string(.preferencesTemperatureHelp))
                         .font(.footnote)
@@ -223,6 +229,7 @@ struct PreferencesView: View {
                     .labelsHidden()
                     .pickerStyle(.menu)
                     .frame(width: 120)
+                    .id("update-channel-\(localizationRefreshID)")
                 }
                 .transition(.opacity.combined(with: .move(edge: .top)))
             }

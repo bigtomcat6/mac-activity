@@ -389,12 +389,12 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
     func testSectionLocalErrorTextComesFromProducingSection() {
         let english = Self.englishBundle
 
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed("denied"), bundle: english), "Trash Cleanup Failed")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed("denied"), bundle: english), "denied")
-        XCTAssertEqual(DiskCleanupStatusView.title(for: .failed("boom"), bundle: english), "Disk Cleanup Failed")
-        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed("boom"), bundle: english), "boom")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed("boom"), bundle: english), "Memory Release Failed")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed("boom"), bundle: english), "boom")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Trash Cleanup Failed")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
+        XCTAssertEqual(DiskCleanupStatusView.title(for: .failed(.message("boom")), bundle: english), "Disk Cleanup Failed")
+        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed(.message("boom")), bundle: english), "Memory Release Failed")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable, bundle: english), "Memory Release Not Available")
     }
 
@@ -460,8 +460,8 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             ),
             "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
         )
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed("denied"), bundle: english), "Trash Cleanup Failed")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed("denied"), bundle: english), "denied")
+        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Trash Cleanup Failed")
+        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
     }
 
     func testDiskCleanupHelperTextMatchesCleanReleasePlan() {
@@ -509,8 +509,8 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             ),
             "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
         )
-        XCTAssertEqual(DiskCleanupStatusView.title(for: .failed("denied"), bundle: english), "Disk Cleanup Failed")
-        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed("denied"), bundle: english), "denied")
+        XCTAssertEqual(DiskCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Disk Cleanup Failed")
+        XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
     }
 
     func testMemoryHelperTextMatchesCleanReleasePlan() {
@@ -543,8 +543,8 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: english), "2.5% of total memory")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable, bundle: english), "Memory Release Not Available")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable, bundle: english), "No supported memory release method is available on this Mac.")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed("boom"), bundle: english), "Memory Release Failed")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed("boom"), bundle: english), "boom")
+        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed(.message("boom")), bundle: english), "Memory Release Failed")
+        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failedToReadMemory, bundle: english), "Memory Reading Failed")
         XCTAssertEqual(
             MemoryReleaseStatusView.subtitle(for: .failedToReadMemory, bundle: english),

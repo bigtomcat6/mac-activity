@@ -5,7 +5,7 @@ enum AppLocalization {
     private static let preferredLanguageLock = NSLock()
     nonisolated(unsafe) private static var preferredLanguageIdentifier: String?
 
-    enum Key: String {
+    enum Key: String, CaseIterable {
         case appName = "app.name"
         case preferences = "app.action.preferences"
         case quit = "app.action.quit"
@@ -17,6 +17,7 @@ enum AppLocalization {
         case dashboardWaitingFirstMetricSample = "dashboard.waiting.firstMetricSample"
         case dashboardCPUGPU = "dashboard.cpuGpu"
         case dashboardTrendCollecting = "dashboard.trend.collecting"
+        case dashboardStorageAccessibility = "dashboard.storage.accessibility"
         case memoryChartCollectingSamples = "dashboard.memory.chart.collectingSamples"
         case memoryChartAccessibility = "dashboard.memory.chart.accessibility"
         case memorySegmentActive = "dashboard.memory.segment.active"
@@ -36,6 +37,18 @@ enum AppLocalization {
         case metricFan = "metric.fan"
         case metricBatteryCharging = "metric.battery.charging"
         case metricBatteryOnBattery = "metric.battery.onBattery"
+        case chartDimensionTime = "chart.dimension.time"
+        case chartDimensionPrimary = "chart.dimension.primary"
+        case chartDimensionSecondary = "chart.dimension.secondary"
+        case chartDimensionSeries = "chart.dimension.series"
+        case chartDimensionBaseline = "chart.dimension.baseline"
+        case chartDimensionSelection = "chart.dimension.selection"
+        case chartDimensionSelectionTime = "chart.dimension.selectionTime"
+        case chartDimensionSelectionValue = "chart.dimension.selectionValue"
+        case chartTemperatureAxis = "chart.temperature.axis"
+        case chartTemperatureReadout = "chart.temperature.readout"
+        case chartFanAxis = "chart.fan.axis"
+        case chartFanReadout = "chart.fan.readout"
         case temperatureSourceCPUSMC = "temperature.source.cpuSMC"
         case temperatureSourceBattery = "temperature.source.battery"
         case temperatureDashboardCPU = "temperature.dashboard.cpu"
@@ -58,8 +71,7 @@ enum AppLocalization {
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
         case languageSystem = "language.system"
-        case languageEnglish = "language.english"
-        case languageSimplifiedChinese = "language.simplifiedChinese"
+        case languageSelfName = "language.selfName"
         case updateChannelAlpha = "update.channel.alpha"
         case updateChannelBeta = "update.channel.beta"
         case updateChannelRelease = "update.channel.release"
@@ -85,6 +97,7 @@ enum AppLocalization {
         case memoryReleaseSubtitleUnavailable = "memoryRelease.subtitle.unavailable"
         case memoryReleaseSubtitleReadFailed = "memoryRelease.subtitle.readFailed"
         case memoryReleaseSubtitleDefault = "memoryRelease.subtitle.default"
+        case memoryReleaseSubtitleFailedWithExitCode = "memoryRelease.subtitle.failedWithExitCode"
         case trashActionRetry = "trash.action.retry"
         case trashActionClean = "trash.action.clean"
         case trashTitleScanning = "trash.title.scanning"
@@ -100,6 +113,7 @@ enum AppLocalization {
         case trashSubtitleCleaned = "trash.subtitle.cleaned"
         case trashSubtitlePartial = "trash.subtitle.partial"
         case trashSubtitlePartialWithRemaining = "trash.subtitle.partialWithRemaining"
+        case trashSubtitleFailedUnableToDeleteItems = "trash.subtitle.failed.unableToDeleteItems"
         case trashItemSingular = "trash.item.singular"
         case trashItemPlural = "trash.item.plural"
         case diskCleanupActionRetry = "diskCleanup.action.retry"
@@ -117,6 +131,7 @@ enum AppLocalization {
         case diskCleanupSubtitleCleaned = "diskCleanup.subtitle.cleaned"
         case diskCleanupSubtitlePartial = "diskCleanup.subtitle.partial"
         case diskCleanupSubtitlePartialWithRemaining = "diskCleanup.subtitle.partialWithRemaining"
+        case diskCleanupSubtitleFailedUnableToDeleteItems = "diskCleanup.subtitle.failed.unableToDeleteItems"
         case diskCleanupItemSingular = "diskCleanup.item.singular"
         case diskCleanupItemPlural = "diskCleanup.item.plural"
         case diskCleanupCategorySingular = "diskCleanup.category.singular"
@@ -138,15 +153,102 @@ enum AppLocalization {
         #endif
     }
 
-    static func bundle(forLanguageIdentifier languageIdentifier: String) -> Bundle? {
-        let candidates = [
-            languageIdentifier,
-            languageIdentifier.lowercased(),
-        ]
+    static func availableLanguageIdentifiers(in sourceBundle: Bundle? = nil) -> [String] {
+        let targetBundle = sourceBundle ?? bundle
+        let resources = localizedResources(in: targetBundle)
 
-        guard let path = candidates.lazy.compactMap({ bundle.path(forResource: $0, ofType: "lproj") }).first else {
+        return Array(resources.keys)
+            .sorted { lhs, rhs in
+                if lhs == "en" {
+                    return true
+                }
+                if rhs == "en" {
+                    return false
+                }
+                return lhs.localizedStandardCompare(rhs) == .orderedAscending
+            }
+    }
+
+    private static func localizedResources(in bundle: Bundle) -> [String: String] {
+        var resources: [String: String] = [:]
+
+        for identifier in bundle.localizations where identifier != "Base" {
+            resources[canonicalLanguageIdentifier(identifier)] = identifier
+        }
+
+        if let resourceURL = bundle.resourceURL,
+           let resourceContents = try? FileManager.default.contentsOfDirectory(
+            at: resourceURL,
+            includingPropertiesForKeys: nil
+           ) {
+            for url in resourceContents where url.pathExtension == "lproj" {
+                let identifier = url.deletingPathExtension().lastPathComponent
+                if identifier != "Base" {
+                    resources[canonicalLanguageIdentifier(identifier), default: identifier] = identifier
+                }
+            }
+        }
+
+        return resources
+    }
+
+    static func availableLanguageIdentifier(matching languageIdentifier: String, in sourceBundle: Bundle? = nil) -> String? {
+        guard let normalized = normalizedLanguageIdentifier(languageIdentifier) else {
             return nil
         }
+
+        let available = availableLanguageIdentifiers(in: sourceBundle)
+        if available.contains(normalized) {
+            return normalized
+        }
+
+        if let regionalMatch = available.first(where: { normalized.hasPrefix("\($0)-") }) {
+            return regionalMatch
+        }
+
+        let normalizedComponents = normalized.split(separator: "-")
+        if normalizedComponents.count == 1 {
+            return available.first { $0.split(separator: "-").first == normalizedComponents.first }
+        }
+
+        return nil
+    }
+
+    private static func canonicalLanguageIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .enumerated()
+            .map { index, component in
+                let value = String(component)
+                if index == 0 {
+                    return value.lowercased()
+                }
+                if value.count == 4 {
+                    return value.prefix(1).uppercased() + value.dropFirst().lowercased()
+                }
+                if value.count == 2 || value.count == 3 {
+                    return value.uppercased()
+                }
+                return value
+            }
+            .joined(separator: "-")
+    }
+
+    static func bundle(forLanguageIdentifier languageIdentifier: String) -> Bundle? {
+        guard let normalized = normalizedLanguageIdentifier(languageIdentifier) else {
+            return nil
+        }
+
+        let resources = localizedResources(in: bundle)
+        let preferred = availableLanguageIdentifier(matching: normalized)
+
+        guard let preferred,
+              let resourceIdentifier = resources[preferred],
+              let path = bundle.path(forResource: resourceIdentifier, ofType: "lproj") else {
+            return nil
+        }
+
         return Bundle(path: path)
     }
 
@@ -155,7 +257,7 @@ enum AppLocalization {
               normalized.isEmpty == false else {
             return nil
         }
-        return normalized
+        return canonicalLanguageIdentifier(normalized)
     }
 
     static func setPreferredLanguageIdentifier(_ preferredLanguageIdentifier: String?) {
@@ -177,6 +279,21 @@ enum AppLocalization {
             locale: locale(for: targetBundle),
             arguments: arguments
         )
+    }
+
+    static func currentLocale(bundle: Bundle? = nil) -> Locale {
+        locale(for: bundle ?? configuredBundle())
+    }
+
+    static func currentLanguageIdentifier() -> String? {
+        normalizedLanguageIdentifier(locale(for: configuredBundle()).identifier)
+    }
+
+    static func explicitPreferredLanguageIdentifier() -> String? {
+        preferredLanguageLock.lock()
+        let preferredLanguageIdentifier = self.preferredLanguageIdentifier
+        preferredLanguageLock.unlock()
+        return preferredLanguageIdentifier
     }
 
     static func metricTitle(for kind: MetricKind, bundle: Bundle? = nil) -> String {
@@ -219,6 +336,20 @@ enum AppLocalization {
         return metricTitle(for: metric.kind, bundle: bundle)
     }
 
+    static func dashboardMetricTitle(for metric: DashboardMetric, bundle: Bundle? = nil) -> String {
+        switch metric.titleRole {
+        case .metric(let kind):
+            return metricTitle(for: kind, bundle: bundle)
+        case .temperature(let source):
+            switch source {
+            case .smc:
+                return string(.temperatureDashboardCPU, bundle: bundle)
+            case .battery:
+                return string(.temperatureDashboardBattery, bundle: bundle)
+            }
+        }
+    }
+
     static func metricDetail(_ detail: String, bundle: Bundle? = nil) -> String {
         switch detail {
         case "Charging":
@@ -228,6 +359,75 @@ enum AppLocalization {
         default:
             return detail
         }
+    }
+
+    static func dashboardMetricDetail(for metric: DashboardMetric, bundle: Bundle? = nil) -> String? {
+        guard let detailRole = metric.detailRole else {
+            return metric.detail
+        }
+
+        switch detailRole {
+        case .batteryCharging:
+            return string(.metricBatteryCharging, bundle: bundle)
+        case .batteryOnBattery:
+            return string(.metricBatteryOnBattery, bundle: bundle)
+        case .raw(let value):
+            return value
+        }
+    }
+
+    static func storageAccessibilityValue(for metrics: [DashboardMetric], bundle: Bundle? = nil) -> String {
+        let targetBundle = bundle ?? configuredBundle()
+        let separator = locale(for: targetBundle).identifier.hasPrefix("zh") ? "，" : ", "
+        return metrics
+            .map { metric in
+                let title = dashboardMetricTitle(for: metric, bundle: targetBundle)
+                let value = dashboardMetricDetail(for: metric, bundle: targetBundle) ?? metric.value
+                return "\(title) \(value)"
+            }
+            .joined(separator: separator)
+    }
+
+    static func formattedTime(_ date: Date, includesSeconds: Bool = false, bundle: Bundle? = nil) -> String {
+        var format = Date.FormatStyle.dateTime.hour().minute()
+        if includesSeconds {
+            format = format.second()
+        }
+        return date.formatted(format.locale(locale(for: bundle ?? configuredBundle())))
+    }
+
+    static func chartAxisLabel(for kind: MetricKind, value: Double, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:
+            return DashboardMetricTextFormatter.formatPercent(value)
+        case .temperature:
+            return string(.chartTemperatureAxis, value, bundle: bundle)
+        case .fan:
+            return string(.chartFanAxis, Int(value.rounded()), bundle: bundle)
+        case .network:
+            return DashboardMetricTextFormatter.formatRate(abs(value))
+        }
+    }
+
+    static func chartPrimaryReadout(for kind: MetricKind, sample: DashboardTrendSample, bundle: Bundle? = nil) -> String {
+        switch kind {
+        case .network:
+            return "↑ \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
+        case .temperature:
+            return string(.chartTemperatureReadout, sample.primaryValue, bundle: bundle)
+        case .fan:
+            return string(.chartFanReadout, Int(sample.primaryValue.rounded()), bundle: bundle)
+        default:
+            return DashboardMetricTextFormatter.formatPercent(sample.primaryValue)
+        }
+    }
+
+    static func chartSecondaryReadout(for kind: MetricKind, sample: DashboardTrendSample, bundle: Bundle? = nil) -> String? {
+        guard kind == .network else {
+            return nil
+        }
+
+        return "↓ \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
     }
 
     static func temperatureSourceTitle(for source: TemperatureSource, bundle: Bundle? = nil) -> String {
@@ -240,14 +440,11 @@ enum AppLocalization {
     }
 
     static func languageTitle(for language: AppLanguage, bundle: Bundle? = nil) -> String {
-        switch language {
-        case .system:
+        guard let identifier = language.preferredLanguageIdentifier else {
             return string(.languageSystem, bundle: bundle)
-        case .english:
-            return string(.languageEnglish, bundle: bundle)
-        case .simplifiedChinese:
-            return string(.languageSimplifiedChinese, bundle: bundle)
         }
+
+        return displayName(forLanguageIdentifier: identifier)
     }
 
     static func updateChannelTitle(for channel: UpdateChannel, bundle: Bundle? = nil) -> String {
@@ -303,7 +500,27 @@ enum AppLocalization {
         string(.memoryChartAccessibility, pressurePercent, usedMemory, totalMemory, bundle: bundle)
     }
 
+    static func displayName(forLanguageIdentifier identifier: String) -> String {
+        guard let languageBundle = bundle(forLanguageIdentifier: identifier) else {
+            return identifier
+        }
+
+        let value = languageBundle.localizedString(
+            forKey: Key.languageSelfName.rawValue,
+            value: nil,
+            table: nil
+        )
+        return value == Key.languageSelfName.rawValue ? identifier : value
+    }
+
     private static func locale(for bundle: Bundle) -> Locale {
+        if bundle.bundleURL.pathExtension == "lproj" {
+            let identifier = canonicalLanguageIdentifier(
+                bundle.bundleURL.deletingPathExtension().lastPathComponent
+            )
+            return Locale(identifier: identifier)
+        }
+
         if let identifier = bundle.preferredLocalizations.first {
             return Locale(identifier: identifier)
         }

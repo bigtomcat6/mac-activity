@@ -87,8 +87,8 @@ struct MemoryReleaseStatusView: View {
             return AppLocalization.string(.memoryReleaseSubtitleCooldown, remainingSeconds, bundle: bundle)
         case .unavailable:
             return AppLocalization.string(.memoryReleaseSubtitleUnavailable, bundle: bundle)
-        case .failed(let message):
-            return message
+        case .failed(let reason):
+            return failureSubtitle(for: reason, bundle: bundle)
         case .failedToReadMemory:
             return AppLocalization.string(.memoryReleaseSubtitleReadFailed, bundle: bundle)
         case .idle, .releasing:
@@ -113,6 +113,15 @@ struct MemoryReleaseStatusView: View {
 
     private static func formattedBytes(_ bytes: UInt64) -> String {
         byteFormatter.string(fromByteCount: Int64(min(bytes, UInt64(Int64.max))))
+    }
+
+    private static func failureSubtitle(for reason: MemoryReleaseFailureReason, bundle: Bundle? = nil) -> String {
+        switch reason {
+        case .message(let message):
+            return message
+        case .exitCode(let exitCode):
+            return AppLocalization.string(.memoryReleaseSubtitleFailedWithExitCode, Int(exitCode), bundle: bundle)
+        }
     }
 
     private static let releaseActionWidth: CGFloat = 72

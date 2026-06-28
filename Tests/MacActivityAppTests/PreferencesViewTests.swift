@@ -117,6 +117,22 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
     }
 
+    func testPreferencesViewRefreshIDFollowsSelectedLanguage() {
+        defer { AppLocalizationController.shared.applyPreferredLanguageIdentifier(nil) }
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let view = PreferencesView(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(view.localizationRefreshID, "zh-Hans")
+    }
+
     func testPreferencesViewCanPersistProcessApplicationIdentifierToggle() {
         let controller = PreferencesController(
             store: InMemoryPreferencesStore(initial: .default),

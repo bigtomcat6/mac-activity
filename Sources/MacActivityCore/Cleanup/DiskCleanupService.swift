@@ -226,7 +226,12 @@ public enum DiskCleanupScanResult: Equatable, Sendable {
 public enum DiskCleanupResult: Equatable, Sendable {
     case cleaned(bytes: UInt64, itemCount: Int)
     case partial(bytes: UInt64, deletedCount: Int, failedCount: Int, remainingBytes: UInt64?)
-    case failed(String)
+    case failed(DiskCleanupFailureReason)
+}
+
+public enum DiskCleanupFailureReason: Equatable, Sendable {
+    case message(String)
+    case unableToDeleteItems
 }
 
 public struct DiskCleanupService: Sendable {
@@ -322,7 +327,7 @@ public struct DiskCleanupService: Sendable {
         case .cleanable(let cleanableSummary):
             summary = cleanableSummary
         case .failed(let message):
-            return .failed(message)
+            return .failed(.message(message))
         }
 
         var deletedBytes: UInt64 = 0
@@ -357,7 +362,7 @@ public struct DiskCleanupService: Sendable {
         }
 
         if deletedCount == 0 {
-            return .failed("Unable to delete selected disk cleanup items.")
+            return .failed(.unableToDeleteItems)
         }
 
         return .partial(
@@ -464,8 +469,11 @@ public struct DiskCleanupService: Sendable {
                     continue
                 }
 
-                guard let metadata = try? filesystem.itemMetadata(at: child) else {
-                    accessIssues.append(DiskCleanupAccessIssue(kind: kind, url: child, message: "Unable to read file metadata."))
+                let metadata: DiskCleanupItemMetadata
+                do {
+                    metadata = try filesystem.itemMetadata(at: child)
+                } catch {
+                    accessIssues.append(DiskCleanupAccessIssue(kind: kind, url: child, message: error.localizedDescription))
                     continue
                 }
 

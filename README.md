@@ -1,11 +1,12 @@
 <p align="center">
-  <img src="/assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
+  <img src="./assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
 </p>
 
 <h1 align="center">Mac Activity</h1>
 
 <p align="center">
   <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml/badge.svg?branch=main" alt="Localization"></a>
   <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml/badge.svg?branch=main" alt="Docs Links"></a>
   <a href="https://codecov.io/gh/bigtomcat6/mac-activity"><img src="https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg" alt="codecov"></a>
   <a href="/LICENSE"><img src="https://img.shields.io/github/license/bigtomcat6/mac-activity" alt="License"></a>
@@ -15,6 +16,11 @@
 <p align="center">
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=!*-*&sort=semver&label=stable" alt="Stable"></a>
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release" alt="Pre-release"></a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbigtomcat6%2Fmac-activity%2Fbadges%2Flocalization%2Fen.json" alt="English localization coverage"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://img.shields.io/endpoint?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbigtomcat6%2Fmac-activity%2Fbadges%2Flocalization%2Fzh-Hans.json" alt="简体中文 localization coverage"></a>
 </p>
 
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.

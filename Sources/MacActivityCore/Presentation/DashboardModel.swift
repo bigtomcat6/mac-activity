@@ -7,6 +7,17 @@ public enum DashboardMetricStyle: Equatable, Sendable {
     case value
 }
 
+public enum DashboardMetricTitleRole: Equatable, Sendable {
+    case metric(MetricKind)
+    case temperature(TemperatureSource)
+}
+
+public enum DashboardMetricDetailRole: Equatable, Sendable {
+    case batteryCharging
+    case batteryOnBattery
+    case raw(String)
+}
+
 public enum DashboardTrendScale: Equatable, Sendable {
     case automatic
     case fixed(lowerBound: Double, upperBound: Double)
@@ -66,9 +77,11 @@ public struct DashboardMemoryTrend: Equatable, Sendable {
 
 public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var kind: MetricKind
+    public var titleRole: DashboardMetricTitleRole
     public var title: String
     public var value: String
     public var secondaryText: String?
+    public var detailRole: DashboardMetricDetailRole?
     public var detail: String?
     public var usedBytes: UInt64?
     public var totalBytes: UInt64?
@@ -78,7 +91,42 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
     public var memoryTrend: DashboardMemoryTrend?
 
     public var id: String {
-        kind == .temperature ? "\(kind.rawValue)-\(title)" : kind.rawValue
+        switch titleRole {
+        case .metric(let kind):
+            return kind.rawValue
+        case .temperature(let source):
+            return "\(MetricKind.temperature.rawValue)-\(source.rawValue)"
+        }
+    }
+
+    public init(
+        kind: MetricKind,
+        titleRole: DashboardMetricTitleRole? = nil,
+        value: String,
+        secondaryText: String? = nil,
+        detailRole: DashboardMetricDetailRole? = nil,
+        title: String? = nil,
+        detail: String? = nil,
+        usedBytes: UInt64? = nil,
+        totalBytes: UInt64? = nil,
+        progress: Double? = nil,
+        style: DashboardMetricStyle = .value,
+        trend: DashboardTrend? = nil,
+        memoryTrend: DashboardMemoryTrend? = nil
+    ) {
+        self.kind = kind
+        self.titleRole = titleRole ?? .metric(kind)
+        self.title = title ?? kind.title
+        self.value = value
+        self.secondaryText = secondaryText
+        self.detailRole = detailRole
+        self.detail = detail
+        self.usedBytes = usedBytes
+        self.totalBytes = totalBytes
+        self.progress = progress
+        self.style = style
+        self.trend = trend
+        self.memoryTrend = memoryTrend
     }
 
     public init(
@@ -94,17 +142,20 @@ public struct DashboardMetric: Identifiable, Equatable, Sendable {
         trend: DashboardTrend? = nil,
         memoryTrend: DashboardMemoryTrend? = nil
     ) {
-        self.kind = kind
-        self.title = title
-        self.value = value
-        self.secondaryText = secondaryText
-        self.detail = detail
-        self.usedBytes = usedBytes
-        self.totalBytes = totalBytes
-        self.progress = progress
-        self.style = style
-        self.trend = trend
-        self.memoryTrend = memoryTrend
+        self.init(
+            kind: kind,
+            titleRole: .metric(kind),
+            value: value,
+            secondaryText: secondaryText,
+            title: title,
+            detail: detail,
+            usedBytes: usedBytes,
+            totalBytes: totalBytes,
+            progress: progress,
+            style: style,
+            trend: trend,
+            memoryTrend: memoryTrend
+        )
     }
 }
 
@@ -213,8 +264,9 @@ public final class DashboardModel: ObservableObject {
             items.append(
                 DashboardMetric(
                     kind: .cpu,
-                    title: MetricKind.cpu.title,
+                    titleRole: .metric(.cpu),
                     value: "\(Int(cpu.usagePercent.rounded()))%",
+                    title: MetricKind.cpu.title,
                     progress: progressFraction(for: cpu.usagePercent),
                     style: .chart,
                     trend: trend(from: history, kind: .cpu, scale: .fixed(lowerBound: 0, upperBound: 100))
@@ -226,8 +278,9 @@ public final class DashboardModel: ObservableObject {
             items.append(
                 DashboardMetric(
                     kind: .gpu,
-                    title: MetricKind.gpu.title,
+                    titleRole: .metric(.gpu),
                     value: "\(Int(gpu.usagePercent.rounded()))%",
+                    title: MetricKind.gpu.title,
                     progress: progressFraction(for: gpu.usagePercent),
                     style: .chart,
                     trend: trend(from: history, kind: .gpu, scale: .fixed(lowerBound: 0, upperBound: 100))
@@ -236,15 +289,18 @@ public final class DashboardModel: ObservableObject {
         }
 
         if let disk = snapshot.disk {
+            let detail = DashboardMetricTextFormatter.formatUsageDetail(
+                usedBytes: disk.usedBytes,
+                percent: disk.usagePercent
+            )
             items.append(
                 DashboardMetric(
                     kind: .disk,
-                    title: MetricKind.disk.title,
+                    titleRole: .metric(.disk),
                     value: DashboardMetricTextFormatter.formatPercent(disk.usagePercent),
-                    detail: DashboardMetricTextFormatter.formatUsageDetail(
-                        usedBytes: disk.usedBytes,
-                        percent: disk.usagePercent
-                    ),
+                    detailRole: .raw(detail),
+                    title: MetricKind.disk.title,
+                    detail: detail,
                     usedBytes: disk.usedBytes,
                     totalBytes: disk.totalBytes,
                     progress: progressFraction(for: disk.usagePercent),
@@ -255,12 +311,18 @@ public final class DashboardModel: ObservableObject {
         }
 
         if let swap = snapshot.swap {
+            let detail = DashboardMetricTextFormatter.formatUsageDetail(
+                usedBytes: swap.usedBytes,
+                percent: swap.usagePercent
+            )
             items.append(
                 DashboardMetric(
                     kind: .swap,
-                    title: MetricKind.swap.title,
+                    titleRole: .metric(.swap),
                     value: DashboardMetricTextFormatter.formatPercent(swap.usagePercent),
-                    detail: DashboardMetricTextFormatter.formatBytes(swap.usedBytes),
+                    detailRole: .raw(detail),
+                    title: MetricKind.swap.title,
+                    detail: detail,
                     usedBytes: swap.usedBytes,
                     totalBytes: swap.totalBytes,
                     progress: progressFraction(for: swap.usagePercent),
@@ -274,12 +336,13 @@ public final class DashboardModel: ObservableObject {
             items.append(
                 DashboardMetric(
                     kind: .memory,
-                    title: MetricKind.memory.title,
+                    titleRole: .metric(.memory),
                     value: DashboardMetricTextFormatter.formatMemorySummary(
                         usedBytes: memory.usedBytes,
                         totalBytes: memory.totalBytes,
                         percent: memory.pressurePercent
                     ),
+                    title: MetricKind.memory.title,
                     style: .memoryStackedChart,
                     trend: trend(from: history, kind: .memory, scale: .fixed(lowerBound: 0, upperBound: 100)),
                     memoryTrend: memoryTrend(from: history, memory: memory)
@@ -289,7 +352,14 @@ public final class DashboardModel: ObservableObject {
 
         if let network = snapshot.network {
             items.append(
-                DashboardMetric(kind: .network, title: MetricKind.network.title, value: "↑ \(DashboardMetricTextFormatter.formatRate(network.uploadBytesPerSecond))  ↓ \(DashboardMetricTextFormatter.formatRate(network.downloadBytesPerSecond))", style: .chart, trend: trend(from: history, kind: .network, scale: .automatic))
+                DashboardMetric(
+                    kind: .network,
+                    titleRole: .metric(.network),
+                    value: "↑ \(DashboardMetricTextFormatter.formatRate(network.uploadBytesPerSecond))  ↓ \(DashboardMetricTextFormatter.formatRate(network.downloadBytesPerSecond))",
+                    title: MetricKind.network.title,
+                    style: .chart,
+                    trend: trend(from: history, kind: .network, scale: .automatic)
+                )
             )
         }
 
@@ -297,11 +367,14 @@ public final class DashboardModel: ObservableObject {
             let percentage = battery.displayPercentage(
                 showsHardwarePercentage: showsHardwareBatteryPercentage
             )
+            let detailRole: DashboardMetricDetailRole = battery.isCharging ? .batteryCharging : .batteryOnBattery
             items.append(
                 DashboardMetric(
                     kind: .battery,
-                    title: MetricKind.battery.title,
+                    titleRole: .metric(.battery),
                     value: "\(Int(percentage.rounded()))%",
+                    detailRole: detailRole,
+                    title: MetricKind.battery.title,
                     detail: battery.isCharging ? "Charging" : "On Battery",
                     style: .chart,
                     trend: batteryTrend(
@@ -316,8 +389,9 @@ public final class DashboardModel: ObservableObject {
             items.append(
                 DashboardMetric(
                     kind: .temperature,
-                    title: temperature.source.dashboardTitle,
+                    titleRole: .temperature(temperature.source),
                     value: formatTemperature(temperature.celsius),
+                    title: temperature.source.dashboardTitle,
                     style: .chart,
                     trend: trend(
                         from: history,
@@ -331,7 +405,14 @@ public final class DashboardModel: ObservableObject {
 
         if let fan = snapshot.fan {
             items.append(
-                DashboardMetric(kind: .fan, title: MetricKind.fan.title, value: "\(fan.rpm) RPM", style: .chart, trend: trend(from: history, kind: .fan, scale: .automatic))
+                DashboardMetric(
+                    kind: .fan,
+                    titleRole: .metric(.fan),
+                    value: "\(fan.rpm) RPM",
+                    title: MetricKind.fan.title,
+                    style: .chart,
+                    trend: trend(from: history, kind: .fan, scale: .automatic)
+                )
             )
         }
 

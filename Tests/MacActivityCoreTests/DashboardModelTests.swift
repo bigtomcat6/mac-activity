@@ -62,20 +62,24 @@ final class DashboardModelTests: XCTestCase {
 
         XCTAssertEqual(metrics.map(\.kind), [.cpu, .gpu, .disk, .swap])
         let disk = try! XCTUnwrap(metrics.first { $0.kind == .disk })
+        XCTAssertEqual(disk.titleRole, .metric(.disk))
         XCTAssertEqual(disk.title, "Disk")
         XCTAssertEqual(disk.value, "75%")
         XCTAssertEqual(disk.usedBytes, 750)
         XCTAssertEqual(disk.totalBytes, 1_000)
         XCTAssertEqual(try! XCTUnwrap(disk.progress), 0.75, accuracy: 0.001)
+        XCTAssertEqual(disk.detailRole, .raw("750 B (75%)"))
         XCTAssertEqual(disk.detail, "750 B (75%)")
 
         let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
+        XCTAssertEqual(swap.titleRole, .metric(.swap))
         XCTAssertEqual(swap.title, "Swap")
         XCTAssertEqual(swap.value, "25%")
         XCTAssertEqual(swap.usedBytes, 256)
         XCTAssertEqual(swap.totalBytes, 1_024)
         XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
-        XCTAssertEqual(swap.detail, "256 B")
+        XCTAssertEqual(swap.detailRole, .raw("256 B (25%)"))
+        XCTAssertEqual(swap.detail, "256 B (25%)")
     }
 
     func testModelBuildsZeroSwapUsageDetailWithoutDividingByTotal() async {
@@ -94,7 +98,45 @@ final class DashboardModelTests: XCTestCase {
         let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
         XCTAssertEqual(swap.value, "0%")
         XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.0, accuracy: 0.001)
-        XCTAssertEqual(swap.detail, "0 KB")
+        XCTAssertEqual(swap.detailRole, .raw("0 KB (0%)"))
+        XCTAssertEqual(swap.detail, "0 KB (0%)")
+    }
+
+    func testTemperatureMetricIDIncludesSelectedTemperatureSource() {
+        let cpu = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.smc),
+            value: "32.0 C"
+        )
+        let battery = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.battery),
+            value: "31.0 C"
+        )
+
+        XCTAssertEqual(cpu.id, "temperature-smc")
+        XCTAssertEqual(battery.id, "temperature-battery")
+    }
+
+    func testModelBuildsFanMetricWhenFanReadingExists() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [.fan(FanReading(rpm: 1_800))],
+            timestamp: Date(timeIntervalSince1970: 13)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .fan }
+        }
+        let fan = try! XCTUnwrap(metrics.first { $0.kind == .fan })
+
+        XCTAssertEqual(fan.titleRole, .metric(.fan))
+        XCTAssertEqual(fan.title, "Fan")
+        XCTAssertEqual(fan.value, "1800 RPM")
+        XCTAssertEqual(fan.style, .chart)
+        XCTAssertNotNil(fan.trend)
     }
 
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
@@ -200,6 +242,7 @@ final class DashboardModelTests: XCTestCase {
         let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
 
         XCTAssertEqual(battery.value, "79%")
+        XCTAssertEqual(battery.detailRole, .batteryOnBattery)
         XCTAssertEqual(battery.trend?.samples.map(\.primaryValue), [79])
     }
 
@@ -304,6 +347,7 @@ final class DashboardModelTests: XCTestCase {
             metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [30, 31]
         }
         let batteryTemperature = try! XCTUnwrap(batteryMetrics.first { $0.kind == .temperature })
+        XCTAssertEqual(batteryTemperature.titleRole, .temperature(.battery))
         XCTAssertEqual(batteryTemperature.title, TemperatureSource.battery.dashboardTitle)
         XCTAssertEqual(batteryTemperature.value, "31.0 C")
 
@@ -313,6 +357,7 @@ final class DashboardModelTests: XCTestCase {
             metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [55, 56]
         }
         let smcTemperature = try! XCTUnwrap(smcMetrics.first { $0.kind == .temperature })
+        XCTAssertEqual(smcTemperature.titleRole, .temperature(.smc))
         XCTAssertEqual(smcTemperature.title, TemperatureSource.smc.dashboardTitle)
         XCTAssertEqual(smcTemperature.value, "56.0 C")
     }

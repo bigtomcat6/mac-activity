@@ -158,6 +158,127 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
     }
 
+    func testSparkleLocalizationOverrideUsesSelectedAppLanguage() throws {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        let bundle = try makeSparkleBundle(localizations: [
+            "en": ["Software Update": "Software Update"],
+            "zh_CN": ["Software Update": "软件更新"],
+        ])
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(
+            SparkleLocalizationOverride.localizedString(
+                for: bundle,
+                key: "Software Update",
+                value: nil,
+                table: "Sparkle"
+            ),
+            "软件更新"
+        )
+    }
+
+    func testSparkleLocalizationOverrideInstallsBundleHook() throws {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        let bundle = try makeSparkleBundle(localizations: [
+            "en": ["Software Update": "Software Update"],
+            "zh_CN": ["Software Update": "软件更新"],
+        ])
+
+        SparkleLocalizationOverride.install()
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(
+            bundle.localizedString(forKey: "Software Update", value: nil, table: "Sparkle"),
+            "软件更新"
+        )
+    }
+
+    func testAppLanguageDrivesFoundationPreferredLocalizationsUsedBySparkle() {
+        let defaults = UserDefaults.standard
+        let previous = defaults.object(forKey: "AppleLanguages")
+        defer {
+            AppLocalizationController.shared.applyPreferredLanguageIdentifier(nil)
+            if let previous {
+                defaults.set(previous, forKey: "AppleLanguages")
+            } else {
+                defaults.removeObject(forKey: "AppleLanguages")
+            }
+        }
+
+        SparkleLocalizationOverride.install()
+        defaults.set(["zh-Hans"], forKey: "AppleLanguages")
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier("en")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["zh_CN", "en"]).first, "en")
+
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["zh_CN", "en"]).first, "zh_CN")
+
+        AppLocalizationController.shared.applyPreferredLanguageIdentifier(nil)
+
+        XCTAssertNil(SparkleLocalizationOverride.preferredLocalization(from: ["zh_CN", "en"]))
+    }
+
+    func testSparklePreferredLocalizationHandlesRegionalAndBaseMatches() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]),
+            "zh_CN"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hant")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_TW"]),
+            "zh_TW"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("en-US")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]),
+            "en"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("fr-CA")
+        XCTAssertNil(SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]))
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "fr"]),
+            "fr"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("fr")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "fr_CA"]),
+            "fr_CA"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("x-private")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["x-private"]),
+            "x-private"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("sr-Cyrl")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["sr_Cyrl"]),
+            "sr_Cyrl"
+        )
+    }
+
+    func testBundlePreferredLocalizationsFallsBackWhenSelectedLanguageIsUnavailable() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+
+        SparkleLocalizationOverride.install()
+        AppLocalization.setPreferredLanguageIdentifier(nil)
+        let original = Bundle.preferredLocalizations(from: ["en", "zh_CN"])
+        AppLocalization.setPreferredLanguageIdentifier("fr-CA")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["en", "zh_CN"]), original)
+    }
+
     func testUpdateCandidateBuildsFromSparkleMetadata() {
         let candidate = SparkleUpdateController.updateCandidate(
             for: SparkleAppcastCandidateInput(
@@ -247,6 +368,37 @@ final class SparkleUpdateControllerTests: XCTestCase {
         ])
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
+        return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func makeSparkleBundle(localizations: [String: [String: String]]) throws -> Bundle {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("framework")
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        let infoPlist = NSMutableDictionary(dictionary: [
+            "CFBundleIdentifier": "org.sparkle-project.Sparkle",
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "CFBundleName": "Sparkle",
+            "CFBundlePackageType": "FMWK",
+            "CFBundleDevelopmentRegion": "en",
+        ])
+        XCTAssertTrue(infoPlist.write(to: bundleURL.appendingPathComponent("Info.plist"), atomically: true))
+
+        for (language, strings) in localizations {
+            let languageURL = bundleURL.appendingPathComponent("\(language).lproj")
+            try FileManager.default.createDirectory(at: languageURL, withIntermediateDirectories: true)
+            let contents = strings
+                .map { "\"\($0.key)\" = \"\($0.value)\";" }
+                .sorted()
+                .joined(separator: "\n")
+            try contents.write(
+                to: languageURL.appendingPathComponent("Sparkle.strings"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
         return try XCTUnwrap(Bundle(url: bundleURL))
     }
 

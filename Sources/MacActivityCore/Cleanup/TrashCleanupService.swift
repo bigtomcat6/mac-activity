@@ -9,7 +9,12 @@ public enum TrashScanResult: Equatable, Sendable {
 public enum TrashCleanupResult: Equatable, Sendable {
     case cleaned(bytes: UInt64, itemCount: Int)
     case partial(bytes: UInt64, deletedCount: Int, failedCount: Int)
-    case failed(String)
+    case failed(TrashCleanupFailureReason)
+}
+
+public enum TrashCleanupFailureReason: Equatable, Sendable {
+    case message(String)
+    case unableToDeleteItems
 }
 
 public protocol TrashFilesystem: Sendable {
@@ -141,12 +146,12 @@ public struct TrashCleanupService: Sendable {
             }
 
             if deletedCount == 0 {
-                return .failed("Unable to delete Trash items.")
+                return .failed(.unableToDeleteItems)
             }
 
             return .partial(bytes: deletedBytes, deletedCount: deletedCount, failedCount: failedCount)
         } catch {
-            return .failed(error.localizedDescription)
+            return .failed(.message(error.localizedDescription))
         }
     }
 }

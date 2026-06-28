@@ -243,6 +243,34 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("Run SwiftPM tests with coverage"),
         )
 
+    def test_localization_workflow_checks_resource_coverage(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "localization.yml").read_text()
+
+        self.assertIn("name: Localization", workflow)
+        self.assertIn("pull_request:", workflow)
+        self.assertIn("push:", workflow)
+        self.assertIn("workflow_dispatch:", workflow)
+        self.assertIn("contents: read", workflow)
+        self.assertIn("Check localization coverage", workflow)
+        self.assertIn(".github/scripts/update_localization_coverage.py --check", workflow)
+
+    def test_localization_workflow_publishes_shields_endpoint_badges_from_main(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "localization.yml").read_text()
+
+        self.assertIn("publish-badges:", workflow)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
+        self.assertIn("contents: write", workflow)
+        self.assertIn("--badge-json-dir", workflow)
+        self.assertIn("HEAD:badges", workflow)
+
+    def test_readme_uses_shields_endpoint_localization_badges(self):
+        readme = (REPO_ROOT / "README.md").read_text()
+
+        self.assertIn("img.shields.io/endpoint?url=", readme)
+        self.assertIn("badges%2Flocalization%2Fen.json", readme)
+        self.assertIn("badges%2Flocalization%2Fzh-Hans.json", readme)
+        self.assertNotIn("l10n%20English-100%25", readme)
+
     def test_ci_workflow_uses_reusable_ci_checks(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
 

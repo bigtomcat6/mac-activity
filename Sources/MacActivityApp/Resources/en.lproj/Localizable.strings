@@ -10,6 +10,7 @@
 "dashboard.waiting.firstMetricSample" = "Waiting for the first metric sample.";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecting trend";
+"dashboard.storage.accessibility" = "Disk and Swap usage";
 "dashboard.memory.chart.collectingSamples" = "Memory chart collecting samples";
 "dashboard.memory.chart.accessibility" = "Memory %d%%, used %@, of %@";
 "dashboard.memory.segment.active" = "Active";
@@ -30,6 +31,19 @@
 "metric.fan" = "Fan";
 "metric.battery.charging" = "Charging";
 "metric.battery.onBattery" = "On Battery";
+
+"chart.dimension.time" = "Time";
+"chart.dimension.primary" = "Primary";
+"chart.dimension.secondary" = "Secondary";
+"chart.dimension.series" = "Series";
+"chart.dimension.baseline" = "Baseline";
+"chart.dimension.selection" = "Selection";
+"chart.dimension.selectionTime" = "Selection Time";
+"chart.dimension.selectionValue" = "Selection Value";
+"chart.temperature.axis" = "%.1f℃";
+"chart.temperature.readout" = "%.1f℃";
+"chart.fan.axis" = "%d RPM";
+"chart.fan.readout" = "%d RPM";
 
 "temperature.source.cpuSMC" = "CPU/SMC";
 "temperature.source.battery" = "Battery";
@@ -55,8 +69,7 @@
 "preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
 
 "language.system" = "Follow System";
-"language.english" = "English";
-"language.simplifiedChinese" = "Simplified Chinese";
+"language.selfName" = "English";
 "update.channel.alpha" = "Alpha";
 "update.channel.beta" = "Beta";
 "update.channel.release" = "Release";
@@ -83,6 +96,7 @@
 "memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
 "memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";
 "memoryRelease.subtitle.default" = "Release reclaimable system memory.";
+"memoryRelease.subtitle.failedWithExitCode" = "Memory release failed with exit code %d.";
 
 "trash.action.retry" = "Retry";
 "trash.action.clean" = "Clean";
@@ -99,6 +113,7 @@
 "trash.subtitle.cleaned" = "Removed %d %@.";
 "trash.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
 "trash.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"trash.subtitle.failed.unableToDeleteItems" = "Unable to delete Trash items.";
 "trash.item.singular" = "item";
 "trash.item.plural" = "items";
 
@@ -117,6 +132,7 @@
 "diskCleanup.subtitle.cleaned" = "Removed %d %@.";
 "diskCleanup.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
 "diskCleanup.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
+"diskCleanup.subtitle.failed.unableToDeleteItems" = "Unable to delete selected disk cleanup items.";
 "diskCleanup.item.singular" = "item";
 "diskCleanup.item.plural" = "items";
 "diskCleanup.category.singular" = "category";

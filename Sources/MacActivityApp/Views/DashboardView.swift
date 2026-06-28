@@ -663,9 +663,9 @@ struct DashboardView: View {
 
     private var summaryText: String {
         let visible = dashboardModel.metrics.prefix(3).map { metric in
-            "\(metric.title) \(metric.value)"
+            "\(AppLocalization.dashboardMetricTitle(for: metric)) \(metric.value)"
         }
-        return visible.isEmpty ? "Waiting for the first sample" : visible.joined(separator: " · ")
+        return visible.isEmpty ? AppLocalization.string(.dashboardWaitingFirstSample) : visible.joined(separator: " · ")
     }
 }
 
@@ -773,7 +773,7 @@ private struct OverviewDashboardContent: View {
     }
 
     private var emptyState: some View {
-        Text("Waiting for the first metric sample.")
+        Text(AppLocalization.string(.dashboardWaitingFirstMetricSample))
             .font(.subheadline)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, minHeight: 120)
@@ -859,15 +859,27 @@ struct RAMSegmentBarsLayout {
             guard let timestamp = slot.sample?.timestamp else {
                 return bucketEndLabel(startingAt: slot.bucketStart)
             }
-            return timestamp.formatted(.dateTime.hour().minute().second())
+            return AppLocalization.formattedTime(timestamp, includesSeconds: true)
         case .minuteAverage:
             return bucketEndLabel(startingAt: slot.bucketStart)
         }
     }
 
+    static func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
+        guard let sample else {
+            return AppLocalization.string(.memoryChartCollectingSamples)
+        }
+
+        return AppLocalization.memoryChartAccessibilityLabel(
+            pressurePercent: Int(sample.pressurePercent.rounded()),
+            usedMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes),
+            totalMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes)
+        )
+    }
+
     private static func bucketEndLabel(startingAt bucketStart: Date) -> String {
         let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
-        return bucketEnd.formatted(.dateTime.hour().minute())
+        return AppLocalization.formattedTime(bucketEnd)
     }
 
     private static func bucketStart(containing date: Date) -> Date {
@@ -1142,7 +1154,7 @@ struct RAMSegmentBars: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel(for: slots.compactMap(\.sample).last))
+            .accessibilityLabel(RAMSegmentBarsLayout.accessibilityLabel(for: slots.compactMap(\.sample).last))
         }
     }
 
@@ -1162,15 +1174,6 @@ struct RAMSegmentBars: View {
         )
     }
 
-    private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
-        guard let sample else { return "Memory chart collecting samples" }
-        let parts = [
-            "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "used \(DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes))",
-            "of \(DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes))",
-        ]
-        return parts.joined(separator: ", ")
-    }
 }
 
 private struct RAMSegmentBar: View {
@@ -1253,6 +1256,7 @@ private struct RAMSegmentTooltip: View {
             if let sample = slot.sample {
                 ForEach(RAMSegmentBarsLayout.displaySegments(for: sample)) { segment in
                     HStack(spacing: 5) {
+                        let title = AppLocalization.memorySegmentTitle(for: segment.kind)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(
                                 DashboardOverviewChrome.memorySegmentColor(
@@ -1261,7 +1265,15 @@ private struct RAMSegmentTooltip: View {
                                 )
                             )
                             .frame(width: 8, height: 8)
-                        Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
+                        Text(
+                            AppLocalization.memorySegmentTooltip(
+                                title: title,
+                                memory: DashboardMetricTextFormatter.formatMemoryGB(segment.bytes),
+                                percent: DashboardMetricTextFormatter.formatPercent(
+                                    RAMSegmentBarsLayout.percentage(for: segment, in: sample)
+                                )
+                            )
+                        )
                             .font(.caption2.monospacedDigit())
                             .lineLimit(1)
                     }
@@ -1411,8 +1423,8 @@ private struct StorageSegmentedUsageBar: View {
             }
             .clipShape(Capsule())
         }
-        .accessibilityLabel(Text("Disk and Swap usage"))
-        .accessibilityValue(Text(visibleMetrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
+        .accessibilityLabel(Text(AppLocalization.string(.dashboardStorageAccessibility)))
+        .accessibilityValue(Text(AppLocalization.storageAccessibilityValue(for: visibleMetrics)))
         .animation(DashboardMotion.valueAnimation, value: metrics)
     }
 
@@ -1505,14 +1517,14 @@ private struct StorageUsageDetailRow: View {
                         .accessibilityHidden(true)
                 }
 
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(.caption2.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
                     .multilineTextAlignment(textAlignment)
             }
             .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
 
-            Text(metric.detail ?? metric.value)
+            Text(AppLocalization.dashboardMetricDetail(for: metric) ?? metric.value)
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
@@ -1538,7 +1550,7 @@ private struct UsageBarRow: View {
         let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
-            Text(metric.title)
+            Text(AppLocalization.dashboardMetricTitle(for: metric))
                 .font(.caption.monospacedDigit().weight(.semibold))
                 .lineLimit(1)
                 .frame(
@@ -1601,7 +1613,7 @@ private struct CompactTrendMetricCard: View {
                     isHovered: isCardHovered
                 ) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(metric.title)
+                    Text(AppLocalization.dashboardMetricTitle(for: metric))
                         .font(.caption2.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -1648,7 +1660,7 @@ private struct SlimTrendMetricCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(.caption2.weight(.semibold))
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -1698,7 +1710,7 @@ private struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .top) {
-                Text(metric.title)
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
                     .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
                     .foregroundStyle(.secondary)
                 Spacer(minLength: 8)
@@ -1732,7 +1744,7 @@ private struct MetricCard: View {
                     .clipShape(Capsule())
             }
 
-            if let detail = metric.detail, !isCompactChartCard {
+            if let detail = AppLocalization.dashboardMetricDetail(for: metric), !isCompactChartCard {
                 Text(detail)
                     .font(.caption)
                     .foregroundStyle(.secondary)

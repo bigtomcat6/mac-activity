@@ -1,6 +1,7 @@
 import Combine
 import Foundation
 import MacActivityCore
+import ObjectiveC
 @preconcurrency import Sparkle
 
 @MainActor
@@ -31,6 +32,7 @@ final class SparkleUpdateController: NSObject, SPUUpdaterDelegate {
         versionDisplay = MacActivitySparkleVersionDisplay(bundle: bundle)
         userDriverDelegate = MacActivitySparkleUserDriverDelegate(versionDisplay: versionDisplay)
         super.init()
+        SparkleLocalizationOverride.install()
 
         if let currentVersion = Self.currentReleaseVersion(in: bundle) {
             preferencesController.syncUpdateChannelWithInstalledVersion(currentVersion)
@@ -197,6 +199,175 @@ struct SparkleAppcastCandidateInput: Equatable {
     let displayVersionString: String
     let versionString: String
     let channel: String?
+}
+
+enum SparkleLocalizationOverride {
+    private static let sparkleBundleIdentifier = "org.sparkle-project.Sparkle"
+    private static let sparkleTableName = "Sparkle"
+
+    private static let installOnce: Void = {
+        // ponytail: Sparkle exposes no runtime language hook, so only Sparkle.strings lookups are redirected.
+        guard let original = class_getInstanceMethod(
+            Bundle.self,
+            #selector(Bundle.localizedString(forKey:value:table:))
+        ),
+        let replacement = class_getInstanceMethod(
+            Bundle.self,
+            #selector(Bundle.macActivity_localizedString(forKey:value:table:))
+        ) else {
+            // codecov:ignore start
+            return
+            // codecov:ignore end
+        }
+
+        method_exchangeImplementations(original, replacement)
+
+        if let original = class_getClassMethod(
+            Bundle.self,
+            #selector(Bundle.preferredLocalizations(from:))
+        ),
+            let replacement = class_getClassMethod(
+                Bundle.self,
+                #selector(Bundle.macActivity_preferredLocalizations(from:))
+            ) {
+            method_exchangeImplementations(original, replacement)
+        }
+    }()
+
+    static func install() {
+        _ = installOnce
+    }
+
+    static func localizedString(
+        for bundle: Bundle,
+        key: String,
+        value: String?,
+        table tableName: String?
+    ) -> String? {
+        guard bundle.bundleIdentifier == sparkleBundleIdentifier,
+              tableName == sparkleTableName,
+              let appLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier(),
+              let resourceIdentifier = sparkleResourceIdentifier(
+                for: appLanguageIdentifier,
+                in: bundle
+              ),
+              let path = bundle.path(forResource: resourceIdentifier, ofType: "lproj"),
+              let languageBundle = Bundle(path: path) else {
+            return nil
+        }
+
+        return languageBundle.localizedString(forKey: key, value: value, table: tableName)
+    }
+
+    static func preferredLocalization(from localizations: [String]) -> String? {
+        guard let appLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier() else {
+            return nil
+        }
+
+        return resourceIdentifier(
+            for: appLanguageIdentifier,
+            in: localizations
+        )
+    }
+
+    private static func sparkleResourceIdentifier(
+        for languageIdentifier: String,
+        in bundle: Bundle
+    ) -> String? {
+        resourceIdentifier(
+            for: languageIdentifier,
+            in: bundle.localizations.filter { $0 != "Base" }
+        )
+    }
+
+    private static func resourceIdentifier(
+        for languageIdentifier: String,
+        in localizations: [String]
+    ) -> String? {
+        var resources: [String: String] = [:]
+        for localization in localizations where localization != "Base" {
+            resources[canonicalLanguageIdentifier(localization), default: localization] = localization
+        }
+        guard let normalized = AppLocalization.normalizedLanguageIdentifier(languageIdentifier) else {
+            // codecov:ignore start
+            return nil
+            // codecov:ignore end
+        }
+
+        if let exact = resources[normalized] {
+            return exact
+        }
+
+        switch normalized {
+        case "zh-Hans":
+            if let simplifiedChinese = resources["zh-CN"] {
+                return simplifiedChinese
+            }
+        case "zh-Hant":
+            if let traditionalChinese = resources["zh-TW"] {
+                return traditionalChinese
+            }
+        default:
+            break
+        }
+
+        if let regionalMatch = resources.keys.sorted().first(where: { normalized.hasPrefix("\($0)-") }) {
+            return resources[regionalMatch]
+        }
+
+        let normalizedBase = normalized.split(separator: "-").first
+        guard let baseMatch = resources.keys.sorted().first(where: { $0.split(separator: "-").first == normalizedBase }) else {
+            return nil
+        }
+        return resources[baseMatch]
+    }
+
+    private static func canonicalLanguageIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .enumerated()
+            .map { index, component in
+                let value = String(component)
+                if index == 0 {
+                    return value.lowercased()
+                }
+                if value.count == 4 {
+                    return value.prefix(1).uppercased() + value.dropFirst().lowercased()
+                }
+                if value.count == 2 || value.count == 3 {
+                    return value.uppercased()
+                }
+                return value
+            }
+            .joined(separator: "-")
+    }
+}
+
+private extension Bundle {
+    @objc(macActivity_localizedStringForKey:value:table:)
+    func macActivity_localizedString(forKey key: String, value: String?, table tableName: String?) -> String {
+        if let localized = SparkleLocalizationOverride.localizedString(
+            for: self,
+            key: key,
+            value: value,
+            table: tableName
+        ) {
+            return localized
+        }
+
+        return macActivity_localizedString(forKey: key, value: value, table: tableName)
+    }
+
+    @objc(macActivity_preferredLocalizationsFromArray:)
+    class func macActivity_preferredLocalizations(from localizationsArray: [String]) -> [String] {
+        let original = macActivity_preferredLocalizations(from: localizationsArray)
+        guard let preferred = SparkleLocalizationOverride.preferredLocalization(from: localizationsArray) else {
+            return original
+        }
+
+        return [preferred] + original.filter { $0 != preferred }
+    }
 }
 
 final class MacActivitySparkleUserDriverDelegate: NSObject, SPUStandardUserDriverDelegate {

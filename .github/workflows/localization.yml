@@ -1,0 +1,77 @@
+name: Localization
+
+on:
+  pull_request:
+    branches: ["main"]
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  localization:
+    name: Check Localization
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Check localization coverage
+        run: python3 .github/scripts/update_localization_coverage.py --check
+
+  publish-badges:
+    name: Publish Localization Badges
+    needs: localization
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Generate Shields endpoint JSON
+        run: python3 .github/scripts/update_localization_coverage.py --badge-json-dir "${RUNNER_TEMP}/localization-badges"
+
+      - name: Publish Shields endpoint JSON
+        run: |
+          set -euo pipefail
+
+          output_dir="${RUNNER_TEMP}/localization-badges"
+          publish_dir="${RUNNER_TEMP}/badges-branch"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin badges >/dev/null 2>&1; then
+            git fetch origin badges:refs/remotes/origin/badges
+            git worktree add --detach "${publish_dir}" origin/badges
+          else
+            git worktree add --detach "${publish_dir}" HEAD
+            git -C "${publish_dir}" switch --orphan badges
+            git -C "${publish_dir}" rm -rf .
+          fi
+
+          mkdir -p "${publish_dir}/localization"
+          rm -f "${publish_dir}/localization/"*.json
+          cp "${output_dir}"/*.json "${publish_dir}/localization/"
+          touch "${publish_dir}/.nojekyll"
+
+          git -C "${publish_dir}" add .nojekyll localization
+          if git -C "${publish_dir}" diff --cached --quiet; then
+            echo "Localization badges are unchanged."
+            exit 0
+          fi
+
+          git -C "${publish_dir}" commit -m "chore: update localization badges"
+          git -C "${publish_dir}" push origin HEAD:badges
