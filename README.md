@@ -17,6 +17,13 @@
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release" alt="Pre-release"></a>
 </p>
 
+<!-- localization-badges:start -->
+<p align="center">
+  <a href="#localization"><img src="https://img.shields.io/badge/l10n%20English-100%25-2ea44f" alt="English localization 100%"></a>
+  <a href="#localization"><img src="https://img.shields.io/badge/l10n%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-100%25-2ea44f" alt="简体中文 localization 100%"></a>
+</p>
+<!-- localization-badges:end -->
+
 ## Localization
 
 <!-- localization-coverage:start -->

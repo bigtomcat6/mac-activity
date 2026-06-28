@@ -4,10 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import html
 import re
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 
 README_PATH = Path("README.md")
@@ -15,6 +17,8 @@ RESOURCES_PATH = Path("Sources/MacActivityApp/Resources")
 LANGUAGE_SELF_NAME_KEY = "language.selfName"
 START_MARKER = "<!-- localization-coverage:start -->"
 END_MARKER = "<!-- localization-coverage:end -->"
+BADGES_START_MARKER = "<!-- localization-badges:start -->"
+BADGES_END_MARKER = "<!-- localization-badges:end -->"
 SECTION_HEADING = "## Localization"
 
 STRING_ENTRY_RE = re.compile(r'"((?:\\.|[^"\\])*)"\s*=\s*"((?:\\.|[^"\\])*)"\s*;', re.DOTALL)
@@ -49,8 +53,9 @@ def main() -> int:
 
     coverage = collect_coverage()
     table = render_coverage_table(coverage)
+    badges = render_coverage_badges(coverage)
     readme = README_PATH.read_text(encoding="utf-8")
-    updated = update_readme(readme, table)
+    updated = update_readme(readme, table, badges)
 
     if args.check:
         if updated != readme:
@@ -152,14 +157,47 @@ def render_coverage_table(coverage: list[Coverage]) -> str:
     return "\n".join(lines)
 
 
+def render_coverage_badges(coverage: list[Coverage]) -> str:
+    lines = ['<p align="center">']
+    for row in coverage:
+        percent = format_percent(row.overall_present, row.overall_total)
+        color = badge_color(row.overall_present, row.overall_total)
+        label = quote(f"l10n {row.display_name}", safe="")
+        message = quote(percent, safe="")
+        alt = html.escape(f"{row.display_name} localization {percent}", quote=True)
+        lines.append(
+            f'  <a href="#localization"><img src="https://img.shields.io/badge/{label}-{message}-{color}" alt="{alt}"></a>'
+        )
+    lines.append("</p>")
+    return "\n".join(lines)
+
+
 def format_ratio(present: int, total: int) -> str:
     if total == 0:
         return "n/a"
+    return f"{format_percent(present, total)} ({present}/{total})"
+
+
+def format_percent(present: int, total: int) -> str:
+    if total == 0:
+        return "n/a"
     percent = present / total * 100
-    return f"{percent:.0f}% ({present}/{total})"
+    return f"{percent:.0f}%"
 
 
-def update_readme(readme: str, table: str) -> str:
+def badge_color(present: int, total: int) -> str:
+    if total == 0:
+        return "lightgrey"
+    percent = present / total * 100
+    if percent >= 100:
+        return "2ea44f"
+    if percent >= 90:
+        return "dfb317"
+    return "d73a49"
+
+
+def update_readme(readme: str, table: str, badges: str) -> str:
+    readme = update_badges(readme, badges)
     replacement = f"{START_MARKER}\n{table}\n{END_MARKER}"
 
     if START_MARKER in readme and END_MARKER in readme:
@@ -174,6 +212,26 @@ def update_readme(readme: str, table: str) -> str:
         return f"{readme[:insert_at]}{section}{readme[insert_at:]}"
 
     return f"{section.lstrip()}\n{readme}"
+
+
+def update_badges(readme: str, badges: str) -> str:
+    replacement = f"{BADGES_START_MARKER}\n{badges}\n{BADGES_END_MARKER}"
+
+    if BADGES_START_MARKER in readme and BADGES_END_MARKER in readme:
+        start = readme.index(BADGES_START_MARKER)
+        end = readme.index(BADGES_END_MARKER, start) + len(BADGES_END_MARKER)
+        return f"{readme[:start]}{replacement}{readme[end:]}"
+
+    if SECTION_HEADING in readme:
+        insert_at = readme.index(SECTION_HEADING)
+        return f"{readme[:insert_at]}{replacement}\n\n{readme[insert_at:]}"
+
+    badge_paragraphs = list(re.finditer(r'(?s)<p align="center">.*?</p>\n', readme))
+    if badge_paragraphs:
+        insert_at = badge_paragraphs[-1].end()
+        return f"{readme[:insert_at]}\n{replacement}\n{readme[insert_at:]}"
+
+    return f"{replacement}\n\n{readme}"
 
 
 if __name__ == "__main__":
