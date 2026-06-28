@@ -158,6 +158,42 @@ final class SparkleUpdateControllerTests: XCTestCase {
         )
     }
 
+    func testSparkleLocalizationOverrideUsesSelectedAppLanguage() throws {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        let bundle = try makeSparkleBundle(localizations: [
+            "en": ["Software Update": "Software Update"],
+            "zh_CN": ["Software Update": "软件更新"],
+        ])
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(
+            SparkleLocalizationOverride.localizedString(
+                for: bundle,
+                key: "Software Update",
+                value: nil,
+                table: "Sparkle"
+            ),
+            "软件更新"
+        )
+    }
+
+    func testSparkleLocalizationOverrideInstallsBundleHook() throws {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        let bundle = try makeSparkleBundle(localizations: [
+            "en": ["Software Update": "Software Update"],
+            "zh_CN": ["Software Update": "软件更新"],
+        ])
+
+        SparkleLocalizationOverride.install()
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+
+        XCTAssertEqual(
+            bundle.localizedString(forKey: "Software Update", value: nil, table: "Sparkle"),
+            "软件更新"
+        )
+    }
+
     func testUpdateCandidateBuildsFromSparkleMetadata() {
         let candidate = SparkleUpdateController.updateCandidate(
             for: SparkleAppcastCandidateInput(
@@ -247,6 +283,37 @@ final class SparkleUpdateControllerTests: XCTestCase {
         ])
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
+        return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func makeSparkleBundle(localizations: [String: [String: String]]) throws -> Bundle {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("framework")
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+        let infoPlist = NSMutableDictionary(dictionary: [
+            "CFBundleIdentifier": "org.sparkle-project.Sparkle",
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "CFBundleName": "Sparkle",
+            "CFBundlePackageType": "FMWK",
+            "CFBundleDevelopmentRegion": "en",
+        ])
+        XCTAssertTrue(infoPlist.write(to: bundleURL.appendingPathComponent("Info.plist"), atomically: true))
+
+        for (language, strings) in localizations {
+            let languageURL = bundleURL.appendingPathComponent("\(language).lproj")
+            try FileManager.default.createDirectory(at: languageURL, withIntermediateDirectories: true)
+            let contents = strings
+                .map { "\"\($0.key)\" = \"\($0.value)\";" }
+                .sorted()
+                .joined(separator: "\n")
+            try contents.write(
+                to: languageURL.appendingPathComponent("Sparkle.strings"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+
         return try XCTUnwrap(Bundle(url: bundleURL))
     }
 

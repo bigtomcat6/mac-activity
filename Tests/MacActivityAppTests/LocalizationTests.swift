@@ -146,8 +146,8 @@ final class LocalizationTests: XCTestCase {
 
         XCTAssertEqual(AppLocalization.chartAxisLabel(for: .temperature, value: 31.2, bundle: simplifiedChinese), "31.2℃")
         XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .temperature, sample: sample, bundle: simplifiedChinese), "31.2℃")
-        XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "上传 20 B/s")
-        XCTAssertEqual(AppLocalization.chartSecondaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "下载 31 B/s")
+        XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "↑ 20 B/s")
+        XCTAssertEqual(AppLocalization.chartSecondaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "↓ 31 B/s")
     }
 
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {

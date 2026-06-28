@@ -45,9 +45,6 @@
 "chart.fan.axis" = "%d RPM";
 "chart.fan.readout" = "%d RPM";
 
-"network.upload" = "上传";
-"network.download" = "下载";
-
 "temperature.source.cpuSMC" = "CPU/SMC";
 "temperature.source.battery" = "电池";
 "temperature.dashboard.cpu" = "CPU 温度";

@@ -49,8 +49,6 @@ enum AppLocalization {
         case chartTemperatureReadout = "chart.temperature.readout"
         case chartFanAxis = "chart.fan.axis"
         case chartFanReadout = "chart.fan.readout"
-        case networkUpload = "network.upload"
-        case networkDownload = "network.download"
         case temperatureSourceCPUSMC = "temperature.source.cpuSMC"
         case temperatureSourceBattery = "temperature.source.battery"
         case temperatureDashboardCPU = "temperature.dashboard.cpu"
@@ -287,6 +285,10 @@ enum AppLocalization {
         locale(for: bundle ?? configuredBundle())
     }
 
+    static func currentLanguageIdentifier() -> String? {
+        normalizedLanguageIdentifier(locale(for: configuredBundle()).identifier)
+    }
+
     static func metricTitle(for kind: MetricKind, bundle: Bundle? = nil) -> String {
         switch kind {
         case .cpu:
@@ -403,7 +405,7 @@ enum AppLocalization {
     static func chartPrimaryReadout(for kind: MetricKind, sample: DashboardTrendSample, bundle: Bundle? = nil) -> String {
         switch kind {
         case .network:
-            return "\(string(.networkUpload, bundle: bundle)) \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
+            return "↑ \(DashboardMetricTextFormatter.formatRate(sample.secondaryValue ?? 0))"
         case .temperature:
             return string(.chartTemperatureReadout, sample.primaryValue, bundle: bundle)
         case .fan:
@@ -418,7 +420,7 @@ enum AppLocalization {
             return nil
         }
 
-        return "\(string(.networkDownload, bundle: bundle)) \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
+        return "↓ \(DashboardMetricTextFormatter.formatRate(sample.primaryValue))"
     }
 
     static func temperatureSourceTitle(for source: TemperatureSource, bundle: Bundle? = nil) -> String {

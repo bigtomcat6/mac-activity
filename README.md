@@ -24,8 +24,8 @@ _Coverage counts resource-key presence; translation wording is reviewed separate
 
 | Language | App UI | Bundle metadata | Overall |
 | --- | ---: | ---: | ---: |
-| English | 100% (139/139) | 100% (2/2) | 100% (141/141) |
-| 简体中文 | 100% (139/139) | 100% (2/2) | 100% (141/141) |
+| English | 100% (137/137) | 100% (2/2) | 100% (139/139) |
+| 简体中文 | 100% (137/137) | 100% (2/2) | 100% (139/139) |
 <!-- localization-coverage:end -->
 
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.

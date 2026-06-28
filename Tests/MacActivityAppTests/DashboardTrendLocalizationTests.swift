@@ -3,7 +3,7 @@ import MacActivityCore
 @testable import MacActivityApp
 
 final class DashboardTrendLocalizationTests: XCTestCase {
-    func testNetworkReadoutsUseLocalizedUploadDownloadLabels() throws {
+    func testNetworkReadoutsUseDirectionalArrows() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let sample = DashboardTrendSample(
             timestamp: Date(timeIntervalSince1970: 10),
@@ -13,11 +13,11 @@ final class DashboardTrendLocalizationTests: XCTestCase {
 
         XCTAssertEqual(
             AppLocalization.chartPrimaryReadout(for: .network, sample: sample, bundle: simplifiedChinese),
-            "上传 500 B/s"
+            "↑ 500 B/s"
         )
         XCTAssertEqual(
             AppLocalization.chartSecondaryReadout(for: .network, sample: sample, bundle: simplifiedChinese),
-            "下载 2 KB/s"
+            "↓ 2 KB/s"
         )
     }
 
@@ -31,11 +31,11 @@ final class DashboardTrendLocalizationTests: XCTestCase {
 
         XCTAssertEqual(
             AppLocalization.chartPrimaryReadout(for: .network, sample: sample, bundle: english),
-            "Upload 0 KB/s"
+            "↑ 0 KB/s"
         )
         XCTAssertEqual(
             AppLocalization.chartSecondaryReadout(for: .network, sample: sample, bundle: english),
-            "Download 0 KB/s"
+            "↓ 0 KB/s"
         )
         XCTAssertEqual(
             AppLocalization.chartAxisLabel(for: .network, value: 0, bundle: english),
