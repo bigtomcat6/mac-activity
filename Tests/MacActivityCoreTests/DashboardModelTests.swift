@@ -102,6 +102,43 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(swap.detail, "0 KB (0%)")
     }
 
+    func testTemperatureMetricIDIncludesSelectedTemperatureSource() {
+        let cpu = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.smc),
+            value: "32.0 C"
+        )
+        let battery = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.battery),
+            value: "31.0 C"
+        )
+
+        XCTAssertEqual(cpu.id, "temperature-smc")
+        XCTAssertEqual(battery.id, "temperature-battery")
+    }
+
+    func testModelBuildsFanMetricWhenFanReadingExists() async {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [.fan(FanReading(rpm: 1_800))],
+            timestamp: Date(timeIntervalSince1970: 13)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .fan }
+        }
+        let fan = try! XCTUnwrap(metrics.first { $0.kind == .fan })
+
+        XCTAssertEqual(fan.titleRole, .metric(.fan))
+        XCTAssertEqual(fan.title, "Fan")
+        XCTAssertEqual(fan.value, "1800 RPM")
+        XCTAssertEqual(fan.style, .chart)
+        XCTAssertNotNil(fan.trend)
+    }
+
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
         let store = MetricsStore()
         let model = DashboardModel(store: store)

@@ -1,5 +1,6 @@
 import XCTest
 import MacActivityCore
+import SwiftUI
 @testable import MacActivityApp
 
 @MainActor
@@ -237,6 +238,57 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
                 domain: 0...2_600_000
             )
         )
+    }
+
+    func testRenderedCPUTrendChartBuildsLocalizedAreaAndPrimaryMarks() {
+        let chart = DashboardTrendChart(
+            metric: DashboardMetric(
+                kind: .cpu,
+                title: MetricKind.cpu.title,
+                value: "42%",
+                style: .chart,
+                trend: DashboardTrend(
+                    samples: makeSamples(values: [10, 40, 20, 70]),
+                    scale: .fixed(lowerBound: 0, upperBound: 100)
+                )
+            ),
+            color: .blue,
+            isCardHovered: true,
+            showsYAxisLabels: true
+        )
+        .frame(width: 280, height: 90)
+
+        let renderer = ImageRenderer(content: chart)
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedNetworkTrendChartBuildsLocalizedSecondaryAndHoverMarks() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(2), primaryValue: 1_000, secondaryValue: 250),
+        ]
+        let chart = DashboardTrendChart(
+            metric: DashboardMetric(
+                kind: .network,
+                title: MetricKind.network.title,
+                value: "↑ 750 B/s ↓ 1 KB/s",
+                style: .chart,
+                trend: DashboardTrend(samples: samples, scale: .automatic)
+            ),
+            color: .green,
+            isCardHovered: true,
+            showsYAxisLabels: true
+        )
+        .frame(width: 280, height: 90)
+
+        let renderer = ImageRenderer(content: chart)
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
     }
 
     func testOverviewTrendChartsAnimateSampleChangesIncludingNetwork() {

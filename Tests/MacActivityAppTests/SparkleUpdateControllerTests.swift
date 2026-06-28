@@ -221,6 +221,64 @@ final class SparkleUpdateControllerTests: XCTestCase {
         XCTAssertNil(SparkleLocalizationOverride.preferredLocalization(from: ["zh_CN", "en"]))
     }
 
+    func testSparklePreferredLocalizationHandlesRegionalAndBaseMatches() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]),
+            "zh_CN"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hant")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_TW"]),
+            "zh_TW"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("en-US")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]),
+            "en"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("fr-CA")
+        XCTAssertNil(SparkleLocalizationOverride.preferredLocalization(from: ["en", "zh_CN"]))
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "fr"]),
+            "fr"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("fr")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["en", "fr_CA"]),
+            "fr_CA"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("x-private")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["x-private"]),
+            "x-private"
+        )
+
+        AppLocalization.setPreferredLanguageIdentifier("sr-Cyrl")
+        XCTAssertEqual(
+            SparkleLocalizationOverride.preferredLocalization(from: ["sr_Cyrl"]),
+            "sr_Cyrl"
+        )
+    }
+
+    func testBundlePreferredLocalizationsFallsBackWhenSelectedLanguageIsUnavailable() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+
+        SparkleLocalizationOverride.install()
+        AppLocalization.setPreferredLanguageIdentifier(nil)
+        let original = Bundle.preferredLocalizations(from: ["en", "zh_CN"])
+        AppLocalization.setPreferredLanguageIdentifier("fr-CA")
+
+        XCTAssertEqual(Bundle.preferredLocalizations(from: ["en", "zh_CN"]), original)
+    }
+
     func testUpdateCandidateBuildsFromSparkleMetadata() {
         let candidate = SparkleUpdateController.updateCandidate(
             for: SparkleAppcastCandidateInput(

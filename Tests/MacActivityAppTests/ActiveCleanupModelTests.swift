@@ -307,6 +307,62 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(model.memoryState, .cooldown(remainingSeconds: 7.5))
     }
 
+    func testMemoryReleaseFailureShowsExitCode() async {
+        let memory = MemoryReleaseServiceRecorder(releaseResults: [.failed(exitCode: 7)])
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: memory,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.releaseMemory()
+
+        XCTAssertEqual(model.memoryState, .failed(.exitCode(7)))
+    }
+
+    func testTrashScanFailuresPropagateThroughRefreshAndPostCleanupRescan() async {
+        let trash = TrashCleanupServiceRecorder(
+            scanResults: [
+                .failed("scan denied"),
+                .failed("rescan denied"),
+            ],
+            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: trash,
+            memoryService: MemoryReleaseServiceRecorder(),
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.refresh()
+        XCTAssertEqual(model.trashState, .failed(.message("scan denied")))
+
+        await model.confirmTrashCleanup()
+        XCTAssertEqual(model.trashState, .failed(.message("rescan denied")))
+    }
+
+    func testDiskCleanupScanFailuresPropagateThroughRefreshAndPostCleanupRescan() async {
+        let disk = DiskCleanupServiceRecorder(
+            scanResults: [
+                .failed("scan denied"),
+                .failed("rescan denied"),
+            ],
+            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
+        )
+        let model = ActiveCleanupModel(
+            trashService: TrashCleanupServiceRecorder(),
+            memoryService: MemoryReleaseServiceRecorder(),
+            diskCleanupService: disk,
+            appProvider: ActiveAppProviderRecorder()
+        )
+
+        await model.refreshDiskCleanup()
+        XCTAssertEqual(model.diskCleanupState, .failed(.message("scan denied")))
+
+        await model.confirmDiskCleanup()
+        XCTAssertEqual(model.diskCleanupState, .failed(.message("rescan denied")))
+    }
+
     func testDuplicateMemoryReleaseIsIgnoredWhileFirstCallIsRunning() async {
         let memory = SuspendedMemoryReleaseService()
         let model = ActiveCleanupModel(

@@ -865,6 +865,18 @@ struct RAMSegmentBarsLayout {
         }
     }
 
+    static func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
+        guard let sample else {
+            return AppLocalization.string(.memoryChartCollectingSamples)
+        }
+
+        return AppLocalization.memoryChartAccessibilityLabel(
+            pressurePercent: Int(sample.pressurePercent.rounded()),
+            usedMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes),
+            totalMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes)
+        )
+    }
+
     private static func bucketEndLabel(startingAt bucketStart: Date) -> String {
         let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
         return AppLocalization.formattedTime(bucketEnd)
@@ -1142,7 +1154,7 @@ struct RAMSegmentBars: View {
                 }
             }
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(accessibilityLabel(for: slots.compactMap(\.sample).last))
+            .accessibilityLabel(RAMSegmentBarsLayout.accessibilityLabel(for: slots.compactMap(\.sample).last))
         }
     }
 
@@ -1162,17 +1174,6 @@ struct RAMSegmentBars: View {
         )
     }
 
-    private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
-        guard let sample else {
-            return AppLocalization.string(.memoryChartCollectingSamples)
-        }
-
-        return AppLocalization.memoryChartAccessibilityLabel(
-            pressurePercent: Int(sample.pressurePercent.rounded()),
-            usedMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes),
-            totalMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes)
-        )
-    }
 }
 
 private struct RAMSegmentBar: View {

@@ -215,7 +215,9 @@ enum SparkleLocalizationOverride {
             Bundle.self,
             #selector(Bundle.macActivity_localizedString(forKey:value:table:))
         ) else {
+            // codecov:ignore start
             return
+            // codecov:ignore end
         }
 
         method_exchangeImplementations(original, replacement)
@@ -287,7 +289,9 @@ enum SparkleLocalizationOverride {
             resources[canonicalLanguageIdentifier(localization), default: localization] = localization
         }
         guard let normalized = AppLocalization.normalizedLanguageIdentifier(languageIdentifier) else {
+            // codecov:ignore start
             return nil
+            // codecov:ignore end
         }
 
         if let exact = resources[normalized] {

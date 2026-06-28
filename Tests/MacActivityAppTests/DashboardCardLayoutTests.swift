@@ -716,6 +716,28 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 270, y: 128)))
     }
 
+    func testRenderedOverviewDisplaysTemperatureFanAndBatteryTrendTitles() throws {
+        let store = MetricsStore()
+        store.apply(
+            [
+                .temperature(TemperatureReading(celsius: 42, source: .smc)),
+                .fan(FanReading(rpm: 1_800)),
+                .battery(BatteryReading(percentage: 82, isCharging: false)),
+            ],
+            timestamp: Date(timeIntervalSince1970: 24)
+        )
+        let model = DashboardModel(store: store)
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            openPreferences: {},
+            quitApplication: {}
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 128)))
+    }
+
     func testRenderedDashboardCanStartOnActivesTab() throws {
         let store = MetricsStore()
         store.apply(
@@ -1283,6 +1305,28 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(
             RAMSegmentBarsLayout.tooltipTimeLabel(for: emptyLatestSlot),
             AppLocalization.formattedTime(bucketStart.addingTimeInterval(60))
+        )
+    }
+
+    func testRAMSegmentAccessibilityLabelsDescribeEmptyAndLatestSamples() {
+        let sample = DashboardMemoryTrendSample(
+            timestamp: Date(timeIntervalSince1970: 39 * 60 + 5),
+            pressurePercent: 50,
+            usedBytes: 500,
+            totalBytes: 1_000
+        )
+
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.accessibilityLabel(for: nil),
+            AppLocalization.string(.memoryChartCollectingSamples)
+        )
+        XCTAssertEqual(
+            RAMSegmentBarsLayout.accessibilityLabel(for: sample),
+            AppLocalization.memoryChartAccessibilityLabel(
+                pressurePercent: 50,
+                usedMemory: DashboardMetricTextFormatter.formatMemoryGB(500),
+                totalMemory: DashboardMetricTextFormatter.formatMemoryGB(1_000)
+            )
         )
     }
 

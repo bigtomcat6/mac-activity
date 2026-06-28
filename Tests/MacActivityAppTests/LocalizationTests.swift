@@ -95,10 +95,29 @@ final class LocalizationTests: XCTestCase {
             value: "82%",
             detailRole: .batteryCharging
         )
+        let batteryOnBattery = DashboardMetric(
+            kind: .battery,
+            titleRole: .metric(.battery),
+            value: "82%",
+            detailRole: .batteryOnBattery
+        )
+        let cpuTemperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.smc),
+            value: "31.2 C"
+        )
+        let batteryTemperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.battery),
+            value: "31.2 C"
+        )
 
         XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: disk, bundle: simplifiedChinese), "磁盘")
         XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: battery, bundle: simplifiedChinese), "电池")
+        XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: cpuTemperature, bundle: simplifiedChinese), "CPU 温度")
+        XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: batteryTemperature, bundle: simplifiedChinese), "电池温度")
         XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: battery, bundle: simplifiedChinese), "正在充电")
+        XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: batteryOnBattery, bundle: simplifiedChinese), "使用电池")
     }
 
     func testMemorySegmentTooltipLocalizesSegmentTitles() throws {
@@ -144,10 +163,80 @@ final class LocalizationTests: XCTestCase {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let sample = DashboardTrendSample(timestamp: Date(), primaryValue: 31.2, secondaryValue: 20.4)
 
+        XCTAssertEqual(AppLocalization.chartAxisLabel(for: .cpu, value: 31.2, bundle: simplifiedChinese), "31%")
         XCTAssertEqual(AppLocalization.chartAxisLabel(for: .temperature, value: 31.2, bundle: simplifiedChinese), "31.2℃")
+        XCTAssertEqual(AppLocalization.chartAxisLabel(for: .fan, value: 1_800, bundle: simplifiedChinese), "1,800 RPM")
         XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .temperature, sample: sample, bundle: simplifiedChinese), "31.2℃")
+        XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .fan, sample: sample, bundle: simplifiedChinese), "31 RPM")
+        XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .cpu, sample: sample, bundle: simplifiedChinese), "31%")
         XCTAssertEqual(AppLocalization.chartPrimaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "↑ 20 B/s")
+        XCTAssertNil(AppLocalization.chartSecondaryReadout(for: .cpu, sample: sample, bundle: simplifiedChinese))
         XCTAssertEqual(AppLocalization.chartSecondaryReadout(for: .network, sample: sample, bundle: simplifiedChinese), "↓ 31 B/s")
+    }
+
+    func testLanguageIdentifierMatchingAndDisplayNamesCoverFallbacks() throws {
+        let bundle = try makeLocalizationBundle(localizations: ["fr", "Base", "en", "de"])
+
+        XCTAssertEqual(AppLocalization.availableLanguageIdentifiers(in: bundle), ["en", "de", "fr"])
+        XCTAssertNil(AppLocalization.availableLanguageIdentifier(matching: ""))
+        XCTAssertEqual(AppLocalization.availableLanguageIdentifier(matching: "EN_us"), "en")
+        XCTAssertEqual(AppLocalization.availableLanguageIdentifier(matching: "zh_Hans_CN"), "zh-Hans")
+        XCTAssertEqual(AppLocalization.availableLanguageIdentifier(matching: "fr-CA", in: bundle), "fr")
+        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: ""))
+        XCTAssertEqual(AppLocalization.displayName(forLanguageIdentifier: "zz-Zzzz"), "zz-Zzzz")
+        XCTAssertNotNil(AppLocalization.currentLanguageIdentifier())
+    }
+
+    func testHardcodedProductionStringScannerReportsRepresentativeLiterals() {
+        let contents = [
+            #"Label("Status", systemImage: "bolt")"#,
+            #"ProgressView("Loading")"#,
+            #".accessibilityLabel(Text("Usage"))"#,
+            #"Text("")"#,
+            #"Text("CFBundleName")"#,
+        ].joined(separator: "\n")
+        let violations = Self.hardcodedProductionStringViolations(
+            in: contents,
+            relativePath: "Sources/MacActivityApp/Sample.swift"
+        )
+
+        XCTAssertEqual(
+            violations,
+            [
+                #"Sources/MacActivityApp/Sample.swift:1: Label literal uses "Status""#,
+                #"Sources/MacActivityApp/Sample.swift:2: ProgressView literal uses "Loading""#,
+                #"Sources/MacActivityApp/Sample.swift:3: Text literal uses "Usage""#,
+                #"Sources/MacActivityApp/Sample.swift:3: accessibility label literal uses "Usage""#,
+            ]
+        )
+
+        for allowedFragment in [
+            "CFBundle",
+            "MacActivityReleaseTag",
+            "SUPublicEDKey",
+            "SUFeedURL",
+            "fatalError",
+            "systemName:",
+        ] {
+            XCTAssertFalse(Self.shouldScanProductionStringLine("Text(\"\(allowedFragment)\")"))
+        }
+    }
+
+    func testHardcodedProductionStringPatternsExposeExpectedCaptures() {
+        let samples = [
+            ("Label literal", #"Label("Status", systemImage: "bolt")"#, "Status"),
+            ("ProgressView literal", #"ProgressView("Loading")"#, "Loading"),
+            ("accessibility label literal", #".accessibilityLabel(Text("Usage"))"#, "Usage"),
+        ]
+
+        for (patternName, line, literal) in samples {
+            let pattern = Self.hardcodedProductionStringPatterns.first { $0.name == patternName }
+            let regex = try! XCTUnwrap(pattern?.regex)
+            let range = NSRange(line.startIndex..<line.endIndex, in: line)
+            let match = try! XCTUnwrap(regex.firstMatch(in: line, range: range))
+            let literalRange = try! XCTUnwrap(Range(match.range(at: 1), in: line))
+            XCTAssertEqual(String(line[literalRange]), literal)
+        }
     }
 
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
@@ -340,35 +429,14 @@ final class LocalizationTests: XCTestCase {
             packageRoot.appendingPathComponent("Sources/MacActivityApp"),
             packageRoot.appendingPathComponent("Sources/MacActivityCore"),
         ]
-        var violations: [String] = []
-
-        for fileURL in try sourceRoots.flatMap(Self.swiftSourceFiles) {
-            let relativePath = Self.relativePath(for: fileURL, from: packageRoot)
-            let contents = try String(contentsOf: fileURL, encoding: .utf8)
-
-            for (lineOffset, line) in contents.components(separatedBy: .newlines).enumerated() {
-                guard Self.shouldScanProductionStringLine(line) else { continue }
-
-                for pattern in Self.hardcodedProductionStringPatterns {
-                    let range = NSRange(line.startIndex..<line.endIndex, in: line)
-                    for match in pattern.regex.matches(in: line, range: range) {
-                        guard match.numberOfRanges > 1,
-                              let literalRange = Range(match.range(at: 1), in: line) else {
-                            continue
-                        }
-
-                        let literal = String(line[literalRange])
-                        guard literal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
-                            continue
-                        }
-
-                        violations.append(
-                            "\(relativePath):\(lineOffset + 1): \(pattern.name) uses \"\(literal)\""
-                        )
-                    }
-                }
+        let violations = try sourceRoots
+            .flatMap(Self.swiftSourceFiles)
+            .flatMap { fileURL in
+                Self.hardcodedProductionStringViolations(
+                    in: try String(contentsOf: fileURL, encoding: .utf8),
+                    relativePath: Self.relativePath(for: fileURL, from: packageRoot)
+                )
             }
-        }
 
         XCTAssertTrue(
             violations.isEmpty,
@@ -381,6 +449,22 @@ final class LocalizationTests: XCTestCase {
         let path = try XCTUnwrap(bundle.path(forResource: "InfoPlist", ofType: "strings"))
         let dictionary = try XCTUnwrap(NSDictionary(contentsOfFile: path) as? [String: String])
         return dictionary
+    }
+
+    private func makeLocalizationBundle(localizations: [String]) throws -> Bundle {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathExtension("bundle")
+        try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+
+        for localization in localizations {
+            try FileManager.default.createDirectory(
+                at: bundleURL.appendingPathComponent("\(localization).lproj"),
+                withIntermediateDirectories: true
+            )
+        }
+
+        return try XCTUnwrap(Bundle(url: bundleURL))
     }
 
     private static let hardcodedProductionStringPatterns: [(name: String, regex: NSRegularExpression)] = [
@@ -425,6 +509,31 @@ final class LocalizationTests: XCTestCase {
         ]
 
         return allowedFragments.contains { line.contains($0) } == false
+    }
+
+    private static func hardcodedProductionStringViolations(in contents: String, relativePath: String) -> [String] {
+        var violations: [String] = []
+
+        for (lineOffset, line) in contents.components(separatedBy: .newlines).enumerated() {
+            guard shouldScanProductionStringLine(line) else { continue }
+
+            for pattern in hardcodedProductionStringPatterns {
+                let range = NSRange(line.startIndex..<line.endIndex, in: line)
+                for match in pattern.regex.matches(in: line, range: range) {
+                    let literalRange = Range(match.range(at: 1), in: line)!
+                    let literal = String(line[literalRange])
+                    guard literal.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false else {
+                        continue
+                    }
+
+                    violations.append(
+                        "\(relativePath):\(lineOffset + 1): \(pattern.name) uses \"\(literal)\""
+                    )
+                }
+            }
+        }
+
+        return violations
     }
 
     private static func packageRootURL() -> URL {

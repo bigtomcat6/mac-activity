@@ -25,7 +25,9 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.trash, .userCaches, .userLogs], now: Date())
 
         guard case .cleanable(let summary) = result else {
+            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
+            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 6_144)
         XCTAssertEqual(summary.totalBytes, 6_144)
@@ -86,6 +88,22 @@ final class DiskCleanupServiceTests: XCTestCase {
         XCTAssertEqual(filesystem.removedItems(), [])
     }
 
+    func testCleanReturnsScanFailureWithoutDeleting() async {
+        let roots = DiskCleanupRoots(homeDirectory: URL(fileURLWithPath: "/Users/test", isDirectory: true))
+        let cacheURL = roots.url(for: .userCaches)
+        let blocked = cacheURL.appendingPathComponent("Blocked")
+        let filesystem = DiskCleanupFilesystemRecorder(
+            contents: [cacheURL: [blocked]],
+            itemInfoFailures: [blocked: TestDiskCleanupError.denied]
+        )
+        let service = DiskCleanupService(roots: roots, filesystem: filesystem)
+
+        let result = await service.clean(categories: [.userCaches], now: Date(timeIntervalSince1970: 100))
+
+        XCTAssertEqual(result, .failed(.message("denied")))
+        XCTAssertEqual(filesystem.removedItems(), [])
+    }
+
     func testCacheScannerSkipsExcludedNamesRecentItemsAndSymlinks() async {
         let roots = DiskCleanupRoots(homeDirectory: URL(fileURLWithPath: "/Users/test", isDirectory: true))
         let cacheURL = roots.url(for: .userCaches)
@@ -116,7 +134,9 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.userCaches], now: now)
 
         guard case .cleanable(let summary) = result else {
+            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
+            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 1_000)
         XCTAssertEqual(summary.selectedItemCount, 1)
@@ -171,7 +191,9 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.scan(categories: [.trash, .userCaches, .userLogs], now: Date())
 
         guard case .cleanable(let summary) = result else {
+            // codecov:ignore start
             return XCTFail("Expected cleanable summary, got \(result)")
+            // codecov:ignore end
         }
         XCTAssertEqual(summary.selectedBytes, 128)
         XCTAssertEqual(summary.accessIssueCount, 1)
