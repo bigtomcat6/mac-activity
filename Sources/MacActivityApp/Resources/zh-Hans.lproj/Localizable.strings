@@ -32,22 +32,6 @@
 "metric.battery.charging" = "正在充电";
 "metric.battery.onBattery" = "使用电池";
 
-"status.summary.empty" = "指标";
-"status.accessibility.metric" = "%@ %@";
-"status.accessibility.network" = "上传 %@，下载 %@";
-"status.accessibility.fan" = "风扇 %@ RPM";
-"status.metric.cpu.short" = "CPU";
-"status.metric.gpu.short" = "GPU";
-"status.metric.disk.short" = "磁盘";
-"status.metric.swap.short" = "交换";
-"status.metric.memory.short" = "内存";
-"status.metric.vram.short" = "显存";
-"status.metric.battery.short" = "电池";
-"status.metric.temperature.cpu.short" = "CPU";
-"status.metric.temperature.battery.short" = "电池";
-"status.metric.fan.short" = "风扇";
-"status.metric.fan.unit" = "RPM";
-
 "chart.dimension.time" = "时间";
 "chart.dimension.primary" = "主值";
 "chart.dimension.secondary" = "次值";

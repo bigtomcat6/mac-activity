@@ -32,22 +32,6 @@
 "metric.battery.charging" = "Charging";
 "metric.battery.onBattery" = "On Battery";
 
-"status.summary.empty" = "Metrics";
-"status.accessibility.metric" = "%@ %@";
-"status.accessibility.network" = "Upload %@, download %@";
-"status.accessibility.fan" = "Fan %@ RPM";
-"status.metric.cpu.short" = "CPU";
-"status.metric.gpu.short" = "GPU";
-"status.metric.disk.short" = "DISK";
-"status.metric.swap.short" = "SWAP";
-"status.metric.memory.short" = "MEM";
-"status.metric.vram.short" = "VRAM";
-"status.metric.battery.short" = "BAT";
-"status.metric.temperature.cpu.short" = "CPU";
-"status.metric.temperature.battery.short" = "BAT";
-"status.metric.fan.short" = "FAN";
-"status.metric.fan.unit" = "RPM";
-
 "chart.dimension.time" = "Time";
 "chart.dimension.primary" = "Primary";
 "chart.dimension.secondary" = "Secondary";
