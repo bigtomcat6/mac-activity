@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="/assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
+  <img src="./assets/app-icon/mac-activity-icon-simple.svg" width="96" alt="Mac Activity app icon">
 </p>
 
 <h1 align="center">Mac Activity</h1>
