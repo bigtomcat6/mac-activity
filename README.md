@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI"></a>
+  <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/localization.yml/badge.svg?branch=main" alt="Localization"></a>
   <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml/badge.svg?branch=main" alt="Docs Links"></a>
   <a href="https://codecov.io/gh/bigtomcat6/mac-activity"><img src="https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg" alt="codecov"></a>
   <a href="/LICENSE"><img src="https://img.shields.io/github/license/bigtomcat6/mac-activity" alt="License"></a>
@@ -16,24 +17,6 @@
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=!*-*&sort=semver&label=stable" alt="Stable"></a>
   <a href="https://github.com/bigtomcat6/mac-activity/releases"><img src="https://img.shields.io/github/v/tag/bigtomcat6/mac-activity?filter=v*-*&sort=semver&label=pre-release" alt="Pre-release"></a>
 </p>
-
-<!-- localization-badges:start -->
-<p align="center">
-  <a href="#localization"><img src="https://img.shields.io/badge/l10n%20English-100%25-2ea44f" alt="English localization 100%"></a>
-  <a href="#localization"><img src="https://img.shields.io/badge/l10n%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-100%25-2ea44f" alt="简体中文 localization 100%"></a>
-</p>
-<!-- localization-badges:end -->
-
-## Localization
-
-<!-- localization-coverage:start -->
-_Coverage counts resource-key presence; translation wording is reviewed separately._
-
-| Language | App UI | Bundle metadata | Overall |
-| --- | ---: | ---: | ---: |
-| English | 100% (137/137) | 100% (2/2) | 100% (139/139) |
-| 简体中文 | 100% (137/137) | 100% (2/2) | 100% (139/139) |
-<!-- localization-coverage:end -->
 
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.
 

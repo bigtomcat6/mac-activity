@@ -4,46 +4,26 @@ import update_localization_coverage
 
 
 class UpdateLocalizationCoverageTests(unittest.TestCase):
-    def test_renders_one_encoded_badge_per_language(self):
+    def test_incomplete_coverage_detects_missing_baseline_keys(self):
         coverage = [
             update_localization_coverage.Coverage("en", "English", 137, 137, 2, 2),
             update_localization_coverage.Coverage("zh-Hans", "简体中文", 138, 139, 2, 2),
         ]
 
-        badges = update_localization_coverage.render_coverage_badges(coverage)
+        incomplete = update_localization_coverage.incomplete_coverage(coverage)
 
-        self.assertIn(
-            "https://img.shields.io/badge/l10n%20English-100%25-2ea44f",
-            badges,
-        )
-        self.assertIn(
-            "https://img.shields.io/badge/l10n%20%E7%AE%80%E4%BD%93%E4%B8%AD%E6%96%87-99%25-dfb317",
-            badges,
-        )
-        self.assertIn('href="#localization"', badges)
+        self.assertEqual(["zh-Hans"], [row.language_identifier for row in incomplete])
 
-    def test_update_readme_adds_badge_block_before_localization_table(self):
-        readme = (
-            "<p align=\"center\">\n"
-            "  <img src=\"icon.svg\" alt=\"icon\">\n"
-            "</p>\n"
-            "\n"
-            "## Localization\n"
-            "\n"
-            "<!-- localization-coverage:start -->\n"
-            "old table\n"
-            "<!-- localization-coverage:end -->\n"
-        )
+    def test_render_coverage_table_reports_language_counts(self):
+        coverage = [
+            update_localization_coverage.Coverage("en", "English", 137, 137, 2, 2),
+            update_localization_coverage.Coverage("zh-Hans", "简体中文", 138, 139, 2, 2),
+        ]
 
-        updated = update_localization_coverage.update_readme(
-            readme,
-            table="new table",
-            badges="<p align=\"center\">badges</p>",
-        )
+        table = update_localization_coverage.render_coverage_table(coverage)
 
-        self.assertIn("<!-- localization-badges:start -->\n<p align=\"center\">badges</p>\n<!-- localization-badges:end -->", updated)
-        self.assertLess(updated.index("localization-badges:start"), updated.index("## Localization"))
-        self.assertIn("<!-- localization-coverage:start -->\nnew table\n<!-- localization-coverage:end -->", updated)
+        self.assertIn("| English | 100% (137/137) | 100% (2/2) | 100% (139/139) |", table)
+        self.assertIn("| 简体中文 | 99% (138/139) | 100% (2/2) | 99% (140/141) |", table)
 
 
 if __name__ == "__main__":

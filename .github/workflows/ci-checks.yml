@@ -44,9 +44,6 @@ jobs:
       - name: Check development version
         run: python3 .github/scripts/check_development_version.py
 
-      - name: Check localization coverage table
-        run: python3 .github/scripts/update_localization_coverage.py --check
-
       - name: Show toolchain versions
         run: |
           swift --version
