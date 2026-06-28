@@ -261,6 +261,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
         self.assertIn("contents: write", workflow)
         self.assertIn("--badge-json-dir", workflow)
+        self.assertIn("git -C \"${publish_dir}\" rm -rf --ignore-unmatch .", workflow)
         self.assertIn("HEAD:badges", workflow)
 
     def test_readme_uses_shields_endpoint_localization_badges(self):

@@ -59,7 +59,7 @@ jobs:
           else
             git worktree add --detach "${publish_dir}" HEAD
             git -C "${publish_dir}" switch --orphan badges
-            git -C "${publish_dir}" rm -rf .
+            git -C "${publish_dir}" rm -rf --ignore-unmatch .
           fi
 
           mkdir -p "${publish_dir}/localization"
