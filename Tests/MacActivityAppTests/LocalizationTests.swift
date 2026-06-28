@@ -551,13 +551,15 @@ final class LocalizationTests: XCTestCase {
     }
 
     private static func swiftSourceFiles(in directory: URL) throws -> [URL] {
-        guard let enumerator = FileManager.default.enumerator(
+        guard FileManager.default.fileExists(atPath: directory.path) else {
+            return []
+        }
+
+        let enumerator = try XCTUnwrap(FileManager.default.enumerator(
             at: directory,
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
+        ))
 
         var files: [URL] = []
         for case let fileURL as URL in enumerator where fileURL.pathExtension == "swift" {
