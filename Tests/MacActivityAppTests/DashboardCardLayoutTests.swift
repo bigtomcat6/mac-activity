@@ -1274,15 +1274,15 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertEqual(
             RAMSegmentBarsLayout.tooltipTimeLabel(for: averagedSlot),
-            bucketStart.addingTimeInterval(60).formatted(.dateTime.hour().minute())
+            AppLocalization.formattedTime(bucketStart.addingTimeInterval(60))
         )
         XCTAssertEqual(
             RAMSegmentBarsLayout.tooltipTimeLabel(for: latestSlot),
-            latestTimestamp.formatted(.dateTime.hour().minute().second())
+            AppLocalization.formattedTime(latestTimestamp, includesSeconds: true)
         )
         XCTAssertEqual(
             RAMSegmentBarsLayout.tooltipTimeLabel(for: emptyLatestSlot),
-            bucketStart.addingTimeInterval(60).formatted(.dateTime.hour().minute())
+            AppLocalization.formattedTime(bucketStart.addingTimeInterval(60))
         )
     }
 

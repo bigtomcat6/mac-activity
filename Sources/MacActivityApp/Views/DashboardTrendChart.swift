@@ -194,8 +194,8 @@ struct DashboardTrendChart: View {
             if showsAreaFill {
                 ForEach(displaySamples, id: \.timestamp) { sample in
                     AreaMark(
-                        x: .value("Time", sample.timestamp),
-                        y: .value("Primary", sample.primaryValue)
+                        x: .value(AppLocalization.string(.chartDimensionTime), sample.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionPrimary), sample.primaryValue)
                     )
                     .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
                     .foregroundStyle(areaGradient)
@@ -204,9 +204,9 @@ struct DashboardTrendChart: View {
 
             ForEach(primaryLinePoints) { point in
                 LineMark(
-                    x: .value("Time", point.timestamp),
-                    y: .value("Primary", point.value),
-                    series: .value("Series", point.series.rawValue)
+                    x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                    y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
+                    series: .value(AppLocalization.string(.chartDimensionSeries), point.series.rawValue)
                 )
                 .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
@@ -216,9 +216,9 @@ struct DashboardTrendChart: View {
             if !secondaryLinePoints.isEmpty {
                 ForEach(secondaryLinePoints) { point in
                     LineMark(
-                        x: .value("Time", point.timestamp),
-                        y: .value("Secondary", point.value),
-                        series: .value("Series", point.series.rawValue)
+                        x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionSecondary), point.value),
+                        series: .value(AppLocalization.string(.chartDimensionSeries), point.series.rawValue)
                     )
                     .interpolationMethod(secondaryInterpolationMethod)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
@@ -228,12 +228,12 @@ struct DashboardTrendChart: View {
 
             if let selectedSample {
                 if let baselineValue = DashboardTrendChartLayout.hoverBaselineValue(for: metric.kind) {
-                    RuleMark(y: .value("Baseline", baselineValue))
+                    RuleMark(y: .value(AppLocalization.string(.chartDimensionBaseline), baselineValue))
                         .foregroundStyle(Color.primary.opacity(0.28))
                         .lineStyle(StrokeStyle(lineWidth: 1.1, lineCap: .round, dash: [4, 3]))
                 }
 
-                RuleMark(x: .value("Selection", selectedSample.timestamp))
+                RuleMark(x: .value(AppLocalization.string(.chartDimensionSelection), selectedSample.timestamp))
                     .foregroundStyle(hoverRuleColor)
                     .lineStyle(hoverRuleStyle)
 
@@ -244,9 +244,9 @@ struct DashboardTrendChart: View {
                     )
                 ) { point in
                     PointMark(
-                        x: .value("Selection Time", point.timestamp),
+                        x: .value(AppLocalization.string(.chartDimensionSelectionTime), point.timestamp),
                         y: .value(
-                            "Selection Value",
+                            AppLocalization.string(.chartDimensionSelectionValue),
                             point.value
                         )
                     )
@@ -589,7 +589,7 @@ struct DashboardTrendChart: View {
             return "--:--"
         }
 
-        return date.formatted(.dateTime.hour().minute())
+        return AppLocalization.formattedTime(date)
     }
 
 }

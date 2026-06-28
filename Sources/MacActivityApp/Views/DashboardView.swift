@@ -859,7 +859,7 @@ struct RAMSegmentBarsLayout {
             guard let timestamp = slot.sample?.timestamp else {
                 return bucketEndLabel(startingAt: slot.bucketStart)
             }
-            return timestamp.formatted(.dateTime.hour().minute().second())
+            return AppLocalization.formattedTime(timestamp, includesSeconds: true)
         case .minuteAverage:
             return bucketEndLabel(startingAt: slot.bucketStart)
         }
@@ -867,7 +867,7 @@ struct RAMSegmentBarsLayout {
 
     private static func bucketEndLabel(startingAt bucketStart: Date) -> String {
         let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
-        return bucketEnd.formatted(.dateTime.hour().minute())
+        return AppLocalization.formattedTime(bucketEnd)
     }
 
     private static func bucketStart(containing date: Date) -> Date {
@@ -1163,13 +1163,15 @@ struct RAMSegmentBars: View {
     }
 
     private func accessibilityLabel(for sample: DashboardMemoryTrendSample?) -> String {
-        guard let sample else { return "Memory chart collecting samples" }
-        let parts = [
-            "Memory \(Int(sample.pressurePercent.rounded())) percent",
-            "used \(DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes))",
-            "of \(DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes))",
-        ]
-        return parts.joined(separator: ", ")
+        guard let sample else {
+            return AppLocalization.string(.memoryChartCollectingSamples)
+        }
+
+        return AppLocalization.memoryChartAccessibilityLabel(
+            pressurePercent: Int(sample.pressurePercent.rounded()),
+            usedMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.usedBytes),
+            totalMemory: DashboardMetricTextFormatter.formatMemoryGB(sample.totalBytes)
+        )
     }
 }
 
@@ -1253,6 +1255,7 @@ private struct RAMSegmentTooltip: View {
             if let sample = slot.sample {
                 ForEach(RAMSegmentBarsLayout.displaySegments(for: sample)) { segment in
                     HStack(spacing: 5) {
+                        let title = AppLocalization.memorySegmentTitle(for: segment.kind)
                         RoundedRectangle(cornerRadius: 2, style: .continuous)
                             .fill(
                                 DashboardOverviewChrome.memorySegmentColor(
@@ -1261,7 +1264,15 @@ private struct RAMSegmentTooltip: View {
                                 )
                             )
                             .frame(width: 8, height: 8)
-                        Text("\(segment.kind.title): \(DashboardMetricTextFormatter.formatMemoryGB(segment.bytes)) (\(DashboardMetricTextFormatter.formatPercent(RAMSegmentBarsLayout.percentage(for: segment, in: sample))))")
+                        Text(
+                            AppLocalization.memorySegmentTooltip(
+                                title: title,
+                                memory: DashboardMetricTextFormatter.formatMemoryGB(segment.bytes),
+                                percent: DashboardMetricTextFormatter.formatPercent(
+                                    RAMSegmentBarsLayout.percentage(for: segment, in: sample)
+                                )
+                            )
+                        )
                             .font(.caption2.monospacedDigit())
                             .lineLimit(1)
                     }
@@ -1411,8 +1422,8 @@ private struct StorageSegmentedUsageBar: View {
             }
             .clipShape(Capsule())
         }
-        .accessibilityLabel(Text("Disk and Swap usage"))
-        .accessibilityValue(Text(visibleMetrics.map { "\($0.title) \($0.detail ?? $0.value)" }.joined(separator: ", ")))
+        .accessibilityLabel(Text(AppLocalization.string(.dashboardStorageAccessibility)))
+        .accessibilityValue(Text(AppLocalization.storageAccessibilityValue(for: visibleMetrics)))
         .animation(DashboardMotion.valueAnimation, value: metrics)
     }
 

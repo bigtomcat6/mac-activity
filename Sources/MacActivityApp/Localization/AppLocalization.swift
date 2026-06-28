@@ -364,6 +364,26 @@ enum AppLocalization {
         }
     }
 
+    static func storageAccessibilityValue(for metrics: [DashboardMetric], bundle: Bundle? = nil) -> String {
+        let targetBundle = bundle ?? configuredBundle()
+        let separator = locale(for: targetBundle).identifier.hasPrefix("zh") ? "，" : ", "
+        return metrics
+            .map { metric in
+                let title = dashboardMetricTitle(for: metric, bundle: targetBundle)
+                let value = dashboardMetricDetail(for: metric, bundle: targetBundle) ?? metric.value
+                return "\(title) \(value)"
+            }
+            .joined(separator: separator)
+    }
+
+    static func formattedTime(_ date: Date, includesSeconds: Bool = false, bundle: Bundle? = nil) -> String {
+        var format = Date.FormatStyle.dateTime.hour().minute()
+        if includesSeconds {
+            format = format.second()
+        }
+        return date.formatted(format.locale(locale(for: bundle ?? configuredBundle())))
+    }
+
     static func temperatureSourceTitle(for source: TemperatureSource, bundle: Bundle? = nil) -> String {
         switch source {
         case .smc:
@@ -448,6 +468,13 @@ enum AppLocalization {
     }
 
     private static func locale(for bundle: Bundle) -> Locale {
+        if bundle.bundleURL.pathExtension == "lproj" {
+            let identifier = canonicalLanguageIdentifier(
+                bundle.bundleURL.deletingPathExtension().lastPathComponent
+            )
+            return Locale(identifier: identifier)
+        }
+
         if let identifier = bundle.preferredLocalizations.first {
             return Locale(identifier: identifier)
         }

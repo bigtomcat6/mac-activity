@@ -94,6 +94,45 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: battery, bundle: simplifiedChinese), "正在充电")
     }
 
+    func testMemorySegmentTooltipLocalizesSegmentTitles() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            AppLocalization.memorySegmentTitle(for: .compressed, bundle: simplifiedChinese),
+            "压缩"
+        )
+        XCTAssertEqual(
+            AppLocalization.memorySegmentTooltip(
+                title: "压缩",
+                memory: "2.0GB",
+                percent: "20%",
+                bundle: simplifiedChinese
+            ),
+            "压缩：2.0GB（20%）"
+        )
+    }
+
+    func testStorageAccessibilityLocalizesMetricTitles() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+        let disk = DashboardMetric(
+            kind: .disk,
+            titleRole: .metric(.disk),
+            value: "75%",
+            detailRole: .raw("750 B (75%)")
+        )
+        let swap = DashboardMetric(
+            kind: .swap,
+            titleRole: .metric(.swap),
+            value: "25%",
+            detailRole: .raw("256 B")
+        )
+
+        XCTAssertEqual(
+            AppLocalization.storageAccessibilityValue(for: [disk, swap], bundle: simplifiedChinese),
+            "磁盘 750 B (75%)，交换 256 B"
+        )
+    }
+
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
