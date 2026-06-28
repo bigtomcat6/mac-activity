@@ -284,13 +284,7 @@ struct DiskCleanupStatusView: View {
     }
 
     private static func categoryListSeparator(for bundle: Bundle?) -> String {
-        if let bundle {
-            let identifiers = bundle.preferredLocalizations + bundle.localizations + [bundle.bundleURL.lastPathComponent]
-            if identifiers.contains(where: { $0.hasPrefix("zh") || $0.hasPrefix("zh-") }) {
-                return "、"
-            }
-        }
-        return ", "
+        AppLocalization.currentLocale(bundle: bundle).identifier.hasPrefix("zh") ? "、" : ", "
     }
 
     private static let actionWidth: CGFloat = 72

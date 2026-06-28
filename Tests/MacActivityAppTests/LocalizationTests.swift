@@ -21,6 +21,13 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testUnsupportedLanguageIdentifierDoesNotFallBackToEnglish() {
+        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "fr"))
+        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "zh-Hant"))
+        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "fr").preferredLanguageIdentifier)
+        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "zh-Hant").preferredLanguageIdentifier)
+    }
+
     func testAppLanguageOptionsIncludeSystemAndBundledLanguages() {
         let languages = AppLanguage.supportedLanguages()
 
@@ -312,13 +319,19 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testPreferredLanguageSelectionOverridesDefaultBundle() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+
         AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
         XCTAssertEqual(AppLocalization.string(.preferences), "偏好设置")
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
+                for: .cleanable(bytes: 4_096, itemCount: 3, categories: [.userCaches, .trash, .userLogs])
+            ),
+            "已选择 3 个项目，来自缓存、废纸篓、日志。"
+        )
 
         AppLocalization.setPreferredLanguageIdentifier("en")
         XCTAssertEqual(AppLocalization.string(.preferences), "Preferences")
-
-        AppLocalization.setPreferredLanguageIdentifier(nil)
     }
 
     func testProductionUIStringsUseLocalizationResources() throws {
@@ -376,6 +389,11 @@ final class LocalizationTests: XCTestCase {
         ("Label literal", try! NSRegularExpression(pattern: #"\bLabel\s*\(\s*"((?:\\"|[^"])*)""#)),
         ("Toggle literal", try! NSRegularExpression(pattern: #"\bToggle\s*\(\s*"((?:\\"|[^"])*)""#)),
         ("Picker literal", try! NSRegularExpression(pattern: #"\bPicker\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Menu literal", try! NSRegularExpression(pattern: #"\bMenu\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Section literal", try! NSRegularExpression(pattern: #"\bSection\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("TextField literal", try! NSRegularExpression(pattern: #"\bTextField\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("SecureField literal", try! NSRegularExpression(pattern: #"\bSecureField\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("ProgressView literal", try! NSRegularExpression(pattern: #"\bProgressView\s*\(\s*"((?:\\"|[^"])*)""#)),
         (
             "accessibility label literal",
             try! NSRegularExpression(pattern: #"\.accessibilityLabel\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
@@ -385,6 +403,12 @@ final class LocalizationTests: XCTestCase {
             try! NSRegularExpression(pattern: #"\.accessibilityValue\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
         ),
         ("help literal", try! NSRegularExpression(pattern: #"\.help\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("navigation title literal", try! NSRegularExpression(pattern: #"\.navigationTitle\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("alert literal", try! NSRegularExpression(pattern: #"\.alert\s*\(\s*"((?:\\"|[^"])*)""#)),
+        (
+            "confirmation dialog literal",
+            try! NSRegularExpression(pattern: #"\.confirmationDialog\s*\(\s*"((?:\\"|[^"])*)""#)
+        ),
         ("tooltip literal", try! NSRegularExpression(pattern: #"\.toolTip\s*=\s*"((?:\\"|[^"])*)""#)),
         ("title literal", try! NSRegularExpression(pattern: #"\.title\s*=\s*"((?:\\"|[^"])*)""#)),
         ("failed literal", try! NSRegularExpression(pattern: #"\.failed\s*\(\s*"((?:\\"|[^"])*)""#)),

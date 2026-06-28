@@ -15,11 +15,7 @@ struct AppLanguage: Hashable, Identifiable {
             return
         }
 
-        let available = AppLocalization.availableLanguageIdentifiers()
-        self.preferredLanguageIdentifier = Bundle.preferredLocalizations(
-            from: available,
-            forPreferences: [normalized]
-        ).first
+        self.preferredLanguageIdentifier = AppLocalization.availableLanguageIdentifier(matching: normalized)
     }
 
     private init(canonicalLanguageIdentifier: String?) {

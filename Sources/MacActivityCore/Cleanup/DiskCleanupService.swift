@@ -469,8 +469,11 @@ public struct DiskCleanupService: Sendable {
                     continue
                 }
 
-                guard let metadata = try? filesystem.itemMetadata(at: child) else {
-                    accessIssues.append(DiskCleanupAccessIssue(kind: kind, url: child, message: "Unable to read file metadata."))
+                let metadata: DiskCleanupItemMetadata
+                do {
+                    metadata = try filesystem.itemMetadata(at: child)
+                } catch {
+                    accessIssues.append(DiskCleanupAccessIssue(kind: kind, url: child, message: error.localizedDescription))
                     continue
                 }
 

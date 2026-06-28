@@ -73,8 +73,6 @@
 
 "language.system" = "Follow System";
 "language.selfName" = "English";
-"language.english" = "English";
-"language.simplifiedChinese" = "Simplified Chinese";
 "update.channel.alpha" = "Alpha";
 "update.channel.beta" = "Beta";
 "update.channel.release" = "Release";

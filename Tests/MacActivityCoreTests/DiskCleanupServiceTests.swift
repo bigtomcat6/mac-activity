@@ -177,6 +177,21 @@ final class DiskCleanupServiceTests: XCTestCase {
         XCTAssertEqual(summary.accessIssueCount, 1)
         XCTAssertEqual(summary.categories.map(\.kind), [.trash])
     }
+
+    func testScanMetadataFailureUsesUnderlyingLocalizedMessage() async {
+        let roots = DiskCleanupRoots(homeDirectory: URL(fileURLWithPath: "/Users/test", isDirectory: true))
+        let cacheURL = roots.url(for: .userCaches)
+        let unreadable = cacheURL.appendingPathComponent("unreadable.cache")
+        let filesystem = DiskCleanupFilesystemRecorder(
+            contents: [cacheURL: [unreadable]],
+            itemInfoFailures: [unreadable: TestDiskCleanupError.denied]
+        )
+        let service = DiskCleanupService(roots: roots, filesystem: filesystem)
+
+        let result = await service.scan(categories: [.userCaches], now: Date())
+
+        XCTAssertEqual(result, .failed("denied"))
+    }
 }
 
 private enum TestDiskCleanupError: Error, LocalizedError {
@@ -250,6 +265,7 @@ private final class DiskCleanupFilesystemRecorder: DiskCleanupFilesystem, @unche
 
     var contents: [URL: [URL]]
     var itemInfo: [URL: ItemInfo]
+    var itemInfoFailures: [URL: Error]
     var contentsFailures: [URL: Error]
     var removeFailures: [URL: Error]
 
@@ -258,11 +274,13 @@ private final class DiskCleanupFilesystemRecorder: DiskCleanupFilesystem, @unche
     init(
         contents: [URL: [URL]] = [:],
         itemInfo: [URL: ItemInfo] = [:],
+        itemInfoFailures: [URL: Error] = [:],
         contentsFailures: [URL: Error] = [:],
         removeFailures: [URL: Error] = [:]
     ) {
         self.contents = contents
         self.itemInfo = itemInfo
+        self.itemInfoFailures = itemInfoFailures
         self.contentsFailures = contentsFailures
         self.removeFailures = removeFailures
     }
@@ -273,6 +291,7 @@ private final class DiskCleanupFilesystemRecorder: DiskCleanupFilesystem, @unche
     }
 
     func itemMetadata(at url: URL) throws -> DiskCleanupItemMetadata {
+        if let error = itemInfoFailures[url] { throw error }
         let info = itemInfo[url] ?? .file(size: 0, modifiedAt: .distantPast)
         return DiskCleanupItemMetadata(
             allocatedBytes: info.size,

@@ -74,8 +74,6 @@ enum AppLocalization {
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
         case languageSystem = "language.system"
         case languageSelfName = "language.selfName"
-        case languageEnglish = "language.english"
-        case languageSimplifiedChinese = "language.simplifiedChinese"
         case updateChannelAlpha = "update.channel.alpha"
         case updateChannelBeta = "update.channel.beta"
         case updateChannelRelease = "update.channel.release"
@@ -196,6 +194,28 @@ enum AppLocalization {
         return resources
     }
 
+    static func availableLanguageIdentifier(matching languageIdentifier: String, in sourceBundle: Bundle? = nil) -> String? {
+        guard let normalized = normalizedLanguageIdentifier(languageIdentifier) else {
+            return nil
+        }
+
+        let available = availableLanguageIdentifiers(in: sourceBundle)
+        if available.contains(normalized) {
+            return normalized
+        }
+
+        if let regionalMatch = available.first(where: { normalized.hasPrefix("\($0)-") }) {
+            return regionalMatch
+        }
+
+        let normalizedComponents = normalized.split(separator: "-")
+        if normalizedComponents.count == 1 {
+            return available.first { $0.split(separator: "-").first == normalizedComponents.first }
+        }
+
+        return nil
+    }
+
     private static func canonicalLanguageIdentifier(_ identifier: String) -> String {
         identifier
             .replacingOccurrences(of: "_", with: "-")
@@ -223,11 +243,7 @@ enum AppLocalization {
         }
 
         let resources = localizedResources(in: bundle)
-        let available = Array(resources.keys)
-        let preferred = Bundle.preferredLocalizations(
-            from: available,
-            forPreferences: [normalized]
-        ).first
+        let preferred = availableLanguageIdentifier(matching: normalized)
 
         guard let preferred,
               let resourceIdentifier = resources[preferred],
@@ -243,7 +259,7 @@ enum AppLocalization {
               normalized.isEmpty == false else {
             return nil
         }
-        return normalized
+        return canonicalLanguageIdentifier(normalized)
     }
 
     static func setPreferredLanguageIdentifier(_ preferredLanguageIdentifier: String?) {

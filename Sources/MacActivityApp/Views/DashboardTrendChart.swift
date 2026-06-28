@@ -203,11 +203,11 @@ struct DashboardTrendChart: View {
             }
 
             ForEach(primaryLinePoints) { point in
-                LineMark(
-                    x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
-                    y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
-                    series: .value(AppLocalization.string(.chartDimensionSeries), point.series.rawValue)
-                )
+                    LineMark(
+                        x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                        y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
+                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
+                    )
                 .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(primaryLineGradient)
@@ -218,7 +218,7 @@ struct DashboardTrendChart: View {
                     LineMark(
                         x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
                         y: .value(AppLocalization.string(.chartDimensionSecondary), point.value),
-                        series: .value(AppLocalization.string(.chartDimensionSeries), point.series.rawValue)
+                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
                     )
                     .interpolationMethod(secondaryInterpolationMethod)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
@@ -582,6 +582,15 @@ struct DashboardTrendChart: View {
 
     private func secondaryReadout(for sample: DashboardTrendSample) -> String? {
         AppLocalization.chartSecondaryReadout(for: metric.kind, sample: sample)
+    }
+
+    private func seriesLabel(for series: DashboardTrendLineSeries) -> String {
+        switch series {
+        case .primary:
+            return AppLocalization.string(.chartDimensionPrimary)
+        case .secondary:
+            return AppLocalization.string(.chartDimensionSecondary)
+        }
     }
 
     private func timestampLabel(for date: Date?) -> String {
