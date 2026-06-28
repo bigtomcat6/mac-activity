@@ -4,6 +4,47 @@ import MacActivityCore
 
 @MainActor
 final class LocalizationTests: XCTestCase {
+    func testAvailableLanguagesComeFromBundledLprojFolders() throws {
+        let languages = AppLocalization.availableLanguageIdentifiers()
+
+        XCTAssertTrue(languages.contains("en"))
+        XCTAssertTrue(languages.contains("zh-Hans"))
+        XCTAssertFalse(languages.contains("Base"))
+    }
+
+    func testRegionalLanguageIdentifierFallsBackToBundledLocalization() throws {
+        let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans-CN"))
+
+        XCTAssertEqual(
+            AppLocalization.string(.preferences, bundle: bundle),
+            "偏好设置"
+        )
+    }
+
+    func testAppLanguageOptionsIncludeSystemAndBundledLanguages() {
+        let languages = AppLanguage.supportedLanguages()
+
+        XCTAssertEqual(languages.first?.preferredLanguageIdentifier, nil)
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "en" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "zh-Hans" })
+    }
+
+    func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(AppLocalization.languageTitle(for: .system, bundle: english), "Follow System")
+        XCTAssertEqual(AppLocalization.languageTitle(for: .system, bundle: simplifiedChinese), "跟随系统")
+        XCTAssertEqual(
+            AppLocalization.languageTitle(for: AppLanguage(preferredLanguageIdentifier: "en"), bundle: simplifiedChinese),
+            "English"
+        )
+        XCTAssertEqual(
+            AppLocalization.languageTitle(for: AppLanguage(preferredLanguageIdentifier: "zh-Hans"), bundle: english),
+            "简体中文"
+        )
+    }
+
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))

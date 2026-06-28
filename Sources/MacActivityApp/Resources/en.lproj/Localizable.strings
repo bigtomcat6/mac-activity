@@ -55,6 +55,7 @@
 "preferences.metricsFixedOrder" = "Metrics always render in the fixed MVP order.";
 
 "language.system" = "Follow System";
+"language.selfName" = "English";
 "language.english" = "English";
 "language.simplifiedChinese" = "Simplified Chinese";
 "update.channel.alpha" = "Alpha";

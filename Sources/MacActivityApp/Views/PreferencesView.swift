@@ -55,7 +55,7 @@ struct PreferencesView: View {
                             }
                         )
                     ) {
-                        ForEach(AppLanguage.allCases) { language in
+                        ForEach(AppLanguage.supportedLanguages()) { language in
                             Text(AppLocalization.languageTitle(for: language))
                                 .tag(language)
                         }

@@ -58,6 +58,7 @@ enum AppLocalization {
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
         case preferencesMetricsFixedOrder = "preferences.metricsFixedOrder"
         case languageSystem = "language.system"
+        case languageSelfName = "language.selfName"
         case languageEnglish = "language.english"
         case languageSimplifiedChinese = "language.simplifiedChinese"
         case updateChannelAlpha = "update.channel.alpha"
@@ -138,15 +139,84 @@ enum AppLocalization {
         #endif
     }
 
-    static func bundle(forLanguageIdentifier languageIdentifier: String) -> Bundle? {
-        let candidates = [
-            languageIdentifier,
-            languageIdentifier.lowercased(),
-        ]
+    static func availableLanguageIdentifiers(in sourceBundle: Bundle? = nil) -> [String] {
+        let targetBundle = sourceBundle ?? bundle
+        let resources = localizedResources(in: targetBundle)
 
-        guard let path = candidates.lazy.compactMap({ bundle.path(forResource: $0, ofType: "lproj") }).first else {
+        return Array(resources.keys)
+            .sorted { lhs, rhs in
+                if lhs == "en" {
+                    return true
+                }
+                if rhs == "en" {
+                    return false
+                }
+                return lhs.localizedStandardCompare(rhs) == .orderedAscending
+            }
+    }
+
+    private static func localizedResources(in bundle: Bundle) -> [String: String] {
+        var resources: [String: String] = [:]
+
+        for identifier in bundle.localizations where identifier != "Base" {
+            resources[canonicalLanguageIdentifier(identifier)] = identifier
+        }
+
+        if let resourceURL = bundle.resourceURL,
+           let resourceContents = try? FileManager.default.contentsOfDirectory(
+            at: resourceURL,
+            includingPropertiesForKeys: nil
+           ) {
+            for url in resourceContents where url.pathExtension == "lproj" {
+                let identifier = url.deletingPathExtension().lastPathComponent
+                if identifier != "Base" {
+                    resources[canonicalLanguageIdentifier(identifier), default: identifier] = identifier
+                }
+            }
+        }
+
+        return resources
+    }
+
+    private static func canonicalLanguageIdentifier(_ identifier: String) -> String {
+        identifier
+            .replacingOccurrences(of: "_", with: "-")
+            .split(separator: "-")
+            .enumerated()
+            .map { index, component in
+                let value = String(component)
+                if index == 0 {
+                    return value.lowercased()
+                }
+                if value.count == 4 {
+                    return value.prefix(1).uppercased() + value.dropFirst().lowercased()
+                }
+                if value.count == 2 || value.count == 3 {
+                    return value.uppercased()
+                }
+                return value
+            }
+            .joined(separator: "-")
+    }
+
+    static func bundle(forLanguageIdentifier languageIdentifier: String) -> Bundle? {
+        guard let normalized = normalizedLanguageIdentifier(languageIdentifier) else {
             return nil
         }
+
+        let resources = localizedResources(in: bundle)
+        let available = Array(resources.keys)
+        let preferred = Bundle.preferredLocalizations(
+            from: available,
+            forPreferences: [normalized]
+        ).first
+
+        guard let preferred,
+              let resourceIdentifier = resources[preferred],
+              let path = bundle.path(forResource: resourceIdentifier, ofType: "lproj") else {
+            return nil
+        }
+
         return Bundle(path: path)
     }
 
@@ -177,6 +247,10 @@ enum AppLocalization {
             locale: locale(for: targetBundle),
             arguments: arguments
         )
+    }
+
+    static func currentLocale(bundle: Bundle? = nil) -> Locale {
+        locale(for: bundle ?? configuredBundle())
     }
 
     static func metricTitle(for kind: MetricKind, bundle: Bundle? = nil) -> String {
@@ -240,14 +314,11 @@ enum AppLocalization {
     }
 
     static func languageTitle(for language: AppLanguage, bundle: Bundle? = nil) -> String {
-        switch language {
-        case .system:
+        guard let identifier = language.preferredLanguageIdentifier else {
             return string(.languageSystem, bundle: bundle)
-        case .english:
-            return string(.languageEnglish, bundle: bundle)
-        case .simplifiedChinese:
-            return string(.languageSimplifiedChinese, bundle: bundle)
         }
+
+        return displayName(forLanguageIdentifier: identifier)
     }
 
     static func updateChannelTitle(for channel: UpdateChannel, bundle: Bundle? = nil) -> String {
@@ -301,6 +372,19 @@ enum AppLocalization {
         bundle: Bundle? = nil
     ) -> String {
         string(.memoryChartAccessibility, pressurePercent, usedMemory, totalMemory, bundle: bundle)
+    }
+
+    static func displayName(forLanguageIdentifier identifier: String) -> String {
+        guard let languageBundle = bundle(forLanguageIdentifier: identifier) else {
+            return identifier
+        }
+
+        let value = languageBundle.localizedString(
+            forKey: Key.languageSelfName.rawValue,
+            value: nil,
+            table: nil
+        )
+        return value == Key.languageSelfName.rawValue ? identifier : value
     }
 
     private static func locale(for bundle: Bundle) -> Locale {

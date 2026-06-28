@@ -55,6 +55,7 @@
 "preferences.metricsFixedOrder" = "指标始终按固定 MVP 顺序显示。";
 
 "language.system" = "跟随系统";
+"language.selfName" = "简体中文";
 "language.english" = "English";
 "language.simplifiedChinese" = "简体中文";
 "update.channel.alpha" = "Alpha";
