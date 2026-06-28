@@ -10,6 +10,7 @@
 "dashboard.waiting.firstMetricSample" = "正在等待第一组指标样本。";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "正在收集趋势";
+"dashboard.storage.accessibility" = "磁盘和交换空间用量";
 "dashboard.memory.chart.collectingSamples" = "内存图表正在收集样本";
 "dashboard.memory.chart.accessibility" = "内存 %d%%，已用 %@，共 %@";
 "dashboard.memory.segment.active" = "活跃";
@@ -21,7 +22,7 @@
 "metric.cpu" = "CPU";
 "metric.gpu" = "GPU";
 "metric.disk" = "磁盘";
-"metric.swap" = "Swap";
+"metric.swap" = "交换";
 "metric.memory" = "内存";
 "metric.vram" = "显存";
 "metric.network" = "网络";
@@ -30,6 +31,38 @@
 "metric.fan" = "风扇";
 "metric.battery.charging" = "正在充电";
 "metric.battery.onBattery" = "使用电池";
+
+"status.summary.empty" = "指标";
+"status.accessibility.metric" = "%@ %@";
+"status.accessibility.network" = "上传 %@，下载 %@";
+"status.accessibility.fan" = "风扇 %@ RPM";
+"status.metric.cpu.short" = "CPU";
+"status.metric.gpu.short" = "GPU";
+"status.metric.disk.short" = "磁盘";
+"status.metric.swap.short" = "交换";
+"status.metric.memory.short" = "内存";
+"status.metric.vram.short" = "显存";
+"status.metric.battery.short" = "电池";
+"status.metric.temperature.cpu.short" = "CPU";
+"status.metric.temperature.battery.short" = "电池";
+"status.metric.fan.short" = "风扇";
+"status.metric.fan.unit" = "RPM";
+
+"chart.dimension.time" = "时间";
+"chart.dimension.primary" = "主值";
+"chart.dimension.secondary" = "次值";
+"chart.dimension.series" = "序列";
+"chart.dimension.baseline" = "基线";
+"chart.dimension.selection" = "选择";
+"chart.dimension.selectionTime" = "选择时间";
+"chart.dimension.selectionValue" = "选择值";
+"chart.temperature.axis" = "%.1f℃";
+"chart.temperature.readout" = "%.1f℃";
+"chart.fan.axis" = "%d RPM";
+"chart.fan.readout" = "%d RPM";
+
+"network.upload" = "上传";
+"network.download" = "下载";
 
 "temperature.source.cpuSMC" = "CPU/SMC";
 "temperature.source.battery" = "电池";
@@ -58,9 +91,9 @@
 "language.selfName" = "简体中文";
 "language.english" = "English";
 "language.simplifiedChinese" = "简体中文";
-"update.channel.alpha" = "Alpha";
-"update.channel.beta" = "Beta";
-"update.channel.release" = "Release";
+"update.channel.alpha" = "Alpha 版";
+"update.channel.beta" = "Beta 版";
+"update.channel.release" = "正式版";
 "diskCleanup.category.userCaches" = "缓存";
 "diskCleanup.category.trash" = "废纸篓";
 "diskCleanup.category.userLogs" = "日志";
@@ -84,6 +117,7 @@
 "memoryRelease.subtitle.unavailable" = "这台 Mac 没有可用的内存释放方式。";
 "memoryRelease.subtitle.readFailed" = "无法比较释放前后的内存读数。";
 "memoryRelease.subtitle.default" = "释放可回收的系统内存。";
+"memoryRelease.subtitle.failedWithExitCode" = "内存释放失败，退出代码 %d。";
 
 "trash.action.retry" = "重试";
 "trash.action.clean" = "清理";

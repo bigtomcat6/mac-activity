@@ -10,6 +10,7 @@
 "dashboard.waiting.firstMetricSample" = "Waiting for the first metric sample.";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecting trend";
+"dashboard.storage.accessibility" = "Disk and Swap usage";
 "dashboard.memory.chart.collectingSamples" = "Memory chart collecting samples";
 "dashboard.memory.chart.accessibility" = "Memory %d%%, used %@, of %@";
 "dashboard.memory.segment.active" = "Active";
@@ -30,6 +31,38 @@
 "metric.fan" = "Fan";
 "metric.battery.charging" = "Charging";
 "metric.battery.onBattery" = "On Battery";
+
+"status.summary.empty" = "Metrics";
+"status.accessibility.metric" = "%@ %@";
+"status.accessibility.network" = "Upload %@, download %@";
+"status.accessibility.fan" = "Fan %@ RPM";
+"status.metric.cpu.short" = "CPU";
+"status.metric.gpu.short" = "GPU";
+"status.metric.disk.short" = "DISK";
+"status.metric.swap.short" = "SWAP";
+"status.metric.memory.short" = "MEM";
+"status.metric.vram.short" = "VRAM";
+"status.metric.battery.short" = "BAT";
+"status.metric.temperature.cpu.short" = "CPU";
+"status.metric.temperature.battery.short" = "BAT";
+"status.metric.fan.short" = "FAN";
+"status.metric.fan.unit" = "RPM";
+
+"chart.dimension.time" = "Time";
+"chart.dimension.primary" = "Primary";
+"chart.dimension.secondary" = "Secondary";
+"chart.dimension.series" = "Series";
+"chart.dimension.baseline" = "Baseline";
+"chart.dimension.selection" = "Selection";
+"chart.dimension.selectionTime" = "Selection Time";
+"chart.dimension.selectionValue" = "Selection Value";
+"chart.temperature.axis" = "%.1f℃";
+"chart.temperature.readout" = "%.1f℃";
+"chart.fan.axis" = "%d RPM";
+"chart.fan.readout" = "%d RPM";
+
+"network.upload" = "Upload";
+"network.download" = "Download";
 
 "temperature.source.cpuSMC" = "CPU/SMC";
 "temperature.source.battery" = "Battery";
@@ -84,6 +117,7 @@
 "memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
 "memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";
 "memoryRelease.subtitle.default" = "Release reclaimable system memory.";
+"memoryRelease.subtitle.failedWithExitCode" = "Memory release failed with exit code %d.";
 
 "trash.action.retry" = "Retry";
 "trash.action.clean" = "Clean";

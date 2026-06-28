@@ -45,6 +45,40 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testEveryLocalizationKeyExistsInEveryBundledLocalization() throws {
+        let keys = Set(AppLocalization.Key.allCases.map(\.rawValue))
+
+        for language in AppLocalization.availableLanguageIdentifiers() {
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
+            for key in keys {
+                XCTAssertNotEqual(
+                    bundle.localizedString(forKey: key, value: nil, table: nil),
+                    key,
+                    "Missing \(key) in \(language)"
+                )
+            }
+        }
+    }
+
+    func testInfoPlistLocalizationKeysMatchEnglish() throws {
+        let expectedKeys = Set(["CFBundleDisplayName", "CFBundleName", "NSHumanReadableCopyright"])
+        let english = try infoPlistStrings(forLanguageIdentifier: "en")
+        let englishKeys = Set(english.keys).intersection(expectedKeys)
+
+        XCTAssertTrue(expectedKeys.isSuperset(of: englishKeys))
+        XCTAssertTrue(englishKeys.contains("CFBundleDisplayName"))
+        XCTAssertTrue(englishKeys.contains("NSHumanReadableCopyright"))
+
+        for language in AppLocalization.availableLanguageIdentifiers() where language != "en" {
+            let localized = try infoPlistStrings(forLanguageIdentifier: language)
+            XCTAssertEqual(
+                Set(localized.keys).intersection(expectedKeys),
+                englishKeys,
+                "InfoPlist.strings keys for \(language) must match English"
+            )
+        }
+    }
+
     func testEnglishAndSimplifiedChineseBundlesResolveCoreInterfaceStrings() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
@@ -99,9 +133,9 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: english), "Alpha")
         XCTAssertEqual(AppLocalization.updateChannelTitle(for: .beta, bundle: english), "Beta")
         XCTAssertEqual(AppLocalization.updateChannelTitle(for: .release, bundle: english), "Release")
-        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: simplifiedChinese), "Alpha")
-        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .beta, bundle: simplifiedChinese), "Beta")
-        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .release, bundle: simplifiedChinese), "Release")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .alpha, bundle: simplifiedChinese), "Alpha 版")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .beta, bundle: simplifiedChinese), "Beta 版")
+        XCTAssertEqual(AppLocalization.updateChannelTitle(for: .release, bundle: simplifiedChinese), "正式版")
 
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: english), "Cleanup scope")
         XCTAssertEqual(AppLocalization.string(.preferencesDiskCleanupScope, bundle: simplifiedChinese), "清理范围")
@@ -209,5 +243,12 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.string(.preferences), "Preferences")
 
         AppLocalization.setPreferredLanguageIdentifier(nil)
+    }
+
+    private func infoPlistStrings(forLanguageIdentifier language: String) throws -> [String: String] {
+        let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
+        let path = try XCTUnwrap(bundle.path(forResource: "InfoPlist", ofType: "strings"))
+        let dictionary = try XCTUnwrap(NSDictionary(contentsOfFile: path) as? [String: String])
+        return dictionary
     }
 }
