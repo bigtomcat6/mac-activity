@@ -17,7 +17,7 @@ final class LazyShellControllerTests: XCTestCase {
 
         XCTAssertEqual(recorder.events, [
             "create-popover",
-            "toggle-popover",
+            "toggle-popover"
         ])
     }
 
@@ -34,7 +34,7 @@ final class LazyShellControllerTests: XCTestCase {
         XCTAssertEqual(recorder.events, [
             "create-popover",
             "toggle-popover",
-            "toggle-popover",
+            "toggle-popover"
         ])
     }
 
@@ -53,7 +53,7 @@ final class LazyShellControllerTests: XCTestCase {
             "create-popover",
             "toggle-popover",
             "create-popover",
-            "toggle-popover",
+            "toggle-popover"
         ])
     }
 
@@ -72,7 +72,7 @@ final class LazyShellControllerTests: XCTestCase {
 
         XCTAssertEqual(recorder.events, [
             "create-window",
-            "show-window",
+            "show-window"
         ])
         XCTAssertTrue(controller.window === window)
     }

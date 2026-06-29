@@ -111,7 +111,7 @@ public struct LiveDiskCleanupFilesystem: DiskCleanupFilesystem {
         .isSymbolicLinkKey,
         .contentModificationDateKey,
         .fileAllocatedSizeKey,
-        .totalFileAllocatedSizeKey,
+        .totalFileAllocatedSizeKey
     ]
 }
 

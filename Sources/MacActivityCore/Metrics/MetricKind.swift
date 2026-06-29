@@ -22,7 +22,7 @@ public enum MetricKind: String, CaseIterable, Codable, Sendable {
         .temperature,
         .fan,
         .network,
-        .battery,
+        .battery
     ]
 
     public var title: String {

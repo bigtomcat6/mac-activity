@@ -20,7 +20,7 @@ final class ActiveCleanupModelTests: XCTestCase {
     func testRefreshVisibleCleanReleaseSectionsScansDiskCleanupAndSkipsMemoryEstimate() async {
         let trash = TrashCleanupServiceRecorder(scanResults: [.cleanable(bytes: 4_096, itemCount: 2)])
         let disk = DiskCleanupServiceRecorder(scanResults: [
-            .cleanable(summary: Self.diskSummary(bytes: 4_096, itemCount: 2, categoryCount: 1)),
+            .cleanable(summary: Self.diskSummary(bytes: 4_096, itemCount: 2, categoryCount: 1))
         ])
         let memory = MemoryReleaseServiceRecorder(currentReadings: [
             MemoryReading(
@@ -324,7 +324,7 @@ final class ActiveCleanupModelTests: XCTestCase {
         let trash = TrashCleanupServiceRecorder(
             scanResults: [
                 .failed("scan denied"),
-                .failed("rescan denied"),
+                .failed("rescan denied")
             ],
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )
@@ -345,7 +345,7 @@ final class ActiveCleanupModelTests: XCTestCase {
         let disk = DiskCleanupServiceRecorder(
             scanResults: [
                 .failed("scan denied"),
-                .failed("rescan denied"),
+                .failed("rescan denied")
             ],
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )

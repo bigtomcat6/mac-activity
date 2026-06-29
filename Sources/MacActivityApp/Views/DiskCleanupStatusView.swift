@@ -273,7 +273,7 @@ struct DiskCleanupStatusView: View {
         case .message(let message):
             return message
         case .unableToDeleteItems:
-            return AppLocalization.string(.diskCleanupSubtitleFailedUnableToDeleteItems, bundle: bundle)
+            return AppLocalization.string(.diskCleanupSubtitleDeleteFailed, bundle: bundle)
         }
     }
 

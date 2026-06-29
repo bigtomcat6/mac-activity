@@ -312,7 +312,7 @@ enum StatusBarSummaryLayout {
         let attributes: [NSAttributedString.Key: Any] = [
             .font: fallbackFont,
             .foregroundColor: NSColor.black,
-            .paragraphStyle: paragraphStyle,
+            .paragraphStyle: paragraphStyle
         ]
         let textHeight = ceil((text as NSString).size(withAttributes: attributes).height)
         let drawingRect = NSRect(
@@ -325,17 +325,17 @@ enum StatusBarSummaryLayout {
     }
 
     private static func drawItems(_ items: [StatusSummaryItem], in rect: NSRect) {
-        var x = rect.minX
+        var currentX = rect.minX
 
         for (index, item) in items.enumerated() {
             let width = itemWidth(for: item)
-            let itemRect = NSRect(x: x, y: rect.minY, width: width, height: rect.height)
+            let itemRect = NSRect(x: currentX, y: rect.minY, width: width, height: rect.height)
             drawItem(item, in: itemRect)
-            x += width
+            currentX += width
 
             if index < items.index(before: items.endIndex) {
-                drawSeparator(atX: x, in: rect)
-                x += separatorWidth
+                drawSeparator(atX: currentX, in: rect)
+                currentX += separatorWidth
             }
         }
     }
@@ -369,10 +369,10 @@ enum StatusBarSummaryLayout {
         (item.secondaryText as NSString).draw(in: secondaryRect, withAttributes: secondaryAttributes)
     }
 
-    private static func drawSeparator(atX x: CGFloat, in rect: NSRect) {
+    private static func drawSeparator(atX positionX: CGFloat, in rect: NSRect) {
         NSColor.black.withAlphaComponent(0.35).setFill()
         let dividerRect = NSRect(
-            x: x + floor((separatorWidth - 1) / 2),
+            x: positionX + floor((separatorWidth - 1) / 2),
             y: rect.minY + floor((rect.height - 16) / 2),
             width: 1,
             height: 16
@@ -391,7 +391,7 @@ enum StatusBarSummaryLayout {
         return [
             .font: font,
             .foregroundColor: NSColor.black,
-            .paragraphStyle: paragraphStyle,
+            .paragraphStyle: paragraphStyle
         ]
     }
 

@@ -74,7 +74,7 @@ enum DashboardOverviewLayout {
     static let topRowColumns = [GridItem(.flexible()), GridItem(.flexible())]
     static let secondRowColumns = [
         GridItem(.flexible(minimum: 0), spacing: 12),
-        GridItem(.flexible(minimum: 0), spacing: 12),
+        GridItem(.flexible(minimum: 0), spacing: 12)
     ]
     static let topSplitCardHeight = compactTrendCardHeight
     static let topRowHeight = topSplitCardHeight * 2 + sectionSpacing
@@ -95,7 +95,7 @@ enum DashboardOverviewLayout {
     static let storageDetailIconCenterOffset: CGFloat = 7
     static let storageSwapMinimumVisibleWidth = 0.02
     static let storageDetailMarkerOpacity: Double = 0.28
-    static let storageDetailTrailingFallbackMinimumWidth: CGFloat = 92
+    static let storageTrailingFallbackMinWidth: CGFloat = 92
     static let storageDetailContentAlignment: Alignment = .leading
     static let storageDetailTextAlignment: TextAlignment = .leading
     static let storageDetailSpacing: CGFloat = 4
@@ -246,7 +246,7 @@ enum DashboardOverviewLayout {
 
     static func storageDetailUsesTrailingFallback(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Bool {
         label.kind == .swap
-            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageDetailTrailingFallbackMinimumWidth
+            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageTrailingFallbackMinWidth
     }
 
     static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
@@ -409,11 +409,11 @@ enum DashboardOverviewChrome {
         let colors = appearsActive
             ? [
                 baseColor.opacity(0.16),
-                baseColor.opacity(0.02),
+                baseColor.opacity(0.02)
             ]
             : [
                 inactiveChartAreaTop,
-                inactiveChartAreaBottom,
+                inactiveChartAreaBottom
             ]
         return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
     }
@@ -425,11 +425,11 @@ enum DashboardOverviewChrome {
         let colors = appearsActive
             ? [
                 baseColor.opacity(0.92),
-                baseColor.opacity(0.62),
+                baseColor.opacity(0.62)
             ]
             : [
                 inactiveChartPrimaryStroke,
-                inactiveChartSecondaryStroke,
+                inactiveChartSecondaryStroke
             ]
         return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
@@ -1009,7 +1009,7 @@ struct RAMSegmentBarsLayout {
         let rawSegments = [
             RAMSegmentBarComponent(kind: .active, bytes: sample.breakdown.activeBytes),
             RAMSegmentBarComponent(kind: .compressed, bytes: sample.breakdown.compressedBytes),
-            RAMSegmentBarComponent(kind: .wired, bytes: sample.breakdown.wiredBytes),
+            RAMSegmentBarComponent(kind: .wired, bytes: sample.breakdown.wiredBytes)
         ].filter { $0.bytes > 0 }
 
         let rawTotal = rawSegments.reduce(UInt64(0)) { $0 + $1.bytes }

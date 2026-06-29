@@ -1,5 +1,4 @@
 import Darwin
-import Darwin.Mach
 import Foundation
 import MacActivityCore
 
@@ -429,7 +428,7 @@ struct DebugMemoryRelease {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(report)
-            print(String(decoding: data, as: UTF8.self))
+            print(String(bytes: data, encoding: .utf8) ?? "")
         } catch {
             fatalError("Unable to encode debug report: \(error)")
         }

@@ -10,7 +10,7 @@ final class MetricsSchedulerTests: XCTestCase {
             updates: [
                 .cpu(CPUReading(usagePercent: 10)),
                 .cpu(CPUReading(usagePercent: 20)),
-                .cpu(CPUReading(usagePercent: 30)),
+                .cpu(CPUReading(usagePercent: 30))
             ]
         )
         let mediumProvider = SequencedProvider(
@@ -18,14 +18,14 @@ final class MetricsSchedulerTests: XCTestCase {
             cadence: .medium,
             updates: [
                 .memory(MemoryReading(usedBytes: 1_000, totalBytes: 2_000)),
-                .memory(MemoryReading(usedBytes: 1_500, totalBytes: 2_000)),
+                .memory(MemoryReading(usedBytes: 1_500, totalBytes: 2_000))
             ]
         )
         let slowProvider = SequencedProvider(
             kind: .temperature,
             cadence: .slow,
             updates: [
-                .temperature(TemperatureReading(celsius: 55)),
+                .temperature(TemperatureReading(celsius: 55))
             ]
         )
 
@@ -59,7 +59,7 @@ final class MetricsSchedulerTests: XCTestCase {
             cadence: .fast,
             updates: [
                 .cpu(CPUReading(usagePercent: 44)),
-                .stale(kind: .cpu, reason: "Temporary error"),
+                .stale(kind: .cpu, reason: "Temporary error")
             ]
         )
         let temperatureProvider = SequencedProvider(
@@ -67,7 +67,7 @@ final class MetricsSchedulerTests: XCTestCase {
             cadence: .fast,
             updates: [
                 .temperature(TemperatureReading(celsius: 58)),
-                .unavailable(kind: .temperature, reason: "Sensor unavailable"),
+                .unavailable(kind: .temperature, reason: "Sensor unavailable")
             ]
         )
 
@@ -95,7 +95,7 @@ final class MetricsSchedulerTests: XCTestCase {
             updates: [
                 .cpu(CPUReading(usagePercent: 10)),
                 .cpu(CPUReading(usagePercent: 20)),
-                .cpu(CPUReading(usagePercent: 30)),
+                .cpu(CPUReading(usagePercent: 30))
             ]
         )
         let memoryProvider = SequencedProvider(
@@ -103,7 +103,7 @@ final class MetricsSchedulerTests: XCTestCase {
             cadence: .medium,
             updates: [
                 .memory(MemoryReading(usedBytes: 1_000, totalBytes: 2_000)),
-                .memory(MemoryReading(usedBytes: 1_500, totalBytes: 2_000)),
+                .memory(MemoryReading(usedBytes: 1_500, totalBytes: 2_000))
             ]
         )
 
@@ -112,7 +112,7 @@ final class MetricsSchedulerTests: XCTestCase {
             store: store,
             samplingProfile: .custom([
                 .cpu: 3,
-                .memory: 5,
+                .memory: 5
             ])
         )
 

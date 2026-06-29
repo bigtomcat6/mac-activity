@@ -150,8 +150,7 @@ struct DebugDiskCleanup {
            options.confirm,
            options.dryRun == false,
            let fixtureRoot = options.fixtureRoot,
-           isSafeFixtureRootForConfirmedClean(fixtureRoot) == false
-        {
+           isSafeFixtureRootForConfirmedClean(fixtureRoot) == false {
             throw DebugDiskCleanupError.unsafeFixtureRoot(path: fixtureRoot.path)
         }
 
@@ -373,7 +372,7 @@ struct DebugDiskCleanup {
         let roots = [
             URL(fileURLWithPath: "/private/tmp", isDirectory: true),
             URL(fileURLWithPath: "/tmp", isDirectory: true),
-            FileManager.default.temporaryDirectory,
+            FileManager.default.temporaryDirectory
         ]
 
         return Array(Set(roots.map { $0.resolvingSymlinksInPath().standardizedFileURL.path }))
@@ -384,7 +383,7 @@ struct DebugDiskCleanup {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(report)
-            print(String(decoding: data, as: UTF8.self))
+            print(String(bytes: data, encoding: .utf8) ?? "")
         } catch {
             fatalError("Unable to encode disk cleanup report: \(error)")
         }

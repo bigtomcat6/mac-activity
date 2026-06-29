@@ -3,7 +3,7 @@ import XCTest
 
 @MainActor
 final class DashboardModelTests: XCTestCase {
-    func testModelBuildsMemoryStackedMetricAndOmitsVRAMCard() async {
+    func testModelBuildsMemoryStackedMetricAndOmitsVRAMCard() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -24,7 +24,7 @@ final class DashboardModelTests: XCTestCase {
                     )
                 ),
                 .vram(VRAMReading(usedBytes: 2_147_483_648, totalBytes: 4_294_967_296)),
-                .network(NetworkReading(downloadBytesPerSecond: 1_000, uploadBytesPerSecond: 500)),
+                .network(NetworkReading(downloadBytesPerSecond: 1_000, uploadBytesPerSecond: 500))
             ],
             timestamp: Date(timeIntervalSince1970: 1)
         )
@@ -34,15 +34,15 @@ final class DashboardModelTests: XCTestCase {
         }
 
         XCTAssertEqual(metrics.map(\.kind), [.cpu, .memory, .network])
-        let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
+        let memory = try XCTUnwrap(metrics.first { $0.kind == .memory })
         XCTAssertEqual(memory.style, .memoryStackedChart)
         XCTAssertEqual(memory.value, "6.0GB/10.0GB (60%)")
         XCTAssertNil(memory.secondaryText)
         XCTAssertNil(memory.detail)
-        XCTAssertEqual(try! XCTUnwrap(memory.memoryTrend).samples.last?.breakdown.activeBytes, 3_221_225_472)
+        XCTAssertEqual(try XCTUnwrap(memory.memoryTrend).samples.last?.breakdown.activeBytes, 3_221_225_472)
     }
 
-    func testModelBuildsDiskAndSwapMetricsForOverviewUsageArea() async {
+    func testModelBuildsDiskAndSwapMetricsForOverviewUsageArea() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -51,7 +51,7 @@ final class DashboardModelTests: XCTestCase {
                 .cpu(CPUReading(usagePercent: 25)),
                 .gpu(GPUReading(usagePercent: 50)),
                 .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
-                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
+                .swap(SwapReading(usedBytes: 256, totalBytes: 1_024))
             ],
             timestamp: Date(timeIntervalSince1970: 11)
         )
@@ -61,28 +61,28 @@ final class DashboardModelTests: XCTestCase {
         }
 
         XCTAssertEqual(metrics.map(\.kind), [.cpu, .gpu, .disk, .swap])
-        let disk = try! XCTUnwrap(metrics.first { $0.kind == .disk })
+        let disk = try XCTUnwrap(metrics.first { $0.kind == .disk })
         XCTAssertEqual(disk.titleRole, .metric(.disk))
         XCTAssertEqual(disk.title, "Disk")
         XCTAssertEqual(disk.value, "75%")
         XCTAssertEqual(disk.usedBytes, 750)
         XCTAssertEqual(disk.totalBytes, 1_000)
-        XCTAssertEqual(try! XCTUnwrap(disk.progress), 0.75, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(disk.progress), 0.75, accuracy: 0.001)
         XCTAssertEqual(disk.detailRole, .raw("750 B (75%)"))
         XCTAssertEqual(disk.detail, "750 B (75%)")
 
-        let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
+        let swap = try XCTUnwrap(metrics.first { $0.kind == .swap })
         XCTAssertEqual(swap.titleRole, .metric(.swap))
         XCTAssertEqual(swap.title, "Swap")
         XCTAssertEqual(swap.value, "25%")
         XCTAssertEqual(swap.usedBytes, 256)
         XCTAssertEqual(swap.totalBytes, 1_024)
-        XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(swap.progress), 0.25, accuracy: 0.001)
         XCTAssertEqual(swap.detailRole, .raw("256 B (25%)"))
         XCTAssertEqual(swap.detail, "256 B (25%)")
     }
 
-    func testModelBuildsZeroSwapUsageDetailWithoutDividingByTotal() async {
+    func testModelBuildsZeroSwapUsageDetailWithoutDividingByTotal() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -95,9 +95,9 @@ final class DashboardModelTests: XCTestCase {
             metrics.contains { $0.kind == .swap }
         }
 
-        let swap = try! XCTUnwrap(metrics.first { $0.kind == .swap })
+        let swap = try XCTUnwrap(metrics.first { $0.kind == .swap })
         XCTAssertEqual(swap.value, "0%")
-        XCTAssertEqual(try! XCTUnwrap(swap.progress), 0.0, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(swap.progress), 0.0, accuracy: 0.001)
         XCTAssertEqual(swap.detailRole, .raw("0 KB (0%)"))
         XCTAssertEqual(swap.detail, "0 KB (0%)")
     }
@@ -118,7 +118,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(battery.id, "temperature-battery")
     }
 
-    func testModelBuildsFanMetricWhenFanReadingExists() async {
+    func testModelBuildsFanMetricWhenFanReadingExists() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -130,7 +130,7 @@ final class DashboardModelTests: XCTestCase {
         let metrics = await waitForMetrics(in: model) { metrics in
             metrics.contains { $0.kind == .fan }
         }
-        let fan = try! XCTUnwrap(metrics.first { $0.kind == .fan })
+        let fan = try XCTUnwrap(metrics.first { $0.kind == .fan })
 
         XCTAssertEqual(fan.titleRole, .metric(.fan))
         XCTAssertEqual(fan.title, "Fan")
@@ -139,7 +139,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertNotNil(fan.trend)
     }
 
-    func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async {
+    func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -155,8 +155,8 @@ final class DashboardModelTests: XCTestCase {
         let metrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .memory }?.memoryTrend?.samples.count == 2
         }
-        let memory = try! XCTUnwrap(metrics.first { $0.kind == .memory })
-        let samples = try! XCTUnwrap(memory.memoryTrend).samples
+        let memory = try XCTUnwrap(metrics.first { $0.kind == .memory })
+        let samples = try XCTUnwrap(memory.memoryTrend).samples
 
         XCTAssertEqual(samples.map(\.usedBytes), [1_500, 3_900])
         XCTAssertEqual(samples.map(\.totalBytes), [3_000, 6_000])
@@ -180,7 +180,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(DashboardMetricTextFormatter.formatRate(1_500), "1.5 KB/s")
     }
 
-    func testModelCanPauseAndResumeStoreSubscriptions() async {
+    func testModelCanPauseAndResumeStoreSubscriptions() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
@@ -190,17 +190,17 @@ final class DashboardModelTests: XCTestCase {
 
         model.setActive(true)
         let metrics = await waitForMetrics(in: model) { !$0.isEmpty }
-        let cpu = try! XCTUnwrap(metrics.first { $0.kind == .cpu })
+        let cpu = try XCTUnwrap(metrics.first { $0.kind == .cpu })
         XCTAssertEqual(cpu.value, "12%")
     }
 
-    func testBatteryTrendDoesNotExposeHardwarePercentageAsSecondarySeriesByDefault() async {
+    func testBatteryTrendDoesNotExposeHardwarePercentageAsSecondarySeriesByDefault() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
 
         store.apply(
             [
-                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51))
             ],
             timestamp: Date(timeIntervalSince1970: 30)
         )
@@ -208,14 +208,14 @@ final class DashboardModelTests: XCTestCase {
         let metrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .battery }?.trend?.samples.isEmpty == false
         }
-        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
-        let sample = try! XCTUnwrap(battery.trend?.samples.first)
+        let battery = try XCTUnwrap(metrics.first { $0.kind == .battery })
+        let sample = try XCTUnwrap(battery.trend?.samples.first)
 
         XCTAssertEqual(sample.primaryValue, 79, accuracy: 0.001)
         XCTAssertNil(sample.secondaryValue)
     }
 
-    func testBatteryMetricUsesSystemPercentageWhenHardwareDisplayIsDisabled() async {
+    func testBatteryMetricUsesSystemPercentageWhenHardwareDisplayIsDisabled() async throws {
         let store = MetricsStore()
         let preferences = PreferencesController(
             store: InMemoryDashboardPreferencesStore(
@@ -231,7 +231,7 @@ final class DashboardModelTests: XCTestCase {
 
         store.apply(
             [
-                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51))
             ],
             timestamp: Date(timeIntervalSince1970: 20)
         )
@@ -239,14 +239,14 @@ final class DashboardModelTests: XCTestCase {
         let metrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .battery }?.value == "79%"
         }
-        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
+        let battery = try XCTUnwrap(metrics.first { $0.kind == .battery })
 
         XCTAssertEqual(battery.value, "79%")
         XCTAssertEqual(battery.detailRole, .batteryOnBattery)
         XCTAssertEqual(battery.trend?.samples.map(\.primaryValue), [79])
     }
 
-    func testBatteryMetricUsesHardwarePercentageWhenPreferenceIsEnabled() async {
+    func testBatteryMetricUsesHardwarePercentageWhenPreferenceIsEnabled() async throws {
         let store = MetricsStore()
         let preferences = PreferencesController(
             store: InMemoryDashboardPreferencesStore(
@@ -262,7 +262,7 @@ final class DashboardModelTests: XCTestCase {
 
         store.apply(
             [
-                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51))
             ],
             timestamp: Date(timeIntervalSince1970: 21)
         )
@@ -270,7 +270,7 @@ final class DashboardModelTests: XCTestCase {
         let metrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .battery }?.value == "75%"
         }
-        let battery = try! XCTUnwrap(metrics.first { $0.kind == .battery })
+        let battery = try XCTUnwrap(metrics.first { $0.kind == .battery })
 
         XCTAssertEqual(battery.value, "75%")
         XCTAssertEqual(battery.trend?.samples.map(\.primaryValue), [74.51])
@@ -292,7 +292,7 @@ final class DashboardModelTests: XCTestCase {
 
         store.apply(
             [
-                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51)),
+                .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51))
             ],
             timestamp: Date(timeIntervalSince1970: 22)
         )
@@ -309,7 +309,7 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertEqual(metrics.first { $0.kind == .battery }?.trend?.samples.map(\.primaryValue), [74.51])
     }
 
-    func testTemperatureMetricSwitchesPreferredSourceTrendImmediately() async {
+    func testTemperatureMetricSwitchesPreferredSourceTrendImmediately() async throws {
         let store = MetricsStore()
         let preferences = PreferencesController(
             store: InMemoryDashboardPreferencesStore(
@@ -328,8 +328,8 @@ final class DashboardModelTests: XCTestCase {
             [
                 .temperatures([
                     TemperatureReading(celsius: 55, source: .smc),
-                    TemperatureReading(celsius: 30, source: .battery),
-                ]),
+                    TemperatureReading(celsius: 30, source: .battery)
+                ])
             ],
             timestamp: start
         )
@@ -337,8 +337,8 @@ final class DashboardModelTests: XCTestCase {
             [
                 .temperatures([
                     TemperatureReading(celsius: 56, source: .smc),
-                    TemperatureReading(celsius: 31, source: .battery),
-                ]),
+                    TemperatureReading(celsius: 31, source: .battery)
+                ])
             ],
             timestamp: start.addingTimeInterval(2)
         )
@@ -346,7 +346,7 @@ final class DashboardModelTests: XCTestCase {
         let batteryMetrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [30, 31]
         }
-        let batteryTemperature = try! XCTUnwrap(batteryMetrics.first { $0.kind == .temperature })
+        let batteryTemperature = try XCTUnwrap(batteryMetrics.first { $0.kind == .temperature })
         XCTAssertEqual(batteryTemperature.titleRole, .temperature(.battery))
         XCTAssertEqual(batteryTemperature.title, TemperatureSource.battery.dashboardTitle)
         XCTAssertEqual(batteryTemperature.value, "31.0 C")
@@ -356,7 +356,7 @@ final class DashboardModelTests: XCTestCase {
         let smcMetrics = await waitForMetrics(in: model) { metrics in
             metrics.first { $0.kind == .temperature }?.trend?.samples.map(\.primaryValue) == [55, 56]
         }
-        let smcTemperature = try! XCTUnwrap(smcMetrics.first { $0.kind == .temperature })
+        let smcTemperature = try XCTUnwrap(smcMetrics.first { $0.kind == .temperature })
         XCTAssertEqual(smcTemperature.titleRole, .temperature(.smc))
         XCTAssertEqual(smcTemperature.title, TemperatureSource.smc.dashboardTitle)
         XCTAssertEqual(smcTemperature.value, "56.0 C")

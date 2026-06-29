@@ -55,6 +55,36 @@ final class TrashCleanupServiceTests: XCTestCase {
         XCTAssertEqual(result, .cleanable(bytes: 1_024, itemCount: 2))
     }
 
+    func testLiveTrashFilesystemReadsNestedAllocatedSizeAndRemovesItems() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        let nested = root.appendingPathComponent("nested", isDirectory: true)
+        let topFile = root.appendingPathComponent("top.bin")
+        let nestedFile = nested.appendingPathComponent("child.bin")
+        try FileManager.default.createDirectory(at: nested, withIntermediateDirectories: true)
+        try Data(repeating: 1, count: 4_096).write(to: topFile)
+        try Data(repeating: 2, count: 2_048).write(to: nestedFile)
+        defer {
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let filesystem = LiveTrashFilesystem()
+
+        XCTAssertEqual(
+            Set(try filesystem.contentsOfDirectory(at: root).map { $0.resolvingSymlinksInPath() }),
+            Set([nested, topFile].map { $0.resolvingSymlinksInPath() })
+        )
+        XCTAssertGreaterThan(try filesystem.allocatedSizeOfItem(at: topFile), 0)
+        XCTAssertGreaterThanOrEqual(
+            try filesystem.allocatedSizeOfItem(at: nested),
+            try filesystem.allocatedSizeOfItem(at: nestedFile)
+        )
+
+        try filesystem.removeItem(at: topFile)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: topFile.path))
+    }
+
     @MainActor
     func testScanRunsFilesystemWorkOffMainThreadWhenCalledFromMainActor() async {
         let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
@@ -89,11 +119,11 @@ final class TrashCleanupServiceTests: XCTestCase {
 
     func testCleanupReportsPartialFailureAndKeepsSuccessfulDeletes() async {
         let trashURL = URL(fileURLWithPath: "/Users/test/.Trash", isDirectory: true)
-        let ok = trashURL.appendingPathComponent("ok.tmp")
+        let removable = trashURL.appendingPathComponent("ok.tmp")
         let blocked = trashURL.appendingPathComponent("blocked.tmp")
         let filesystem = TrashFilesystemRecorder(
-            contents: [trashURL: [ok, blocked]],
-            allocatedSizes: [ok: 100, blocked: 200],
+            contents: [trashURL: [removable, blocked]],
+            allocatedSizes: [removable: 100, blocked: 200],
             removeFailures: [blocked: TestTrashError.denied]
         )
         let service = TrashCleanupService(trashDirectory: trashURL, filesystem: filesystem)
@@ -101,7 +131,7 @@ final class TrashCleanupServiceTests: XCTestCase {
         let result = await service.clean()
 
         XCTAssertEqual(result, .partial(bytes: 100, deletedCount: 1, failedCount: 1))
-        XCTAssertEqual(filesystem.removedItems(), [ok, blocked])
+        XCTAssertEqual(filesystem.removedItems(), [removable, blocked])
     }
 
     func testCleanupReportsTotalFailureWhenNoItemsDelete() async {

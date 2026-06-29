@@ -655,23 +655,23 @@ struct DashboardTrendChartLayout {
         let halfHeight = annotationSize.height / 2
 
         let preferredRightX = pointer.x + horizontalSpacing + halfWidth
-        let x: CGFloat
+        let annotationX: CGFloat
 
         if preferredRightX <= plotFrame.maxX - boundaryPadding {
-            x = preferredRightX
+            annotationX = preferredRightX
         } else {
-            x = max(
+            annotationX = max(
                 plotFrame.minX + halfWidth + boundaryPadding,
                 pointer.x - horizontalSpacing - halfWidth
             )
         }
 
-        let y = min(
+        let annotationY = min(
             max(pointer.y, plotFrame.minY + halfHeight + boundaryPadding),
             plotFrame.maxY - halfHeight - boundaryPadding
         )
 
-        return CGPoint(x: x, y: y)
+        return CGPoint(x: annotationX, y: annotationY)
     }
 
     static func xAxisDates(for samples: [DashboardTrendSample]) -> [Date] {
@@ -842,7 +842,7 @@ struct DashboardTrendChartLayout {
                 hoverIndicatorPoint(for: sample, kind: kind, series: .primary, value: sample.primaryValue),
                 sample.secondaryValue.map {
                     hoverIndicatorPoint(for: sample, kind: kind, series: .secondary, value: $0)
-                },
+                }
             ].compactMap { $0 }
         }
 
@@ -1003,10 +1003,8 @@ struct DashboardTrendChartLayout {
         result.reserveCapacity(samples.count)
         var seenTimestamps = Set<Date>()
 
-        for sample in samples {
-            if seenTimestamps.insert(sample.timestamp).inserted {
-                result.append(sample)
-            }
+        for sample in samples where seenTimestamps.insert(sample.timestamp).inserted {
+            result.append(sample)
         }
 
         return result
@@ -1101,7 +1099,7 @@ struct DashboardTrendChartLayout {
     }
 
     static func date(
-        atX x: CGFloat,
+        atX positionX: CGFloat,
         plotFrame: CGRect,
         domain: ClosedRange<Date>
     ) -> Date {
@@ -1110,7 +1108,7 @@ struct DashboardTrendChartLayout {
             return domain.lowerBound
         }
 
-        let clampedX = min(max(x, plotFrame.minX), plotFrame.maxX)
+        let clampedX = min(max(positionX, plotFrame.minX), plotFrame.maxX)
         let progress = (clampedX - plotFrame.minX) / plotFrame.width
         return domain.lowerBound.addingTimeInterval(span * progress)
     }

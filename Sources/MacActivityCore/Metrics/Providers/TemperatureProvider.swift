@@ -74,7 +74,7 @@ public struct TemperatureProvider: MetricProvider {
         let batteryCelsius = readBatteryTemperatureCelsius()
         let readings = [
             smcCelsius.map { TemperatureReading(celsius: $0, source: .smc) },
-            batteryCelsius.map { TemperatureReading(celsius: $0, source: .battery) },
+            batteryCelsius.map { TemperatureReading(celsius: $0, source: .battery) }
         ].compactMap { $0 }
 
         switch readings.count {

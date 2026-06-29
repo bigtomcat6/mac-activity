@@ -9,7 +9,7 @@ enum ActiveProcessMemoryRowTrailingContent: Equatable {
     case quitting
 }
 
-enum ActiveProcessMemoryRowTrailingContentAlignment: Equatable {
+enum ActiveProcessTrailingAlignment: Equatable {
     case trailing
 
     var swiftUIAlignment: Alignment {
@@ -277,7 +277,7 @@ struct ActiveProcessMemoryRow: View {
 
     static func trailingContentAlignment(
         for content: ActiveProcessMemoryRowTrailingContent
-    ) -> ActiveProcessMemoryRowTrailingContentAlignment {
+    ) -> ActiveProcessTrailingAlignment {
         switch content {
         case .memory, .quit, .confirmQuit, .quitting:
             return .trailing
