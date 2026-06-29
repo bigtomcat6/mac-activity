@@ -179,7 +179,7 @@ struct DebugMemoryReleaseUI {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         do {
             let data = try encoder.encode(report)
-            print(String(decoding: data, as: UTF8.self))
+            print(String(bytes: data, encoding: .utf8) ?? "")
         } catch {
             fatalError("Unable to encode UI report: \(error)")
         }
