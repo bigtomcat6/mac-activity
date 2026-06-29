@@ -3,7 +3,10 @@ import MacActivityCore
 
 enum AppLocalization {
     private static let preferredLanguageLock = NSLock()
+    private static let localizationCacheLock = NSLock()
     nonisolated(unsafe) private static var preferredLanguageIdentifier: String?
+    nonisolated(unsafe) private static var localizedResourcesCache: [URL: [String: String]] = [:]
+    nonisolated(unsafe) private static var languageBundleCache: [String: Bundle] = [:]
 
     enum Key: String, CaseIterable {
         case appName = "app.name"
@@ -170,6 +173,14 @@ enum AppLocalization {
     }
 
     private static func localizedResources(in bundle: Bundle) -> [String: String] {
+        let cacheKey = bundle.bundleURL.standardizedFileURL
+        localizationCacheLock.lock()
+        if let cached = localizedResourcesCache[cacheKey] {
+            localizationCacheLock.unlock()
+            return cached
+        }
+        localizationCacheLock.unlock()
+
         var resources: [String: String] = [:]
 
         for identifier in bundle.localizations where identifier != "Base" {
@@ -189,6 +200,9 @@ enum AppLocalization {
             }
         }
 
+        localizationCacheLock.lock()
+        localizedResourcesCache[cacheKey] = resources
+        localizationCacheLock.unlock()
         return resources
     }
 
@@ -240,16 +254,45 @@ enum AppLocalization {
             return nil
         }
 
+        if let cached = cachedLanguageBundle(for: normalized) {
+            return cached
+        }
+
         let resources = localizedResources(in: bundle)
         let preferred = availableLanguageIdentifier(matching: normalized)
 
-        guard let preferred,
-              let resourceIdentifier = resources[preferred],
-              let path = bundle.path(forResource: resourceIdentifier, ofType: "lproj") else {
+        guard let preferred else {
             return nil
         }
 
-        return Bundle(path: path)
+        if let cached = cachedLanguageBundle(for: preferred) {
+            cacheLanguageBundle(cached, for: [normalized])
+            return cached
+        }
+
+        guard let resourceIdentifier = resources[preferred],
+              let path = bundle.path(forResource: resourceIdentifier, ofType: "lproj"),
+              let resolvedBundle = Bundle(path: path) else {
+            return nil
+        }
+
+        cacheLanguageBundle(resolvedBundle, for: [normalized, preferred])
+        return resolvedBundle
+    }
+
+    private static func cachedLanguageBundle(for languageIdentifier: String) -> Bundle? {
+        localizationCacheLock.lock()
+        let bundle = languageBundleCache[languageIdentifier]
+        localizationCacheLock.unlock()
+        return bundle
+    }
+
+    private static func cacheLanguageBundle(_ bundle: Bundle, for languageIdentifiers: [String]) {
+        localizationCacheLock.lock()
+        for languageIdentifier in languageIdentifiers {
+            languageBundleCache[languageIdentifier] = bundle
+        }
+        localizationCacheLock.unlock()
     }
 
     static func normalizedLanguageIdentifier(_ languageIdentifier: String?) -> String? {

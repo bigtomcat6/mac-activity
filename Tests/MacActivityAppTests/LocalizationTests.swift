@@ -21,6 +21,19 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testPreferredLanguageStringLookupsStayCheap() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
+        _ = AppLocalization.string(.preferences)
+
+        let start = Date()
+        for _ in 0..<10_000 {
+            _ = AppLocalization.string(.preferences)
+        }
+
+        XCTAssertLessThan(Date().timeIntervalSince(start), 0.5)
+    }
+
     func testUnsupportedLanguageIdentifierDoesNotFallBackToEnglish() {
         XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "fr"))
         XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "zh-Hant"))
