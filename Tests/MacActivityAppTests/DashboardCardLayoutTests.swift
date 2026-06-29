@@ -196,6 +196,28 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
     }
 
+    func testOverviewStorageDetailHidesSwapPercent() {
+        let disk = DashboardMetric(
+            kind: .disk,
+            value: "80%",
+            detailRole: .raw("800 B (80%)"),
+            title: "Disk",
+            detail: "800 B (80%)",
+            usedBytes: 800
+        )
+        let swap = DashboardMetric(
+            kind: .swap,
+            value: "25%",
+            detailRole: .raw("256 B (25%)"),
+            title: "Swap",
+            detail: "256 B (25%)",
+            usedBytes: 256
+        )
+
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailValue(for: disk), "800 B (80%)")
+        XCTAssertEqual(DashboardOverviewLayout.storageDetailValue(for: swap), "256 B")
+    }
+
     func testOverviewStorageCardShowsDetailsAboveUsageBar() {
         XCTAssertEqual(DashboardOverviewLayout.storageCardContentOrder, [.details, .bar])
     }
