@@ -11,7 +11,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
             MetricHistorySample(timestamp: base.addingTimeInterval(20), primaryValue: 20, secondaryValue: 4),
             MetricHistorySample(timestamp: base.addingTimeInterval(30), primaryValue: 30, secondaryValue: 6),
             MetricHistorySample(timestamp: base.addingTimeInterval(40), primaryValue: 40, secondaryValue: 8),
-            MetricHistorySample(timestamp: base.addingTimeInterval(50), primaryValue: 50, secondaryValue: 10),
+            MetricHistorySample(timestamp: base.addingTimeInterval(50), primaryValue: 50, secondaryValue: 10)
         ]
 
         let aggregated = MetricsHistory.bucketAveragedSamples(samples, targetCount: 3)
@@ -19,7 +19,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
         XCTAssertEqual(aggregated.map(\.timestamp), [
             base.addingTimeInterval(10),
             base.addingTimeInterval(30),
-            base.addingTimeInterval(50),
+            base.addingTimeInterval(50)
         ])
         XCTAssertEqual(aggregated.map(\.primaryValue), [5, 25, 45])
         XCTAssertEqual(aggregated.map { $0.secondaryValue ?? -1 }, [1, 5, 9])
@@ -40,7 +40,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
                 primaryValue: 40,
                 secondaryValue: 8,
                 sampleCount: 1
-            ),
+            )
         ]
 
         let aggregated = MetricsHistory.bucketAveragedSamples(samples, targetCount: 1)
@@ -48,6 +48,104 @@ final class MetricsStoreHistoryTests: XCTestCase {
         XCTAssertEqual(aggregated.map(\.primaryValue), [17.5])
         XCTAssertEqual(aggregated.map { $0.secondaryValue ?? -1 }, [3.5])
         XCTAssertEqual(aggregated.map(\.sampleCount), [4])
+    }
+
+    func testBucketAveragedSamplesHandlesEmptyAndAlreadySmallInputs() {
+        let base = Date(timeIntervalSince1970: 0)
+        let samples = [
+            MetricHistorySample(timestamp: base, primaryValue: 10, sampleCount: 0),
+            MetricHistorySample(timestamp: base.addingTimeInterval(1), primaryValue: 20)
+        ]
+
+        XCTAssertEqual(MetricsHistory.bucketAveragedSamples(samples, targetCount: 0), [])
+        XCTAssertEqual(MetricsHistory.bucketAveragedSamples([], targetCount: 3), [])
+        XCTAssertEqual(MetricsHistory.bucketAveragedSamples(samples, targetCount: 3), samples)
+        XCTAssertEqual(samples.first?.sampleCount, 1)
+    }
+
+    func testBucketAveragedSamplesPreserveWeightedMemoryDetails() throws {
+        let base = Date(timeIntervalSince1970: 0)
+        let samples = [
+            MetricHistorySample(
+                timestamp: base.addingTimeInterval(10),
+                primaryValue: 50,
+                memoryUsedBytes: 10,
+                memoryTotalBytes: 100,
+                memoryBreakdown: MemoryBreakdown(
+                    wiredBytes: 10,
+                    activeBytes: 20,
+                    compressedBytes: 30,
+                    cachedBytes: 40,
+                    availableBytes: 50
+                ),
+                sampleCount: 3
+            ),
+            MetricHistorySample(
+                timestamp: base.addingTimeInterval(20),
+                primaryValue: 90,
+                memoryUsedBytes: 30,
+                memoryTotalBytes: 100,
+                memoryBreakdown: MemoryBreakdown(
+                    wiredBytes: 30,
+                    activeBytes: 40,
+                    compressedBytes: 50,
+                    cachedBytes: 60,
+                    availableBytes: 70
+                ),
+                sampleCount: 1
+            )
+        ]
+
+        let sample = try XCTUnwrap(MetricsHistory.bucketAveragedSamples(samples, targetCount: 1).first)
+
+        XCTAssertEqual(sample.timestamp, base.addingTimeInterval(20))
+        XCTAssertEqual(sample.primaryValue, 60)
+        XCTAssertNil(sample.secondaryValue)
+        XCTAssertEqual(sample.memoryUsedBytes, 15)
+        XCTAssertEqual(sample.memoryTotalBytes, 100)
+        XCTAssertEqual(
+            sample.memoryBreakdown,
+            MemoryBreakdown(
+                wiredBytes: 15,
+                activeBytes: 25,
+                compressedBytes: 35,
+                cachedBytes: 45,
+                availableBytes: 55
+            )
+        )
+        XCTAssertEqual(sample.sampleCount, 4)
+    }
+
+    func testBucketAveragedSamplesDropsMemoryDetailsWhenAnySampleIsMissingThem() throws {
+        let base = Date(timeIntervalSince1970: 0)
+        let samples = [
+            MetricHistorySample(
+                timestamp: base.addingTimeInterval(10),
+                primaryValue: 50,
+                memoryUsedBytes: 10,
+                memoryTotalBytes: 100,
+                memoryBreakdown: MemoryBreakdown(wiredBytes: 10)
+            ),
+            MetricHistorySample(timestamp: base.addingTimeInterval(20), primaryValue: 90)
+        ]
+
+        let sample = try XCTUnwrap(MetricsHistory.bucketAveragedSamples(samples, targetCount: 1).first)
+
+        XCTAssertNil(sample.memoryUsedBytes)
+        XCTAssertNil(sample.memoryTotalBytes)
+        XCTAssertNil(sample.memoryBreakdown)
+    }
+
+    func testMetricHistorySampleRejectsInvalidOrNonScalarUpdates() {
+        let timestamp = Date(timeIntervalSince1970: 0)
+
+        XCTAssertNil(MetricHistorySample(update: .memory(MemoryReading(usedBytes: 1, totalBytes: 0)), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .vram(VRAMReading(usedBytes: 1, totalBytes: 0)), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .disk(DiskReading(usedBytes: 1, totalBytes: 0)), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .swap(SwapReading(usedBytes: 1, totalBytes: 0)), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .temperatures([TemperatureReading(celsius: 30)]), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .unavailable(kind: .cpu, reason: "missing"), timestamp: timestamp))
+        XCTAssertNil(MetricHistorySample(update: .stale(kind: .cpu, reason: "old"), timestamp: timestamp))
     }
 
     func testHistoryRetainsOneDayForMostMetricsAndThirtyMinutesForNetwork() {
@@ -67,7 +165,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
                             downloadBytesPerSecond: Double(sampleIndex * 1_000),
                             uploadBytesPerSecond: Double(sampleIndex * 500)
                         )
-                    ),
+                    )
                 ],
                 timestamp: start.addingTimeInterval(Double(sampleIndex) * sampleInterval)
             )
@@ -91,7 +189,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [
                 .temperature(TemperatureReading(celsius: 48)),
                 .fan(FanReading(rpm: 1_800)),
-                .battery(BatteryReading(percentage: 91, isCharging: false)),
+                .battery(BatteryReading(percentage: 91, isCharging: false))
             ],
             timestamp: start
         )
@@ -99,7 +197,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [
                 .temperature(TemperatureReading(celsius: 49)),
                 .fan(FanReading(rpm: 1_850)),
-                .battery(BatteryReading(percentage: 92, isCharging: false)),
+                .battery(BatteryReading(percentage: 92, isCharging: false))
             ],
             timestamp: start.addingTimeInterval(2)
         )
@@ -107,7 +205,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [
                 .temperature(TemperatureReading(celsius: 57)),
                 .fan(FanReading(rpm: 0)),
-                .battery(BatteryReading(percentage: 93, isCharging: false)),
+                .battery(BatteryReading(percentage: 93, isCharging: false))
             ],
             timestamp: start.addingTimeInterval(12 * 60 * 60)
         )
@@ -123,7 +221,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
         for second in 0..<5_000 {
             store.apply(
                 [
-                    .cpu(CPUReading(usagePercent: Double(second))),
+                    .cpu(CPUReading(usagePercent: Double(second)))
                 ],
                 timestamp: Date(timeIntervalSince1970: Double(second))
             )
@@ -150,13 +248,13 @@ final class MetricsStoreHistoryTests: XCTestCase {
         store.apply(
             [
                 .cpu(CPUReading(usagePercent: 20)),
-                .temperature(TemperatureReading(celsius: 48)),
+                .temperature(TemperatureReading(celsius: 48))
             ],
             timestamp: Date(timeIntervalSince1970: 10)
         )
         store.apply(
             [
-                .cpu(CPUReading(usagePercent: 35)),
+                .cpu(CPUReading(usagePercent: 35))
             ],
             timestamp: Date(timeIntervalSince1970: 11)
         )
@@ -182,7 +280,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
                         isCharging: false,
                         hardwarePercentage: 74.51
                     )
-                ),
+                )
             ],
             timestamp: Date(timeIntervalSince1970: 10)
         )
@@ -201,8 +299,8 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [
                 .temperatures([
                     TemperatureReading(celsius: 55, source: .smc),
-                    TemperatureReading(celsius: 30, source: .battery),
-                ]),
+                    TemperatureReading(celsius: 30, source: .battery)
+                ])
             ],
             timestamp: start
         )
@@ -210,8 +308,8 @@ final class MetricsStoreHistoryTests: XCTestCase {
             [
                 .temperatures([
                     TemperatureReading(celsius: 56, source: .smc),
-                    TemperatureReading(celsius: 31, source: .battery),
-                ]),
+                    TemperatureReading(celsius: 31, source: .battery)
+                ])
             ],
             timestamp: start.addingTimeInterval(2)
         )

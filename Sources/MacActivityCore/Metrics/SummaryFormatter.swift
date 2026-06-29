@@ -323,7 +323,7 @@ public struct SummaryFormatter: HardwareBatterySummaryFormatting {
         .temperature,
         .fan,
         .network,
-        .battery,
+        .battery
     ]
 
     private func formatBytesPerSecond(_ value: Double) -> String {

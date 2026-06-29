@@ -16,7 +16,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             preferencesController: preferencesController,
             bundle: try makeBundle(info: [
                 "CFBundleShortVersionString": "26.0.0",
-                "CFBundleVersion": "1",
+                "CFBundleVersion": "1"
             ])
         )
 
@@ -34,7 +34,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             bundle: try makeBundle(info: [
                 "CFBundleShortVersionString": "26.0.0",
                 "CFBundleVersion": "2",
-                "MacActivityReleaseTag": "v26.0.0-beta.2",
+                "MacActivityReleaseTag": "v26.0.0-beta.2"
             ])
         )
 
@@ -47,7 +47,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             SparkleUpdateController.hasSparkleConfiguration(
                 in: try makeBundle(info: [
                     "SUPublicEDKey": "$(SPARKLE_PUBLIC_ED_KEY)",
-                    "SUFeedURL": "https://example.com/appcast.xml",
+                    "SUFeedURL": "https://example.com/appcast.xml"
                 ])
             )
         )
@@ -55,7 +55,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             SparkleUpdateController.hasSparkleConfiguration(
                 in: try makeBundle(info: [
                     "SUPublicEDKey": "test-key",
-                    "SUFeedURL": "$(SPARKLE_FEED_URL)",
+                    "SUFeedURL": "$(SPARKLE_FEED_URL)"
                 ])
             )
         )
@@ -63,7 +63,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             SparkleUpdateController.hasSparkleConfiguration(
                 in: try makeBundle(info: [
                     "SUPublicEDKey": "test-key",
-                    "SUFeedURL": "https://example.com/appcast.xml",
+                    "SUFeedURL": "https://example.com/appcast.xml"
                 ])
             )
         )
@@ -72,7 +72,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
     func testReleaseTagPrefersConfiguredReleaseTag() throws {
         let bundle = try makeBundle(info: [
             "CFBundleShortVersionString": "26.0.0",
-            "MacActivityReleaseTag": " v26.0.0-beta.2 ",
+            "MacActivityReleaseTag": " v26.0.0-beta.2 "
         ])
 
         XCTAssertEqual(SparkleUpdateController.releaseTag(in: bundle), "v26.0.0-beta.2")
@@ -82,7 +82,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
     func testReleaseTagFallsBackToShortVersionAndIgnoresPlaceholders() throws {
         let bundle = try makeBundle(info: [
             "CFBundleShortVersionString": "26.0.1",
-            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)",
+            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)"
         ])
 
         XCTAssertEqual(SparkleUpdateController.releaseTag(in: bundle), "v26.0.1")
@@ -92,7 +92,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
     func testReleaseTagReturnsNilWhenNoUsableVersionExists() throws {
         let bundle = try makeBundle(info: [
             "CFBundleShortVersionString": " ",
-            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)",
+            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)"
         ])
 
         XCTAssertNil(SparkleUpdateController.releaseTag(in: bundle))
@@ -162,7 +162,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
         defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
         let bundle = try makeSparkleBundle(localizations: [
             "en": ["Software Update": "Software Update"],
-            "zh_CN": ["Software Update": "软件更新"],
+            "zh_CN": ["Software Update": "软件更新"]
         ])
 
         AppLocalization.setPreferredLanguageIdentifier("zh-Hans")
@@ -182,7 +182,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
         defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
         let bundle = try makeSparkleBundle(localizations: [
             "en": ["Software Update": "Software Update"],
-            "zh_CN": ["Software Update": "软件更新"],
+            "zh_CN": ["Software Update": "软件更新"]
         ])
 
         SparkleLocalizationOverride.install()
@@ -323,7 +323,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
                     displayVersionString: "v26.0.0",
                     versionString: "3",
                     channel: "alpha"
-                ),
+                )
             ]
         )
 
@@ -339,7 +339,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
                     displayVersionString: "v26.0.0",
                     versionString: "1",
                     channel: "alpha"
-                ),
+                )
             ]
         )
 
@@ -364,7 +364,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             "CFBundleIdentifier": "com.how.macactivity.test",
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": "Mac Activity",
-            "CFBundlePackageType": "APPL",
+            "CFBundlePackageType": "APPL"
         ])
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
@@ -381,7 +381,7 @@ final class SparkleUpdateControllerTests: XCTestCase {
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": "Sparkle",
             "CFBundlePackageType": "FMWK",
-            "CFBundleDevelopmentRegion": "en",
+            "CFBundleDevelopmentRegion": "en"
         ])
         XCTAssertTrue(infoPlist.write(to: bundleURL.appendingPathComponent("Info.plist"), atomically: true))
 

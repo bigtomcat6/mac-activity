@@ -82,7 +82,7 @@ struct MemoryReleaseStatusView: View {
         case .released(_, let percentOfTotal):
             return AppLocalization.string(.memoryReleaseSubtitlePercentOfTotal, percentOfTotal, bundle: bundle)
         case .noSignificantRelease:
-            return AppLocalization.string(.memoryReleaseSubtitleNoSignificantRelease, bundle: bundle)
+            return AppLocalization.string(.memoryReleaseSubtitleNoRelease, bundle: bundle)
         case .cooldown(let remainingSeconds):
             return AppLocalization.string(.memoryReleaseSubtitleCooldown, remainingSeconds, bundle: bundle)
         case .unavailable:

@@ -9,7 +9,7 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         let items = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network)
         ]
 
         let presentation = StatusBarSummaryLayout.imagePresentation(
@@ -40,7 +40,7 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         let items = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network)
         ]
 
         XCTAssertLessThanOrEqual(StatusBarSummaryLayout.preferredWidth(for: items), 154)
@@ -119,12 +119,12 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         let quieterItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network)
         ]
         let busierItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .temperature, primaryText: "105℃", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network)
         ]
 
         XCTAssertEqual(
@@ -137,12 +137,12 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         let quieterItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑512B", secondaryText: "↓999B", style: .network)
         ]
         let busierItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "100%", secondaryText: "CPU", style: .metric),
             StatusSummaryItem(kind: .temperature, primaryText: "105℃", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓125.4M", style: .network)
         ]
 
         XCTAssertEqual(
@@ -154,11 +154,11 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
     func testStructureKeyChangesWhenMenuBarMetricSelectionChanges() {
         let cpuAndMemory = [
             StatusSummaryItem(kind: .cpu, primaryText: "--", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .memory, primaryText: "--", secondaryText: "MEM", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "--", secondaryText: "MEM", style: .metric)
         ]
         let cpuAndNetwork = [
             StatusSummaryItem(kind: .cpu, primaryText: "--", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network),
+            StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network)
         ]
 
         XCTAssertNotEqual(
@@ -170,11 +170,11 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
     func testStructureKeyIgnoresValueOnlyChanges() {
         let quieterItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "7%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "38%", secondaryText: "MEM", style: .metric)
         ]
         let busierItems = [
             StatusSummaryItem(kind: .cpu, primaryText: "98%", secondaryText: "CPU", style: .metric),
-            StatusSummaryItem(kind: .memory, primaryText: "88%", secondaryText: "MEM", style: .metric),
+            StatusSummaryItem(kind: .memory, primaryText: "88%", secondaryText: "MEM", style: .metric)
         ]
 
         XCTAssertEqual(

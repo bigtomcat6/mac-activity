@@ -127,6 +127,7 @@ jobs:
           override_branch: ${{ github.head_ref || github.ref_name }}
           override_pr: ${{ github.event.number }}
           disable_search: true
+          plugins: noop
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 

@@ -194,7 +194,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
     func testAreaFillAppliesToFlatNonNetworkTrend() {
         let samples = [
             DashboardTrendSample(timestamp: .now, primaryValue: 45),
-            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 45),
+            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 45)
         ]
 
         XCTAssertTrue(
@@ -209,7 +209,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
     func testAreaFillAppliesToNonNetworkTrendWithSpread() {
         let samples = [
             DashboardTrendSample(timestamp: .now, primaryValue: 20),
-            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 54),
+            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 54)
         ]
 
         XCTAssertTrue(
@@ -228,7 +228,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
                 timestamp: .now.addingTimeInterval(60),
                 primaryValue: 2_600_000,
                 secondaryValue: 120_000
-            ),
+            )
         ]
 
         XCTAssertFalse(
@@ -269,7 +269,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let samples = [
             DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
             DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(2), primaryValue: 1_000, secondaryValue: 250),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(2), primaryValue: 1_000, secondaryValue: 250)
         ]
         let chart = DashboardTrendChart(
             metric: DashboardMetric(
@@ -300,7 +300,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let samples = [
             DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750)
         ]
 
         let primaryPoints = DashboardTrendChartLayout.linePoints(
@@ -325,7 +325,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let samples = [
             DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750)
         ]
 
         let downloadPoints = DashboardTrendChartLayout.linePoints(
@@ -347,7 +347,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let samples = [
             DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750)
         ]
 
         let domain = DashboardTrendChartLayout.valueDomain(
@@ -608,14 +608,14 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let end = start.addingTimeInterval(120)
         let plotFrame = CGRect(x: 42, y: 4, width: 236, height: 38)
         let midpointDate = start.addingTimeInterval(60)
-        let x = DashboardTrendChartLayout.xPosition(
+        let xPosition = DashboardTrendChartLayout.xPosition(
             for: midpointDate,
             domain: start...end,
             plotFrame: plotFrame
         )
 
         let mappedDate = DashboardTrendChartLayout.date(
-            atX: x,
+            atX: xPosition,
             plotFrame: plotFrame,
             domain: start...end
         )
@@ -634,7 +634,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let samples = [
             DashboardTrendSample(timestamp: start, primaryValue: 10),
             DashboardTrendSample(timestamp: middle, primaryValue: 40),
-            DashboardTrendSample(timestamp: end, primaryValue: 20),
+            DashboardTrendSample(timestamp: end, primaryValue: 20)
         ]
         let plotFrame = CGRect(x: 42, y: 4, width: 236, height: 38)
 
@@ -669,15 +669,15 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
     func testTopAxisLabelPositionStaysInsideContainer() {
         let plotFrame = CGRect(x: 42, y: 4, width: 236, height: 38)
-        let y = DashboardTrendChartLayout.yAxisLabelPosition(
+        let yPosition = DashboardTrendChartLayout.yAxisLabelPosition(
             for: 40,
             domain: 20...40,
             plotFrame: plotFrame,
             containerHeight: 60
         )
 
-        XCTAssertGreaterThanOrEqual(y, 7)
-        XCTAssertLessThanOrEqual(y, 53)
+        XCTAssertGreaterThanOrEqual(yPosition, 7)
+        XCTAssertLessThanOrEqual(yPosition, 53)
     }
 
     private func makeSamples(values: [Double]) -> [DashboardTrendSample] {

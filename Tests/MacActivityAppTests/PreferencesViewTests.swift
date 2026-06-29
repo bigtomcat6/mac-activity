@@ -27,7 +27,7 @@ final class PreferencesViewTests: XCTestCase {
             "CFBundlePackageType": "APPL",
             "CFBundleShortVersionString": "26.0.0",
             "CFBundleVersion": "2",
-            "MacActivityReleaseTag": "v26.0.0-alpha.2",
+            "MacActivityReleaseTag": "v26.0.0-alpha.2"
         ])
         let info = PreferencesVersionInfo.current(bundle: bundle)
 
@@ -38,7 +38,7 @@ final class PreferencesViewTests: XCTestCase {
         let bundle = try makeBundle(info: [
             "CFBundleShortVersionString": "26.0.0",
             "CFBundleVersion": "4",
-            "MacActivityReleaseTag": "v26.0.0",
+            "MacActivityReleaseTag": "v26.0.0"
         ])
 
         let info = PreferencesVersionInfo.current(bundle: bundle)
@@ -50,7 +50,7 @@ final class PreferencesViewTests: XCTestCase {
         let bundle = try makeBundle(info: [
             "CFBundleShortVersionString": "26.0.0",
             "CFBundleVersion": "5",
-            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)",
+            "MacActivityReleaseTag": "$(MACACTIVITY_RELEASE_TAG)"
         ])
 
         let info = PreferencesVersionInfo.current(bundle: bundle)
@@ -60,7 +60,7 @@ final class PreferencesViewTests: XCTestCase {
 
     func testCurrentVersionUsesShortVersionWhenReleaseTagIsMissing() throws {
         let bundle = try makeBundle(info: [
-            "CFBundleShortVersionString": "26.0.1",
+            "CFBundleShortVersionString": "26.0.1"
         ])
 
         let info = PreferencesVersionInfo.current(bundle: bundle)
@@ -174,7 +174,7 @@ final class PreferencesViewTests: XCTestCase {
             "CFBundleIdentifier": "com.how.macactivity.test",
             "CFBundleInfoDictionaryVersion": "6.0",
             "CFBundleName": "Mac Activity",
-            "CFBundlePackageType": "APPL",
+            "CFBundlePackageType": "APPL"
         ])
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))

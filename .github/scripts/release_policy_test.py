@@ -368,6 +368,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("override_branch: ${{ github.head_ref || github.ref_name }}", workflow)
         self.assertIn("override_pr: ${{ github.event.number }}", workflow)
         self.assertIn("disable_search: true", workflow)
+        self.assertIn("plugins: noop", workflow)
         self.assertIn("fail_ci_if_error: true", workflow)
         self.assertIn("token: ${{ secrets.CODECOV_TOKEN }}", workflow)
         self.assertLess(

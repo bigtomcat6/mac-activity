@@ -124,7 +124,7 @@ public actor NetworkProvider: MetricProvider {
             "vmenet",
             "vmnet",
             "tap",
-            "tun",
+            "tun"
         ]
 
         return excludedPrefixes.contains { prefix in
@@ -144,7 +144,7 @@ public actor NetworkProvider: MetricProvider {
 
         let names = [
             primaryInterfaceName(for: "State:/Network/Global/IPv4", store: store),
-            primaryInterfaceName(for: "State:/Network/Global/IPv6", store: store),
+            primaryInterfaceName(for: "State:/Network/Global/IPv6", store: store)
         ].compactMap { $0 }
 
         return uniqueInterfaceNames(names)
