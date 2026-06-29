@@ -166,7 +166,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("assets/dmg/background.png", package_section)
         self.assertNotIn("-srcfolder \"${app}\"", package_section)
 
-    def test_dmg_uses_repository_background_asset(self):
+    def test_styled_dmg_uses_hidden_background_and_finder_layout(self):
         script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
         background = REPO_ROOT / "assets" / "dmg" / "background.png"
 
@@ -176,7 +176,25 @@ class ReleasePolicyTests(unittest.TestCase):
             width, height = struct.unpack(">II", image.read(8))
 
         self.assertEqual((width, height), (627, 560))
-        self.assertIn('ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_BASENAME}"', script)
+        self.assertIn('BACKGROUND_DIR_NAME=".background"', script)
+        self.assertIn('mkdir -p "${STAGING_DIR}/${BACKGROUND_DIR_NAME}"', script)
+        self.assertIn('ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_DIR_NAME}/${BACKGROUND_BASENAME}"', script)
+        self.assertNotIn('ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_BASENAME}"', script)
+        self.assertIn("WINDOW_WIDTH=627", script)
+        self.assertIn("WINDOW_HEIGHT=560", script)
+        self.assertIn("ICON_SIZE=96", script)
+        self.assertIn("APP_X=185", script)
+        self.assertIn("APP_Y=290", script)
+        self.assertIn("APPLICATIONS_X=442", script)
+        self.assertIn("APPLICATIONS_Y=290", script)
+        self.assertIn("set bounds of container window", script)
+        self.assertIn("set background picture of opts to backgroundPath", script)
+        self.assertIn("set icon size of opts to iconSize", script)
+        self.assertIn("set position of item appName", script)
+        self.assertIn("set position of item applicationsName", script)
+        self.assertIn("-format UDRW", script)
+        self.assertIn("hdiutil convert", script)
+        self.assertIn("-format UDZO", script)
 
     def test_styled_dmg_uses_finder_applications_alias_icon(self):
         script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
