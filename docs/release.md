@@ -125,6 +125,12 @@ DMG, zip, dSYM zip, and checksum manifest. Alpha, beta, and rc builds are marked
 as prereleases. The workflow always uses draft releases; publish from the GitHub
 web UI after reviewing notes and assets.
 
+After a successful dry run, prefer reusing its workflow artifact instead of
+building a second time. Pass the dry-run run ID as `source_run_id`; the workflow
+checks that the source run succeeded at the same commit, downloads the artifact,
+verifies checksums and release metadata, revalidates Developer ID signing and
+notarization, then creates the draft.
+
 Dry run example:
 
 ```bash
@@ -150,9 +156,10 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f prerelease=1 \
   -f build=1 \
-  -f ci_suite=full \
+  -f ci_suite=skip \
   -f signing=developer-id \
-  -f create_github_release=true
+  -f create_github_release=true \
+  -f source_run_id=<dry-run-id>
 ```
 
 ## Sparkle Appcast

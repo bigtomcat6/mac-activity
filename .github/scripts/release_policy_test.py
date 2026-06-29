@@ -79,6 +79,34 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("uses: ./.github/workflows/ci-checks.yml", ci_section)
         self.assertIn("secrets: inherit", ci_section)
 
+    def test_release_workflow_can_create_draft_from_dry_run_artifact(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        workflow_dispatch = workflow.split("permissions:", 1)[0]
+        ci_section = workflow.split("\n  ci:", 1)[1].split("\n  package:", 1)[0]
+
+        self.assertIn("source_run_id:", workflow_dispatch)
+        self.assertIn("\n  create_release_from_artifact:", workflow)
+
+        package_section = workflow.split("\n  package:", 1)[1].split("\n  create_release_from_artifact:", 1)[0]
+        reuse_section = workflow.split("\n  create_release_from_artifact:", 1)[1]
+
+        self.assertIn("Dry-run workflow run ID", workflow_dispatch)
+        self.assertIn("actions: read", workflow)
+        self.assertIn("inputs.source_run_id == ''", ci_section)
+        self.assertIn("inputs.source_run_id == ''", package_section)
+        self.assertIn("source_run_id can only be used with create_github_release=true", workflow)
+        self.assertIn("gh run view", reuse_section)
+        self.assertIn("conclusion,headSha,status,workflowName", reuse_section)
+        self.assertIn("github.sha", reuse_section)
+        self.assertIn("MacActivityReleaseTag", reuse_section)
+        self.assertIn("MacActivityBundleBuild", reuse_section)
+        self.assertIn("gh run download", reuse_section)
+        self.assertIn("--name \"${ARTIFACT_STEM}\"", reuse_section)
+        self.assertIn("shasum -a 256 -c", reuse_section)
+        self.assertIn("prepare_release_metadata.py", reuse_section)
+        self.assertIn("gh release create", reuse_section)
+        self.assertIn("--draft", reuse_section)
+
     def test_release_package_checks_project_drift_even_when_ci_is_skipped(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         package_section = workflow.split("\n  package:", 1)[1]
@@ -253,6 +281,7 @@ class ReleasePolicyTests(unittest.TestCase):
         phase_2 = skill.split("## Phase 2: Draft GitHub Release", 1)[1].split("## Distribution Notes", 1)[0]
 
         self.assertIn("-f signing=developer-id", phase_2)
+        self.assertIn("-f source_run_id=<dry-run-id>", phase_2)
         self.assertIn("-f prerelease=1", phase_2)
         self.assertIn("--prerelease 1", skill)
         self.assertNotIn("-f signing=local", phase_2)

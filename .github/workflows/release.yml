@@ -49,8 +49,14 @@ on:
         required: true
         type: boolean
         default: false
+      source_run_id:
+        description: Dry-run workflow run ID to reuse for draft release assets. Leave empty to build/package in this run.
+        required: false
+        type: string
+        default: ""
 
 permissions:
+  actions: read
   contents: write
   pull-requests: read
 
@@ -84,6 +90,21 @@ jobs:
           echo "::error::GitHub Release assets must use signing=developer-id."
           exit 1
 
+      - name: Validate source dry-run input
+        run: |
+          source_run_id="${{ inputs.source_run_id }}"
+          if [[ -z "${source_run_id}" ]]; then
+            exit 0
+          fi
+          if [[ "${{ inputs.create_github_release }}" != "true" ]]; then
+            echo "::error::source_run_id can only be used with create_github_release=true."
+            exit 1
+          fi
+          if [[ ! "${source_run_id}" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::source_run_id must be a GitHub Actions run ID."
+            exit 1
+          fi
+
       - name: Validate prerelease input
         run: |
           prerelease="${{ inputs.prerelease }}"
@@ -100,7 +121,7 @@ jobs:
   ci:
     name: Selected CI
     needs: [preflight]
-    if: ${{ inputs.ci_suite != 'skip' }}
+    if: ${{ inputs.ci_suite != 'skip' && inputs.source_run_id == '' }}
     uses: ./.github/workflows/ci-checks.yml
     with:
       suite: ${{ inputs.ci_suite }}
@@ -110,7 +131,7 @@ jobs:
     name: Package Release Artifact
     runs-on: macos-26
     needs: [preflight, ci]
-    if: ${{ always() && needs.preflight.result == 'success' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    if: ${{ always() && needs.preflight.result == 'success' && inputs.source_run_id == '' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
     environment:
       name: release-signing
       deployment: false
@@ -430,6 +451,218 @@ jobs:
             "${CHECKSUMS_PATH}"
             --title "${TITLE}"
             --target "${TARGET_SHA}"
+            --notes "$(cat "${NOTES_PATH}")"
+            --latest="${LATEST}"
+            --draft
+          )
+          if [[ "${PRERELEASE}" == "true" ]]; then
+            args+=(--prerelease)
+          fi
+          gh release create "${args[@]}"
+
+  create_release_from_artifact:
+    name: Create Draft Release From Dry Run
+    runs-on: macos-26
+    needs: [preflight, ci]
+    if: ${{ always() && needs.preflight.result == 'success' && inputs.create_github_release && inputs.source_run_id != '' && (needs.ci.result == 'success' || needs.ci.result == 'skipped') }}
+    environment:
+      name: release-signing
+      deployment: false
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      - name: Resolve expected release artifact
+        id: expected
+        run: |
+          channel="${{ inputs.channel }}"
+          version="${{ inputs.version }}"
+          prerelease="${{ inputs.prerelease }}"
+
+          if [[ "${channel}" == "release" ]]; then
+            tag="v${version}"
+          else
+            tag="v${version}-${channel}.${prerelease}"
+          fi
+
+          {
+            echo "tag=${tag}"
+            echo "artifact_stem=MacActivity-${tag}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Validate source workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          source_json="$(gh run view "${SOURCE_RUN_ID}" --json conclusion,headSha,status,workflowName)"
+          status="$(jq -r '.status' <<< "${source_json}")"
+          conclusion="$(jq -r '.conclusion' <<< "${source_json}")"
+          head_sha="$(jq -r '.headSha' <<< "${source_json}")"
+          workflow_name="$(jq -r '.workflowName' <<< "${source_json}")"
+
+          if [[ "${workflow_name}" != "Release" ]]; then
+            echo "::error::Expected source run ${SOURCE_RUN_ID} to use the Release workflow, got ${workflow_name}."
+            exit 1
+          fi
+          if [[ "${status}" != "completed" || "${conclusion}" != "success" ]]; then
+            echo "::error::Expected source run ${SOURCE_RUN_ID} to be completed successfully, got status=${status}, conclusion=${conclusion}."
+            exit 1
+          fi
+          if [[ "${head_sha}" != "${{ github.sha }}" ]]; then
+            echo "::error::Expected source run ${SOURCE_RUN_ID} to target ${{ github.sha }}, got ${head_sha}."
+            exit 1
+          fi
+
+      - name: Download dry-run artifact
+        id: download
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          ARTIFACT_STEM: ${{ steps.expected.outputs.artifact_stem }}
+        run: |
+          download_dir="${RUNNER_TEMP}/release-artifact"
+          mkdir -p "${download_dir}"
+          gh run download "${SOURCE_RUN_ID}" --name "${ARTIFACT_STEM}" --dir "${download_dir}"
+          echo "download_dir=${download_dir}" >> "${GITHUB_OUTPUT}"
+
+      - name: Validate dry-run artifact
+        id: artifact
+        env:
+          DOWNLOAD_DIR: ${{ steps.download.outputs.download_dir }}
+          TAG: ${{ steps.expected.outputs.tag }}
+          ARTIFACT_STEM: ${{ steps.expected.outputs.artifact_stem }}
+        run: |
+          zip_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}.zip"
+          dsym_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}-dSYM.zip"
+          dmg_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}.dmg"
+          checksums_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}-SHA256SUMS.txt"
+          notes_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}-release-notes.md"
+
+          for path in "${zip_path}" "${dsym_path}" "${dmg_path}" "${checksums_path}" "${notes_path}"; do
+            if [[ ! -f "${path}" ]]; then
+              echo "::error::Expected dry-run artifact file ${path}."
+              exit 1
+            fi
+          done
+
+          (
+            cd "${DOWNLOAD_DIR}"
+            shasum -a 256 -c "$(basename "${checksums_path}")"
+          )
+
+          artifact_tag="$(sed -nE 's/^<!-- MacActivityReleaseTag: ([^ ]+) -->$/\1/p' "${notes_path}" | head -n 1)"
+          artifact_build="$(sed -nE 's/^<!-- MacActivityBundleBuild: ([1-9][0-9]*) -->$/\1/p' "${notes_path}" | head -n 1)"
+          if [[ "${artifact_tag}" != "${TAG}" ]]; then
+            echo "::error::Expected release notes tag ${TAG}, got ${artifact_tag}."
+            exit 1
+          fi
+          if [[ -z "${artifact_build}" ]]; then
+            echo "::error::Release notes are missing MacActivityBundleBuild metadata."
+            exit 1
+          fi
+          if [[ -n "${{ inputs.build }}" && "${artifact_build}" != "${{ inputs.build }}" ]]; then
+            echo "::error::Expected dry-run build ${{ inputs.build }}, got ${artifact_build}."
+            exit 1
+          fi
+
+          expanded_dir="${RUNNER_TEMP}/release-artifact-expanded"
+          rm -rf "${expanded_dir}"
+          mkdir -p "${expanded_dir}"
+          ditto -x -k "${zip_path}" "${expanded_dir}"
+
+          app="${expanded_dir}/Mac Activity.app"
+          info_plist="${app}/Contents/Info.plist"
+          if [[ ! -d "${app}" ]]; then
+            echo "::error::Expected Mac Activity.app in ${zip_path}."
+            exit 1
+          fi
+
+          actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
+          actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
+          if [[ "${actual_release_tag}" != "${TAG}" ]]; then
+            echo "::error::Expected MacActivityReleaseTag ${TAG}, got ${actual_release_tag}."
+            exit 1
+          fi
+          if [[ "${actual_build}" != "${artifact_build}" ]]; then
+            echo "::error::Expected CFBundleVersion ${artifact_build}, got ${actual_build}."
+            exit 1
+          fi
+
+          codesign --verify --deep --strict --verbose=4 "${app}"
+          xcrun stapler validate "${app}"
+          syspolicy_check distribution "${app}"
+          codesign --verify --verbose=4 "${dmg_path}"
+          xcrun stapler validate "${dmg_path}"
+
+          mount_point="$(mktemp -d "${RUNNER_TEMP}/MacActivityMountedDMG.XXXXXX")"
+          cleanup() {
+            hdiutil detach "${mount_point}" >/dev/null 2>&1 || hdiutil detach "${mount_point}" -force >/dev/null 2>&1 || true
+            rm -rf "${mount_point}"
+          }
+          trap cleanup EXIT
+
+          hdiutil attach -readonly -nobrowse -mountpoint "${mount_point}" "${dmg_path}"
+          dmg_app="${mount_point}/Mac Activity.app"
+          if [[ ! -d "${dmg_app}" ]]; then
+            echo "::error::Expected Mac Activity.app at DMG root."
+            exit 1
+          fi
+          codesign --verify --deep --strict --verbose=4 "${dmg_app}"
+          xcrun stapler validate "${dmg_app}"
+          syspolicy_check distribution "${dmg_app}"
+
+          echo "build=${artifact_build}" >> "${GITHUB_OUTPUT}"
+
+      - name: Check release conflicts
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 .github/scripts/plan_release.py \
+            --channel "${{ inputs.channel }}" \
+            --version "${{ inputs.version }}" \
+            --prerelease "${{ inputs.prerelease }}" \
+            --build "${{ steps.artifact.outputs.build }}" \
+            --remote
+
+      - name: Prepare release metadata
+        id: release
+        run: |
+          python3 .github/scripts/prepare_release_metadata.py \
+            --channel "${{ inputs.channel }}" \
+            --version "${{ inputs.version }}" \
+            --prerelease "${{ inputs.prerelease }}" \
+            --build "${{ steps.artifact.outputs.build }}" \
+            --xcconfig Configuration/Shared.xcconfig
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DOWNLOAD_DIR: ${{ steps.download.outputs.download_dir }}
+          ARTIFACT_STEM: ${{ steps.release.outputs.artifact_stem }}
+          TAG: ${{ steps.release.outputs.tag }}
+          TITLE: ${{ steps.release.outputs.title }}
+          ZIP_PATH: ${{ steps.download.outputs.download_dir }}/${{ steps.release.outputs.artifact_stem }}.zip
+          DSYM_PATH: ${{ steps.download.outputs.download_dir }}/${{ steps.release.outputs.artifact_stem }}-dSYM.zip
+          DMG_PATH: ${{ steps.download.outputs.download_dir }}/${{ steps.release.outputs.artifact_stem }}.dmg
+          CHECKSUMS_PATH: ${{ steps.download.outputs.download_dir }}/${{ steps.release.outputs.artifact_stem }}-SHA256SUMS.txt
+          NOTES_PATH: ${{ steps.download.outputs.download_dir }}/${{ steps.release.outputs.artifact_stem }}-release-notes.md
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
+          LATEST: ${{ steps.release.outputs.latest }}
+        run: |
+          args=(
+            "${TAG}"
+            "${DMG_PATH}"
+            "${ZIP_PATH}"
+            "${DSYM_PATH}"
+            "${CHECKSUMS_PATH}"
+            --title "${TITLE}"
+            --target "${{ github.sha }}"
             --notes "$(cat "${NOTES_PATH}")"
             --latest="${LATEST}"
             --draft

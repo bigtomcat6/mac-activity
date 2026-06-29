@@ -96,6 +96,11 @@ the dry run.
 Only continue after explicit confirmation. The workflow always creates GitHub
 Releases as drafts; there is no `draft=false` path.
 
+Prefer reusing the successful phase 1 artifact instead of rebuilding. Pass the
+dry-run workflow run ID as `source_run_id`; the workflow verifies the source run,
+downloaded artifact checksums, release metadata, and Developer ID signatures
+before creating the draft.
+
 ```bash
 gh workflow run release.yml \
   --ref main \
@@ -103,9 +108,10 @@ gh workflow run release.yml \
   -f version=26.0.0 \
   -f prerelease=1 \
   -f build=1 \
-  -f ci_suite=full \
+  -f ci_suite=skip \
   -f signing=developer-id \
-  -f create_github_release=true
+  -f create_github_release=true \
+  -f source_run_id=<dry-run-id>
 ```
 
 ## Distribution Notes
