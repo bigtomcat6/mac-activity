@@ -969,6 +969,35 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testOverviewPrimaryLineGradientUsesNeutralTrailingToneWhenWindowIsInactive() throws {
+        let inactiveColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(
+                        DashboardOverviewChrome.chartPrimaryLineGradient(
+                            baseColor: .red,
+                            appearsActive: false
+                        )
+                    )
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 23, y: 12)
+            )
+        )
+        let referenceColor = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle()
+                    .fill(DashboardOverviewChrome.inactiveChartSecondaryStroke)
+                    .frame(width: 24, height: 24),
+                atTopLeft: CGPoint(x: 12, y: 12)
+            )
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.04),
+            "Expected the inactive primary gradient to end with the neutral secondary tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
+        )
+    }
+
     func testOverviewMemorySegmentColorUsesNeutralToneWhenWindowIsInactive() throws {
         let inactiveColor = try XCTUnwrap(
             Self.renderedColor(

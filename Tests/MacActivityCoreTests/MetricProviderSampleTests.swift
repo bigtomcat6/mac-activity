@@ -2,32 +2,26 @@ import XCTest
 @testable import MacActivityCore
 
 final class MetricProviderSampleTests: XCTestCase {
-    func testCPUProviderSamplesInitialAndDeltaUsage() async {
+    func testCPUProviderSamplesInitialAndDeltaUsage() async throws {
         let provider = CPUProvider()
 
         let firstUpdate = await provider.sample()
         let secondUpdate = await provider.sample()
 
-        guard case let .cpu(firstReading) = firstUpdate else {
-            return XCTFail("Expected CPU update, got \(firstUpdate)")
-        }
-        guard case let .cpu(secondReading) = secondUpdate else {
-            return XCTFail("Expected CPU update, got \(secondUpdate)")
-        }
+        let firstReading = try XCTUnwrap(Mirror(reflecting: firstUpdate).children.first?.value as? CPUReading)
+        let secondReading = try XCTUnwrap(Mirror(reflecting: secondUpdate).children.first?.value as? CPUReading)
 
         XCTAssertEqual(firstReading.usagePercent, 0, accuracy: 0.001)
         XCTAssertGreaterThanOrEqual(secondReading.usagePercent, 0)
         XCTAssertLessThanOrEqual(secondReading.usagePercent, 100)
     }
 
-    func testDiskProviderSamplesTemporaryVolume() async {
+    func testDiskProviderSamplesTemporaryVolume() async throws {
         let provider = DiskProvider(volumeURL: FileManager.default.temporaryDirectory)
 
         let update = await provider.sample()
 
-        guard case let .disk(reading) = update else {
-            return XCTFail("Expected disk update, got \(update)")
-        }
+        let reading = try XCTUnwrap(Mirror(reflecting: update).children.first?.value as? DiskReading)
 
         XCTAssertGreaterThan(reading.totalBytes, 0)
         XCTAssertLessThanOrEqual(reading.usedBytes, reading.totalBytes)
@@ -43,14 +37,12 @@ final class MetricProviderSampleTests: XCTestCase {
         XCTAssertEqual(update, .stale(kind: .disk, reason: "Unable to read disk usage"))
     }
 
-    func testSwapProviderSamplesSystemSwapState() async {
+    func testSwapProviderSamplesSystemSwapState() async throws {
         let provider = SwapProvider()
 
         let update = await provider.sample()
 
-        guard case let .swap(reading) = update else {
-            return XCTFail("Expected swap update, got \(update)")
-        }
+        let reading = try XCTUnwrap(Mirror(reflecting: update).children.first?.value as? SwapReading)
 
         XCTAssertLessThanOrEqual(reading.usedBytes, reading.totalBytes)
     }

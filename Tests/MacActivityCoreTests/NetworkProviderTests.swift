@@ -2,18 +2,14 @@ import XCTest
 @testable import MacActivityCore
 
 final class NetworkProviderTests: XCTestCase {
-    func testNetworkProviderSamplesCurrentCounters() async {
+    func testNetworkProviderSamplesCurrentCounters() async throws {
         let provider = NetworkProvider()
 
         let firstUpdate = await provider.sample()
         let secondUpdate = await provider.sample()
 
-        guard case let .network(firstReading) = firstUpdate else {
-            return XCTFail("Expected network update, got \(firstUpdate)")
-        }
-        guard case let .network(secondReading) = secondUpdate else {
-            return XCTFail("Expected network update, got \(secondUpdate)")
-        }
+        let firstReading = try XCTUnwrap(Mirror(reflecting: firstUpdate).children.first?.value as? NetworkReading)
+        let secondReading = try XCTUnwrap(Mirror(reflecting: secondUpdate).children.first?.value as? NetworkReading)
 
         XCTAssertEqual(firstReading.downloadBytesPerSecond, 0, accuracy: 0.001)
         XCTAssertEqual(firstReading.uploadBytesPerSecond, 0, accuracy: 0.001)

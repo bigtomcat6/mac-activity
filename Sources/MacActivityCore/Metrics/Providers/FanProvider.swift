@@ -451,7 +451,7 @@ enum SMCSensorReader {
         }
     }
 
-    private static func currentCPUBrand() -> String {
+    static func currentCPUBrand() -> String {
         var size = 0
         guard sysctlbyname("machdep.cpu.brand_string", nil, &size, nil, 0) == 0, size > 0 else {
             return ""

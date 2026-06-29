@@ -211,6 +211,10 @@ final class SMCSensorReaderTests: XCTestCase {
         )
     }
 
+    func testCurrentCPUBrandReadsSysctlBrandString() {
+        XCTAssertGreaterThanOrEqual(SMCSensorReader.currentCPUBrand().count, 0)
+    }
+
     func testSMCSensorSnapshotTracksWhetherAnyReadingExists() {
         XCTAssertFalse(SMCSensorSnapshot().hasReadings)
         XCTAssertTrue(SMCSensorSnapshot(temperatureCelsius: 44.5).hasReadings)
@@ -239,6 +243,14 @@ final class SMCSensorReaderTests: XCTestCase {
         XCTAssertEqual(first, SMCSensorSnapshot(temperatureCelsius: 44.5, fanRPM: 2_400))
         XCTAssertEqual(second, first)
         XCTAssertEqual(readCount, 1)
+    }
+
+    func testSMCSensorSnapshotReadRecorderReturnsEmptySnapshotWhenExhausted() async {
+        let recorder = SMCSensorSnapshotReadRecorder(snapshots: [])
+
+        let snapshot = await recorder.nextSnapshot()
+
+        XCTAssertEqual(snapshot, SMCSensorSnapshot())
     }
 
     func testFanProviderReportsFanRPMAndUnavailableState() async {

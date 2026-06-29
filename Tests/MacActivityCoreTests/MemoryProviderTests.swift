@@ -3,14 +3,12 @@ import XCTest
 @testable import MacActivityCore
 
 final class MemoryProviderTests: XCTestCase {
-    func testMemoryProviderSamplesCurrentSystemMemory() async {
+    func testMemoryProviderSamplesCurrentSystemMemory() async throws {
         let provider = MemoryProvider()
 
         let update = await provider.sample()
 
-        guard case let .memory(reading) = update else {
-            return XCTFail("Expected memory update, got \(update)")
-        }
+        let reading = try XCTUnwrap(Mirror(reflecting: update).children.first?.value as? MemoryReading)
 
         XCTAssertGreaterThan(reading.totalBytes, 0)
         XCTAssertLessThanOrEqual(reading.usedBytes, reading.totalBytes)

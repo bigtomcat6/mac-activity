@@ -783,7 +783,7 @@ private enum IOAcceleratorStatsReader {
                     "Device Utilization %",
                     "GPU Core Utilization %",
                     "Renderer Utilization %",
-                    "Tiler Utilization %"
+                    "Tiler Utilization %",
                 ]
             ) {
                 usageCandidates.append(utilization)

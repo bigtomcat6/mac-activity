@@ -519,11 +519,7 @@ final class LocalizationTests: XCTestCase {
     ]
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
-        do {
-            return try NSRegularExpression(pattern: pattern)
-        } catch {
-            preconditionFailure("Invalid localization scan regex \(pattern): \(error)")
-        }
+        (try? NSRegularExpression(pattern: pattern))!
     }
 
     private static func shouldScanProductionStringLine(_ line: String) -> Bool {
