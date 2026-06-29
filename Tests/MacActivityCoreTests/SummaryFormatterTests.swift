@@ -45,7 +45,7 @@ final class SummaryFormatterTests: XCTestCase {
                 StatusSummaryItem(kind: .vram, primaryText: "25%", secondaryText: "VRAM", style: .metric),
                 StatusSummaryItem(kind: .temperature, primaryText: "41℃", secondaryText: "CPU", style: .metric),
                 StatusSummaryItem(kind: .fan, primaryText: "0", secondaryText: "RPM", style: .metric),
-                StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network),
+                StatusSummaryItem(kind: .network, primaryText: "↑13.8K", secondaryText: "↓15.4K", style: .network)
             ]
         )
     }
@@ -65,7 +65,7 @@ final class SummaryFormatterTests: XCTestCase {
         XCTAssertEqual(
             items,
             [
-                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric),
+                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric)
             ]
         )
     }
@@ -103,7 +103,7 @@ final class SummaryFormatterTests: XCTestCase {
                     primaryText: "75%",
                     secondaryText: "BAT",
                     style: .metric
-                ),
+                )
             ]
         )
     }
@@ -129,12 +129,51 @@ final class SummaryFormatterTests: XCTestCase {
         )
     }
 
+    func testRenderIncludesAllMetricTypesInSummaryOrder() {
+        let snapshot = MetricsSnapshot(
+            cpu: CPUReading(usagePercent: 12.4),
+            gpu: GPUReading(usagePercent: 67.6),
+            memory: MemoryReading(usedBytes: 3, totalBytes: 8),
+            vram: VRAMReading(usedBytes: 1, totalBytes: 4),
+            disk: DiskReading(usedBytes: 55, totalBytes: 100),
+            swap: SwapReading(usedBytes: 5, totalBytes: 20),
+            network: NetworkReading(downloadBytesPerSecond: 1_230_000, uploadBytesPerSecond: -100),
+            battery: BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51),
+            temperatures: [
+                .smc: TemperatureReading(celsius: 54.1, source: .smc),
+                .battery: TemperatureReading(celsius: 31.6, source: .battery)
+            ],
+            fan: FanReading(rpm: 2_400)
+        )
+
+        let summary = SummaryFormatter().render(
+            snapshot: snapshot,
+            selectedMetrics: MetricKind.allCases,
+            preferredTemperatureSource: .battery,
+            showsHardwareBatteryPercentage: true
+        )
+
+        XCTAssertEqual(
+            summary,
+            "CPU 12% | GPU 68% | DISK 55% | SWAP 25% | MEM 38% | VRAM 25% | BTMP 32C | FAN 2400RPM | NET D1.2M U0B | BAT 75%"
+        )
+    }
+
+    func testRenderFallsBackWhenSelectedMetricsHaveNoReadings() {
+        let summary = SummaryFormatter().render(
+            snapshot: MetricsSnapshot(),
+            selectedMetrics: [.gpu, .disk, .swap, .memory, .vram, .network, .battery, .temperature, .fan]
+        )
+
+        XCTAssertEqual(summary, "Metrics")
+    }
+
     func testRenderUsesPreferredTemperatureSourceFromDualReadings() {
         let snapshot = MetricsSnapshot(
             timestamp: Date(timeIntervalSince1970: 602),
             temperatures: [
                 .smc: TemperatureReading(celsius: 55.4, source: .smc),
-                .battery: TemperatureReading(celsius: 30.2, source: .battery),
+                .battery: TemperatureReading(celsius: 30.2, source: .battery)
             ]
         )
 
@@ -153,7 +192,7 @@ final class SummaryFormatterTests: XCTestCase {
         XCTAssertEqual(
             items,
             [
-                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric),
+                StatusSummaryItem(kind: .temperature, primaryText: "30℃", secondaryText: "BAT", style: .metric)
             ]
         )
     }
@@ -172,7 +211,7 @@ final class SummaryFormatterTests: XCTestCase {
         XCTAssertEqual(
             items,
             [
-                StatusSummaryItem(kind: .network, primaryText: "↑2.3G", secondaryText: "↓1.5G", style: .network),
+                StatusSummaryItem(kind: .network, primaryText: "↑2.3G", secondaryText: "↓1.5G", style: .network)
             ]
         )
     }
@@ -192,7 +231,7 @@ final class SummaryFormatterTests: XCTestCase {
                 StatusSummaryItem(kind: .vram, primaryText: "--", secondaryText: "VRAM", style: .metric),
                 StatusSummaryItem(kind: .temperature, primaryText: "--", secondaryText: "CPU", style: .metric),
                 StatusSummaryItem(kind: .fan, primaryText: "--", secondaryText: "RPM", style: .metric),
-                StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network),
+                StatusSummaryItem(kind: .network, primaryText: "↑--", secondaryText: "↓--", style: .network)
             ]
         )
     }

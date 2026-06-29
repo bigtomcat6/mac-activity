@@ -59,4 +59,15 @@ final class BatteryProviderTests: XCTestCase {
             .battery(BatteryReading(percentage: 79, isCharging: false, hardwarePercentage: 74.51))
         )
     }
+
+    func testProviderReportsUnavailableWhenSystemBatteryIsMissing() async {
+        let provider = BatteryProvider(
+            readSystemBattery: { nil },
+            readHardwarePercentage: { 74.51 }
+        )
+
+        let update = await provider.sample()
+
+        XCTAssertEqual(update, .unavailable(kind: .battery, reason: "Battery unavailable on this Mac"))
+    }
 }

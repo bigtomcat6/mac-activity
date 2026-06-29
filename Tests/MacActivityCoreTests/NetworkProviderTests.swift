@@ -2,6 +2,25 @@ import XCTest
 @testable import MacActivityCore
 
 final class NetworkProviderTests: XCTestCase {
+    func testNetworkProviderSamplesCurrentCounters() async {
+        let provider = NetworkProvider()
+
+        let firstUpdate = await provider.sample()
+        let secondUpdate = await provider.sample()
+
+        guard case let .network(firstReading) = firstUpdate else {
+            return XCTFail("Expected network update, got \(firstUpdate)")
+        }
+        guard case let .network(secondReading) = secondUpdate else {
+            return XCTFail("Expected network update, got \(secondUpdate)")
+        }
+
+        XCTAssertEqual(firstReading.downloadBytesPerSecond, 0, accuracy: 0.001)
+        XCTAssertEqual(firstReading.uploadBytesPerSecond, 0, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(secondReading.downloadBytesPerSecond, 0)
+        XCTAssertGreaterThanOrEqual(secondReading.uploadBytesPerSecond, 0)
+    }
+
     func testCounterSampleUsesPreferredInterfaceWithoutSummingVirtualAdapters() {
         let timestamp = Date(timeIntervalSince1970: 1_000)
         let sample = NetworkProvider.makeCounterSample(
@@ -19,7 +38,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 9_000,
                     sentBytes: 1_000
-                ),
+                )
             ],
             preferredInterfaceNames: ["en0"],
             timestamp: timestamp
@@ -55,7 +74,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 20_000,
                     sentBytes: 30_000
-                ),
+                )
             ],
             preferredInterfaceNames: ["en0"],
             timestamp: timestamp
@@ -91,7 +110,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 20_000,
                     sentBytes: 30_000
-                ),
+                )
             ],
             preferredInterfaceNames: ["en0"],
             timestamp: timestamp
@@ -127,7 +146,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 20_000,
                     sentBytes: 10_000
-                ),
+                )
             ],
             preferredInterfaceNames: ["missing0"],
             timestamp: timestamp
@@ -156,7 +175,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 5_000,
                     sentBytes: 7_000
-                ),
+                )
             ],
             preferredInterfaceNames: ["utun4"],
             timestamp: timestamp
@@ -192,7 +211,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 3_000,
                     sentBytes: 4_000
-                ),
+                )
             ],
             preferredInterfaceNames: [],
             timestamp: timestamp
@@ -221,7 +240,7 @@ final class NetworkProviderTests: XCTestCase {
                     isLoopback: false,
                     receivedBytes: 5_000,
                     sentBytes: 6_000
-                ),
+                )
             ],
             preferredInterfaceNames: [],
             timestamp: timestamp
@@ -244,7 +263,7 @@ final class NetworkProviderTests: XCTestCase {
             "vmenet0",
             "vmnet8",
             "tap0",
-            "tun0",
+            "tun0"
         ]
 
         for name in virtualNames {

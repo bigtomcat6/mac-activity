@@ -5,7 +5,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
     func testReleaseComputesReclaimedBytesAndPercent() async {
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
-            MemoryReading(usedBytes: 6_500, totalBytes: 10_000),
+            MemoryReading(usedBytes: 6_500, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded])
         let service = MemoryReleaseService(
@@ -26,7 +26,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
     func testReleaseReportsNoSignificantReleaseWhenObservedDeltaIsBelowThreshold() async {
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 6_000, totalBytes: 10_000),
-            MemoryReading(usedBytes: 7_000, totalBytes: 10_000),
+            MemoryReading(usedBytes: 7_000, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded])
         let service = MemoryReleaseService(
@@ -42,7 +42,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
 
     func testReleasePropagatesUnavailable() async {
         let reader = MemoryReadingRecorder(readings: [
-            MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
+            MemoryReading(usedBytes: 8_000, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.unavailable])
         let service = MemoryReleaseService(
@@ -58,7 +58,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
 
     func testReleasePropagatesFailedExitCode() async {
         let reader = MemoryReadingRecorder(readings: [
-            MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
+            MemoryReading(usedBytes: 8_000, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.failed(exitCode: 9)])
         let service = MemoryReleaseService(
@@ -91,7 +91,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
     func testReleaseReportsFailedToReadMemoryWhenAfterReadingIsMissing() async {
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
-            nil,
+            nil
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded])
         let service = MemoryReleaseService(
@@ -111,7 +111,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
-            MemoryReading(usedBytes: 6_500, totalBytes: 10_000),
+            MemoryReading(usedBytes: 6_500, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded, .succeeded])
         let service = MemoryReleaseService(
@@ -130,7 +130,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
     func testLocalReleaseDoesNotRunPurgeFallback() async {
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
-            MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
+            MemoryReading(usedBytes: 8_000, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded])
         let service = MemoryReleaseService(
@@ -148,7 +148,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
 
     func testPurgeReleaseReportsFailedExitCodeWithoutPretendingSuccess() async {
         let reader = MemoryReadingRecorder(readings: [
-            MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
+            MemoryReading(usedBytes: 8_000, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.failed(exitCode: 9)])
         let service = MemoryReleaseService(
@@ -168,7 +168,7 @@ final class MemoryReleaseServiceTests: XCTestCase {
         let now = MonotonicTimeRecorder(now: 1_000)
         let reader = MemoryReadingRecorder(readings: [
             MemoryReading(usedBytes: 8_000, totalBytes: 10_000),
-            MemoryReading(usedBytes: 6_500, totalBytes: 10_000),
+            MemoryReading(usedBytes: 6_500, totalBytes: 10_000)
         ])
         let cleaner = MemoryCleanerRecorder(results: [.succeeded])
         let service = MemoryReleaseService(

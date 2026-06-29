@@ -18,7 +18,7 @@ final class MetricsSnapshotTests: XCTestCase {
                 .vram(VRAMReading(usedBytes: 2_000, totalBytes: 8_000)),
                 .disk(DiskReading(usedBytes: 700, totalBytes: 1_000)),
                 .swap(SwapReading(usedBytes: 300, totalBytes: 1_000)),
-                .unavailable(kind: .temperature, reason: "Unsupported sensor"),
+                .unavailable(kind: .temperature, reason: "Unsupported sensor")
             ],
             timestamp: updatedTimestamp
         )
@@ -39,15 +39,15 @@ final class MetricsSnapshotTests: XCTestCase {
             timestamp: Date(timeIntervalSince1970: 1_000),
             temperatures: [
                 .smc: TemperatureReading(celsius: 55, source: .smc),
-                .battery: TemperatureReading(celsius: 30, source: .battery),
+                .battery: TemperatureReading(celsius: 30, source: .battery)
             ]
         )
 
         let updated = original.applying(
             [
                 .temperatures([
-                    TemperatureReading(celsius: 31, source: .battery),
-                ]),
+                    TemperatureReading(celsius: 31, source: .battery)
+                ])
             ],
             timestamp: Date(timeIntervalSince1970: 1_001)
         )

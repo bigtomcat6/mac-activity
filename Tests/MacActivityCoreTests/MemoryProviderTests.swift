@@ -3,6 +3,19 @@ import XCTest
 @testable import MacActivityCore
 
 final class MemoryProviderTests: XCTestCase {
+    func testMemoryProviderSamplesCurrentSystemMemory() async {
+        let provider = MemoryProvider()
+
+        let update = await provider.sample()
+
+        guard case let .memory(reading) = update else {
+            return XCTFail("Expected memory update, got \(update)")
+        }
+
+        XCTAssertGreaterThan(reading.totalBytes, 0)
+        XCTAssertLessThanOrEqual(reading.usedBytes, reading.totalBytes)
+    }
+
     func testMakeReadingUsesActivityMonitorMemoryUsedSemantics() {
         var stats = vm_statistics64_data_t()
         stats.free_count = 2
@@ -127,7 +140,7 @@ final class MemoryProviderTests: XCTestCase {
                 bundleURL: URL(fileURLWithPath: "/System/Applications/Calendar.app"),
                 residentMemoryBytes: 2_048,
                 isTerminable: true
-            ),
+            )
         ]
 
         let ranked = ActiveAppMemoryService.sortedByMemory(entries, limit: 3)
@@ -157,7 +170,7 @@ final class MemoryProviderTests: XCTestCase {
             CleanMemoryService.defaultCommands,
             [
                 MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/sbin/purge")),
-                MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge")),
+                MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge"))
             ]
         )
     }
@@ -174,6 +187,40 @@ final class MemoryProviderTests: XCTestCase {
         XCTAssertEqual(result, .succeeded)
         XCTAssertEqual(localCallCount, 1)
         XCTAssertEqual(commands, [])
+    }
+
+    func testCleanMemoryExtensionUsesFullStrategyAndForwardsEstimate() async {
+        let localReclaimer = MemoryLocalReclaimerRecorder(results: [true], estimatedReleasableBytes: 123)
+        let service: MemoryCleaning = CleanMemoryService(localReclaimer: localReclaimer, runner: MemoryCleanCommandRecorder(results: []))
+
+        let result = await service.cleanMemory()
+        let estimate = await service.estimatedReleasableBytes()
+
+        XCTAssertEqual(result, .succeeded)
+        XCTAssertEqual(estimate, 123)
+    }
+
+    func testCleanMemoryServiceSingleCommandInitializerAndEmptyCommands() async {
+        let command = MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/missing/purge"), arguments: ["--dry-run"])
+        let singleRunner = MemoryCleanCommandRecorder(results: [.failed(exitCode: 42)])
+        let singleCommandService = CleanMemoryService(
+            localReclaimer: MemoryLocalReclaimerRecorder(results: [false]),
+            command: command,
+            runner: singleRunner
+        )
+        let emptyCommandService = CleanMemoryService(
+            localReclaimer: MemoryLocalReclaimerRecorder(results: [false]),
+            commands: [],
+            runner: MemoryCleanCommandRecorder(results: [])
+        )
+
+        let singleResult = await singleCommandService.cleanMemory(strategy: .full)
+        let singleCommands = await singleRunner.recordedCommands()
+        let emptyResult = await emptyCommandService.cleanMemory(strategy: .purge)
+
+        XCTAssertEqual(singleResult, .failed(exitCode: 42))
+        XCTAssertEqual(singleCommands, [command])
+        XCTAssertEqual(emptyResult, .unavailable)
     }
 
     func testCleanMemoryServiceRunsDefaultCommandWhenLocalReclaimerFails() async {
@@ -268,7 +315,7 @@ final class MemoryProviderTests: XCTestCase {
             [
                 256 * 1_024 * 1_024,
                 256 * 1_024 * 1_024,
-                256 * 1_024 * 1_024,
+                256 * 1_024 * 1_024
             ]
         )
     }
@@ -284,6 +331,48 @@ final class MemoryProviderTests: XCTestCase {
         let estimate = await reclaimer.estimatedReleasableBytes()
 
         XCTAssertEqual(estimate, 0)
+    }
+
+    func testSystemLocalMemoryReclaimerHandlesNilZeroAndInvalidTargets() async {
+        let nilReaderReclaimer = SystemLocalMemoryReclaimer(
+            reclaimableByteReader: { nil },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [true])
+        )
+        let zeroReclaimerRecorder = MemoryPressureReclaimerRecorder(results: [true])
+        let zeroReclaimer = SystemLocalMemoryReclaimer(
+            reclaimableByteReader: { 0 },
+            pressureReclaimer: zeroReclaimerRecorder
+        )
+        let invalidBatchReclaimer = SystemLocalMemoryReclaimer(
+            maximumByteCount: 256,
+            batchByteCount: 0,
+            reclaimableByteReader: { 256 },
+            pressureReclaimer: MemoryPressureReclaimerRecorder(results: [true])
+        )
+
+        let nilResult = await nilReaderReclaimer.reclaimMemory()
+        let nilEstimate = await nilReaderReclaimer.estimatedReleasableBytes()
+        let zeroResult = await zeroReclaimer.reclaimMemory()
+        let zeroByteCounts = await zeroReclaimerRecorder.recordedByteCounts()
+        let invalidBatchResult = await invalidBatchReclaimer.reclaimMemory()
+
+        XCTAssertFalse(nilResult)
+        XCTAssertNil(nilEstimate)
+        XCTAssertTrue(zeroResult)
+        XCTAssertEqual(zeroByteCounts, [0])
+        XCTAssertFalse(invalidBatchResult)
+    }
+
+    func testSystemMemoryPressureReclaimerHandlesZeroByteRequest() async {
+        let reclaimer = SystemMemoryPressureReclaimer()
+
+        let result = await reclaimer.reclaim(byteCount: 0)
+
+        XCTAssertTrue(result)
+    }
+
+    func testCurrentReclaimableByteCountReadsLiveVMStatistics() {
+        XCTAssertNotNil(SystemLocalMemoryReclaimer.currentReclaimableByteCount())
     }
 
     func testSystemLocalMemoryReclaimerDoesNotEstimateSmallerPressureTargetAsConfirmedRelease() async {
@@ -319,7 +408,7 @@ final class MemoryProviderTests: XCTestCase {
             ProcessMemorySnapshot(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 200),
             ProcessMemorySnapshot(processIdentifier: 102, parentProcessIdentifier: 100, residentMemoryBytes: 300),
             ProcessMemorySnapshot(processIdentifier: 103, parentProcessIdentifier: 102, residentMemoryBytes: 400),
-            ProcessMemorySnapshot(processIdentifier: 999, parentProcessIdentifier: 1, residentMemoryBytes: 9_000),
+            ProcessMemorySnapshot(processIdentifier: 999, parentProcessIdentifier: 1, residentMemoryBytes: 9_000)
         ]
 
         let aggregate = ProcessTreeResidentMemoryAggregator.aggregate(
@@ -341,7 +430,7 @@ final class MemoryProviderTests: XCTestCase {
     func testProcessTreeAggregatorDoesNotAttachOrphansToUnrelatedApps() {
         let snapshots = [
             ProcessMemorySnapshot(processIdentifier: 100, parentProcessIdentifier: 1, residentMemoryBytes: 1_000),
-            ProcessMemorySnapshot(processIdentifier: 200, parentProcessIdentifier: 404, residentMemoryBytes: 3_000),
+            ProcessMemorySnapshot(processIdentifier: 200, parentProcessIdentifier: 404, residentMemoryBytes: 3_000)
         ]
 
         let aggregate = ProcessTreeResidentMemoryAggregator.aggregate(
@@ -377,7 +466,7 @@ final class MemoryProviderTests: XCTestCase {
             byteCounts,
             [
                 256 * 1_024 * 1_024,
-                128 * 1_024 * 1_024,
+                128 * 1_024 * 1_024
             ]
         )
     }
@@ -414,6 +503,40 @@ final class MemoryProviderTests: XCTestCase {
 
         let readCount = await recorder.currentReadCount()
         XCTAssertEqual(readCount, 1)
+    }
+
+    func testGPUAndVRAMProvidersReturnReadingsAndUnavailableStates() async {
+        let populatedCache = IOAcceleratorStatsCache(
+            readStats: {
+                IOAcceleratorStats(
+                    gpuUsagePercent: 55,
+                    memory: VRAMReading(usedBytes: 1_024, totalBytes: 2_048)
+                )
+            }
+        )
+        let emptyCache = IOAcceleratorStatsCache(readStats: { IOAcceleratorStats() })
+
+        let gpuUpdate = await GPUProvider(cache: populatedCache).sample()
+        let vramUpdate = await VRAMProvider(cache: populatedCache).sample()
+        let unavailableGPUUpdate = await GPUProvider(cache: emptyCache).sample()
+        let unavailableVRAMUpdate = await VRAMProvider(cache: emptyCache).sample()
+
+        XCTAssertEqual(gpuUpdate, .gpu(GPUReading(usagePercent: 55)))
+        XCTAssertEqual(vramUpdate, .vram(VRAMReading(usedBytes: 1_024, totalBytes: 2_048)))
+        XCTAssertEqual(unavailableGPUUpdate, .unavailable(kind: .gpu, reason: "GPU usage is not exposed by IOAccelerator"))
+        XCTAssertEqual(unavailableVRAMUpdate, .unavailable(kind: .vram, reason: "GPU memory usage is not exposed by IOAccelerator"))
+    }
+
+    func testProcessMemoryCleanCommandRunnerReportsUnavailableSuccessAndFailure() async {
+        let runner = ProcessMemoryCleanCommandRunner()
+
+        let unavailable = await runner.run(MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/missing/purge")))
+        let succeeded = await runner.run(MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/true")))
+        let failed = await runner.run(MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/false")))
+
+        XCTAssertEqual(unavailable, .unavailable)
+        XCTAssertEqual(succeeded, .succeeded)
+        XCTAssertEqual(failed, .failed(exitCode: 1))
     }
 }
 

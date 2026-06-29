@@ -2,6 +2,17 @@ import XCTest
 @testable import MacActivityCore
 
 final class TemperatureProviderTests: XCTestCase {
+    func testTemperatureSourceSelectionStoreReadsAndUpdatesSource() async {
+        let store = TemperatureSourceSelectionStore(initialSource: .smc)
+
+        let initialSource = await store.read()
+        await store.set(.battery)
+        let updatedSource = await store.read()
+
+        XCTAssertEqual(initialSource, .smc)
+        XCTAssertEqual(updatedSource, .battery)
+    }
+
     func testSamplesSMCAndBatteryTemperatureTogether() async {
         let provider = TemperatureProvider(
             readSMCTemperatureCelsius: { 55.4 },
@@ -14,7 +25,7 @@ final class TemperatureProviderTests: XCTestCase {
             update,
             MetricUpdate.temperatures([
                 TemperatureReading(celsius: 55.4, source: .smc),
-                TemperatureReading(celsius: 30.17, source: .battery),
+                TemperatureReading(celsius: 30.17, source: .battery)
             ])
         )
     }
@@ -44,7 +55,7 @@ final class TemperatureProviderTests: XCTestCase {
         XCTAssertEqual(
             update,
             MetricUpdate.temperatures([
-                TemperatureReading(celsius: 30.17, source: .battery),
+                TemperatureReading(celsius: 30.17, source: .battery)
             ])
         )
     }
@@ -60,7 +71,7 @@ final class TemperatureProviderTests: XCTestCase {
         XCTAssertEqual(
             update,
             MetricUpdate.temperatures([
-                TemperatureReading(celsius: 55.4, source: .smc),
+                TemperatureReading(celsius: 55.4, source: .smc)
             ])
         )
     }
@@ -76,7 +87,7 @@ final class TemperatureProviderTests: XCTestCase {
     func testSMCSensorCacheBacksOffRepeatedUnavailableReads() async {
         let recorder = SMCSnapshotReadRecorder(results: [
             .init(temperatureCelsius: nil, fanRPM: nil),
-            .init(temperatureCelsius: 61, fanRPM: 2_100),
+            .init(temperatureCelsius: 61, fanRPM: 2_100)
         ])
         let cache = SMCSensorSnapshotCache(
             ttl: .seconds(60),

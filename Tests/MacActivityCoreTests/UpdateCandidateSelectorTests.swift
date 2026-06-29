@@ -7,7 +7,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         let candidates = [
             try UpdateCandidate(version: "v26.0.1", build: "20"),
             try UpdateCandidate(version: "v26.1.0-alpha.3", build: "30"),
-            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40"),
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -24,7 +24,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         let candidates = [
             try UpdateCandidate(version: "v26.0.1", build: "20"),
             try UpdateCandidate(version: "v26.1.0-alpha.3", build: "30"),
-            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40"),
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -39,7 +39,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
     func testBetaChannelDoesNotSeeAlphaOnlyCandidates() throws {
         let current = try ReleaseVersion("v26.0.0")
         let candidates = [
-            try UpdateCandidate(version: "v26.1.0-alpha.3", build: "30"),
+            try UpdateCandidate(version: "v26.1.0-alpha.3", build: "30")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -55,7 +55,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         let current = try ReleaseVersion("v26.0.0")
         let candidates = [
             try UpdateCandidate(version: "v26.0.1", build: "20"),
-            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40"),
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -70,7 +70,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
     func testBetaChannelCanMoveFromStableToNewerBetaWhenNoReleaseCandidateExists() throws {
         let current = try ReleaseVersion("v26.0.1")
         let candidates = [
-            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40"),
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "40")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -85,7 +85,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
     func testLowerBaseReleaseDoesNotDowngradeInstalledBeta() throws {
         let current = try ReleaseVersion("v26.1.0-beta.1")
         let candidates = [
-            try UpdateCandidate(version: "v26.0.1", build: "50"),
+            try UpdateCandidate(version: "v26.0.1", build: "50")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -100,7 +100,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
     func testSameChannelPrereleaseNumberCanAdvance() throws {
         let current = try ReleaseVersion("v26.1.0-alpha.2")
         let candidates = [
-            try UpdateCandidate(version: "v26.1.0-alpha.3", build: "31"),
+            try UpdateCandidate(version: "v26.1.0-alpha.3", build: "31")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -115,7 +115,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
     func testHigherChannelCanAdvanceWithinSameBaseVersion() throws {
         let current = try ReleaseVersion("v26.1.0-alpha.2")
         let candidates = [
-            try UpdateCandidate(version: "v26.1.0-beta.1", build: "41"),
+            try UpdateCandidate(version: "v26.1.0-beta.1", build: "41")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -131,7 +131,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         let current = try ReleaseVersion("v26.0.0")
         let candidates = [
             try UpdateCandidate(version: "v26.1.0-beta.1", build: "50"),
-            try UpdateCandidate(version: "v26.1.0-beta.2", build: "40"),
+            try UpdateCandidate(version: "v26.1.0-beta.2", build: "40")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(
@@ -163,7 +163,7 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         let current = try ReleaseVersion("v26.0.0")
         let candidates = [
             try UpdateCandidate(version: "v26.0.1", build: "20"),
-            try UpdateCandidate(version: "v26.0.1", build: "21"),
+            try UpdateCandidate(version: "v26.0.1", build: "21")
         ]
 
         let selected = UpdateCandidateSelector.bestCandidate(

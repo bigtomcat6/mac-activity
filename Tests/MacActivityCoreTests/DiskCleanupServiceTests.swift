@@ -13,11 +13,11 @@ final class DiskCleanupServiceTests: XCTestCase {
             contents: [
                 trashURL: [visible, hidden],
                 cacheURL: [],
-                logURL: [],
+                logURL: []
             ],
             itemInfo: [
                 visible: .file(size: 4_096, modifiedAt: .distantPast),
-                hidden: .file(size: 2_048, modifiedAt: .distantPast),
+                hidden: .file(size: 2_048, modifiedAt: .distantPast)
             ]
         )
         let service = DiskCleanupService(roots: roots, filesystem: filesystem)
@@ -55,13 +55,13 @@ final class DiskCleanupServiceTests: XCTestCase {
     func testPartialCleanupReportsDeletedAndFailedCountsWithRemainingBytes() async {
         let roots = DiskCleanupRoots(homeDirectory: URL(fileURLWithPath: "/Users/test", isDirectory: true))
         let trashURL = roots.url(for: .trash)
-        let ok = trashURL.appendingPathComponent("ok.tmp")
+        let removable = trashURL.appendingPathComponent("ok.tmp")
         let blocked = trashURL.appendingPathComponent("blocked.tmp")
         let filesystem = DiskCleanupFilesystemRecorder(
-            contents: [trashURL: [ok, blocked]],
+            contents: [trashURL: [removable, blocked]],
             itemInfo: [
-                ok: .file(size: 100, modifiedAt: .distantPast),
-                blocked: .file(size: 200, modifiedAt: .distantPast),
+                removable: .file(size: 100, modifiedAt: .distantPast),
+                blocked: .file(size: 200, modifiedAt: .distantPast)
             ],
             removeFailures: [blocked: TestDiskCleanupError.denied]
         )
@@ -70,7 +70,7 @@ final class DiskCleanupServiceTests: XCTestCase {
         let result = await service.clean(categories: [.trash], now: Date())
 
         XCTAssertEqual(result, .partial(bytes: 100, deletedCount: 1, failedCount: 1, remainingBytes: 200))
-        XCTAssertEqual(filesystem.removedItems(), [ok, blocked])
+        XCTAssertEqual(filesystem.removedItems(), [removable, blocked])
     }
 
     func testCleanRevalidatesCandidateBeforeDeleting() async {
@@ -116,7 +116,7 @@ final class DiskCleanupServiceTests: XCTestCase {
             contents: [
                 cacheURL: [oldSafeDirectory, excludedDirectory],
                 oldSafeDirectory: [oldSafe, recent, symlink],
-                excludedDirectory: [excluded],
+                excludedDirectory: [excluded]
             ],
             itemInfo: [
                 oldSafeDirectory: .directory(size: 0, modifiedAt: .distantPast),
@@ -124,7 +124,7 @@ final class DiskCleanupServiceTests: XCTestCase {
                 recent: .file(size: 2_000, modifiedAt: now.addingTimeInterval(-3_600)),
                 symlink: .symlink(size: 9, modifiedAt: .distantPast),
                 excludedDirectory: .directory(size: 0, modifiedAt: .distantPast),
-                excluded: .file(size: 3_000, modifiedAt: .distantPast),
+                excluded: .file(size: 3_000, modifiedAt: .distantPast)
             ]
         )
         let service = DiskCleanupService(roots: roots, filesystem: filesystem)
@@ -153,7 +153,7 @@ final class DiskCleanupServiceTests: XCTestCase {
                 oldLog: .file(size: 100, modifiedAt: now.addingTimeInterval(-172_800)),
                 oldCompressedLog: .file(size: 200, modifiedAt: now.addingTimeInterval(-172_800)),
                 recentLog: .file(size: 400, modifiedAt: now.addingTimeInterval(-3_600)),
-                notLog: .file(size: 800, modifiedAt: .distantPast),
+                notLog: .file(size: 800, modifiedAt: .distantPast)
             ]
         )
         let service = DiskCleanupService(roots: roots, filesystem: filesystem)
@@ -177,7 +177,7 @@ final class DiskCleanupServiceTests: XCTestCase {
         let filesystem = DiskCleanupFilesystemRecorder(
             contents: [
                 trashURL: [trashItem],
-                logURL: [],
+                logURL: []
             ],
             itemInfo: [trashItem: .file(size: 128, modifiedAt: .distantPast)],
             contentsFailures: [cacheURL: TestDiskCleanupError.denied]
@@ -254,15 +254,15 @@ private final class ReplacingDiskCleanupFilesystem: DiskCleanupFilesystem, @unch
     }
 }
 
+private enum DiskCleanupItemKind: Sendable {
+    case file
+    case directory
+    case symlink
+}
+
 private final class DiskCleanupFilesystemRecorder: DiskCleanupFilesystem, @unchecked Sendable {
     struct ItemInfo: Sendable {
-        enum Kind: Sendable {
-            case file
-            case directory
-            case symlink
-        }
-
-        let kind: Kind
+        let kind: DiskCleanupItemKind
         let size: UInt64
         let modifiedAt: Date
 
