@@ -163,7 +163,8 @@ final class LocalizationTests: XCTestCase {
             kind: .swap,
             titleRole: .metric(.swap),
             value: "25%",
-            detailRole: .raw("256 B")
+            detailRole: .raw("256 B (25%)"),
+            usedBytes: 256
         )
 
         XCTAssertEqual(

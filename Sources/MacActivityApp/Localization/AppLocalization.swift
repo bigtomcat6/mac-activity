@@ -425,10 +425,17 @@ enum AppLocalization {
         return metrics
             .map { metric in
                 let title = dashboardMetricTitle(for: metric, bundle: targetBundle)
-                let value = dashboardMetricDetail(for: metric, bundle: targetBundle) ?? metric.value
+                let value = storageAccessibilityMetricValue(for: metric, bundle: targetBundle)
                 return "\(title) \(value)"
             }
             .joined(separator: separator)
+    }
+
+    private static func storageAccessibilityMetricValue(for metric: DashboardMetric, bundle: Bundle) -> String {
+        if metric.kind == .swap, let usedBytes = metric.usedBytes {
+            return DashboardMetricTextFormatter.formatBytes(usedBytes)
+        }
+        return dashboardMetricDetail(for: metric, bundle: bundle) ?? metric.value
     }
 
     static func formattedTime(_ date: Date, includesSeconds: Bool = false, bundle: Bundle? = nil) -> String {
