@@ -7,11 +7,43 @@ excluded:
   - .build
   - DerivedData
 
-disabled_rules:
-  - line_length
-  - function_body_length
-  - file_length
-  - type_body_length
+only_rules:
+  - blanket_disable_command
+  - colon
+  - comma
+  - compiler_protocol_init
+  - duplicate_conditions
+  - duplicate_enum_cases
+  - duplicated_key_in_dictionary_literal
+  - dynamic_inline
+  - empty_enum_arguments
+  - empty_parameters
+  - empty_parentheses_with_trailing_closure
+  - force_cast
+  - invalid_swiftlint_command
+  - invisible_character
+  - no_fallthrough_only
+  - function_name_whitespace
+  - redundant_discardable_let
+  - redundant_objc_attribute
+  - redundant_set_access_control
+  - redundant_string_enum_value
+  - redundant_void_return
+  - return_arrow_whitespace
+  - shorthand_operator
+  - statement_position
+  - superfluous_disable_command
+  - switch_case_alignment
+  - syntactic_sugar
+  - trailing_newline
+  - trailing_semicolon
+  - unavailable_condition
+  - unneeded_break_in_switch
+  - unused_closure_parameter
+  - unused_control_flow_label
+  - unused_enumerated
+  - unused_optional_binding
+  - void_return
 
 strict: false
 reporter: github-actions-logging
