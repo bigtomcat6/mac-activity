@@ -583,8 +583,13 @@ jobs:
             exit 1
           fi
 
+          actual_version="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${info_plist}")"
           actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
           actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
+          if [[ "${actual_version}" != "${{ inputs.version }}" ]]; then
+            echo "::error::Expected CFBundleShortVersionString ${{ inputs.version }}, got ${actual_version}."
+            exit 1
+          fi
           if [[ "${actual_release_tag}" != "${TAG}" ]]; then
             echo "::error::Expected MacActivityReleaseTag ${TAG}, got ${actual_release_tag}."
             exit 1
@@ -613,6 +618,21 @@ jobs:
             echo "::error::Expected Mac Activity.app at DMG root."
             exit 1
           fi
+
+          applications_alias="${mount_point}/Applications"
+          if [[ ! -f "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias at DMG root."
+            exit 1
+          fi
+          if [[ -L "${applications_alias}" ]]; then
+            echo "::error::Expected Applications Finder alias, got symlink."
+            exit 1
+          fi
+          if ! file "${applications_alias}" | grep -q "MacOS Alias file"; then
+            echo "::error::Applications item is not a Finder alias."
+            exit 1
+          fi
+
           codesign --verify --deep --strict --verbose=4 "${dmg_app}"
           xcrun stapler validate "${dmg_app}"
           syspolicy_check distribution "${dmg_app}"
