@@ -27,8 +27,8 @@ public struct FanProvider: MetricProvider {
 }
 
 struct SMCSensorSnapshot: Equatable, Sendable {
-    var temperatureCelsius: Double? = nil
-    var fanRPM: Int? = nil
+    var temperatureCelsius: Double?
+    var fanRPM: Int?
 
     var hasReadings: Bool {
         temperatureCelsius != nil || fanRPM != nil
@@ -463,7 +463,7 @@ enum SMCSensorReader {
         }
 
         let bytes = buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }
-        return String(decoding: bytes, as: UTF8.self)
+        return String(bytes: bytes, encoding: .utf8) ?? ""
     }
 
     private enum SMCCommand: UInt8 {
@@ -498,6 +498,8 @@ enum SMCSensorReader {
     }
 
     struct SMCBytes {
+        // AppleSMC expects this to be laid out as exactly 32 bytes for IOConnectCallStructMethod.
+        // swiftlint:disable:next large_tuple
         var value: (
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,
             UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8, UInt8,

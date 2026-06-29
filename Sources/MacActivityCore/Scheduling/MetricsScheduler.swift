@@ -31,7 +31,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .network: 2,
             .battery: 15,
             .temperature: 2,
-            .fan: 2,
+            .fan: 2
         ]
     )
     public static let background = MetricsSamplingProfile(
@@ -45,7 +45,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .network: 2,
             .battery: 10,
             .temperature: 10,
-            .fan: 10,
+            .fan: 10
         ]
     )
     public static let energySaver = MetricsSamplingProfile(
@@ -59,7 +59,7 @@ public struct MetricsSamplingProfile: Equatable, Sendable {
             .network: 2,
             .battery: 120,
             .temperature: 60,
-            .fan: 60,
+            .fan: 60
         ]
     )
 }

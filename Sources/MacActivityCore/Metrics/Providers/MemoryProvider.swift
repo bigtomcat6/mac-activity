@@ -1,6 +1,5 @@
 import AppKit
 import Darwin
-import Darwin.Mach
 import Foundation
 import IOKit
 
@@ -370,7 +369,7 @@ public protocol MemoryPressureReclaiming: Sendable {
 public struct CleanMemoryService: MemoryCleaning {
     public static let defaultCommands = [
         MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/sbin/purge")),
-        MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge")),
+        MemoryCleanCommand(executableURL: URL(fileURLWithPath: "/usr/bin/purge"))
     ]
 
     public static let defaultCommand = defaultCommands[0]
@@ -784,7 +783,7 @@ private enum IOAcceleratorStatsReader {
                     "Device Utilization %",
                     "GPU Core Utilization %",
                     "Renderer Utilization %",
-                    "Tiler Utilization %",
+                    "Tiler Utilization %"
                 ]
             ) {
                 usageCandidates.append(utilization)

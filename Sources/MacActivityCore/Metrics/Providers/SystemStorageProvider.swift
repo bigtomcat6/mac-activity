@@ -24,7 +24,7 @@ public struct DiskProvider: MetricProvider {
             forKeys: [
                 .volumeTotalCapacityKey,
                 .volumeAvailableCapacityForImportantUsageKey,
-                .volumeAvailableCapacityKey,
+                .volumeAvailableCapacityKey
             ]
         ) else {
             return nil

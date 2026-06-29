@@ -32,7 +32,7 @@ public struct LiveTrashFilesystem: TrashFilesystem {
             includingPropertiesForKeys: [
                 .isDirectoryKey,
                 .fileAllocatedSizeKey,
-                .totalFileAllocatedSizeKey,
+                .totalFileAllocatedSizeKey
             ],
             options: []
         )
@@ -42,7 +42,7 @@ public struct LiveTrashFilesystem: TrashFilesystem {
         let values = try url.resourceValues(forKeys: [
             .isDirectoryKey,
             .fileAllocatedSizeKey,
-            .totalFileAllocatedSizeKey,
+            .totalFileAllocatedSizeKey
         ])
         var total = UInt64(max(0, values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0))
 
@@ -54,7 +54,7 @@ public struct LiveTrashFilesystem: TrashFilesystem {
             at: url,
             includingPropertiesForKeys: [
                 .fileAllocatedSizeKey,
-                .totalFileAllocatedSizeKey,
+                .totalFileAllocatedSizeKey
             ],
             options: []
         )
@@ -62,7 +62,7 @@ public struct LiveTrashFilesystem: TrashFilesystem {
         while let child = children?.nextObject() as? URL {
             let childValues = try? child.resourceValues(forKeys: [
                 .fileAllocatedSizeKey,
-                .totalFileAllocatedSizeKey,
+                .totalFileAllocatedSizeKey
             ])
             total += UInt64(max(0, childValues?.totalFileAllocatedSize ?? childValues?.fileAllocatedSize ?? 0))
         }
