@@ -174,6 +174,13 @@ enum DashboardOverviewLayout {
         }
     }
 
+    static func storageDetailValue(for metric: DashboardMetric) -> String {
+        if metric.kind == .swap, let usedBytes = metric.usedBytes {
+            return DashboardMetricTextFormatter.formatBytes(usedBytes)
+        }
+        return AppLocalization.dashboardMetricDetail(for: metric) ?? metric.value
+    }
+
     static func usageProgress(for value: String) -> Double {
         let percentText = value.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "%", with: "")
@@ -1524,7 +1531,7 @@ private struct StorageUsageDetailRow: View {
             }
             .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
 
-            Text(AppLocalization.dashboardMetricDetail(for: metric) ?? metric.value)
+            Text(DashboardOverviewLayout.storageDetailValue(for: metric))
                 .font(.caption2.monospacedDigit().weight(.semibold))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
