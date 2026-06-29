@@ -166,7 +166,7 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("assets/dmg/background.png", package_section)
         self.assertNotIn("-srcfolder \"${app}\"", package_section)
 
-    def test_styled_dmg_uses_compact_cropped_background_layout(self):
+    def test_dmg_uses_repository_background_asset(self):
         script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
         background = REPO_ROOT / "assets" / "dmg" / "background.png"
 
@@ -176,21 +176,28 @@ class ReleasePolicyTests(unittest.TestCase):
             width, height = struct.unpack(">II", image.read(8))
 
         self.assertEqual((width, height), (627, 560))
-        self.assertIn("WINDOW_WIDTH=627", script)
-        self.assertIn("WINDOW_HEIGHT=560", script)
-        self.assertIn("APP_Y=290", script)
-        self.assertIn("APPLICATIONS_Y=290", script)
+        self.assertIn('ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_BASENAME}"', script)
 
     def test_styled_dmg_uses_finder_applications_alias_icon(self):
         script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
 
         self.assertIn("APPLICATIONS_ALIAS_NAME=\"Applications\"", script)
         self.assertIn("make new alias file to POSIX file \"/Applications\"", script)
-        self.assertIn('"path": applications_alias_name', script)
+        self.assertIn("create_applications_alias", script)
         self.assertNotIn('"type": "link"', script)
         self.assertNotIn("ApplicationsFolderIcon.icns", script)
         self.assertNotIn("Rez -append", script)
         self.assertNotIn("SetFile -a C", script)
+
+
+    def test_dmg_creation_uses_platform_tools_without_runtime_npm_execution(self):
+        script = (REPO_ROOT / ".github" / "scripts" / "create_dmg.sh").read_text()
+
+        self.assertIn("command -v hdiutil", script)
+        self.assertIn("hdiutil create", script)
+        self.assertNotIn("npx", script)
+        self.assertNotIn("appdmg", script)
+        self.assertNotIn("APPDMG_VERSION", script)
 
     def test_release_workflow_validates_applications_finder_alias(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
