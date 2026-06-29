@@ -491,9 +491,9 @@ public final class DashboardModel: ObservableObject {
         let showsHardwareBatteryPercentage = self.showsHardwareBatteryPercentage
         refreshGeneration += 1
         let refreshGeneration = refreshGeneration
-        DispatchQueue.global(qos: .utility).async { [snapshot, history, metricsBuilder, preferredTemperatureSource, showsHardwareBatteryPercentage] in
+        DispatchQueue.global(qos: .utility).async { [weak self, snapshot, history, metricsBuilder, preferredTemperatureSource, showsHardwareBatteryPercentage, refreshGeneration] in
             let metrics = metricsBuilder(snapshot, history, preferredTemperatureSource, showsHardwareBatteryPercentage)
-            DispatchQueue.main.async { [weak self] in
+            DispatchQueue.main.async { [weak self, refreshGeneration, metrics] in
                 guard let self, self.isActive, self.refreshGeneration == refreshGeneration, self.metrics != metrics else { return }
                 self.metrics = metrics
             }
