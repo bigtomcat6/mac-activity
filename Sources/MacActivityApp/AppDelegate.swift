@@ -91,7 +91,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 NetworkProvider(),
                 BatteryProvider(),
                 TemperatureProvider(),
-                FanProvider(),
+                FanProvider()
             ],
             store: metricsStore,
             samplingProfile: samplingController.currentProfile
