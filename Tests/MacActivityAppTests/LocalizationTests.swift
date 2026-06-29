@@ -206,7 +206,7 @@ final class LocalizationTests: XCTestCase {
             #"ProgressView("Loading")"#,
             #".accessibilityLabel(Text("Usage"))"#,
             #"Text("")"#,
-            #"Text("CFBundleName")"#,
+            #"Text("CFBundleName")"#
         ].joined(separator: "\n")
         let violations = Self.hardcodedProductionStringViolations(
             in: contents,
@@ -219,7 +219,7 @@ final class LocalizationTests: XCTestCase {
                 #"Sources/MacActivityApp/Sample.swift:1: Label literal uses "Status""#,
                 #"Sources/MacActivityApp/Sample.swift:2: ProgressView literal uses "Loading""#,
                 #"Sources/MacActivityApp/Sample.swift:3: Text literal uses "Usage""#,
-                #"Sources/MacActivityApp/Sample.swift:3: accessibility label literal uses "Usage""#,
+                #"Sources/MacActivityApp/Sample.swift:3: accessibility label literal uses "Usage""#
             ]
         )
 
@@ -229,25 +229,25 @@ final class LocalizationTests: XCTestCase {
             "SUPublicEDKey",
             "SUFeedURL",
             "fatalError",
-            "systemName:",
+            "systemName:"
         ] {
             XCTAssertFalse(Self.shouldScanProductionStringLine("Text(\"\(allowedFragment)\")"))
         }
     }
 
-    func testHardcodedProductionStringPatternsExposeExpectedCaptures() {
+    func testHardcodedProductionStringPatternsExposeExpectedCaptures() throws {
         let samples = [
             ("Label literal", #"Label("Status", systemImage: "bolt")"#, "Status"),
             ("ProgressView literal", #"ProgressView("Loading")"#, "Loading"),
-            ("accessibility label literal", #".accessibilityLabel(Text("Usage"))"#, "Usage"),
+            ("accessibility label literal", #".accessibilityLabel(Text("Usage"))"#, "Usage")
         ]
 
         for (patternName, line, literal) in samples {
             let pattern = Self.hardcodedProductionStringPatterns.first { $0.name == patternName }
-            let regex = try! XCTUnwrap(pattern?.regex)
+            let regex = try XCTUnwrap(pattern?.regex)
             let range = NSRange(line.startIndex..<line.endIndex, in: line)
-            let match = try! XCTUnwrap(regex.firstMatch(in: line, range: range))
-            let literalRange = try! XCTUnwrap(Range(match.range(at: 1), in: line))
+            let match = try XCTUnwrap(regex.firstMatch(in: line, range: range))
+            let literalRange = try XCTUnwrap(Range(match.range(at: 1), in: line))
             XCTAssertEqual(String(line[literalRange]), literal)
         }
     }
@@ -447,7 +447,7 @@ final class LocalizationTests: XCTestCase {
         let packageRoot = Self.packageRootURL()
         let sourceRoots = [
             packageRoot.appendingPathComponent("Sources/MacActivityApp"),
-            packageRoot.appendingPathComponent("Sources/MacActivityCore"),
+            packageRoot.appendingPathComponent("Sources/MacActivityCore")
         ]
         let violations = try sourceRoots
             .flatMap(Self.swiftSourceFiles)
@@ -488,35 +488,43 @@ final class LocalizationTests: XCTestCase {
     }
 
     private static let hardcodedProductionStringPatterns: [(name: String, regex: NSRegularExpression)] = [
-        ("Text literal", try! NSRegularExpression(pattern: #"\bText\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Button literal", try! NSRegularExpression(pattern: #"\bButton\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Label literal", try! NSRegularExpression(pattern: #"\bLabel\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Toggle literal", try! NSRegularExpression(pattern: #"\bToggle\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Picker literal", try! NSRegularExpression(pattern: #"\bPicker\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Menu literal", try! NSRegularExpression(pattern: #"\bMenu\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("Section literal", try! NSRegularExpression(pattern: #"\bSection\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("TextField literal", try! NSRegularExpression(pattern: #"\bTextField\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("SecureField literal", try! NSRegularExpression(pattern: #"\bSecureField\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("ProgressView literal", try! NSRegularExpression(pattern: #"\bProgressView\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Text literal", regex(#"\bText\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Button literal", regex(#"\bButton\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Label literal", regex(#"\bLabel\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Toggle literal", regex(#"\bToggle\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Picker literal", regex(#"\bPicker\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Menu literal", regex(#"\bMenu\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("Section literal", regex(#"\bSection\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("TextField literal", regex(#"\bTextField\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("SecureField literal", regex(#"\bSecureField\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("ProgressView literal", regex(#"\bProgressView\s*\(\s*"((?:\\"|[^"])*)""#)),
         (
             "accessibility label literal",
-            try! NSRegularExpression(pattern: #"\.accessibilityLabel\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
+            regex(#"\.accessibilityLabel\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
         ),
         (
             "accessibility value literal",
-            try! NSRegularExpression(pattern: #"\.accessibilityValue\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
+            regex(#"\.accessibilityValue\s*\(\s*Text\s*\(\s*"((?:\\"|[^"])*)""#)
         ),
-        ("help literal", try! NSRegularExpression(pattern: #"\.help\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("navigation title literal", try! NSRegularExpression(pattern: #"\.navigationTitle\s*\(\s*"((?:\\"|[^"])*)""#)),
-        ("alert literal", try! NSRegularExpression(pattern: #"\.alert\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("help literal", regex(#"\.help\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("navigation title literal", regex(#"\.navigationTitle\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("alert literal", regex(#"\.alert\s*\(\s*"((?:\\"|[^"])*)""#)),
         (
             "confirmation dialog literal",
-            try! NSRegularExpression(pattern: #"\.confirmationDialog\s*\(\s*"((?:\\"|[^"])*)""#)
+            regex(#"\.confirmationDialog\s*\(\s*"((?:\\"|[^"])*)""#)
         ),
-        ("tooltip literal", try! NSRegularExpression(pattern: #"\.toolTip\s*=\s*"((?:\\"|[^"])*)""#)),
-        ("title literal", try! NSRegularExpression(pattern: #"\.title\s*=\s*"((?:\\"|[^"])*)""#)),
-        ("failed literal", try! NSRegularExpression(pattern: #"\.failed\s*\(\s*"((?:\\"|[^"])*)""#)),
+        ("tooltip literal", regex(#"\.toolTip\s*=\s*"((?:\\"|[^"])*)""#)),
+        ("title literal", regex(#"\.title\s*=\s*"((?:\\"|[^"])*)""#)),
+        ("failed literal", regex(#"\.failed\s*\(\s*"((?:\\"|[^"])*)""#))
     ]
+
+    private static func regex(_ pattern: String) -> NSRegularExpression {
+        do {
+            return try NSRegularExpression(pattern: pattern)
+        } catch {
+            preconditionFailure("Invalid localization scan regex \(pattern): \(error)")
+        }
+    }
 
     private static func shouldScanProductionStringLine(_ line: String) -> Bool {
         let allowedFragments = [
@@ -525,7 +533,7 @@ final class LocalizationTests: XCTestCase {
             "SUPublicEDKey",
             "SUFeedURL",
             "fatalError",
-            "systemName:",
+            "systemName:"
         ]
 
         return allowedFragments.contains { line.contains($0) } == false

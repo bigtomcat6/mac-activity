@@ -57,7 +57,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             .network,
             .temperature,
             .fan,
-            .battery,
+            .battery
         ])
 
         XCTAssertEqual(
@@ -217,7 +217,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 100,
                 totalBytes: 200,
                 progress: 0.5
-            ),
+            )
         ]
 
         let segments = DashboardOverviewLayout.storageUsageSegments(for: metrics)
@@ -248,13 +248,13 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 0,
                 totalBytes: 1_000,
                 progress: 0.0
-            ),
+            )
         ]
 
         XCTAssertEqual(
             DashboardOverviewLayout.storageUsageSegments(for: metrics),
             [
-                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
+                DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4)
             ]
         )
 
@@ -274,14 +274,14 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 10,
                 totalBytes: 1_000,
                 progress: 0.01
-            ),
+            )
         ]
 
         XCTAssertEqual(
             DashboardOverviewLayout.storageUsageSegments(for: smallSwapMetrics),
             [
                 DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.4),
-                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.02),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.4, widthProgress: 0.02)
             ]
         )
     }
@@ -299,14 +299,14 @@ final class DashboardCardLayoutTests: XCTestCase {
                 title: "Swap",
                 value: "50%",
                 progress: 0.5
-            ),
+            )
         ]
 
         XCTAssertEqual(
             DashboardOverviewLayout.storageUsageSegments(for: metrics),
             [
                 DashboardStorageUsageSegment(kind: .disk, startProgress: 0.0, widthProgress: 0.2),
-                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.5, widthProgress: 0.25),
+                DashboardStorageUsageSegment(kind: .swap, startProgress: 0.5, widthProgress: 0.25)
             ]
         )
     }
@@ -328,7 +328,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 0,
                 totalBytes: 1_000,
                 progress: 0.0
-            ),
+            )
         ]
 
         let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
@@ -361,14 +361,14 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 100,
                 totalBytes: 200,
                 progress: 0.5
-            ),
+            )
         ]
 
         XCTAssertEqual(
             DashboardOverviewLayout.storageUsageLabels(for: metrics),
             [
                 DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0, endProgress: 0.8),
-                DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1, endProgress: 0.9),
+                DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1, endProgress: 0.9)
             ]
         )
     }
@@ -376,7 +376,7 @@ final class DashboardCardLayoutTests: XCTestCase {
     func testOverviewStorageConnectorsStartBelowTheirLabelRows() {
         let labels = [
             DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0),
-            DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1),
+            DashboardStorageUsageLabel(kind: .swap, startProgress: 0.8, rowIndex: 1)
         ]
 
         XCTAssertEqual(DashboardOverviewLayout.storageConnectorYPosition(for: labels[0]), 14, accuracy: 0.001)
@@ -402,7 +402,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 usedBytes: 100,
                 totalBytes: 200,
                 progress: 0.5
-            ),
+            )
         ]
         let labels = DashboardOverviewLayout.storageUsageLabels(for: metrics)
         let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
@@ -649,7 +649,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 .gpu(GPUReading(usagePercent: 50)),
                 .disk(DiskReading(usedBytes: 750, totalBytes: 1_000)),
                 .swap(SwapReading(usedBytes: 256, totalBytes: 1_024)),
-                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000))
             ],
             timestamp: Date(timeIntervalSince1970: 21)
         )
@@ -672,7 +672,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         storageOnlyStore.apply(
             [
                 .disk(DiskReading(usedBytes: 400, totalBytes: 1_000)),
-                .swap(SwapReading(usedBytes: 100, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 100, totalBytes: 1_000))
             ],
             timestamp: Date(timeIntervalSince1970: 22)
         )
@@ -701,7 +701,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                         style: .memoryStackedChart,
                         trend: DashboardTrend(samples: [], scale: .fixed(lowerBound: 0, upperBound: 100)),
                         memoryTrend: DashboardMemoryTrend(samples: [])
-                    ),
+                    )
                 ]
             }
         )
@@ -722,7 +722,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             [
                 .temperature(TemperatureReading(celsius: 42, source: .smc)),
                 .fan(FanReading(rpm: 1_800)),
-                .battery(BatteryReading(percentage: 82, isCharging: false)),
+                .battery(BatteryReading(percentage: 82, isCharging: false))
             ],
             timestamp: Date(timeIntervalSince1970: 24)
         )
@@ -742,7 +742,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let store = MetricsStore()
         store.apply(
             [
-                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000)),
+                .memory(MemoryReading(usedBytes: 600, totalBytes: 1_000))
             ],
             timestamp: Date(timeIntervalSince1970: 23)
         )
@@ -783,7 +783,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                         pressurePercent: 60,
                         usedBytes: 6_000,
                         totalBytes: 10_000
-                    ),
+                    )
                 ])
             )
         ]
@@ -1049,7 +1049,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     cachedBytes: 300,
                     availableBytes: 600
                 )
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1080,7 +1080,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 80,
                 usedBytes: 800,
                 totalBytes: 1_000
-            ),
+            )
         ]
         let updatedSamples = firstSamples + [
             DashboardMemoryTrendSample(
@@ -1088,7 +1088,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 20,
                 usedBytes: 200,
                 totalBytes: 1_000
-            ),
+            )
         ]
 
         let firstSlots = RAMSegmentBarsLayout.displaySlots(
@@ -1130,7 +1130,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 50,
                 usedBytes: 500,
                 totalBytes: 1_000
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1163,7 +1163,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 50,
                 usedBytes: 500,
                 totalBytes: 1_000
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1226,7 +1226,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 RAMSegmentBarSlot(
                     bucketStart: Date(timeIntervalSince1970: 120),
                     sample: nil
-                ),
+                )
             ],
             slotCount: 2
         )
@@ -1249,7 +1249,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 60,
                 usedBytes: 0,
                 totalBytes: 0
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1364,7 +1364,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 40,
                 usedBytes: 400,
                 totalBytes: 1_000
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1399,7 +1399,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 pressurePercent: 90,
                 usedBytes: 900,
                 totalBytes: 1_000
-            ),
+            )
         ]
 
         let slots = RAMSegmentBarsLayout.displaySlots(
@@ -1434,7 +1434,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             [
                 RAMSegmentBarComponent(kind: .active, bytes: 300),
                 RAMSegmentBarComponent(kind: .compressed, bytes: 100),
-                RAMSegmentBarComponent(kind: .wired, bytes: 100),
+                RAMSegmentBarComponent(kind: .wired, bytes: 100)
             ]
         )
     }
@@ -1503,17 +1503,17 @@ final class DashboardCardLayoutTests: XCTestCase {
             return nil
         }
 
-        let x = Int(point.x.rounded(.down))
-        let y = Int(point.y.rounded(.down))
-        let pixelY = bitmap.pixelsHigh - y - 1
+        let pixelX = Int(point.x.rounded(.down))
+        let sourceY = Int(point.y.rounded(.down))
+        let pixelY = bitmap.pixelsHigh - sourceY - 1
 
-        guard (0..<bitmap.pixelsWide).contains(x),
+        guard (0..<bitmap.pixelsWide).contains(pixelX),
               (0..<bitmap.pixelsHigh).contains(pixelY)
         else {
             return nil
         }
 
-        return bitmap.colorAt(x: x, y: pixelY)?.usingColorSpace(.deviceRGB)
+        return bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB)
     }
 
     private static func colorsApproximatelyEqual(

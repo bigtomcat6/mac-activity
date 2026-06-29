@@ -15,7 +15,7 @@ final class AppPresentationCoordinatorTests: XCTestCase {
 
         XCTAssertEqual(recorder.events, [
             "install",
-            "activation:accessory",
+            "activation:accessory"
         ])
     }
 }

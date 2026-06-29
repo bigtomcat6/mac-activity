@@ -76,7 +76,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
     }
 
-
     func testRenderedProcessProgressUsesNeutralToneWhenWindowIsInactive() throws {
         let app = ActiveAppMemoryEntry(
             processIdentifier: 2_210,
@@ -460,8 +459,19 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             ),
             "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
         )
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 1, failedCount: 2, remainingBytes: nil),
+                bundle: english
+            ),
+            "Removed 1 item; 2 items could not be deleted."
+        )
         XCTAssertEqual(TrashCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Trash Cleanup Failed")
         XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
+        XCTAssertEqual(
+            TrashCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: english),
+            "Unable to delete Trash items."
+        )
     }
 
     func testDiskCleanupHelperTextMatchesCleanReleasePlan() {
@@ -509,8 +519,19 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             ),
             "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
         )
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(
+                for: .partial(bytes: 12_288, deletedCount: 1, failedCount: 2, remainingBytes: nil),
+                bundle: english
+            ),
+            "Removed 1 item; 2 items could not be deleted."
+        )
         XCTAssertEqual(DiskCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Disk Cleanup Failed")
         XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
+        XCTAssertEqual(
+            DiskCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: english),
+            "Unable to delete selected disk cleanup items."
+        )
     }
 
     func testMemoryHelperTextMatchesCleanReleasePlan() {
@@ -541,15 +562,45 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: english), "Released \(releasedBytes)")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: english), "2.5% of total memory")
+        XCTAssertEqual(
+            MemoryReleaseStatusView.title(for: .noSignificantRelease(observedBytes: 512), bundle: english),
+            "Memory Unchanged"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 512), bundle: english),
+            "No immediately releasable memory was found."
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.title(for: .cooldown(remainingSeconds: 5), bundle: english),
+            "Release Cooling Down"
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 5), bundle: english),
+            "Try again in 5.0 seconds."
+        )
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable, bundle: english), "Memory Release Not Available")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable, bundle: english), "No supported memory release method is available on this Mac.")
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed(.message("boom")), bundle: english), "Memory Release Failed")
         XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
+        XCTAssertEqual(
+            MemoryReleaseStatusView.subtitle(for: .failed(.exitCode(7)), bundle: english),
+            "Memory release failed with exit code 7."
+        )
         XCTAssertEqual(MemoryReleaseStatusView.title(for: .failedToReadMemory, bundle: english), "Memory Reading Failed")
         XCTAssertEqual(
             MemoryReleaseStatusView.subtitle(for: .failedToReadMemory, bundle: english),
             "Unable to compare before and after memory readings."
         )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.trailingAction(isReleasingMemory: true, bundle: english),
+            .progressIndicator
+        )
+        XCTAssertEqual(
+            MemoryReleaseStatusView.trailingAction(isReleasingMemory: false, bundle: english),
+            .button(title: "Release")
+        )
+        XCTAssertTrue(MemoryReleaseStatusView.showsProgressIndicator(for: .releasing(previousPercent: 44)))
+        XCTAssertFalse(MemoryReleaseStatusView.showsProgressIndicator(for: .idle))
     }
 
     func testProcessActionMessagesMatchCleanReleasePlan() {
@@ -596,17 +647,17 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             return nil
         }
 
-        let x = Int(point.x.rounded(.down))
-        let y = Int(point.y.rounded(.down))
-        let pixelY = bitmap.pixelsHigh - y - 1
+        let pixelX = Int(point.x.rounded(.down))
+        let sourceY = Int(point.y.rounded(.down))
+        let pixelY = bitmap.pixelsHigh - sourceY - 1
 
-        guard (0..<bitmap.pixelsWide).contains(x),
+        guard (0..<bitmap.pixelsWide).contains(pixelX),
               (0..<bitmap.pixelsHigh).contains(pixelY)
         else {
             return nil
         }
 
-        return bitmap.colorAt(x: x, y: pixelY)?.usingColorSpace(.deviceRGB)
+        return bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB)
     }
 
     private static func colorsApproximatelyEqual(

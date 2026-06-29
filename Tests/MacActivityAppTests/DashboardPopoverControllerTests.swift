@@ -28,7 +28,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             "activate-app",
             "show-popover",
             "focus-popover",
-            "visible:true",
+            "visible:true"
         ])
     }
 
@@ -49,7 +49,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
 
         XCTAssertEqual(recorder.events, [
-            "close-popover",
+            "close-popover"
         ])
     }
 
@@ -87,7 +87,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
 
         XCTAssertEqual(recorder.events, [
-            "visible:false",
+            "visible:false"
         ])
     }
 
