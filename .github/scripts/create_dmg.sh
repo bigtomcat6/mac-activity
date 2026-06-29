@@ -15,6 +15,7 @@ APPLICATIONS_X=442
 APPLICATIONS_Y=290
 APPLICATIONS_ALIAS_NAME="Applications"
 BACKGROUND_DIR_NAME=".background"
+DMG_HEADROOM_MEGABYTES=16
 
 WORK_DIR=""
 MOUNT_POINT=""
@@ -123,9 +124,20 @@ end run
 OSA
 }
 
+detach_mount() {
+  local mount_point="$1"
+
+  for attempt in 1 2 3; do
+    hdiutil detach "${mount_point}" >/dev/null 2>&1 && return 0
+    sleep "${attempt}"
+  done
+
+  hdiutil detach "${mount_point}" -force >/dev/null
+}
+
 cleanup() {
   if [[ -n "${MOUNT_POINT}" && -d "${MOUNT_POINT}" ]]; then
-    hdiutil detach "${MOUNT_POINT}" >/dev/null 2>&1 || hdiutil detach "${MOUNT_POINT}" -force >/dev/null 2>&1 || true
+    detach_mount "${MOUNT_POINT}" >/dev/null 2>&1 || true
   fi
   if [[ -n "${WORK_DIR}" && -d "${WORK_DIR}" ]]; then
     rm -rf "${WORK_DIR}"
@@ -186,9 +198,12 @@ mkdir -p "${STAGING_DIR}/${BACKGROUND_DIR_NAME}"
 ditto "${APP_PATH}" "${STAGING_DIR}/${APP_BASENAME}"
 ditto "${BACKGROUND_PATH}" "${STAGING_DIR}/${BACKGROUND_DIR_NAME}/${BACKGROUND_BASENAME}"
 create_applications_alias
+STAGING_SIZE_MEGABYTES="$(du -sm "${STAGING_DIR}" | awk '{print $1}')"
+RW_DMG_SIZE_MEGABYTES="$((STAGING_SIZE_MEGABYTES + DMG_HEADROOM_MEGABYTES))"
 
 rm -f "${OUTPUT_PATH}"
 hdiutil create \
+  -size "${RW_DMG_SIZE_MEGABYTES}m" \
   -volname "${VOLUME_NAME}" \
   -srcfolder "${STAGING_DIR}" \
   -ov \
@@ -200,7 +215,7 @@ mkdir -p "${MOUNT_POINT}"
 hdiutil attach -readwrite -nobrowse -mountpoint "${MOUNT_POINT}" "${RW_DMG_PATH}" >/dev/null
 apply_finder_layout "${MOUNT_POINT}"
 sync
-hdiutil detach "${MOUNT_POINT}" >/dev/null
+detach_mount "${MOUNT_POINT}"
 MOUNT_POINT=""
 
 hdiutil convert \
