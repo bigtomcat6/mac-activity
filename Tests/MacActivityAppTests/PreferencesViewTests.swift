@@ -163,6 +163,78 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertEqual(windowController.window?.contentViewController is NSHostingController<PreferencesView>, true)
     }
 
+    func testPreferencesWindowControllerCollapsesRenderedUpdateChannelAfterCloseAndReopen() throws {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+        defer { windowController.close() }
+
+        windowController.showWindow(nil)
+        let window = try XCTUnwrap(windowController.window)
+        let hostingController = try XCTUnwrap(window.contentViewController as? NSHostingController<PreferencesView>)
+        XCTAssertEqual(updateChannelPickerCount(in: window), 0)
+
+        hostingController.rootView.toggleUpdateChannelExpanded()
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(updateChannelPickerCount(in: window), 1)
+
+        window.close()
+        windowController.showWindow(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(updateChannelPickerCount(in: window), 0)
+    }
+
+    func testPreferencesWindowControllerKeepsHostedSettingsPageWhenReopening() throws {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+        defer { windowController.close() }
+
+        windowController.showWindow(nil)
+        let window = try XCTUnwrap(windowController.window)
+        let contentViewController = try XCTUnwrap(window.contentViewController)
+
+        window.close()
+        windowController.showWindow(nil)
+
+        XCTAssertTrue(window.contentViewController === contentViewController)
+    }
+
+    func testPreferencesWindowControllerKeepsUpdateChannelExpandedWhenAlreadyVisible() throws {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+        defer { windowController.close() }
+
+        windowController.showWindow(nil)
+        let window = try XCTUnwrap(windowController.window)
+        let hostingController = try XCTUnwrap(window.contentViewController as? NSHostingController<PreferencesView>)
+        hostingController.rootView.toggleUpdateChannelExpanded()
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(updateChannelPickerCount(in: window), 1)
+
+        windowController.showWindow(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(updateChannelPickerCount(in: window), 1)
+    }
+
     private func makeBundle(info: [String: String]) throws -> Bundle {
         let bundleURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
@@ -179,6 +251,18 @@ final class PreferencesViewTests: XCTestCase {
         infoPlist.addEntries(from: info)
         XCTAssertTrue(infoPlist.write(to: contentsURL.appendingPathComponent("Info.plist"), atomically: true))
         return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func updateChannelPickerCount(in window: NSWindow) -> Int {
+        allSubviews(of: window.contentView)
+            .compactMap { $0 as? NSPopUpButton }
+            .filter { $0.itemTitles.contains(AppLocalization.updateChannelTitle(for: .alpha)) }
+            .count
+    }
+
+    private func allSubviews(of view: NSView?) -> [NSView] {
+        guard let view else { return [] }
+        return view.subviews + view.subviews.flatMap(allSubviews)
     }
 }
 

@@ -1,10 +1,23 @@
 import SwiftUI
 import MacActivityCore
 
+@MainActor
+final class PreferencesViewState: ObservableObject {
+    @Published var isUpdateChannelExpanded: Bool
+
+    init(isUpdateChannelExpanded: Bool = false) {
+        self.isUpdateChannelExpanded = isUpdateChannelExpanded
+    }
+
+    func collapseUpdateChannel() {
+        isUpdateChannelExpanded = false
+    }
+}
+
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
     @ObservedObject private var localizationController = AppLocalizationController.shared
-    @State private var isUpdateChannelExpanded = false
+    @ObservedObject private var viewState: PreferencesViewState
 
     private let versionInfo: PreferencesVersionInfo
     private let checkForUpdates: () -> Void
@@ -12,12 +25,13 @@ struct PreferencesView: View {
     init(
         preferencesController: PreferencesController,
         versionInfo: PreferencesVersionInfo = .current(),
+        viewState: PreferencesViewState? = nil,
         isUpdateChannelExpanded: Bool = false,
         checkForUpdates: @escaping () -> Void
     ) {
         self.preferencesController = preferencesController
         self.versionInfo = versionInfo
-        self._isUpdateChannelExpanded = State(initialValue: isUpdateChannelExpanded)
+        self.viewState = viewState ?? PreferencesViewState(isUpdateChannelExpanded: isUpdateChannelExpanded)
         self.checkForUpdates = checkForUpdates
     }
 
@@ -191,18 +205,18 @@ struct PreferencesView: View {
                 Button {
                     toggleUpdateChannelExpanded()
                 } label: {
-                    Image(systemName: isUpdateChannelExpanded ? "chevron.up" : "chevron.down")
+                    Image(systemName: viewState.isUpdateChannelExpanded ? "chevron.up" : "chevron.down")
                         .imageScale(.small)
                 }
                 .buttonStyle(.borderless)
                 .help(
                     AppLocalization.string(
-                        isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
+                        viewState.isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
                     )
                 )
                 .accessibilityLabel(
                     AppLocalization.string(
-                        isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
+                        viewState.isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
                     )
                 )
 
@@ -211,7 +225,7 @@ struct PreferencesView: View {
                 Button(AppLocalization.string(.preferencesCheckForUpdates), action: checkForUpdates)
             }
 
-            if isUpdateChannelExpanded {
+            if viewState.isUpdateChannelExpanded {
                 HStack(spacing: 8) {
                     Text(AppLocalization.string(.preferencesUpdateChannel))
 
@@ -238,7 +252,7 @@ struct PreferencesView: View {
 
     func toggleUpdateChannelExpanded() {
         withAnimation(.easeInOut(duration: 0.16)) {
-            isUpdateChannelExpanded.toggle()
+            viewState.isUpdateChannelExpanded.toggle()
         }
     }
 
