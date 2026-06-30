@@ -71,24 +71,33 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertLessThanOrEqual(largestGap, 30)
     }
 
-    func testDisplaySamplesLeaveNetworkSeriesUnchanged() {
+    func testDisplaySamplesReduceDenseNetworkSeriesAndPreservePeaks() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let samples = (0..<24).map { index in
-            DashboardTrendSample(
+        var samples: [DashboardTrendSample] = []
+        for index in 0..<600 {
+            let sample = DashboardTrendSample(
                 timestamp: base.addingTimeInterval(Double(index)),
-                primaryValue: Double(index * 2_000),
-                secondaryValue: Double(index * 750)
+                primaryValue: index == 240 ? 95_000 : Double(index % 9) * 1_000,
+                secondaryValue: index == 360 ? 88_000 : Double(index % 7) * 500
             )
+            samples.append(sample)
         }
-
-        XCTAssertEqual(
-            DashboardTrendChartLayout.displaySamples(
-                for: samples,
-                kind: .network,
-                containerSize: CGSize(width: 280, height: 60)
-            ),
-            samples
+        let containerSize = CGSize(width: 280, height: 60)
+        let displaySamples = DashboardTrendChartLayout.displaySamples(
+            for: samples,
+            kind: .network,
+            containerSize: containerSize
         )
+
+        XCTAssertLessThan(displaySamples.count, samples.count)
+        XCTAssertLessThanOrEqual(
+            displaySamples.count,
+            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
+        )
+        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
+        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
+        XCTAssertTrue(displaySamples.contains { $0.primaryValue == 95_000 })
+        XCTAssertTrue(displaySamples.contains { $0.secondaryValue == 88_000 })
     }
 
     func testDisplaySampleBudgetUsesRestPlotWidthNotHoverWidth() {
