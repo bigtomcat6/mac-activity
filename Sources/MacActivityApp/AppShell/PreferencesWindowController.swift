@@ -37,7 +37,9 @@ final class PreferencesWindowController: NSWindowController {
     }
 
     override func showWindow(_ sender: Any?) {
-        viewState.collapseUpdateChannel()
+        if window?.isVisible != true {
+            viewState.collapseUpdateChannel()
+        }
         super.showWindow(sender)
     }
 }

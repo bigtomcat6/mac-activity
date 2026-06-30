@@ -211,6 +211,30 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertTrue(window.contentViewController === contentViewController)
     }
 
+    func testPreferencesWindowControllerKeepsUpdateChannelExpandedWhenAlreadyVisible() throws {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+        defer { windowController.close() }
+
+        windowController.showWindow(nil)
+        let window = try XCTUnwrap(windowController.window)
+        let hostingController = try XCTUnwrap(window.contentViewController as? NSHostingController<PreferencesView>)
+        hostingController.rootView.toggleUpdateChannelExpanded()
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(updateChannelPickerCount(in: window), 1)
+
+        windowController.showWindow(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        XCTAssertEqual(updateChannelPickerCount(in: window), 1)
+    }
+
     private func makeBundle(info: [String: String]) throws -> Bundle {
         let bundleURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
