@@ -6,6 +6,7 @@ import MacActivityCore
 @MainActor
 final class PreferencesWindowController: NSWindowController {
     private var cancellables: Set<AnyCancellable> = []
+    private let viewState = PreferencesViewState()
 
     init(
         preferencesController: PreferencesController,
@@ -13,10 +14,10 @@ final class PreferencesWindowController: NSWindowController {
     ) {
         let rootView = PreferencesView(
             preferencesController: preferencesController,
+            viewState: viewState,
             checkForUpdates: checkForUpdates
         )
-        let hostingController = NSHostingController(rootView: rootView)
-        let window = NSWindow(contentViewController: hostingController)
+        let window = NSWindow(contentViewController: NSHostingController(rootView: rootView))
         window.title = AppLocalization.string(.preferences)
         window.setContentSize(NSSize(width: 460, height: 520))
         window.styleMask = [.titled, .closable, .miniaturizable]
@@ -33,5 +34,10 @@ final class PreferencesWindowController: NSWindowController {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func showWindow(_ sender: Any?) {
+        viewState.collapseUpdateChannel()
+        super.showWindow(sender)
     }
 }
