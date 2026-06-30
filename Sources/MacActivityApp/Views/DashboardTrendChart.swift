@@ -971,14 +971,6 @@ struct DashboardTrendChartLayout {
         _ samples: ArraySlice<DashboardTrendSample>
     ) -> [DashboardTrendSample] {
         let bucket = Array(samples)
-        guard !bucket.isEmpty else {
-            return []
-        }
-
-        guard bucket.count > 2 else {
-            return bucket
-        }
-
         let average = averagedNetworkSample(bucket)
         let primaryPeak = bucket.max { $0.primaryValue < $1.primaryValue } ?? bucket[0]
         let secondaryPeak = bucket.max {
