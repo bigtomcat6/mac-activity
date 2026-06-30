@@ -156,7 +156,7 @@ struct DashboardTrendChart: View {
             updateDisplayedDomain(to: rawDomain, animated: true)
         }
         .animation(DashboardMotion.hoverAnimation, value: isHovering)
-        .animation(sampleAnimation ? DashboardMotion.sampleAnimation : nil, value: trend.samples)
+        .animation(sampleAnimation ? DashboardMotion.sampleAnimation : nil, value: displaySamples)
         .animation(DashboardMotion.domainAnimation, value: displayedDomain)
     }
 
@@ -901,10 +901,6 @@ struct DashboardTrendChartLayout {
         kind: MetricKind,
         containerSize: CGSize
     ) -> [DashboardTrendSample] {
-        guard kind != .network else {
-            return samples
-        }
-
         let budget = displaySampleBudget(for: containerSize)
         guard samples.count > budget, samples.count >= 3 else {
             return samples
@@ -922,6 +918,7 @@ struct DashboardTrendChartLayout {
         let overviewBudget = max(1, budget - recentSamples.count)
         let overviewSamples = sampledOverviewSamples(
             Array(samples.prefix(olderCount)),
+            kind: kind,
             budget: overviewBudget
         )
         var displaySamples = deduplicatedTimestamps(overviewSamples + recentSamples)
@@ -939,6 +936,7 @@ struct DashboardTrendChartLayout {
 
     private static func sampledOverviewSamples(
         _ samples: [DashboardTrendSample],
+        kind: MetricKind,
         budget: Int
     ) -> [DashboardTrendSample] {
         guard budget > 0, !samples.isEmpty else {
@@ -949,7 +947,8 @@ struct DashboardTrendChartLayout {
             return samples
         }
 
-        let bucketCount = max(1, budget / 3)
+        let bucketSize = kind == .network ? 4 : 3
+        let bucketCount = max(1, budget / bucketSize)
         let representatives = (0..<bucketCount).flatMap { bucketIndex -> [DashboardTrendSample] in
             let startIndex = bucketIndex * samples.count / bucketCount
             let endIndex = min(samples.count, (bucketIndex + 1) * samples.count / bucketCount)
@@ -957,10 +956,70 @@ struct DashboardTrendChartLayout {
                 return []
             }
 
-            return sampledOverviewBucket(samples[startIndex..<endIndex])
+            let bucket = samples[startIndex..<endIndex]
+            if kind == .network {
+                return sampledNetworkOverviewBucket(bucket)
+            }
+
+            return sampledOverviewBucket(bucket)
         }
 
         return representatives
+    }
+
+    private static func sampledNetworkOverviewBucket(
+        _ samples: ArraySlice<DashboardTrendSample>
+    ) -> [DashboardTrendSample] {
+        let bucket = Array(samples)
+        guard !bucket.isEmpty else {
+            return []
+        }
+
+        guard bucket.count > 2 else {
+            return bucket
+        }
+
+        let average = averagedNetworkSample(bucket)
+        let primaryPeak = bucket.max { $0.primaryValue < $1.primaryValue } ?? bucket[0]
+        let secondaryPeak = bucket.max {
+            ($0.secondaryValue ?? 0) < ($1.secondaryValue ?? 0)
+        } ?? bucket[0]
+        let candidates = [average, primaryPeak, secondaryPeak, bucket[bucket.count - 1]]
+
+        return deduplicatedTimestamps(candidates.sorted { $0.timestamp < $1.timestamp })
+    }
+
+    private static func averagedNetworkSample(
+        _ samples: [DashboardTrendSample]
+    ) -> DashboardTrendSample {
+        let timestampSum = samples.reduce(0) {
+            $0 + $1.timestamp.timeIntervalSinceReferenceDate
+        }
+        let primaryAverage = samples.reduce(0) { $0 + $1.primaryValue } / Double(samples.count)
+        let secondaryValues = samples.compactMap(\.secondaryValue)
+        let secondaryAverage = secondaryValues.isEmpty
+            ? nil
+            : secondaryValues.reduce(0, +) / Double(secondaryValues.count)
+        let averageTimestamp = Date(
+            timeIntervalSinceReferenceDate: timestampSum / Double(samples.count)
+        )
+
+        return DashboardTrendSample(
+            timestamp: uniqueAverageTimestamp(averageTimestamp, avoiding: samples),
+            primaryValue: primaryAverage,
+            secondaryValue: secondaryAverage
+        )
+    }
+
+    private static func uniqueAverageTimestamp(
+        _ timestamp: Date,
+        avoiding samples: [DashboardTrendSample]
+    ) -> Date {
+        guard samples.contains(where: { $0.timestamp == timestamp }) else {
+            return timestamp
+        }
+
+        return timestamp.addingTimeInterval(0.000_001)
     }
 
     private static func sampledOverviewBucket(

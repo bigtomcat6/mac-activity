@@ -816,27 +816,17 @@ struct RAMSegmentBarsLayout {
             from: bucketStart(containing: oldestSample.timestamp),
             through: latestBucketStart
         )
-        let samplesByBucket = Dictionary(
-            uniqueKeysWithValues: bucketStarts.compactMap { bucketStart -> (Date, DashboardMemoryTrendSample)? in
-                guard let sample = averagedSample(
-                    samplesInBucket(
-                        startingAt: bucketStart,
-                        samples: visibleSamples,
-                        referenceDate: referenceDate
-                    ),
-                    bucketStart: bucketStart
-                ) else {
+        let samplesByBucket = groupedSamplesByBucket(visibleSamples)
+        let averagedSamplesByBucket = Dictionary(
+            uniqueKeysWithValues: samplesByBucket.compactMap { bucketStart, samples -> (Date, DashboardMemoryTrendSample)? in
+                guard let sample = averagedSample(samples, bucketStart: bucketStart) else {
                     return nil
                 }
 
                 return (bucketStart, sample)
             }
         )
-        let latestSample = samplesInBucket(
-            startingAt: latestBucketStart,
-            samples: visibleSamples,
-            referenceDate: referenceDate
-        ).max { $0.timestamp < $1.timestamp }
+        let latestSample = samplesByBucket[latestBucketStart]?.max { $0.timestamp < $1.timestamp }
 
         let placeholderSlots = placeholderSlots(for: bucketStarts, slotCount: slotCount)
         let sampledSlots = bucketStarts.compactMap { bucketStart -> RAMSegmentBarSlot? in
@@ -849,7 +839,7 @@ struct RAMSegmentBarsLayout {
                 )
             }
 
-            guard let sample = samplesByBucket[bucketStart] else { return nil }
+            guard let sample = averagedSamplesByBucket[bucketStart] else { return nil }
             return RAMSegmentBarSlot(bucketStart: bucketStart, sample: sample)
         }
 
@@ -913,17 +903,15 @@ struct RAMSegmentBarsLayout {
         }
     }
 
-    private static func samplesInBucket(
-        startingAt bucketStart: Date,
-        samples: [DashboardMemoryTrendSample],
-        referenceDate: Date
-    ) -> [DashboardMemoryTrendSample] {
-        let bucketEnd = bucketStart.addingTimeInterval(bucketDuration)
-        return samples.filter {
-            $0.timestamp >= bucketStart
-                && $0.timestamp < bucketEnd
-                && $0.timestamp <= referenceDate
+    private static func groupedSamplesByBucket(
+        _ samples: [DashboardMemoryTrendSample]
+    ) -> [Date: [DashboardMemoryTrendSample]] {
+        var samplesByBucket: [Date: [DashboardMemoryTrendSample]] = [:]
+        for sample in samples {
+            samplesByBucket[bucketStart(containing: sample.timestamp), default: []].append(sample)
         }
+
+        return samplesByBucket
     }
 
     private static func bucketIndex(forSlotIndex slotIndex: Int, slotCount: Int, bucketCount: Int) -> Int {
