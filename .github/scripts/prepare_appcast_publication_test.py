@@ -44,6 +44,7 @@ class PrepareAppcastPublicationTests(unittest.TestCase):
         notes = (
             "<!-- MacActivityReleaseTag: v26.0.0-beta.2 -->\n"
             "<!-- MacActivityBundleBuild: 3 -->\n"
+            "<!-- MacActivityReleaseRunId: 28485055775 -->\n"
             "<!-- MacActivityPrerelease: 2 -->\n"
             "## Features\n"
         )

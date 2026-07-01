@@ -39,14 +39,32 @@ class ReleasePolicyTests(unittest.TestCase):
 
         self.assertIn("prerelease:", workflow_dispatch)
         self.assertIn("--prerelease", conflict_section)
-        self.assertIn("${{ inputs.prerelease }}", conflict_section)
+        self.assertIn('"${PRERELEASE}"', conflict_section)
         self.assertIn("--prerelease", metadata_section)
-        self.assertIn("${{ inputs.prerelease }}", metadata_section)
+        self.assertIn('"${PRERELEASE}"', metadata_section)
         self.assertIn("CFBundleVersion", workflow)
         self.assertIn("steps.release.outputs.build", workflow)
         self.assertIn("Validate prerelease input", workflow)
         self.assertIn("Final releases must leave prerelease empty.", workflow)
         self.assertIn("require a positive prerelease number", workflow)
+
+    def test_release_workflow_passes_dispatch_inputs_through_env_not_shell(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        lines = workflow.splitlines()
+
+        for index, line in enumerate(lines):
+            if not re.match(r"^\s+run: \|", line):
+                continue
+
+            indent = len(line) - len(line.lstrip())
+            body = []
+            for body_line in lines[index + 1:]:
+                body_indent = len(body_line) - len(body_line.lstrip())
+                if body_line.strip() and body_indent <= indent:
+                    break
+                body.append(body_line)
+
+            self.assertNotIn("${{ inputs.", "\n".join(body), f"unsafe input interpolation after line {index + 1}")
 
     def test_release_workflow_embeds_bundle_build_metadata_in_release_notes(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
@@ -54,6 +72,7 @@ class ReleasePolicyTests(unittest.TestCase):
 
         self.assertIn("MacActivityBundleBuild", notes_section)
         self.assertIn("steps.release.outputs.build", notes_section)
+        self.assertIn("MacActivityReleaseRunId", notes_section)
 
     def test_release_workflow_requires_main_before_ci_and_packaging(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
@@ -153,6 +172,12 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("git merge-base --is-ancestor", appcast_section)
         self.assertIn("reachable from main", appcast_section)
         self.assertIn("Validate release archive", appcast_section)
+        self.assertIn("actions: read", appcast_section)
+        self.assertIn("-SHA256SUMS.txt", appcast_section)
+        self.assertIn("MacActivityReleaseRunId", appcast_section)
+        self.assertIn("gh run view", appcast_section)
+        self.assertIn("gh run download", appcast_section)
+        self.assertIn("cmp -s", appcast_section)
         self.assertIn("MacActivityReleaseTag", appcast_section)
         self.assertIn("codesign --verify --deep --strict", appcast_section)
         self.assertIn("xcrun stapler validate", appcast_section)

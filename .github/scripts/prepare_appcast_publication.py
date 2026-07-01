@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 INTERNAL_METADATA_COMMENT_PATTERN = re.compile(
-    r"^<!--\s*MacActivity(?:ReleaseTag|BundleBuild|Prerelease):.*?-->\r?\n?",
+    r"^<!--\s*MacActivity(?:ReleaseTag|BundleBuild|ReleaseRunId|Prerelease):.*?-->\r?\n?",
     re.MULTILINE,
 )
 
