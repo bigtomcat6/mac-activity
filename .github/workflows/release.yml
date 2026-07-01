@@ -91,12 +91,15 @@ jobs:
           exit 1
 
       - name: Validate source dry-run input
+        env:
+          CREATE_GITHUB_RELEASE: ${{ inputs.create_github_release }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
         run: |
-          source_run_id="${{ inputs.source_run_id }}"
+          source_run_id="${SOURCE_RUN_ID}"
           if [[ -z "${source_run_id}" ]]; then
             exit 0
           fi
-          if [[ "${{ inputs.create_github_release }}" != "true" ]]; then
+          if [[ "${CREATE_GITHUB_RELEASE}" != "true" ]]; then
             echo "::error::source_run_id can only be used with create_github_release=true."
             exit 1
           fi
@@ -106,9 +109,12 @@ jobs:
           fi
 
       - name: Validate prerelease input
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          prerelease="${{ inputs.prerelease }}"
-          if [[ "${{ inputs.channel }}" == "release" ]]; then
+          prerelease="${PRERELEASE}"
+          if [[ "${CHANNEL}" == "release" ]]; then
             if [[ -n "${prerelease}" ]]; then
               echo "::error::Final releases must leave prerelease empty."
               exit 1
@@ -161,8 +167,10 @@ jobs:
 
       - name: Resolve build number
         id: build
+        env:
+          REQUESTED_BUILD: ${{ inputs.build }}
         run: |
-          build="${{ inputs.build }}"
+          build="${REQUESTED_BUILD}"
           if [[ -z "${build}" ]]; then
             build="${GITHUB_RUN_NUMBER}"
           fi
@@ -171,22 +179,31 @@ jobs:
       - name: Check release conflicts
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          BUILD: ${{ steps.build.outputs.build }}
         run: |
           python3 .github/scripts/plan_release.py \
-            --channel "${{ inputs.channel }}" \
-            --version "${{ inputs.version }}" \
-            --prerelease "${{ inputs.prerelease }}" \
-            --build "${{ steps.build.outputs.build }}" \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --prerelease "${PRERELEASE}" \
+            --build "${BUILD}" \
             --remote
 
       - name: Prepare release metadata
         id: release
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          BUILD: ${{ steps.build.outputs.build }}
         run: |
           python3 .github/scripts/prepare_release_metadata.py \
-            --channel "${{ inputs.channel }}" \
-            --version "${{ inputs.version }}" \
-            --prerelease "${{ inputs.prerelease }}" \
-            --build "${{ steps.build.outputs.build }}" \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --prerelease "${PRERELEASE}" \
+            --build "${BUILD}" \
             --xcconfig Configuration/Shared.xcconfig
 
       - name: Resolve release target commit
@@ -230,8 +247,9 @@ jobs:
         env:
           MAC_ACTIVITY_DEVELOPMENT_TEAM: ${{ vars.APPLE_TEAM_ID }}
           MAC_ACTIVITY_DEVELOPER_ID_IDENTITY: ${{ vars.DEVELOPER_ID_APPLICATION_IDENTITY }}
+          SIGNING: ${{ inputs.signing }}
         run: |
-          signing_arg="--${{ inputs.signing }}-signing"
+          signing_arg="--${SIGNING}-signing"
           MAC_ACTIVITY_DERIVED_DATA="${RUNNER_TEMP}/MacActivityRelease" \
             scripts/install-local-release.command \
               --build-only \
@@ -407,6 +425,7 @@ jobs:
           {
             echo "<!-- MacActivityReleaseTag: ${{ steps.release.outputs.tag }} -->"
             echo "<!-- MacActivityBundleBuild: ${{ steps.release.outputs.build }} -->"
+            echo "<!-- MacActivityReleaseRunId: ${GITHUB_RUN_ID} -->"
             if [[ -n "${{ steps.release.outputs.prerelease_number }}" ]]; then
               echo "<!-- MacActivityPrerelease: ${{ steps.release.outputs.prerelease_number }} -->"
             fi
@@ -479,10 +498,14 @@ jobs:
 
       - name: Resolve expected release artifact
         id: expected
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          channel="${{ inputs.channel }}"
-          version="${{ inputs.version }}"
-          prerelease="${{ inputs.prerelease }}"
+          channel="${CHANNEL}"
+          version="${VERSION}"
+          prerelease="${PRERELEASE}"
 
           if [[ "${channel}" == "release" ]]; then
             tag="v${version}"
@@ -514,8 +537,8 @@ jobs:
             echo "::error::Expected source run ${SOURCE_RUN_ID} to be completed successfully, got status=${status}, conclusion=${conclusion}."
             exit 1
           fi
-          if [[ "${head_sha}" != "${{ github.sha }}" ]]; then
-            echo "::error::Expected source run ${SOURCE_RUN_ID} to target ${{ github.sha }}, got ${head_sha}."
+          if [[ "${head_sha}" != "${GITHUB_SHA}" ]]; then
+            echo "::error::Expected source run ${SOURCE_RUN_ID} to target ${GITHUB_SHA}, got ${head_sha}."
             exit 1
           fi
 
@@ -537,6 +560,9 @@ jobs:
           DOWNLOAD_DIR: ${{ steps.download.outputs.download_dir }}
           TAG: ${{ steps.expected.outputs.tag }}
           ARTIFACT_STEM: ${{ steps.expected.outputs.artifact_stem }}
+          REQUESTED_BUILD: ${{ inputs.build }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+          VERSION: ${{ inputs.version }}
         run: |
           zip_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}.zip"
           dsym_path="${DOWNLOAD_DIR}/${ARTIFACT_STEM}-dSYM.zip"
@@ -558,6 +584,7 @@ jobs:
 
           artifact_tag="$(sed -nE 's/^<!-- MacActivityReleaseTag: ([^ ]+) -->$/\1/p' "${notes_path}" | head -n 1)"
           artifact_build="$(sed -nE 's/^<!-- MacActivityBundleBuild: ([1-9][0-9]*) -->$/\1/p' "${notes_path}" | head -n 1)"
+          artifact_run_id="$(sed -nE 's/^<!-- MacActivityReleaseRunId: ([1-9][0-9]*) -->$/\1/p' "${notes_path}" | head -n 1)"
           if [[ "${artifact_tag}" != "${TAG}" ]]; then
             echo "::error::Expected release notes tag ${TAG}, got ${artifact_tag}."
             exit 1
@@ -566,8 +593,12 @@ jobs:
             echo "::error::Release notes are missing MacActivityBundleBuild metadata."
             exit 1
           fi
-          if [[ -n "${{ inputs.build }}" && "${artifact_build}" != "${{ inputs.build }}" ]]; then
-            echo "::error::Expected dry-run build ${{ inputs.build }}, got ${artifact_build}."
+          if [[ "${artifact_run_id}" != "${SOURCE_RUN_ID}" ]]; then
+            echo "::error::Expected release notes run ID ${SOURCE_RUN_ID}, got ${artifact_run_id}."
+            exit 1
+          fi
+          if [[ -n "${REQUESTED_BUILD}" && "${artifact_build}" != "${REQUESTED_BUILD}" ]]; then
+            echo "::error::Expected dry-run build ${REQUESTED_BUILD}, got ${artifact_build}."
             exit 1
           fi
 
@@ -586,8 +617,8 @@ jobs:
           actual_version="$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "${info_plist}")"
           actual_release_tag="$(/usr/libexec/PlistBuddy -c "Print MacActivityReleaseTag" "${info_plist}")"
           actual_build="$(/usr/libexec/PlistBuddy -c "Print CFBundleVersion" "${info_plist}")"
-          if [[ "${actual_version}" != "${{ inputs.version }}" ]]; then
-            echo "::error::Expected CFBundleShortVersionString ${{ inputs.version }}, got ${actual_version}."
+          if [[ "${actual_version}" != "${VERSION}" ]]; then
+            echo "::error::Expected CFBundleShortVersionString ${VERSION}, got ${actual_version}."
             exit 1
           fi
           if [[ "${actual_release_tag}" != "${TAG}" ]]; then
@@ -642,22 +673,31 @@ jobs:
       - name: Check release conflicts
         env:
           GH_TOKEN: ${{ github.token }}
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          BUILD: ${{ steps.artifact.outputs.build }}
         run: |
           python3 .github/scripts/plan_release.py \
-            --channel "${{ inputs.channel }}" \
-            --version "${{ inputs.version }}" \
-            --prerelease "${{ inputs.prerelease }}" \
-            --build "${{ steps.artifact.outputs.build }}" \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --prerelease "${PRERELEASE}" \
+            --build "${BUILD}" \
             --remote
 
       - name: Prepare release metadata
         id: release
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          PRERELEASE: ${{ inputs.prerelease }}
+          BUILD: ${{ steps.artifact.outputs.build }}
         run: |
           python3 .github/scripts/prepare_release_metadata.py \
-            --channel "${{ inputs.channel }}" \
-            --version "${{ inputs.version }}" \
-            --prerelease "${{ inputs.prerelease }}" \
-            --build "${{ steps.artifact.outputs.build }}" \
+            --channel "${CHANNEL}" \
+            --version "${VERSION}" \
+            --prerelease "${PRERELEASE}" \
+            --build "${BUILD}" \
             --xcconfig Configuration/Shared.xcconfig
 
       - name: Create GitHub Release

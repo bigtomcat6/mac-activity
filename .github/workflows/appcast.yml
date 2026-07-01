@@ -11,6 +11,7 @@ on:
         type: string
 
 permissions:
+  actions: read
   contents: write
   id-token: write
   pages: write
@@ -72,6 +73,7 @@ jobs:
 
           {
             echo "tag=${RELEASE_TAG}"
+            echo "tag_commit=${tag_commit}"
             echo "channel=${channel}"
             echo "publish=${publish}"
           } >> "${GITHUB_OUTPUT}"
@@ -86,11 +88,16 @@ jobs:
           mkdir -p "${archive_dir}"
 
           asset_name="MacActivity-${TAG}.zip"
+          checksums_name="MacActivity-${TAG}-SHA256SUMS.txt"
           gh release download "${TAG}" --pattern "${asset_name}" --dir "${archive_dir}" --clobber
-          if [[ ! -f "${archive_dir}/${asset_name}" ]]; then
-            echo "::error::Expected release asset ${asset_name}."
-            exit 1
-          fi
+          gh release download "${TAG}" --pattern "${checksums_name}" --dir "${archive_dir}" --clobber
+
+          for asset in "${asset_name}" "${checksums_name}"; do
+            if [[ ! -f "${archive_dir}/${asset}" ]]; then
+              echo "::error::Expected release asset ${asset}."
+              exit 1
+            fi
+          done
 
           gh release view "${TAG}" --json body --jq '.body // ""' \
             > "${archive_dir}/MacActivity-${TAG}.md"
@@ -98,18 +105,78 @@ jobs:
       - name: Validate release archive
         if: ${{ steps.release.outputs.publish == 'true' }}
         env:
+          GH_TOKEN: ${{ github.token }}
           TAG: ${{ steps.release.outputs.tag }}
+          TAG_COMMIT: ${{ steps.release.outputs.tag_commit }}
         run: |
           archive_dir="${RUNNER_TEMP}/sparkle-archives"
+          artifact_dir="${RUNNER_TEMP}/sparkle-source-artifact"
           expanded_dir="${RUNNER_TEMP}/sparkle-expanded"
+          asset_name="MacActivity-${TAG}.zip"
+          checksums_name="MacActivity-${TAG}-SHA256SUMS.txt"
+          notes_name="MacActivity-${TAG}.md"
+          zip_path="${archive_dir}/${asset_name}"
+          checksums_path="${archive_dir}/${checksums_name}"
+          notes_path="${archive_dir}/${notes_name}"
+
+          expected_zip_checksum="$(awk -v name="${asset_name}" '$2 == name { print $1 }' "${checksums_path}" | head -n 1)"
+          actual_zip_checksum="$(shasum -a 256 "${zip_path}" | awk '{ print $1 }')"
+          if [[ -z "${expected_zip_checksum}" ]]; then
+            echo "::error::Expected ${checksums_name} to include ${asset_name}."
+            exit 1
+          fi
+          if [[ "${actual_zip_checksum}" != "${expected_zip_checksum}" ]]; then
+            echo "::error::Release ZIP checksum mismatch for ${asset_name}."
+            exit 1
+          fi
+
+          source_run_id="$(sed -nE 's/^<!-- MacActivityReleaseRunId: ([1-9][0-9]*) -->$/\1/p' "${notes_path}" | head -n 1)"
+          if [[ -z "${source_run_id}" ]]; then
+            echo "::error::Release notes are missing MacActivityReleaseRunId metadata."
+            exit 1
+          fi
+
+          source_json="$(gh run view "${source_run_id}" --json conclusion,headSha,status,workflowName)"
+          status="$(jq -r '.status' <<< "${source_json}")"
+          conclusion="$(jq -r '.conclusion' <<< "${source_json}")"
+          head_sha="$(jq -r '.headSha' <<< "${source_json}")"
+          workflow_name="$(jq -r '.workflowName' <<< "${source_json}")"
+
+          if [[ "${workflow_name}" != "Release" ]]; then
+            echo "::error::Expected source run ${source_run_id} to use the Release workflow, got ${workflow_name}."
+            exit 1
+          fi
+          if [[ "${status}" != "completed" || "${conclusion}" != "success" ]]; then
+            echo "::error::Expected source run ${source_run_id} to be completed successfully, got status=${status}, conclusion=${conclusion}."
+            exit 1
+          fi
+          if [[ "${head_sha}" != "${TAG_COMMIT}" ]]; then
+            echo "::error::Expected source run ${source_run_id} to target ${TAG_COMMIT}, got ${head_sha}."
+            exit 1
+          fi
+
+          rm -rf "${artifact_dir}"
+          mkdir -p "${artifact_dir}"
+          gh run download "${source_run_id}" --name "MacActivity-${TAG}" --dir "${artifact_dir}"
+          for artifact in "${asset_name}" "${checksums_name}"; do
+            if [[ ! -f "${artifact_dir}/${artifact}" ]]; then
+              echo "::error::Expected source workflow artifact ${artifact}."
+              exit 1
+            fi
+            if ! cmp -s "${archive_dir}/${artifact}" "${artifact_dir}/${artifact}"; then
+              echo "::error::Release asset ${artifact} does not match source workflow artifact."
+              exit 1
+            fi
+          done
+
           rm -rf "${expanded_dir}"
           mkdir -p "${expanded_dir}"
 
-          ditto -x -k "${archive_dir}/MacActivity-${TAG}.zip" "${expanded_dir}"
+          ditto -x -k "${zip_path}" "${expanded_dir}"
           app="${expanded_dir}/Mac Activity.app"
           info_plist="${app}/Contents/Info.plist"
           if [[ ! -d "${app}" ]]; then
-            echo "::error::Expected Mac Activity.app in MacActivity-${TAG}.zip."
+            echo "::error::Expected Mac Activity.app in ${asset_name}."
             exit 1
           fi
 
