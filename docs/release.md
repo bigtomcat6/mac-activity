@@ -199,6 +199,10 @@ The appcast workflow requires `SPARKLE_ED_PRIVATE_KEY`.
 Release notes are generated from merged pull requests by
 `.github/scripts/generate_release_notes.py`.
 
+Prerelease notes are incremental from the latest reachable tag. Final release
+notes are cumulative from the previous final release tag; when there is no
+previous final release, the first final release includes the full release train.
+
 Apply one release-note label to every release-relevant PR before merge. Use
 `skip-release-notes` for PRs that should not appear in user-facing release
 notes.
