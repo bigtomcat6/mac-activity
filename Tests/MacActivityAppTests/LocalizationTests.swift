@@ -576,11 +576,8 @@ final class LocalizationTests: XCTestCase {
         let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?[d@f]"
         let regex = regex(pattern)
         let range = NSRange(string.startIndex..<string.endIndex, in: string)
-        return regex.matches(in: string, range: range).compactMap { match in
-            guard let matchRange = Range(match.range, in: string) else {
-                return nil
-            }
-            return String(string[matchRange])
+        return regex.matches(in: string, range: range).map { match in
+            String(string[Range(match.range, in: string)!])
         }
     }
 
