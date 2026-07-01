@@ -101,6 +101,8 @@ jobs:
 
           gh release view "${TAG}" --json body --jq '.body // ""' \
             > "${archive_dir}/MacActivity-${TAG}.md"
+          echo "Normalize release notes line endings for metadata parsing."
+          perl -0pi -e 's/\r\n/\n/g; s/\r/\n/g' "${archive_dir}/MacActivity-${TAG}.md"
 
       - name: Validate release archive
         if: ${{ steps.release.outputs.publish == 'true' }}

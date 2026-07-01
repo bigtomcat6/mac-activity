@@ -219,6 +219,18 @@ class ReleasePolicyTests(unittest.TestCase):
         deploy_section = appcast_section.split("deploy-pages:", 1)[1]
         self.assertNotIn("name: github-pages", deploy_section)
 
+    def test_appcast_workflow_normalizes_release_notes_line_endings(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "appcast.yml").read_text()
+        download_section = workflow.split("- name: Download release archive", 1)[1].split(
+            "- name: Validate release archive",
+            1,
+        )[0]
+
+        self.assertIn("Normalize release notes line endings", download_section)
+        self.assertIn("perl -0pi -e", download_section)
+        self.assertIn(r"s/\r\n/\n/g; s/\r/\n/g", download_section)
+        self.assertIn('MacActivity-${TAG}.md', download_section)
+
     def test_release_workflow_validates_internal_release_tag(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         validation_section = workflow.split("- name: Validate bundle version", 1)[1].split("- name: Notarize", 1)[0]
