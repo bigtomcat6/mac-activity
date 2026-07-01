@@ -9,6 +9,11 @@ final class LocalizationTests: XCTestCase {
 
         XCTAssertTrue(languages.contains("en"))
         XCTAssertTrue(languages.contains("zh-Hans"))
+        XCTAssertTrue(languages.contains("zh-Hant"))
+        XCTAssertTrue(languages.contains("ja"))
+        XCTAssertTrue(languages.contains("ko"))
+        XCTAssertTrue(languages.contains("de"))
+        XCTAssertTrue(languages.contains("fr"))
         XCTAssertFalse(languages.contains("Base"))
     }
 
@@ -35,10 +40,10 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testUnsupportedLanguageIdentifierDoesNotFallBackToEnglish() {
-        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "fr"))
-        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "zh-Hant"))
-        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "fr").preferredLanguageIdentifier)
-        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "zh-Hant").preferredLanguageIdentifier)
+        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "es"))
+        XCTAssertNil(AppLocalization.bundle(forLanguageIdentifier: "ru-RU"))
+        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "es").preferredLanguageIdentifier)
+        XCTAssertNil(AppLanguage(preferredLanguageIdentifier: "ru-RU").preferredLanguageIdentifier)
     }
 
     func testAppLanguageOptionsIncludeSystemAndBundledLanguages() {
@@ -47,6 +52,11 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(languages.first?.preferredLanguageIdentifier, nil)
         XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "en" })
         XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "zh-Hans" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "zh-Hant" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "ja" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "ko" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "de" })
+        XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "fr" })
     }
 
     func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
@@ -75,6 +85,22 @@ final class LocalizationTests: XCTestCase {
                     bundle.localizedString(forKey: key, value: nil, table: nil),
                     key,
                     "Missing \(key) in \(language)"
+                )
+            }
+        }
+    }
+
+    func testLocalizedFormatPlaceholdersMatchEnglish() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+
+        for language in AppLocalization.availableLanguageIdentifiers() where language != "en" {
+            let localized = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
+            for key in AppLocalization.Key.allCases {
+                let keyValue = key.rawValue
+                XCTAssertEqual(
+                    Self.formatPlaceholders(in: localized.localizedString(forKey: keyValue, value: nil, table: nil)),
+                    Self.formatPlaceholders(in: english.localizedString(forKey: keyValue, value: nil, table: nil)),
+                    "Format placeholders for \(keyValue) in \(language) must match English"
                 )
             }
         }
@@ -521,6 +547,18 @@ final class LocalizationTests: XCTestCase {
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
         (try? NSRegularExpression(pattern: pattern))!
+    }
+
+    private static func formatPlaceholders(in string: String) -> [String] {
+        let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?[d@f]"
+        let regex = regex(pattern)
+        let range = NSRange(string.startIndex..<string.endIndex, in: string)
+        return regex.matches(in: string, range: range).compactMap { match in
+            guard let matchRange = Range(match.range, in: string) else {
+                return nil
+            }
+            return String(string[matchRange])
+        }
     }
 
     private static func shouldScanProductionStringLine(_ line: String) -> Bool {
