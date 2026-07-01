@@ -419,6 +419,7 @@ jobs:
           python3 .github/scripts/generate_release_notes.py \
             --repo "${GITHUB_REPOSITORY}" \
             --target "${{ steps.target.outputs.sha }}" \
+            --current-tag "${{ steps.release.outputs.tag }}" \
             --output "${notes_path}"
 
           metadata_path="${notes_path}.metadata"

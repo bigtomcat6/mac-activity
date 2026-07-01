@@ -3,6 +3,10 @@
 Release notes are generated from merged pull requests by
 `.github/scripts/generate_release_notes.py`.
 
+Prerelease notes are incremental from the latest reachable tag. Final release
+notes are cumulative from the previous final release tag; when there is no
+previous final release, the first final release includes the full release train.
+
 Agents working on PRs should apply one release-note label to every PR before it
 is merged. Use `skip-release-notes` for PRs that should not appear in user-facing
 release notes.

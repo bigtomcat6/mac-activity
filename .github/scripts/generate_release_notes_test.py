@@ -125,6 +125,55 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertEqual(len(pull_requests), 1)
         self.assertEqual(pull_requests[0].number, 7)
 
+    def test_final_release_notes_use_previous_stable_tag(self):
+        commands = []
+
+        def run_command(command):
+            commands.append(command)
+            if command[:3] == ["git", "tag", "--merged"]:
+                return "v26.0.0-beta.5\nv26.0.0-beta.4\nv25.2.0\nv25.2.0-rc.1"
+            raise AssertionError(f"unexpected command: {command}")
+
+        previous_tag = generate_release_notes.find_previous_tag(
+            "release-sha",
+            current_tag="v26.0.0",
+            run=run_command,
+        )
+
+        self.assertEqual(previous_tag, "v25.2.0")
+        self.assertEqual(
+            commands,
+            [["git", "tag", "--merged", "release-sha", "--sort=-creatordate"]],
+        )
+
+    def test_first_final_release_notes_include_entire_train(self):
+        def run_command(command):
+            if command[:3] == ["git", "tag", "--merged"]:
+                return "v26.0.0-beta.5\nv26.0.0-alpha.1"
+            raise AssertionError(f"unexpected command: {command}")
+
+        previous_tag = generate_release_notes.find_previous_tag(
+            "release-sha",
+            current_tag="v26.0.0",
+            run=run_command,
+        )
+
+        self.assertIsNone(previous_tag)
+
+    def test_prerelease_notes_still_use_latest_reachable_tag(self):
+        def run_command(command):
+            if command == ["git", "describe", "--tags", "--abbrev=0", "release-sha"]:
+                return "v26.0.0-beta.4"
+            raise AssertionError(f"unexpected command: {command}")
+
+        previous_tag = generate_release_notes.find_previous_tag(
+            "release-sha",
+            current_tag="v26.0.0-beta.5",
+            run=run_command,
+        )
+
+        self.assertEqual(previous_tag, "v26.0.0-beta.4")
+
 
 if __name__ == "__main__":
     unittest.main()

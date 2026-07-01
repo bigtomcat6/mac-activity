@@ -68,11 +68,25 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_release_workflow_embeds_bundle_build_metadata_in_release_notes(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
-        notes_section = workflow.split("- name: Generate release notes", 1)[1].split("- name: Upload workflow artifact", 1)[0]
+        notes_section = workflow.split("- name: Generate release notes", 1)[1].split(
+            "- name: Upload workflow artifact",
+            1,
+        )[0]
 
         self.assertIn("MacActivityBundleBuild", notes_section)
         self.assertIn("steps.release.outputs.build", notes_section)
         self.assertIn("MacActivityReleaseRunId", notes_section)
+
+    def test_release_workflow_passes_current_tag_to_release_notes_generator(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
+        notes_section = workflow.split("- name: Generate release notes", 1)[1].split(
+            "- name: Upload workflow artifact",
+            1,
+        )[0]
+
+        self.assertIn("generate_release_notes.py", notes_section)
+        self.assertIn("--current-tag", notes_section)
+        self.assertIn("steps.release.outputs.tag", notes_section)
 
     def test_release_workflow_requires_main_before_ci_and_packaging(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()

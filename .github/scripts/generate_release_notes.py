@@ -20,6 +20,7 @@ SECTION_ORDER = (
 OTHER_SECTION = "## Other Changes"
 SKIP_LABEL = "skip-release-notes"
 CONVENTIONAL_TITLE_PREFIX = re.compile(r"^[a-zA-Z]+(?:\([^)]+\))?!?:\s+")
+STABLE_RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
 TERMINAL_PUNCTUATION = (".", "!", "?", ")", "]", "`")
 
 
@@ -125,11 +126,44 @@ def run_command(command: list[str]) -> str:
     return completed.stdout.strip()
 
 
-def find_previous_tag(target: str) -> str | None:
+def is_stable_release_tag(tag: str) -> bool:
+    return bool(STABLE_RELEASE_TAG.fullmatch(tag))
+
+
+def find_latest_reachable_tag(target: str, run=run_command) -> str | None:
     try:
-        return run_command(["git", "describe", "--tags", "--abbrev=0", target])
+        return run(["git", "describe", "--tags", "--abbrev=0", target])
     except subprocess.CalledProcessError:
         return None
+
+
+def find_previous_stable_tag(
+    target: str,
+    current_tag: str,
+    run=run_command,
+) -> str | None:
+    try:
+        output = run(["git", "tag", "--merged", target, "--sort=-creatordate"])
+    except subprocess.CalledProcessError:
+        return None
+
+    for tag in output.splitlines():
+        tag = tag.strip()
+        if tag == current_tag:
+            continue
+        if is_stable_release_tag(tag):
+            return tag
+    return None
+
+
+def find_previous_tag(
+    target: str,
+    current_tag: str | None = None,
+    run=run_command,
+) -> str | None:
+    if current_tag and is_stable_release_tag(current_tag):
+        return find_previous_stable_tag(target, current_tag, run=run)
+    return find_latest_reachable_tag(target, run=run)
 
 
 def commits_since(previous_tag: str | None, target: str) -> list[str]:
@@ -171,6 +205,14 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="Previous release tag. Defaults to the latest reachable tag before target.",
     )
+    parser.add_argument(
+        "--current-tag",
+        default=None,
+        help=(
+            "Current release tag. Stable tags default previous-tag selection to the "
+            "latest stable tag before target."
+        ),
+    )
     parser.add_argument("--output", required=True, help="Release notes markdown output path.")
     return parser.parse_args(argv)
 
@@ -179,7 +221,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     previous_tag = args.previous_tag
     if previous_tag is None:
-        previous_tag = find_previous_tag(args.target)
+        previous_tag = find_previous_tag(args.target, current_tag=args.current_tag)
 
     try:
         pull_requests = collect_pull_requests(args.repo, args.target, previous_tag)
