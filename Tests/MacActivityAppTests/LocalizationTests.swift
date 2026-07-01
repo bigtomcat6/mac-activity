@@ -125,6 +125,25 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testGeneratedXcodeProjectIncludesBundledLocalizations() throws {
+        let project = try String(
+            contentsOf: Self.packageRootURL().appendingPathComponent("MacActivity.xcodeproj/project.pbxproj"),
+            encoding: .utf8
+        )
+
+        for language in AppLocalization.availableLanguageIdentifiers() {
+            XCTAssertTrue(
+                project.contains("path = \(quotedProjectValue("\(language).lproj/Localizable.strings"));"),
+                language
+            )
+            XCTAssertTrue(
+                project.contains("path = \(quotedProjectValue("\(language).lproj/InfoPlist.strings"));"),
+                language
+            )
+            XCTAssertTrue(project.contains("\n\t\t\t\t\(quotedProjectValue(language)),"))
+        }
+    }
+
     func testDashboardMetricTitlesAndDetailsLocalizeFromSemanticRoles() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let disk = DashboardMetric(kind: .disk, titleRole: .metric(.disk), value: "75%")
@@ -512,6 +531,10 @@ final class LocalizationTests: XCTestCase {
         }
 
         return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func quotedProjectValue(_ value: String) -> String {
+        value.contains("-") ? "\"\(value)\"" : value
     }
 
     private static let hardcodedProductionStringPatterns: [(name: String, regex: NSRegularExpression)] = [
