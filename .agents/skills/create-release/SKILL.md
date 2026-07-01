@@ -91,6 +91,11 @@ Inspect the run conclusion, artifact, checksum, and release notes expectation.
 Stop and ask whether to create the draft release for the exact tag that passed
 the dry run.
 
+For prereleases, generated release notes are incremental from the latest
+reachable tag. For final releases, generated release notes must be cumulative
+from the previous final release tag; when there is no previous final release,
+the first final release includes the full alpha/beta/rc train.
+
 ## Phase 2: Draft GitHub Release
 
 Only continue after explicit confirmation. The workflow always creates GitHub
