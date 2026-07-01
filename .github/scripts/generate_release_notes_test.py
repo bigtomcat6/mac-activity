@@ -131,7 +131,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         def run_command(command):
             commands.append(command)
             if command[:3] == ["git", "tag", "--merged"]:
-                return "v26.0.0-beta.5\nv26.0.0-beta.4\nv25.2.0\nv25.2.0-rc.1"
+                return "v25.1.0\nv26.0.0-beta.5\nv25.2.0\nv25.2.0-rc.1"
             raise AssertionError(f"unexpected command: {command}")
 
         previous_tag = generate_release_notes.find_previous_tag(
@@ -143,7 +143,7 @@ class GenerateReleaseNotesTests(unittest.TestCase):
         self.assertEqual(previous_tag, "v25.2.0")
         self.assertEqual(
             commands,
-            [["git", "tag", "--merged", "release-sha", "--sort=-creatordate"]],
+            [["git", "tag", "--merged", "release-sha"]],
         )
 
     def test_first_final_release_notes_include_entire_train(self):

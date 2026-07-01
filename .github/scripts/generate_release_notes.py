@@ -20,7 +20,7 @@ SECTION_ORDER = (
 OTHER_SECTION = "## Other Changes"
 SKIP_LABEL = "skip-release-notes"
 CONVENTIONAL_TITLE_PREFIX = re.compile(r"^[a-zA-Z]+(?:\([^)]+\))?!?:\s+")
-STABLE_RELEASE_TAG = re.compile(r"^v\d+\.\d+\.\d+$")
+STABLE_RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 TERMINAL_PUNCTUATION = (".", "!", "?", ")", "]", "`")
 
 
@@ -127,7 +127,14 @@ def run_command(command: list[str]) -> str:
 
 
 def is_stable_release_tag(tag: str) -> bool:
-    return bool(STABLE_RELEASE_TAG.fullmatch(tag))
+    return stable_release_version(tag) is not None
+
+
+def stable_release_version(tag: str) -> tuple[int, int, int] | None:
+    match = STABLE_RELEASE_TAG.fullmatch(tag)
+    if not match:
+        return None
+    return tuple(int(part) for part in match.groups())
 
 
 def find_latest_reachable_tag(target: str, run=run_command) -> str | None:
@@ -142,18 +149,25 @@ def find_previous_stable_tag(
     current_tag: str,
     run=run_command,
 ) -> str | None:
+    current_version = stable_release_version(current_tag)
+    if current_version is None:
+        return None
+
     try:
-        output = run(["git", "tag", "--merged", target, "--sort=-creatordate"])
+        output = run(["git", "tag", "--merged", target])
     except subprocess.CalledProcessError:
         return None
 
+    candidates = []
     for tag in output.splitlines():
         tag = tag.strip()
-        if tag == current_tag:
-            continue
-        if is_stable_release_tag(tag):
-            return tag
-    return None
+        version = stable_release_version(tag)
+        if version and version < current_version:
+            candidates.append((version, tag))
+
+    if not candidates:
+        return None
+    return max(candidates)[1]
 
 
 def find_previous_tag(
