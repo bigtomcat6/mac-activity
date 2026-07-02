@@ -1,7 +1,12 @@
 import XCTest
+import IOKit.ps
 @testable import MacActivityCore
 
 final class BatteryProviderTests: XCTestCase {
+    func testDefaultProviderCanBeConstructed() {
+        _ = BatteryProvider()
+    }
+
     func testBatteryReadingUsesHardwarePercentageWhenRequestedAndAvailable() {
         let reading = BatteryReading(
             percentage: 79,
@@ -32,6 +37,61 @@ final class BatteryProviderTests: XCTestCase {
 
         XCTAssertFalse(reading.isCharging)
         XCTAssertTrue(reading.isConnectedToPower)
+    }
+
+    func testPowerSourceDescriptionReadsConnectedPowerState() throws {
+        let acPowerReading = try XCTUnwrap(
+            BatteryProvider.batteryReading(
+                fromPowerSourceDescription: [
+                    kIOPSIsPresentKey as String: true,
+                    kIOPSCurrentCapacityKey as String: 40.0,
+                    kIOPSMaxCapacityKey as String: 80.0,
+                    kIOPSIsChargingKey as String: false,
+                    kIOPSPowerSourceStateKey as String: kIOPSACPowerValue
+                ]
+            )
+        )
+        let batteryPowerReading = try XCTUnwrap(
+            BatteryProvider.batteryReading(
+                fromPowerSourceDescription: [
+                    kIOPSIsPresentKey as String: true,
+                    kIOPSCurrentCapacityKey as String: 40.0,
+                    kIOPSMaxCapacityKey as String: 80.0,
+                    kIOPSIsChargingKey as String: false,
+                    kIOPSPowerSourceStateKey as String: "Battery Power"
+                ]
+            )
+        )
+
+        XCTAssertEqual(
+            acPowerReading,
+            BatteryReading(percentage: 50, isCharging: false, isConnectedToPower: true)
+        )
+        XCTAssertEqual(
+            batteryPowerReading,
+            BatteryReading(percentage: 50, isCharging: false, isConnectedToPower: false)
+        )
+    }
+
+    func testPowerSourceDescriptionRejectsUnavailableBatteryDescriptions() {
+        XCTAssertNil(
+            BatteryProvider.batteryReading(
+                fromPowerSourceDescription: [
+                    kIOPSIsPresentKey as String: false,
+                    kIOPSCurrentCapacityKey as String: 40.0,
+                    kIOPSMaxCapacityKey as String: 80.0
+                ]
+            )
+        )
+        XCTAssertNil(
+            BatteryProvider.batteryReading(
+                fromPowerSourceDescription: [
+                    kIOPSIsPresentKey as String: true,
+                    kIOPSCurrentCapacityKey as String: 40.0,
+                    kIOPSMaxCapacityKey as String: 0.0
+                ]
+            )
+        )
     }
 
     func testHardwareCapacityReaderComputesClampedPercentage() throws {

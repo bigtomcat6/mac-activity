@@ -64,6 +64,7 @@
 		9541AA250A5A3B92AE170C2B /* UpdateChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 153AAE3970DB7FC89AF0F7CD /* UpdateChannel.swift */; };
 		973E3F49276C6903D1FD4C7A /* NetworkProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = A62CD05233387237992500A0 /* NetworkProvider.swift */; };
 		9860C042B6168A52097ECE16 /* ActiveCleanupModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */; };
+		9A395BB79F2CCC0C7DCD4117 /* BatterySystemPowerSourceReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 420BEFFE5B99B07B33CAF5DE /* BatterySystemPowerSourceReader.swift */; };
 		9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */; };
 		A1DC0091AFAA3500C5AAA85F /* ActiveAppMemoryProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */; };
 		A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */; };
@@ -181,6 +182,7 @@
 		3DFFA707E889556C69367275 /* LaunchAtLoginService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LaunchAtLoginService.swift; sourceTree = "<group>"; };
 		41191DB15439FD672A7C6221 /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		41333E534CBDB52CD351763E /* DashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModel.swift; sourceTree = "<group>"; };
+		420BEFFE5B99B07B33CAF5DE /* BatterySystemPowerSourceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatterySystemPowerSourceReader.swift; sourceTree = "<group>"; };
 		422B3F924F7EC6DA0DF6493F /* NetworkProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProviderTests.swift; sourceTree = "<group>"; };
 		443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryRow.swift; sourceTree = "<group>"; };
 		46B63F02833B7A142E6D3C19 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
@@ -381,6 +383,7 @@
 			isa = PBXGroup;
 			children = (
 				399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */,
+				420BEFFE5B99B07B33CAF5DE /* BatterySystemPowerSourceReader.swift */,
 				5F80A7CF6CB9E39D7858C692 /* CPUProvider.swift */,
 				622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */,
 				EDC3E242AE71B79619755C0D /* MemoryProvider.swift */,
@@ -744,6 +747,7 @@
 				A1DC0091AFAA3500C5AAA85F /* ActiveAppMemoryProviding.swift in Sources */,
 				AD712FC4EBAA68F9349BACD3 /* AppPreferences.swift in Sources */,
 				B5B1142091C4E8D575C3F253 /* BatteryProvider.swift in Sources */,
+				9A395BB79F2CCC0C7DCD4117 /* BatterySystemPowerSourceReader.swift in Sources */,
 				17C8C8D688BB94F85DBDE1DC /* CPUProvider.swift in Sources */,
 				1B3A5C1A4385179E39C90CDF /* DashboardModel.swift in Sources */,
 				CF45AF27EDBD4FB898FC14D4 /* DiskCleanupService.swift in Sources */,

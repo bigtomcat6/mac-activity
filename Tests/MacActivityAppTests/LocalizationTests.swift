@@ -185,6 +185,15 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: batteryOnBattery, bundle: simplifiedChinese), "使用电池")
     }
 
+    func testLegacyBatteryDetailStringsLocalizeConnectedPowerState() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            AppLocalization.metricDetail("Connected to Power", bundle: simplifiedChinese),
+            "接入电源"
+        )
+    }
+
     func testMemorySegmentTooltipLocalizesSegmentTitles() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
 

@@ -349,6 +349,24 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertEqual(iconFrame.height, 8, accuracy: 0.001)
     }
 
+    func testBatteryPowerConnectedCapsulesOmitLightningIconWhenTooNarrow() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(5)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 20, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+
+        let capsule = try XCTUnwrap(capsules.first)
+        XCTAssertNil(capsule.iconFrame)
+    }
+
     func testBatteryDataPlotFrameReservesTopPowerConnectedCapsuleLane() throws {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let interval = DashboardBatteryPowerConnectedInterval(
@@ -378,6 +396,15 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(fullBatteryLineY, capsule.frame.maxY + 3)
     }
 
+    func testBatteryDataPlotFrameKeepsTinyPlotFrameWhenCapsuleLaneCannotFit() {
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 8)
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.dataPlotFrame(for: .battery, plotFrame: plotFrame),
+            plotFrame
+        )
+    }
+
     func testNonBatteryDataPlotFrameUsesFullPlotFrame() {
         let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
 
@@ -385,6 +412,10 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             DashboardTrendChartLayout.dataPlotFrame(for: .cpu, plotFrame: plotFrame),
             plotFrame
         )
+    }
+
+    func testBatteryPowerConnectedPlaceholderCapsuleRequiresVisibleWidth() {
+        XCTAssertNil(DashboardTrendChartLayout.batteryPowerConnectedPlaceholderCapsuleFrame(in: .zero))
     }
 
     func testRenderedCPUTrendChartBuildsLocalizedAreaAndPrimaryMarks() {
@@ -621,8 +652,13 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let capsule = try XCTUnwrap(capsules.first)
         let iconFrame = try XCTUnwrap(capsule.iconFrame)
         let bitmap = try renderedBitmap(of: chart)
+        let iconColor = try color(in: bitmap, atTopLeft: CGPoint(x: iconFrame.midX, y: iconFrame.midY))
 
-        XCTAssertTrue(containsDarkGreenPixel(in: iconFrame.insetBy(dx: -1, dy: -1), bitmap: bitmap))
+        XCTAssertGreaterThan(iconColor.greenComponent, 0.22)
+        XCTAssertGreaterThan(iconColor.greenComponent, iconColor.redComponent + 0.08)
+        XCTAssertGreaterThan(iconColor.greenComponent, iconColor.blueComponent + 0.06)
+        XCTAssertLessThan(iconColor.redComponent, 0.35)
+        XCTAssertLessThan(iconColor.blueComponent, 0.35)
     }
 
     func testOverviewTrendChartsAnimateSampleChangesIncludingNetwork() {
@@ -1075,61 +1111,6 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertTrue((0..<bitmap.pixelsHigh).contains(pixelY))
 
         return try XCTUnwrap(bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB))
-    }
-
-    private func maximumColorDistance(
-        in rect: CGRect,
-        from baseColor: NSColor,
-        bitmap: NSBitmapImageRep
-    ) -> CGFloat {
-        let minX = max(0, Int(rect.minX.rounded(.down)))
-        let maxX = min(bitmap.pixelsWide - 1, Int(rect.maxX.rounded(.up)))
-        let minY = max(0, Int(rect.minY.rounded(.down)))
-        let maxY = min(bitmap.pixelsHigh - 1, Int(rect.maxY.rounded(.up)))
-        guard minX <= maxX, minY <= maxY else {
-            return 0
-        }
-
-        var maximumDistance: CGFloat = 0
-        for y in minY...maxY {
-            for x in minX...maxX {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
-                    continue
-                }
-                maximumDistance = max(maximumDistance, colorDistance(color, baseColor))
-            }
-        }
-        return maximumDistance
-    }
-
-    private func containsDarkGreenPixel(
-        in rect: CGRect,
-        bitmap: NSBitmapImageRep
-    ) -> Bool {
-        let minX = max(0, Int(rect.minX.rounded(.down)))
-        let maxX = min(bitmap.pixelsWide - 1, Int(rect.maxX.rounded(.up)))
-        let minY = max(0, Int(rect.minY.rounded(.down)))
-        let maxY = min(bitmap.pixelsHigh - 1, Int(rect.maxY.rounded(.up)))
-        guard minX <= maxX, minY <= maxY else {
-            return false
-        }
-
-        for y in minY...maxY {
-            for x in minX...maxX {
-                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
-                    continue
-                }
-
-                if color.greenComponent > 0.22,
-                   color.greenComponent > color.redComponent + 0.08,
-                   color.greenComponent > color.blueComponent + 0.06,
-                   color.redComponent < 0.35,
-                   color.blueComponent < 0.35 {
-                    return true
-                }
-            }
-        }
-        return false
     }
 
     private func colorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
