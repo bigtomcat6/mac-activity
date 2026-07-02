@@ -51,6 +51,7 @@ struct DashboardTrendChart: View {
             yAxisLabelWidth: yAxisLabelWidth,
             xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
         )
+        let dataPlotFrame = DashboardTrendChartLayout.dataPlotFrame(for: metric.kind, plotFrame: plotFrame)
         let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
         let showsAreaFill = DashboardTrendChartLayout.showsAreaFill(
             kind: metric.kind,
@@ -82,7 +83,7 @@ struct DashboardTrendChart: View {
         return ZStack(alignment: .topLeading) {
             if isHovering {
                 axesOverlay(
-                    plotFrame: plotFrame,
+                    plotFrame: dataPlotFrame,
                     containerSize: size,
                     xDomain: xDomain,
                     domain: domain,
@@ -100,7 +101,7 @@ struct DashboardTrendChart: View {
                 selectedSample: selectedSample,
                 domain: domain,
                 xDomain: xDomain,
-                plotFrame: plotFrame,
+                plotFrame: dataPlotFrame,
                 showsAreaFill: showsAreaFill,
                 usesDisplaySampling: usesDisplaySampling,
                 isCompactHoverLayout: isCompactHoverLayout
@@ -121,7 +122,7 @@ struct DashboardTrendChart: View {
                     x: DashboardTrendChartLayout.xPosition(
                         for: selectedSample.timestamp,
                         domain: xDomain,
-                        plotFrame: plotFrame
+                        plotFrame: dataPlotFrame
                     ),
                     y: DashboardTrendChartLayout.yPosition(
                         for: DashboardTrendChartLayout.selectionValue(
@@ -129,7 +130,7 @@ struct DashboardTrendChart: View {
                             kind: metric.kind
                         ),
                         domain: domain,
-                        plotFrame: plotFrame
+                        plotFrame: dataPlotFrame
                     )
                 )
                 let annotationSize = annotationSize(
@@ -145,7 +146,7 @@ struct DashboardTrendChart: View {
                 .position(
                     DashboardTrendChartLayout.annotationPosition(
                         pointer: annotationAnchor,
-                        plotFrame: plotFrame,
+                        plotFrame: dataPlotFrame,
                         annotationSize: annotationSize
                     )
                 )
@@ -704,6 +705,7 @@ struct DashboardTrendChartLayout {
     static let batteryPowerConnectedCapsuleHeight: CGFloat = 5
     static let batteryPowerConnectedCapsuleTopInset: CGFloat = 3
     private static let batteryPowerConnectedCapsuleMinimumWidth: CGFloat = 4
+    private static let batteryPowerConnectedLaneBottomGap: CGFloat = 3
 
     static func annotationPosition(
         pointer: CGPoint,
@@ -798,6 +800,26 @@ struct DashboardTrendChartLayout {
                 )
             )
         }
+    }
+
+    static func dataPlotFrame(for kind: MetricKind, plotFrame: CGRect) -> CGRect {
+        guard kind == .battery else {
+            return plotFrame
+        }
+
+        let reservedTop = batteryPowerConnectedCapsuleTopInset
+            + batteryPowerConnectedCapsuleHeight
+            + batteryPowerConnectedLaneBottomGap
+        guard plotFrame.height > reservedTop else {
+            return plotFrame
+        }
+
+        return CGRect(
+            x: plotFrame.minX,
+            y: plotFrame.minY + reservedTop,
+            width: plotFrame.width,
+            height: plotFrame.height - reservedTop
+        )
     }
 
     static func batteryPowerConnectedPlaceholderCapsuleFrame(in containerSize: CGSize) -> CGRect? {

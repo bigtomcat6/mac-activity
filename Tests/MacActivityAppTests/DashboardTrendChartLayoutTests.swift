@@ -326,6 +326,44 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertEqual(capsule.frame.height, 5, accuracy: 0.001)
     }
 
+    func testBatteryDataPlotFrameReservesTopPowerConnectedCapsuleLane() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(300)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let dataPlotFrame = DashboardTrendChartLayout.dataPlotFrame(
+            for: .battery,
+            plotFrame: plotFrame
+        )
+
+        let fullBatteryLineY = DashboardTrendChartLayout.yPosition(
+            for: 100,
+            domain: 0...100,
+            plotFrame: dataPlotFrame
+        )
+
+        XCTAssertEqual(dataPlotFrame.maxY, plotFrame.maxY, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(fullBatteryLineY, capsule.frame.maxY + 3)
+    }
+
+    func testNonBatteryDataPlotFrameUsesFullPlotFrame() {
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.dataPlotFrame(for: .cpu, plotFrame: plotFrame),
+            plotFrame
+        )
+    }
+
     func testRenderedCPUTrendChartBuildsLocalizedAreaAndPrimaryMarks() {
         let chart = DashboardTrendChart(
             metric: DashboardMetric(
