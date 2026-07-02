@@ -99,6 +99,7 @@ enum DashboardOverviewLayout {
     static let storageDetailContentAlignment: Alignment = .leading
     static let storageDetailTextAlignment: TextAlignment = .leading
     static let storageDetailSpacing: CGFloat = 4
+    static let metricTitleIconSpacing: CGFloat = 4
     static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
     static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
@@ -1555,6 +1556,35 @@ private struct StorageUsageDetailRow: View {
             maxHeight: .infinity,
             alignment: alignment
         )
+    }
+}
+
+private struct DashboardMetricTitleLabel: View {
+    let metric: DashboardMetric
+    let font: Font
+    let titleColor: Color
+    let iconColor: Color
+    var spacing: CGFloat = DashboardOverviewLayout.metricTitleIconSpacing
+    var textAlignment: TextAlignment = .leading
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            if let iconName = DashboardOverviewLayout.metricIconName(for: metric.kind) {
+                Image(systemName: iconName)
+                    .font(font)
+                    .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
+            }
+
+            Text(AppLocalization.dashboardMetricTitle(for: metric))
+                .font(font)
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
+                .multilineTextAlignment(textAlignment)
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(AppLocalization.dashboardMetricTitle(for: metric)))
     }
 }
 

@@ -190,6 +190,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.storageDetailSpacing, 4)
     }
 
+    func testOverviewMetricTitleIconsUseCompactSpacing() {
+        XCTAssertEqual(DashboardOverviewLayout.metricTitleIconSpacing, 4)
+    }
+
     func testOverviewStorageDetailUsesNativeSymbolsForDiskAndSwap() {
         XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .disk), "externaldrive")
         XCTAssertEqual(DashboardOverviewLayout.storageDetailIconName(for: .swap), "memorychip")
