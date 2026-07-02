@@ -321,9 +321,32 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let capsule = try XCTUnwrap(capsules.first)
         XCTAssertEqual(capsules.count, 1)
         XCTAssertEqual(capsule.frame.minX, 50, accuracy: 0.001)
-        XCTAssertEqual(capsule.frame.midY, 17.5, accuracy: 0.001)
+        XCTAssertEqual(capsule.frame.midY, 19, accuracy: 0.001)
         XCTAssertEqual(capsule.frame.width, 80, accuracy: 0.001)
-        XCTAssertEqual(capsule.frame.height, 5, accuracy: 0.001)
+        XCTAssertEqual(capsule.frame.height, 8, accuracy: 0.001)
+    }
+
+    func testBatteryPowerConnectedCapsulesIncludeCenteredLightningIconCutout() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(300)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+
+        let capsule = try XCTUnwrap(capsules.first)
+        let iconFrame = try XCTUnwrap(capsule.iconFrame)
+        XCTAssertEqual(DashboardTrendChartLayout.batteryPowerConnectedIconSystemName, "bolt.fill")
+        XCTAssertEqual(iconFrame.midX, capsule.frame.midX, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.midY, capsule.frame.midY, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.width, 8, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.height, 8, accuracy: 0.001)
     }
 
     func testBatteryDataPlotFrameReservesTopPowerConnectedCapsuleLane() throws {
@@ -442,8 +465,8 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         .environment(\.appearsActive, false)
         .background(Color.white)
 
-        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 140, y: 6))
-        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 140, y: 6))
+        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
 
         XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
         XCTAssertGreaterThan(connectedColor.greenComponent - connectedColor.redComponent, 0.12)
@@ -496,11 +519,110 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         .environment(\.appearsActive, false)
         .background(Color.white)
 
-        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 140, y: 6))
-        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 140, y: 6))
+        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
 
         XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
         XCTAssertGreaterThan(connectedColor.greenComponent - connectedColor.redComponent, 0.12)
+    }
+
+    func testRenderedBatteryPowerConnectedRegionUsesLightGreenCapsuleColor() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let chart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, true)
+        .background(Color.white)
+        let plotFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 90),
+            isHovering: false,
+            yAxisLabelWidth: 0,
+            xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
+        )
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base,
+                    endDate: base.addingTimeInterval(10)
+                )
+            ],
+            xDomain: base...base.addingTimeInterval(10),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let capsuleColor = try renderedColor(
+            of: chart,
+            atTopLeft: CGPoint(x: capsule.frame.minX + 8, y: capsule.frame.midY)
+        )
+
+        XCTAssertGreaterThan(capsuleColor.redComponent, 0.70)
+        XCTAssertGreaterThan(capsuleColor.greenComponent, 0.82)
+        XCTAssertGreaterThan(capsuleColor.blueComponent, 0.68)
+        XCTAssertGreaterThan(capsuleColor.greenComponent - capsuleColor.redComponent, 0.16)
+    }
+
+    func testRenderedBatteryPowerConnectedRegionDrawsDarkGreenLightningIcon() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let chart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, true)
+        .background(Color.white)
+        let plotFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 90),
+            isHovering: false,
+            yAxisLabelWidth: 0,
+            xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
+        )
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base,
+                    endDate: base.addingTimeInterval(10)
+                )
+            ],
+            xDomain: base...base.addingTimeInterval(10),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let iconFrame = try XCTUnwrap(capsule.iconFrame)
+        let bitmap = try renderedBitmap(of: chart)
+
+        XCTAssertTrue(containsDarkGreenPixel(in: iconFrame.insetBy(dx: -1, dy: -1), bitmap: bitmap))
     }
 
     func testOverviewTrendChartsAnimateSampleChangesIncludingNetwork() {
@@ -929,13 +1051,23 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         of view: Content,
         atTopLeft point: CGPoint
     ) throws -> NSColor {
+        try color(in: renderedBitmap(of: view), atTopLeft: point)
+    }
+
+    private func renderedBitmap<Content: View>(of view: Content) throws -> NSBitmapImageRep {
         let renderer = ImageRenderer(content: view)
         renderer.proposedSize = ProposedViewSize(width: 280, height: 90)
         renderer.scale = 1
 
         let image = try XCTUnwrap(renderer.nsImage)
         let tiff = try XCTUnwrap(image.tiffRepresentation)
-        let bitmap = try XCTUnwrap(NSBitmapImageRep(data: tiff))
+        return try XCTUnwrap(NSBitmapImageRep(data: tiff))
+    }
+
+    private func color(
+        in bitmap: NSBitmapImageRep,
+        atTopLeft point: CGPoint
+    ) throws -> NSColor {
         let pixelX = Int(point.x.rounded(.down))
         let pixelY = Int(point.y.rounded(.down))
 
@@ -943,6 +1075,61 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertTrue((0..<bitmap.pixelsHigh).contains(pixelY))
 
         return try XCTUnwrap(bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB))
+    }
+
+    private func maximumColorDistance(
+        in rect: CGRect,
+        from baseColor: NSColor,
+        bitmap: NSBitmapImageRep
+    ) -> CGFloat {
+        let minX = max(0, Int(rect.minX.rounded(.down)))
+        let maxX = min(bitmap.pixelsWide - 1, Int(rect.maxX.rounded(.up)))
+        let minY = max(0, Int(rect.minY.rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh - 1, Int(rect.maxY.rounded(.up)))
+        guard minX <= maxX, minY <= maxY else {
+            return 0
+        }
+
+        var maximumDistance: CGFloat = 0
+        for y in minY...maxY {
+            for x in minX...maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+                maximumDistance = max(maximumDistance, colorDistance(color, baseColor))
+            }
+        }
+        return maximumDistance
+    }
+
+    private func containsDarkGreenPixel(
+        in rect: CGRect,
+        bitmap: NSBitmapImageRep
+    ) -> Bool {
+        let minX = max(0, Int(rect.minX.rounded(.down)))
+        let maxX = min(bitmap.pixelsWide - 1, Int(rect.maxX.rounded(.up)))
+        let minY = max(0, Int(rect.minY.rounded(.down)))
+        let maxY = min(bitmap.pixelsHigh - 1, Int(rect.maxY.rounded(.up)))
+        guard minX <= maxX, minY <= maxY else {
+            return false
+        }
+
+        for y in minY...maxY {
+            for x in minX...maxX {
+                guard let color = bitmap.colorAt(x: x, y: y)?.usingColorSpace(.deviceRGB) else {
+                    continue
+                }
+
+                if color.greenComponent > 0.22,
+                   color.greenComponent > color.redComponent + 0.08,
+                   color.greenComponent > color.blueComponent + 0.06,
+                   color.redComponent < 0.35,
+                   color.blueComponent < 0.35 {
+                    return true
+                }
+            }
+        }
+        return false
     }
 
     private func colorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {

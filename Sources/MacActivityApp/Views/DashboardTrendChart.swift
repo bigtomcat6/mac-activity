@@ -109,11 +109,10 @@ struct DashboardTrendChart: View {
 
             if metric.kind == .battery {
                 ForEach(powerConnectedCapsules) { capsule in
-                    Capsule(style: .continuous)
-                        .fill(powerConnectedRegionColor)
-                        .frame(width: capsule.frame.width, height: capsule.frame.height)
-                        .position(x: capsule.frame.midX, y: capsule.frame.midY)
-                        .allowsHitTesting(false)
+                    powerConnectedCapsuleView(
+                        frame: capsule.frame,
+                        iconFrame: capsule.iconFrame
+                    )
                 }
             }
 
@@ -448,7 +447,12 @@ struct DashboardTrendChart: View {
     }
 
     private var powerConnectedRegionColor: Color {
-        Color(nsColor: .systemGreen).opacity(appearsActive ? 0.55 : 0.45)
+        Color(red: 0.68, green: 0.95, blue: 0.72)
+            .opacity(appearsActive ? 0.92 : 0.80)
+    }
+
+    private var powerConnectedIconColor: Color {
+        Color(red: 0.08, green: 0.36, blue: 0.16)
     }
 
     private var hoverRuleColor: Color {
@@ -477,13 +481,34 @@ struct DashboardTrendChart: View {
 
             if showsPowerConnectedRegion,
                let frame = DashboardTrendChartLayout.batteryPowerConnectedPlaceholderCapsuleFrame(in: size) {
-                Capsule(style: .continuous)
-                    .fill(powerConnectedRegionColor)
-                    .frame(width: frame.width, height: frame.height)
-                    .position(x: frame.midX, y: frame.midY)
-                    .allowsHitTesting(false)
+                powerConnectedCapsuleView(
+                    frame: frame,
+                    iconFrame: DashboardTrendChartLayout.batteryPowerConnectedIconFrame(in: frame)
+                )
             }
         }
+    }
+
+    private func powerConnectedCapsuleView(
+        frame: CGRect,
+        iconFrame: CGRect?
+    ) -> some View {
+        ZStack(alignment: .topLeading) {
+            Capsule(style: .continuous)
+                .fill(powerConnectedRegionColor)
+                .frame(width: frame.width, height: frame.height)
+                .position(x: frame.midX, y: frame.midY)
+
+            if let iconFrame {
+                Image(systemName: DashboardTrendChartLayout.batteryPowerConnectedIconSystemName)
+                    .symbolRenderingMode(.monochrome)
+                    .font(.system(size: iconFrame.height, weight: .semibold))
+                    .foregroundStyle(powerConnectedIconColor)
+                    .frame(width: iconFrame.width, height: iconFrame.height)
+                    .position(x: iconFrame.midX, y: iconFrame.midY)
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     private var hoverRuleStyle: StrokeStyle {
@@ -682,6 +707,7 @@ struct DashboardBatteryPowerConnectedInterval: Equatable, Identifiable, Sendable
 struct DashboardBatteryPowerConnectedCapsule: Equatable, Identifiable {
     let interval: DashboardBatteryPowerConnectedInterval
     let frame: CGRect
+    let iconFrame: CGRect?
 
     var id: String { interval.id }
 }
@@ -702,10 +728,13 @@ struct DashboardTrendChartLayout {
     private static let flatPrimaryTolerance = 0.001
     private static let flatSecondaryTolerance = 0.001
     private static let domainContractionStep = 0.35
-    static let batteryPowerConnectedCapsuleHeight: CGFloat = 5
+    static let batteryPowerConnectedCapsuleHeight: CGFloat = 8
     static let batteryPowerConnectedCapsuleTopInset: CGFloat = 3
+    static let batteryPowerConnectedIconSystemName = "bolt.fill"
     private static let batteryPowerConnectedCapsuleMinimumWidth: CGFloat = 4
     private static let batteryPowerConnectedLaneBottomGap: CGFloat = 3
+    private static let batteryPowerConnectedIconSize: CGFloat = 8
+    private static let batteryPowerConnectedIconMinimumCapsuleWidth: CGFloat = 22
 
     static func annotationPosition(
         pointer: CGPoint,
@@ -790,16 +819,31 @@ struct DashboardTrendChartLayout {
 
             let width = min(plotFrame.width, max(batteryPowerConnectedCapsuleMinimumWidth, rawWidth))
             let minX = min(max(startX, plotFrame.minX), plotFrame.maxX - width)
+            let frame = CGRect(
+                x: minX,
+                y: plotFrame.minY + batteryPowerConnectedCapsuleTopInset,
+                width: width,
+                height: batteryPowerConnectedCapsuleHeight
+            )
             return DashboardBatteryPowerConnectedCapsule(
                 interval: interval,
-                frame: CGRect(
-                    x: minX,
-                    y: plotFrame.minY + batteryPowerConnectedCapsuleTopInset,
-                    width: width,
-                    height: batteryPowerConnectedCapsuleHeight
-                )
+                frame: frame,
+                iconFrame: batteryPowerConnectedIconFrame(in: frame)
             )
         }
+    }
+
+    static func batteryPowerConnectedIconFrame(in capsuleFrame: CGRect) -> CGRect? {
+        guard capsuleFrame.width >= batteryPowerConnectedIconMinimumCapsuleWidth else {
+            return nil
+        }
+
+        return CGRect(
+            x: capsuleFrame.midX - batteryPowerConnectedIconSize / 2,
+            y: capsuleFrame.midY - batteryPowerConnectedIconSize / 2,
+            width: batteryPowerConnectedIconSize,
+            height: batteryPowerConnectedIconSize
+        )
     }
 
     static func dataPlotFrame(for kind: MetricKind, plotFrame: CGRect) -> CGRect {
