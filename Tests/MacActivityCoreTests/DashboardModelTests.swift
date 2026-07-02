@@ -215,6 +215,29 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertNil(sample.secondaryValue)
     }
 
+    func testBatteryTrendCarriesConnectedPowerState() async throws {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+        let start = Date(timeIntervalSince1970: 40)
+
+        store.apply(
+            [.battery(BatteryReading(percentage: 78, isCharging: false))],
+            timestamp: start
+        )
+        store.apply(
+            [.battery(BatteryReading(percentage: 79, isCharging: false, isConnectedToPower: true))],
+            timestamp: start.addingTimeInterval(15)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.first { $0.kind == .battery }?.trend?.samples.count == 2
+        }
+        let battery = try XCTUnwrap(metrics.first { $0.kind == .battery })
+
+        XCTAssertEqual(battery.trend?.samples.map(\.batteryIsConnectedToPower), [false, true])
+        XCTAssertEqual(battery.detailRole, .batteryConnectedToPower)
+    }
+
     func testBatteryMetricUsesSystemPercentageWhenHardwareDisplayIsDisabled() async throws {
         let store = MetricsStore()
         let preferences = PreferencesController(

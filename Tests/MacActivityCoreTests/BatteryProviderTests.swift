@@ -23,6 +23,17 @@ final class BatteryProviderTests: XCTestCase {
         XCTAssertEqual(reading.displayPercentage(showsHardwarePercentage: true), 79, accuracy: 0.001)
     }
 
+    func testBatteryReadingCanRepresentConnectedPowerWithoutCharging() {
+        let reading = BatteryReading(
+            percentage: 79,
+            isCharging: false,
+            isConnectedToPower: true
+        )
+
+        XCTAssertFalse(reading.isCharging)
+        XCTAssertTrue(reading.isConnectedToPower)
+    }
+
     func testHardwareCapacityReaderComputesClampedPercentage() throws {
         XCTAssertEqual(
             try XCTUnwrap(BatteryHardwareCapacityReader.hardwarePercentage(currentCapacity: 4_680, maxCapacity: 6_281)),

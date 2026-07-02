@@ -269,7 +269,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
         )
     }
 
-    func testBatteryHistoryStoresSystemAndHardwarePercentages() throws {
+    func testBatteryHistoryStoresSystemHardwarePercentagesAndConnectedPowerState() throws {
         let store = MetricsStore()
 
         store.apply(
@@ -278,6 +278,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
                     BatteryReading(
                         percentage: 79,
                         isCharging: false,
+                        isConnectedToPower: true,
                         hardwarePercentage: 74.51
                     )
                 )
@@ -289,6 +290,7 @@ final class MetricsStoreHistoryTests: XCTestCase {
         XCTAssertEqual(sample.primaryValue, 79, accuracy: 0.001)
         let hardwarePercentage = try XCTUnwrap(sample.secondaryValue)
         XCTAssertEqual(hardwarePercentage, 74.51, accuracy: 0.001)
+        XCTAssertEqual(sample.batteryIsConnectedToPower, true)
     }
 
     func testHistoryKeepsTemperatureSourceSeriesSeparate() {
