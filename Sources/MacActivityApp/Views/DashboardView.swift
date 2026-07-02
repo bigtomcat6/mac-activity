@@ -194,7 +194,7 @@ enum DashboardOverviewLayout {
         case .temperature:
             return "thermometer"
         case .fan:
-            return "fan"
+            return "fanblades"
         }
     }
 

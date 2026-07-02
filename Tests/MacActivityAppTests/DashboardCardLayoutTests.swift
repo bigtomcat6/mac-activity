@@ -211,7 +211,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             (.network, "network"),
             (.battery, "battery.100"),
             (.temperature, "thermometer"),
-            (.fan, "fan")
+            (.fan, "fanblades")
         ]
 
         for (kind, expectedIconName) in expectations {
