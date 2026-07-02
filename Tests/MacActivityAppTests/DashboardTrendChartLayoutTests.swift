@@ -1,4 +1,5 @@
 import XCTest
+import AppKit
 import MacActivityCore
 import SwiftUI
 @testable import MacActivityApp
@@ -249,6 +250,174 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
+    func testBatteryPowerConnectedIntervalsMergeContinuousConnectedSamples() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 80, batteryIsConnectedToPower: false),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(60), primaryValue: 81, batteryIsConnectedToPower: true),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(120), primaryValue: 82, batteryIsConnectedToPower: true),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(180), primaryValue: 83, batteryIsConnectedToPower: false),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(240), primaryValue: 84, batteryIsConnectedToPower: true)
+        ]
+
+        let intervals = DashboardTrendChartLayout.batteryPowerConnectedIntervals(
+            for: samples,
+            xDomain: base...base.addingTimeInterval(300)
+        )
+
+        XCTAssertEqual(
+            intervals,
+            [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base.addingTimeInterval(60),
+                    endDate: base.addingTimeInterval(180)
+                ),
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base.addingTimeInterval(240),
+                    endDate: base.addingTimeInterval(300)
+                )
+            ]
+        )
+    }
+
+    func testBatteryPowerConnectedIntervalsStartAtDomainLowerBoundWhenAlreadyConnected() {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let samples = [
+            DashboardTrendSample(timestamp: base.addingTimeInterval(60), primaryValue: 81, batteryIsConnectedToPower: true),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(120), primaryValue: 82, batteryIsConnectedToPower: true),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(180), primaryValue: 83, batteryIsConnectedToPower: false)
+        ]
+
+        let intervals = DashboardTrendChartLayout.batteryPowerConnectedIntervals(
+            for: samples,
+            xDomain: base...base.addingTimeInterval(300)
+        )
+
+        XCTAssertEqual(
+            intervals,
+            [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base,
+                    endDate: base.addingTimeInterval(180)
+                )
+            ]
+        )
+    }
+
+    func testBatteryPowerConnectedCapsulesPinIntervalsToPlotTop() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base.addingTimeInterval(60),
+            endDate: base.addingTimeInterval(180)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+
+        let capsule = try XCTUnwrap(capsules.first)
+        XCTAssertEqual(capsules.count, 1)
+        XCTAssertEqual(capsule.frame.minX, 50, accuracy: 0.001)
+        XCTAssertEqual(capsule.frame.midY, 19, accuracy: 0.001)
+        XCTAssertEqual(capsule.frame.width, 80, accuracy: 0.001)
+        XCTAssertEqual(capsule.frame.height, 8, accuracy: 0.001)
+    }
+
+    func testBatteryPowerConnectedCapsulesIncludeCenteredLightningIconCutout() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(300)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+
+        let capsule = try XCTUnwrap(capsules.first)
+        let iconFrame = try XCTUnwrap(capsule.iconFrame)
+        XCTAssertEqual(DashboardTrendChartLayout.batteryPowerConnectedIconSystemName, "bolt.fill")
+        XCTAssertEqual(iconFrame.midX, capsule.frame.midX, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.midY, capsule.frame.midY, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.width, 8, accuracy: 0.001)
+        XCTAssertEqual(iconFrame.height, 8, accuracy: 0.001)
+    }
+
+    func testBatteryPowerConnectedCapsulesOmitLightningIconWhenTooNarrow() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(5)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 20, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+
+        let capsule = try XCTUnwrap(capsules.first)
+        XCTAssertNil(capsule.iconFrame)
+    }
+
+    func testBatteryDataPlotFrameReservesTopPowerConnectedCapsuleLane() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let interval = DashboardBatteryPowerConnectedInterval(
+            startDate: base,
+            endDate: base.addingTimeInterval(300)
+        )
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [interval],
+            xDomain: base...base.addingTimeInterval(300),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let dataPlotFrame = DashboardTrendChartLayout.dataPlotFrame(
+            for: .battery,
+            plotFrame: plotFrame
+        )
+
+        let fullBatteryLineY = DashboardTrendChartLayout.yPosition(
+            for: 100,
+            domain: 0...100,
+            plotFrame: dataPlotFrame
+        )
+
+        XCTAssertEqual(dataPlotFrame.maxY, plotFrame.maxY, accuracy: 0.001)
+        XCTAssertGreaterThanOrEqual(fullBatteryLineY, capsule.frame.maxY + 3)
+    }
+
+    func testBatteryDataPlotFrameKeepsTinyPlotFrameWhenCapsuleLaneCannotFit() {
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 8)
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.dataPlotFrame(for: .battery, plotFrame: plotFrame),
+            plotFrame
+        )
+    }
+
+    func testNonBatteryDataPlotFrameUsesFullPlotFrame() {
+        let plotFrame = CGRect(x: 10, y: 12, width: 200, height: 60)
+
+        XCTAssertEqual(
+            DashboardTrendChartLayout.dataPlotFrame(for: .cpu, plotFrame: plotFrame),
+            plotFrame
+        )
+    }
+
+    func testBatteryPowerConnectedPlaceholderCapsuleRequiresVisibleWidth() {
+        XCTAssertNil(DashboardTrendChartLayout.batteryPowerConnectedPlaceholderCapsuleFrame(in: .zero))
+    }
+
     func testRenderedCPUTrendChartBuildsLocalizedAreaAndPrimaryMarks() {
         let chart = DashboardTrendChart(
             metric: DashboardMetric(
@@ -298,6 +467,198 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         renderer.scale = 1
 
         XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedBatteryPowerConnectedIndicatorShowsWhileTrendIsCollecting() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let connectedChart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, false)
+        .background(Color.white)
+        let disconnectedChart = batteryChart(
+            detailRole: .batteryOnBattery,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: false
+                )
+            ]
+        )
+        .environment(\.appearsActive, false)
+        .background(Color.white)
+
+        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+
+        XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
+        XCTAssertGreaterThan(connectedColor.greenComponent, connectedColor.redComponent)
+    }
+
+    func testRenderedBatteryPowerConnectedRegionStaysVisibleWhenInactive() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let connectedChart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, false)
+        .background(Color.white)
+        let disconnectedChart = batteryChart(
+            detailRole: .batteryOnBattery,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: false
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: false
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: false
+                )
+            ]
+        )
+        .environment(\.appearsActive, false)
+        .background(Color.white)
+
+        let connectedColor = try renderedColor(of: connectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+        let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
+
+        XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
+        XCTAssertGreaterThan(connectedColor.greenComponent, connectedColor.redComponent)
+    }
+
+    func testRenderedBatteryPowerConnectedRegionUsesMutedLightGreenCapsuleColor() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let chart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, true)
+        .background(Color.white)
+        let plotFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 90),
+            isHovering: false,
+            yAxisLabelWidth: 0,
+            xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
+        )
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base,
+                    endDate: base.addingTimeInterval(10)
+                )
+            ],
+            xDomain: base...base.addingTimeInterval(10),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let capsuleColor = try renderedColor(
+            of: chart,
+            atTopLeft: CGPoint(x: capsule.frame.minX + 8, y: capsule.frame.midY)
+        )
+
+        XCTAssertGreaterThan(capsuleColor.redComponent, 0.80)
+        XCTAssertGreaterThan(capsuleColor.greenComponent, 0.88)
+        XCTAssertGreaterThan(capsuleColor.blueComponent, 0.78)
+        XCTAssertLessThan(capsuleColor.greenComponent - capsuleColor.redComponent, 0.12)
+    }
+
+    func testRenderedBatteryPowerConnectedRegionDrawsDarkGreenLightningIcon() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 1_000)
+        let chart = batteryChart(
+            detailRole: .batteryConnectedToPower,
+            samples: [
+                DashboardTrendSample(
+                    timestamp: base,
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(5),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                ),
+                DashboardTrendSample(
+                    timestamp: base.addingTimeInterval(10),
+                    primaryValue: 96,
+                    batteryIsConnectedToPower: true
+                )
+            ]
+        )
+        .environment(\.appearsActive, true)
+        .background(Color.white)
+        let plotFrame = DashboardTrendChartLayout.plotFrame(
+            in: CGSize(width: 280, height: 90),
+            isHovering: false,
+            yAxisLabelWidth: 0,
+            xAxisLabelHeight: DashboardTrendChartLayout.xAxisLabelHeight
+        )
+        let capsules = DashboardTrendChartLayout.batteryPowerConnectedCapsules(
+            for: [
+                DashboardBatteryPowerConnectedInterval(
+                    startDate: base,
+                    endDate: base.addingTimeInterval(10)
+                )
+            ],
+            xDomain: base...base.addingTimeInterval(10),
+            plotFrame: plotFrame
+        )
+        let capsule = try XCTUnwrap(capsules.first)
+        let iconFrame = try XCTUnwrap(capsule.iconFrame)
+        let bitmap = try renderedBitmap(of: chart)
+        let iconColor = try color(in: bitmap, atTopLeft: CGPoint(x: iconFrame.midX, y: iconFrame.midY))
+
+        XCTAssertGreaterThan(iconColor.greenComponent, 0.22)
+        XCTAssertGreaterThan(iconColor.greenComponent, iconColor.redComponent + 0.08)
+        XCTAssertGreaterThan(iconColor.greenComponent, iconColor.blueComponent + 0.06)
+        XCTAssertLessThan(iconColor.redComponent, 0.35)
+        XCTAssertLessThan(iconColor.blueComponent, 0.35)
     }
 
     func testOverviewTrendChartsAnimateSampleChangesIncludingNetwork() {
@@ -697,5 +1058,65 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
                 primaryValue: value
             )
         }
+    }
+
+    private func batteryChart(
+        detailRole: DashboardMetricDetailRole,
+        samples: [DashboardTrendSample]
+    ) -> some View {
+        DashboardTrendChart(
+            metric: DashboardMetric(
+                kind: .battery,
+                value: "96%",
+                detailRole: detailRole,
+                title: MetricKind.battery.title,
+                style: .chart,
+                trend: DashboardTrend(
+                    samples: samples,
+                    scale: .fixed(lowerBound: 0, upperBound: 100)
+                )
+            ),
+            color: .green,
+            isCardHovered: false,
+            showsYAxisLabels: false
+        )
+        .frame(width: 280, height: 90)
+    }
+
+    private func renderedColor<Content: View>(
+        of view: Content,
+        atTopLeft point: CGPoint
+    ) throws -> NSColor {
+        try color(in: renderedBitmap(of: view), atTopLeft: point)
+    }
+
+    private func renderedBitmap<Content: View>(of view: Content) throws -> NSBitmapImageRep {
+        let renderer = ImageRenderer(content: view)
+        renderer.proposedSize = ProposedViewSize(width: 280, height: 90)
+        renderer.scale = 1
+
+        let image = try XCTUnwrap(renderer.nsImage)
+        let tiff = try XCTUnwrap(image.tiffRepresentation)
+        return try XCTUnwrap(NSBitmapImageRep(data: tiff))
+    }
+
+    private func color(
+        in bitmap: NSBitmapImageRep,
+        atTopLeft point: CGPoint
+    ) throws -> NSColor {
+        let pixelX = Int(point.x.rounded(.down))
+        let pixelY = Int(point.y.rounded(.down))
+
+        XCTAssertTrue((0..<bitmap.pixelsWide).contains(pixelX))
+        XCTAssertTrue((0..<bitmap.pixelsHigh).contains(pixelY))
+
+        return try XCTUnwrap(bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB))
+    }
+
+    private func colorDistance(_ lhs: NSColor, _ rhs: NSColor) -> CGFloat {
+        let redDelta = lhs.redComponent - rhs.redComponent
+        let greenDelta = lhs.greenComponent - rhs.greenComponent
+        let blueDelta = lhs.blueComponent - rhs.blueComponent
+        return sqrt(redDelta * redDelta + greenDelta * greenDelta + blueDelta * blueDelta)
     }
 }

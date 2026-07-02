@@ -5,6 +5,7 @@ public struct MetricHistorySample: Equatable, Sendable {
     public var timestamp: Date
     public var primaryValue: Double
     public var secondaryValue: Double?
+    var batteryIsConnectedToPower: Bool?
     var memoryUsedBytes: UInt64?
     var memoryTotalBytes: UInt64?
     var memoryBreakdown: MemoryBreakdown?
@@ -14,6 +15,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         timestamp: Date,
         primaryValue: Double,
         secondaryValue: Double? = nil,
+        batteryIsConnectedToPower: Bool? = nil,
         memoryUsedBytes: UInt64? = nil,
         memoryTotalBytes: UInt64? = nil,
         memoryBreakdown: MemoryBreakdown? = nil,
@@ -22,6 +24,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         self.timestamp = timestamp
         self.primaryValue = primaryValue
         self.secondaryValue = secondaryValue
+        self.batteryIsConnectedToPower = batteryIsConnectedToPower
         self.memoryUsedBytes = memoryUsedBytes
         self.memoryTotalBytes = memoryTotalBytes
         self.memoryBreakdown = memoryBreakdown
@@ -34,6 +37,7 @@ public struct MetricHistorySample: Equatable, Sendable {
     ) {
         self.timestamp = timestamp
         self.sampleCount = 1
+        self.batteryIsConnectedToPower = nil
         self.memoryUsedBytes = nil
         self.memoryTotalBytes = nil
         self.memoryBreakdown = nil
@@ -78,6 +82,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         case .battery(let reading):
             self.primaryValue = reading.percentage
             self.secondaryValue = reading.hardwarePercentage
+            self.batteryIsConnectedToPower = reading.isConnectedToPower
         case .temperature(let reading):
             self.primaryValue = reading.celsius
             self.secondaryValue = nil
@@ -315,7 +320,8 @@ public struct MetricsHistory: Equatable, Sendable {
             return samples
         }
 
-        return contiguousBucketAverages(samples, targetCount: targetCount)
+        return batteryPowerStateBucketAverages(samples, targetCount: targetCount)
+            ?? contiguousBucketAverages(samples, targetCount: targetCount)
     }
 
     private static func contiguousBucketAverages(
@@ -331,6 +337,71 @@ public struct MetricsHistory: Equatable, Sendable {
 
             return averageBucket(Array(samples[startIndex..<endIndex]))
         }
+    }
+
+    private static func batteryPowerStateBucketAverages(
+        _ samples: [MetricHistorySample],
+        targetCount: Int
+    ) -> [MetricHistorySample]? {
+        let runs = contiguousBatteryPowerStateRuns(samples)
+        guard runs.count > 1, runs.count <= targetCount else {
+            return nil
+        }
+
+        let allocations = bucketAllocations(
+            forRunLengths: runs.map(\.count),
+            targetCount: targetCount
+        )
+
+        return zip(runs, allocations).flatMap { run, allocation in
+            contiguousBucketAverages(run, targetCount: allocation)
+        }
+    }
+
+    private static func contiguousBatteryPowerStateRuns(_ samples: [MetricHistorySample]) -> [[MetricHistorySample]] {
+        guard samples.contains(where: { $0.batteryIsConnectedToPower != nil }),
+              let firstSample = samples.first else {
+            return []
+        }
+
+        var runs: [[MetricHistorySample]] = []
+        var currentRun = [firstSample]
+        var currentState = firstSample.batteryIsConnectedToPower
+
+        for sample in samples.dropFirst() {
+            if sample.batteryIsConnectedToPower == currentState {
+                currentRun.append(sample)
+            } else {
+                runs.append(currentRun)
+                currentRun = [sample]
+                currentState = sample.batteryIsConnectedToPower
+            }
+        }
+
+        runs.append(currentRun)
+        return runs
+    }
+
+    private static func bucketAllocations(
+        forRunLengths runLengths: [Int],
+        targetCount: Int
+    ) -> [Int] {
+        var allocations = Array(repeating: 1, count: runLengths.count)
+        var remaining = min(targetCount, runLengths.reduce(0, +)) - allocations.count
+
+        while remaining > 0 {
+            let index = runLengths.indices
+                .filter({ allocations[$0] < runLengths[$0] })
+                .max(by: { lhs, rhs in
+                    Double(runLengths[lhs]) / Double(allocations[lhs])
+                        < Double(runLengths[rhs]) / Double(allocations[rhs])
+                })!
+
+            allocations[index] += 1
+            remaining -= 1
+        }
+
+        return allocations
     }
 
     private static func averageBucket(_ samples: [MetricHistorySample]) -> MetricHistorySample? {
@@ -367,6 +438,7 @@ public struct MetricsHistory: Equatable, Sendable {
             timestamp: lastSample.timestamp,
             primaryValue: primaryAverage,
             secondaryValue: secondaryAverage,
+            batteryIsConnectedToPower: lastSample.batteryIsConnectedToPower,
             memoryUsedBytes: weightedMemoryBytes(
                 from: samples,
                 totalSampleCount: totalSampleCount,

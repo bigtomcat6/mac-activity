@@ -131,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return false
                 }
 
-                return !battery.isCharging
+                return !battery.isConnectedToPower
             }
             .removeDuplicates()
             .sink { [weak samplingController] (isRunningOnBattery: Bool) in

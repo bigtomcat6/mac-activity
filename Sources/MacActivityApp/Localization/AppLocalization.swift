@@ -39,6 +39,7 @@ enum AppLocalization {
         case metricTemperature = "metric.temperature"
         case metricFan = "metric.fan"
         case metricBatteryCharging = "metric.battery.charging"
+        case metricBatteryConnectedToPower = "metric.battery.connectedToPower"
         case metricBatteryOnBattery = "metric.battery.onBattery"
         case chartDimensionTime = "chart.dimension.time"
         case chartDimensionPrimary = "chart.dimension.primary"
@@ -397,6 +398,8 @@ enum AppLocalization {
         switch detail {
         case "Charging":
             return string(.metricBatteryCharging, bundle: bundle)
+        case "Connected to Power":
+            return string(.metricBatteryConnectedToPower, bundle: bundle)
         case "On Battery":
             return string(.metricBatteryOnBattery, bundle: bundle)
         default:
@@ -412,6 +415,8 @@ enum AppLocalization {
         switch detailRole {
         case .batteryCharging:
             return string(.metricBatteryCharging, bundle: bundle)
+        case .batteryConnectedToPower:
+            return string(.metricBatteryConnectedToPower, bundle: bundle)
         case .batteryOnBattery:
             return string(.metricBatteryOnBattery, bundle: bundle)
         case .raw(let value):

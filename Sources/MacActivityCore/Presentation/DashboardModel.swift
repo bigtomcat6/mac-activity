@@ -14,6 +14,7 @@ public enum DashboardMetricTitleRole: Equatable, Sendable {
 
 public enum DashboardMetricDetailRole: Equatable, Sendable {
     case batteryCharging
+    case batteryConnectedToPower
     case batteryOnBattery
     case raw(String)
 }
@@ -27,11 +28,18 @@ public struct DashboardTrendSample: Equatable, Sendable {
     public var timestamp: Date
     public var primaryValue: Double
     public var secondaryValue: Double?
+    public var batteryIsConnectedToPower: Bool?
 
-    public init(timestamp: Date, primaryValue: Double, secondaryValue: Double? = nil) {
+    public init(
+        timestamp: Date,
+        primaryValue: Double,
+        secondaryValue: Double? = nil,
+        batteryIsConnectedToPower: Bool? = nil
+    ) {
         self.timestamp = timestamp
         self.primaryValue = primaryValue
         self.secondaryValue = secondaryValue
+        self.batteryIsConnectedToPower = batteryIsConnectedToPower
     }
 }
 
@@ -367,7 +375,7 @@ public final class DashboardModel: ObservableObject {
             let percentage = battery.displayPercentage(
                 showsHardwarePercentage: showsHardwareBatteryPercentage
             )
-            let detailRole: DashboardMetricDetailRole = battery.isCharging ? .batteryCharging : .batteryOnBattery
+            let detailRole: DashboardMetricDetailRole = battery.isConnectedToPower ? .batteryConnectedToPower : .batteryOnBattery
             items.append(
                 DashboardMetric(
                     kind: .battery,
@@ -375,7 +383,7 @@ public final class DashboardModel: ObservableObject {
                     value: "\(Int(percentage.rounded()))%",
                     detailRole: detailRole,
                     title: MetricKind.battery.title,
-                    detail: battery.isCharging ? "Charging" : "On Battery",
+                    detail: battery.isConnectedToPower ? "Connected to Power" : "On Battery",
                     style: .chart,
                     trend: batteryTrend(
                         from: history,
@@ -437,7 +445,8 @@ public final class DashboardModel: ObservableObject {
                     timestamp: sample.timestamp,
                     primaryValue: showsHardwareBatteryPercentage
                         ? (sample.secondaryValue ?? sample.primaryValue)
-                        : sample.primaryValue
+                        : sample.primaryValue,
+                    batteryIsConnectedToPower: sample.batteryIsConnectedToPower
                 )
             },
             scale: .fixed(lowerBound: 0, upperBound: 100)

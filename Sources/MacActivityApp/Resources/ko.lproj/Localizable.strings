@@ -30,6 +30,7 @@
 "metric.temperature" = "온도";
 "metric.fan" = "팬";
 "metric.battery.charging" = "충전 중";
+"metric.battery.connectedToPower" = "전원 연결됨";
 "metric.battery.onBattery" = "배터리 사용 중";
 
 "chart.dimension.time" = "시간";

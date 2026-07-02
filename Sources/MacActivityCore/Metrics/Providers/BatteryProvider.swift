@@ -1,5 +1,4 @@
 import Foundation
-import IOKit
 import IOKit.ps
 
 public struct BatteryProvider: MetricProvider {
@@ -10,7 +9,7 @@ public struct BatteryProvider: MetricProvider {
 
     public init() {
         self.init(
-            readSystemBattery: Self.readSystemBattery,
+            readSystemBattery: BatterySystemPowerSourceReader.readSystemBattery,
             readHardwarePercentage: BatteryHardwareCapacityReader.readHardwarePercentage
         )
     }
@@ -32,33 +31,27 @@ public struct BatteryProvider: MetricProvider {
         return .battery(reading)
     }
 
-    private static func readSystemBattery() -> BatteryReading? {
-        let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as [CFTypeRef]
-
-        for source in sources {
-            guard let description = IOPSGetPowerSourceDescription(snapshot, source)?
-                .takeUnretainedValue() as? [String: Any] else {
-                continue
-            }
-
-            let isPresent = description[kIOPSIsPresentKey as String] as? Bool ?? true
-            guard isPresent else {
-                continue
-            }
-
-            guard let currentCapacity = description[kIOPSCurrentCapacityKey as String] as? Double,
-                  let maxCapacity = description[kIOPSMaxCapacityKey as String] as? Double,
-                  maxCapacity > 0 else {
-                continue
-            }
-
-            let percentage = currentCapacity / maxCapacity * 100
-            let isCharging = description[kIOPSIsChargingKey as String] as? Bool ?? false
-            return BatteryReading(percentage: percentage, isCharging: isCharging)
+    static func batteryReading(fromPowerSourceDescription description: [String: Any]) -> BatteryReading? {
+        let isPresent = description[kIOPSIsPresentKey as String] as? Bool ?? true
+        guard isPresent else {
+            return nil
         }
 
-        return nil
+        guard let currentCapacity = description[kIOPSCurrentCapacityKey as String] as? Double,
+              let maxCapacity = description[kIOPSMaxCapacityKey as String] as? Double,
+              maxCapacity > 0 else {
+            return nil
+        }
+
+        let percentage = currentCapacity / maxCapacity * 100
+        let isCharging = description[kIOPSIsChargingKey as String] as? Bool ?? false
+        let powerSourceState = description[kIOPSPowerSourceStateKey as String] as? String
+        let isConnectedToPower = powerSourceState == kIOPSACPowerValue
+        return BatteryReading(
+            percentage: percentage,
+            isCharging: isCharging,
+            isConnectedToPower: isConnectedToPower
+        )
     }
 }
 

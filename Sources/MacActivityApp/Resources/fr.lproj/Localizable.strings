@@ -30,6 +30,7 @@
 "metric.temperature" = "Température";
 "metric.fan" = "Ventilateur";
 "metric.battery.charging" = "En charge";
+"metric.battery.connectedToPower" = "Branché au secteur";
 "metric.battery.onBattery" = "Sur batterie";
 
 "chart.dimension.time" = "Heure";

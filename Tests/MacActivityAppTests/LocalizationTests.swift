@@ -153,6 +153,12 @@ final class LocalizationTests: XCTestCase {
             value: "82%",
             detailRole: .batteryCharging
         )
+        let batteryConnectedToPower = DashboardMetric(
+            kind: .battery,
+            titleRole: .metric(.battery),
+            value: "82%",
+            detailRole: .batteryConnectedToPower
+        )
         let batteryOnBattery = DashboardMetric(
             kind: .battery,
             titleRole: .metric(.battery),
@@ -175,7 +181,17 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: cpuTemperature, bundle: simplifiedChinese), "CPU 温度")
         XCTAssertEqual(AppLocalization.dashboardMetricTitle(for: batteryTemperature, bundle: simplifiedChinese), "电池温度")
         XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: battery, bundle: simplifiedChinese), "正在充电")
+        XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: batteryConnectedToPower, bundle: simplifiedChinese), "接入电源")
         XCTAssertEqual(AppLocalization.dashboardMetricDetail(for: batteryOnBattery, bundle: simplifiedChinese), "使用电池")
+    }
+
+    func testLegacyBatteryDetailStringsLocalizeConnectedPowerState() throws {
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            AppLocalization.metricDetail("Connected to Power", bundle: simplifiedChinese),
+            "接入电源"
+        )
     }
 
     func testMemorySegmentTooltipLocalizesSegmentTitles() throws {

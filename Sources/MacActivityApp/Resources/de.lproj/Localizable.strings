@@ -30,6 +30,7 @@
 "metric.temperature" = "Temperatur";
 "metric.fan" = "Lüfter";
 "metric.battery.charging" = "Lädt";
+"metric.battery.connectedToPower" = "Netzteil angeschlossen";
 "metric.battery.onBattery" = "Auf Akku";
 
 "chart.dimension.time" = "Zeit";

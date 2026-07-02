@@ -30,6 +30,7 @@
 "metric.temperature" = "Temperature";
 "metric.fan" = "Fan";
 "metric.battery.charging" = "Charging";
+"metric.battery.connectedToPower" = "Connected to Power";
 "metric.battery.onBattery" = "On Battery";
 
 "chart.dimension.time" = "Time";

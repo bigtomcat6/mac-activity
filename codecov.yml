@@ -11,6 +11,7 @@ ignore:
   # live macOS/Sparkle UI entry points in CI.
   - "Sources/MacActivityApp/AppDelegate.swift"
   - "Sources/MacActivityApp/SparkleUpdateController.swift"
+  - "Sources/MacActivityCore/Metrics/Providers/BatterySystemPowerSourceReader.swift"
 
   # SwiftUI view-builder closures and button actions are exercised indirectly by
   # layout/model tests; exclude the declarative view body from patch gating.

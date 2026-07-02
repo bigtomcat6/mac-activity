@@ -117,15 +117,18 @@ public struct NetworkReading: Equatable, Sendable {
 public struct BatteryReading: Equatable, Sendable {
     public var percentage: Double
     public var isCharging: Bool
+    public var isConnectedToPower: Bool
     public var hardwarePercentage: Double?
 
     public init(
         percentage: Double,
         isCharging: Bool,
+        isConnectedToPower: Bool? = nil,
         hardwarePercentage: Double? = nil
     ) {
         self.percentage = percentage
         self.isCharging = isCharging
+        self.isConnectedToPower = isConnectedToPower ?? isCharging
         self.hardwarePercentage = hardwarePercentage
     }
 
