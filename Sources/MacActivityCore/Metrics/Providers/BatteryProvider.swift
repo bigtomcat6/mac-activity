@@ -55,7 +55,13 @@ public struct BatteryProvider: MetricProvider {
 
             let percentage = currentCapacity / maxCapacity * 100
             let isCharging = description[kIOPSIsChargingKey as String] as? Bool ?? false
-            return BatteryReading(percentage: percentage, isCharging: isCharging)
+            let powerSourceState = description[kIOPSPowerSourceStateKey as String] as? String
+            let isConnectedToPower = powerSourceState == kIOPSACPowerValue
+            return BatteryReading(
+                percentage: percentage,
+                isCharging: isCharging,
+                isConnectedToPower: isConnectedToPower
+            )
         }
 
         return nil

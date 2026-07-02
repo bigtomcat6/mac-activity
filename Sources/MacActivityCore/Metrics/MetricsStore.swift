@@ -5,6 +5,7 @@ public struct MetricHistorySample: Equatable, Sendable {
     public var timestamp: Date
     public var primaryValue: Double
     public var secondaryValue: Double?
+    var batteryIsConnectedToPower: Bool?
     var memoryUsedBytes: UInt64?
     var memoryTotalBytes: UInt64?
     var memoryBreakdown: MemoryBreakdown?
@@ -14,6 +15,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         timestamp: Date,
         primaryValue: Double,
         secondaryValue: Double? = nil,
+        batteryIsConnectedToPower: Bool? = nil,
         memoryUsedBytes: UInt64? = nil,
         memoryTotalBytes: UInt64? = nil,
         memoryBreakdown: MemoryBreakdown? = nil,
@@ -22,6 +24,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         self.timestamp = timestamp
         self.primaryValue = primaryValue
         self.secondaryValue = secondaryValue
+        self.batteryIsConnectedToPower = batteryIsConnectedToPower
         self.memoryUsedBytes = memoryUsedBytes
         self.memoryTotalBytes = memoryTotalBytes
         self.memoryBreakdown = memoryBreakdown
@@ -34,6 +37,7 @@ public struct MetricHistorySample: Equatable, Sendable {
     ) {
         self.timestamp = timestamp
         self.sampleCount = 1
+        self.batteryIsConnectedToPower = nil
         self.memoryUsedBytes = nil
         self.memoryTotalBytes = nil
         self.memoryBreakdown = nil
@@ -78,6 +82,7 @@ public struct MetricHistorySample: Equatable, Sendable {
         case .battery(let reading):
             self.primaryValue = reading.percentage
             self.secondaryValue = reading.hardwarePercentage
+            self.batteryIsConnectedToPower = reading.isConnectedToPower
         case .temperature(let reading):
             self.primaryValue = reading.celsius
             self.secondaryValue = nil
@@ -367,6 +372,7 @@ public struct MetricsHistory: Equatable, Sendable {
             timestamp: lastSample.timestamp,
             primaryValue: primaryAverage,
             secondaryValue: secondaryAverage,
+            batteryIsConnectedToPower: lastSample.batteryIsConnectedToPower,
             memoryUsedBytes: weightedMemoryBytes(
                 from: samples,
                 totalSampleCount: totalSampleCount,
