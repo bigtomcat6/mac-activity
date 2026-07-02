@@ -196,6 +196,42 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
     }
 
+    func testOverviewMetricIconsUseApprovedNativeSymbols() {
+        let expectations: [(MetricKind, String?)] = [
+            (.cpu, "cpu"),
+            (.gpu, "display"),
+            (.disk, "externaldrive"),
+            (.swap, "memorychip"),
+            (.memory, "memorychip"),
+            (.vram, nil),
+            (.network, "network"),
+            (.battery, "battery.100"),
+            (.temperature, "thermometer"),
+            (.fan, "fan")
+        ]
+
+        for (kind, expectedIconName) in expectations {
+            XCTAssertEqual(
+                DashboardOverviewLayout.metricIconName(for: kind),
+                expectedIconName,
+                "Unexpected Overview icon for \(kind)"
+            )
+        }
+    }
+
+    func testOverviewStorageDetailIconsUseSharedMetricIconMappingOnlyForStorageMetrics() {
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailIconName(for: .disk),
+            DashboardOverviewLayout.metricIconName(for: .disk)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailIconName(for: .swap),
+            DashboardOverviewLayout.metricIconName(for: .swap)
+        )
+        XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .cpu))
+        XCTAssertNil(DashboardOverviewLayout.storageDetailIconName(for: .memory))
+    }
+
     func testOverviewStorageDetailHidesSwapPercent() {
         let disk = DashboardMetric(
             kind: .disk,

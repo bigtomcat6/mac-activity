@@ -165,12 +165,35 @@ enum DashboardOverviewLayout {
 
     static func storageDetailIconName(for kind: MetricKind) -> String? {
         switch kind {
+        case .disk, .swap:
+            return metricIconName(for: kind)
+        default:
+            return nil
+        }
+    }
+
+    static func metricIconName(for kind: MetricKind) -> String? {
+        switch kind {
+        case .cpu:
+            return "cpu"
+        case .gpu:
+            return "display"
         case .disk:
             return "externaldrive"
         case .swap:
             return "memorychip"
-        default:
+        case .memory:
+            return "memorychip"
+        case .vram:
             return nil
+        case .network:
+            return "network"
+        case .battery:
+            return "battery.100"
+        case .temperature:
+            return "thermometer"
+        case .fan:
+            return "fan"
         }
     }
 
