@@ -447,8 +447,8 @@ struct DashboardTrendChart: View {
     }
 
     private var powerConnectedRegionColor: Color {
-        Color(red: 0.68, green: 0.95, blue: 0.72)
-            .opacity(appearsActive ? 0.92 : 0.80)
+        Color(red: 0.78, green: 0.88, blue: 0.76)
+            .opacity(appearsActive ? 0.78 : 0.64)
     }
 
     private var powerConnectedIconColor: Color {

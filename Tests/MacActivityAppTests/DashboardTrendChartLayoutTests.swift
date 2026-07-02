@@ -469,7 +469,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
 
         XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
-        XCTAssertGreaterThan(connectedColor.greenComponent - connectedColor.redComponent, 0.12)
+        XCTAssertGreaterThan(connectedColor.greenComponent, connectedColor.redComponent)
     }
 
     func testRenderedBatteryPowerConnectedRegionStaysVisibleWhenInactive() throws {
@@ -523,10 +523,10 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         let disconnectedColor = try renderedColor(of: disconnectedChart, atTopLeft: CGPoint(x: 24, y: 6))
 
         XCTAssertGreaterThan(colorDistance(connectedColor, disconnectedColor), 0.12)
-        XCTAssertGreaterThan(connectedColor.greenComponent - connectedColor.redComponent, 0.12)
+        XCTAssertGreaterThan(connectedColor.greenComponent, connectedColor.redComponent)
     }
 
-    func testRenderedBatteryPowerConnectedRegionUsesLightGreenCapsuleColor() throws {
+    func testRenderedBatteryPowerConnectedRegionUsesMutedLightGreenCapsuleColor() throws {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let chart = batteryChart(
             detailRole: .batteryConnectedToPower,
@@ -572,10 +572,10 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             atTopLeft: CGPoint(x: capsule.frame.minX + 8, y: capsule.frame.midY)
         )
 
-        XCTAssertGreaterThan(capsuleColor.redComponent, 0.70)
-        XCTAssertGreaterThan(capsuleColor.greenComponent, 0.82)
-        XCTAssertGreaterThan(capsuleColor.blueComponent, 0.68)
-        XCTAssertGreaterThan(capsuleColor.greenComponent - capsuleColor.redComponent, 0.16)
+        XCTAssertGreaterThan(capsuleColor.redComponent, 0.80)
+        XCTAssertGreaterThan(capsuleColor.greenComponent, 0.88)
+        XCTAssertGreaterThan(capsuleColor.blueComponent, 0.78)
+        XCTAssertLessThan(capsuleColor.greenComponent - capsuleColor.redComponent, 0.12)
     }
 
     func testRenderedBatteryPowerConnectedRegionDrawsDarkGreenLightningIcon() throws {
