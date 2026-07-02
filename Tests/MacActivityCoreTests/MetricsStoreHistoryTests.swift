@@ -50,6 +50,29 @@ final class MetricsStoreHistoryTests: XCTestCase {
         XCTAssertEqual(aggregated.map(\.sampleCount), [4])
     }
 
+    func testBucketAveragedSamplesPreserveBatteryPowerStateTransitions() {
+        let base = Date(timeIntervalSince1970: 0)
+        let samples = [
+            MetricHistorySample(timestamp: base.addingTimeInterval(0), primaryValue: 80, batteryIsConnectedToPower: false),
+            MetricHistorySample(timestamp: base.addingTimeInterval(10), primaryValue: 81, batteryIsConnectedToPower: true),
+            MetricHistorySample(timestamp: base.addingTimeInterval(20), primaryValue: 82, batteryIsConnectedToPower: true),
+            MetricHistorySample(timestamp: base.addingTimeInterval(30), primaryValue: 83, batteryIsConnectedToPower: false),
+            MetricHistorySample(timestamp: base.addingTimeInterval(40), primaryValue: 84, batteryIsConnectedToPower: false),
+            MetricHistorySample(timestamp: base.addingTimeInterval(50), primaryValue: 85, batteryIsConnectedToPower: false),
+            MetricHistorySample(timestamp: base.addingTimeInterval(60), primaryValue: 86, batteryIsConnectedToPower: false),
+            MetricHistorySample(timestamp: base.addingTimeInterval(70), primaryValue: 87, batteryIsConnectedToPower: false)
+        ]
+
+        let aggregated = MetricsHistory.bucketAveragedSamples(samples, targetCount: 4)
+        let stateRuns = aggregated.compactMap(\.batteryIsConnectedToPower).reduce(into: [Bool]()) { result, state in
+            if result.last != state {
+                result.append(state)
+            }
+        }
+
+        XCTAssertEqual(stateRuns, [false, true, false])
+    }
+
     func testBucketAveragedSamplesHandlesEmptyAndAlreadySmallInputs() {
         let base = Date(timeIntervalSince1970: 0)
         let samples = [
