@@ -1529,19 +1529,13 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            HStack(spacing: 4) {
-                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
-                    Image(systemName: iconName)
-                        .font(.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
-                }
-
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .multilineTextAlignment(textAlignment)
-            }
-            .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+            DashboardMetricTitleLabel(
+                metric: metric,
+                font: .caption2.monospacedDigit().weight(.semibold),
+                titleColor: DashboardMetricColor.color(for: metric.kind),
+                iconColor: DashboardMetricColor.color(for: metric.kind),
+                textAlignment: textAlignment
+            )
 
             Text(DashboardOverviewLayout.storageDetailValue(for: metric))
                 .font(.caption2.monospacedDigit().weight(.semibold))
@@ -1598,13 +1592,16 @@ private struct UsageBarRow: View {
         let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
-            Text(AppLocalization.dashboardMetricTitle(for: metric))
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .frame(
-                    width: DashboardOverviewLayout.usageLabelColumnWidth,
-                    alignment: .center
-                )
+            DashboardMetricTitleLabel(
+                metric: metric,
+                font: .caption.monospacedDigit().weight(.semibold),
+                titleColor: .primary,
+                iconColor: color
+            )
+            .frame(
+                width: DashboardOverviewLayout.usageLabelColumnWidth,
+                alignment: .center
+            )
 
             GeometryReader { proxy in
                 let progress = displayedProgress ?? targetProgress
@@ -1661,10 +1658,12 @@ private struct CompactTrendMetricCard: View {
                     isHovered: isCardHovered
                 ) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(AppLocalization.dashboardMetricTitle(for: metric))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    DashboardMetricTitleLabel(
+                        metric: metric,
+                        font: .caption2.weight(.semibold),
+                        titleColor: .secondary,
+                        iconColor: DashboardMetricColor.color(for: metric.kind)
+                    )
                     Text(metric.value)
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                         .lineLimit(1)
@@ -1708,10 +1707,12 @@ private struct SlimTrendMetricCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: .caption2.weight(.semibold),
+                    titleColor: .secondary,
+                    iconColor: DashboardMetricColor.color(for: metric.kind)
+                )
                 Text(metric.value)
                     .font(.subheadline.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
@@ -1758,9 +1759,12 @@ private struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .top) {
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold),
+                    titleColor: .secondary,
+                    iconColor: color
+                )
                 Spacer(minLength: 8)
                 trailingValueView
             }
