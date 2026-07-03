@@ -20,12 +20,15 @@ cd mac-activity
 `version` must be `MAJOR.MINOR.PATCH`. For alpha, beta, and rc builds,
 `prerelease` is the tag suffix sequence number, such as `2` in
 `v26.0.0-beta.2`; leave it empty for final releases. `build` is the bundle
-`CFBundleVersion` and Sparkle version. It must keep increasing across the whole
-version train and can differ from the prerelease number. When `build` is empty,
-the workflow uses the GitHub run number.
+`CFBundleVersion` and Sparkle version. It must keep increasing across release
+trains and can differ from the prerelease number. Do not reset it when moving
+from a final release to the next train. When `build` is empty, the workflow uses
+the GitHub run number.
 
 MacActivity uses calendar-versioned release trains. The first public alpha for
 the current train is `26.0.0-alpha.1`; the matching final release is `26.0.0`.
+After a final release exists for a train, prerelease planner suggestions open
+the next minor train, such as `v26.1.0-beta.1` after `v26.0.0`.
 
 The workflow injects release versions into the runner workspace only. It does
 not commit release version changes back to the repository. The checked-in
