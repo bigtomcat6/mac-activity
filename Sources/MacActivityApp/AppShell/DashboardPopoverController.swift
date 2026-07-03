@@ -22,6 +22,7 @@ enum DashboardPopoverLayout {
     static let dividerHeight: CGFloat = 1
     static let footerHeight: CGFloat = 56
     static let overviewContentVerticalPadding: CGFloat = 36
+    static let emptyStateVerticalPadding: CGFloat = 36
 
     static func contentSize(for tab: DashboardTab, metrics: [DashboardMetric]) -> NSSize {
         NSSize(
@@ -41,7 +42,7 @@ enum DashboardPopoverLayout {
 
     static func overviewContentHeight(for metrics: [DashboardMetric]) -> CGFloat {
         if metrics.isEmpty {
-            return 120 + overviewContentVerticalPadding
+            return 120 + emptyStateVerticalPadding + overviewContentVerticalPadding
         }
 
         let rowHeights = overviewRowHeights(for: metrics)

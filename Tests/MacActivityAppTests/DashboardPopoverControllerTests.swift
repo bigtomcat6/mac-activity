@@ -131,6 +131,12 @@ final class DashboardPopoverControllerTests: XCTestCase {
             DashboardPopoverLayout.maximumHeight
         )
         XCTAssertEqual(
+            DashboardPopoverLayout.overviewContentHeight(for: []),
+            120
+                + DashboardPopoverLayout.emptyStateVerticalPadding
+                + DashboardPopoverLayout.overviewContentVerticalPadding
+        )
+        XCTAssertEqual(
             DashboardPopoverLayout.overviewContentHeight(for: [
                 DashboardMetric(kind: .vram, title: "VRAM", value: "Collecting")
             ]),
