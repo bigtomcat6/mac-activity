@@ -99,6 +99,7 @@ enum DashboardOverviewLayout {
     static let storageDetailContentAlignment: Alignment = .leading
     static let storageDetailTextAlignment: TextAlignment = .leading
     static let storageDetailSpacing: CGFloat = 4
+    static let metricTitleIconSpacing: CGFloat = 4
     static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
     static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
@@ -165,12 +166,35 @@ enum DashboardOverviewLayout {
 
     static func storageDetailIconName(for kind: MetricKind) -> String? {
         switch kind {
+        case .disk, .swap:
+            return metricIconName(for: kind)
+        default:
+            return nil
+        }
+    }
+
+    static func metricIconName(for kind: MetricKind) -> String? {
+        switch kind {
+        case .cpu:
+            return "cpu"
+        case .gpu:
+            return "display"
         case .disk:
             return "externaldrive"
         case .swap:
             return "memorychip"
-        default:
+        case .memory:
+            return "memorychip"
+        case .vram:
             return nil
+        case .network:
+            return "network"
+        case .battery:
+            return "battery.100"
+        case .temperature:
+            return "thermometer"
+        case .fan:
+            return "fanblades"
         }
     }
 
@@ -383,10 +407,6 @@ enum DashboardOverviewChrome {
     static let inactiveChartEmptyStroke = Color.black.opacity(0.34)
     static let inactiveMemorySegmentFill = Color.black.opacity(0.38)
 
-    static func liveIndicatorColor(appearsActive: Bool) -> Color {
-        appearsActive ? .green : .secondary
-    }
-
     static func emphasisFillColor(
         baseColor: Color,
         opacity: Double,
@@ -495,7 +515,6 @@ enum DashboardTab: CaseIterable, Identifiable {
 }
 
 struct DashboardView: View {
-    @Environment(\.appearsActive) private var appearsActive
     @ObservedObject var dashboardModel: DashboardModel
     @ObservedObject private var localizationController = AppLocalizationController.shared
     @ObservedObject var preferencesController: PreferencesController
@@ -504,30 +523,30 @@ struct DashboardView: View {
     @State private var activesRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
+    let onPreferredContentSizeChange: (DashboardTab, [DashboardMetric]) -> Void
 
     init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
-        initialSelectedTab: DashboardTab = .overview
+        initialSelectedTab: DashboardTab = .overview,
+        onPreferredContentSizeChange: @escaping (DashboardTab, [DashboardMetric]) -> Void = { _, _ in }
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
+        self.onPreferredContentSizeChange = onPreferredContentSizeChange
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding([.horizontal, .top], 18)
-                .padding(.bottom, 10)
-
-            tabPicker
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
 
             Divider()
 
@@ -564,54 +583,26 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
+            reportPreferredContentSize()
         }
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
         }
+        .onChange(of: dashboardModel.metrics) { _ in
+            reportPreferredContentSize()
+        }
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(AppLocalization.string(.appName))
-                    .font(.headline)
-                Text(summaryText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(alignment: .center, spacing: DashboardHeaderChrome.titlePickerSpacing) {
+            Text(AppLocalization.string(.appName))
+                .font(.headline)
+                .lineLimit(1)
 
-            Spacer()
+            Spacer(minLength: DashboardHeaderChrome.titlePickerSpacing)
 
-            liveIndicator
-        }
-    }
-
-    private var liveIndicator: some View {
-        HStack(spacing: DashboardHeaderChrome.liveIndicatorSpacing) {
-            Circle()
-                .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
-                .frame(
-                    width: DashboardHeaderChrome.liveIndicatorDotSize,
-                    height: DashboardHeaderChrome.liveIndicatorDotSize
-                )
-
-            Text(AppLocalization.string(.live))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
-        }
-        .padding(.horizontal, DashboardHeaderChrome.liveIndicatorHorizontalPadding)
-        .padding(.vertical, DashboardHeaderChrome.liveIndicatorVerticalPadding)
-        .background(
-            .quaternary.opacity(DashboardHeaderChrome.liveIndicatorBackgroundOpacity),
-            in: Capsule()
-        )
-        .overlay {
-            Capsule()
-                .stroke(
-                    .separator.opacity(DashboardHeaderChrome.liveIndicatorBorderOpacity),
-                    lineWidth: 1
-                )
+            tabPicker
+                .frame(minWidth: DashboardHeaderChrome.tabPickerMinWidth, alignment: .trailing)
         }
     }
 
@@ -649,6 +640,7 @@ struct DashboardView: View {
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger
                 )
+                reportPreferredContentSize(for: newValue)
             }
         )
     }
@@ -668,11 +660,8 @@ struct DashboardView: View {
         }
     }
 
-    private var summaryText: String {
-        let visible = dashboardModel.metrics.prefix(3).map { metric in
-            "\(AppLocalization.dashboardMetricTitle(for: metric)) \(metric.value)"
-        }
-        return visible.isEmpty ? AppLocalization.string(.dashboardWaitingFirstSample) : visible.joined(separator: " · ")
+    private func reportPreferredContentSize(for tab: DashboardTab? = nil) {
+        onPreferredContentSizeChange(tab ?? selectedTab, dashboardModel.metrics)
     }
 }
 
@@ -1505,19 +1494,13 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            HStack(spacing: 4) {
-                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
-                    Image(systemName: iconName)
-                        .font(.caption2.weight(.semibold))
-                        .accessibilityHidden(true)
-                }
-
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .lineLimit(1)
-                    .multilineTextAlignment(textAlignment)
-            }
-            .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+            DashboardMetricTitleLabel(
+                metric: metric,
+                font: .caption2.monospacedDigit().weight(.semibold),
+                titleColor: DashboardMetricColor.color(for: metric.kind),
+                iconColor: DashboardMetricColor.color(for: metric.kind),
+                textAlignment: textAlignment
+            )
 
             Text(DashboardOverviewLayout.storageDetailValue(for: metric))
                 .font(.caption2.monospacedDigit().weight(.semibold))
@@ -1535,6 +1518,35 @@ private struct StorageUsageDetailRow: View {
     }
 }
 
+private struct DashboardMetricTitleLabel: View {
+    let metric: DashboardMetric
+    let font: Font
+    let titleColor: Color
+    let iconColor: Color
+    var spacing: CGFloat = DashboardOverviewLayout.metricTitleIconSpacing
+    var textAlignment: TextAlignment = .leading
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            if let iconName = DashboardOverviewLayout.metricIconName(for: metric.kind) {
+                Image(systemName: iconName)
+                    .font(font)
+                    .foregroundStyle(iconColor)
+                    .accessibilityHidden(true)
+            }
+
+            Text(AppLocalization.dashboardMetricTitle(for: metric))
+                .font(font)
+                .foregroundStyle(titleColor)
+                .lineLimit(1)
+                .multilineTextAlignment(textAlignment)
+        }
+        .lineLimit(1)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(AppLocalization.dashboardMetricTitle(for: metric)))
+    }
+}
+
 private struct UsageBarRow: View {
     @Environment(\.appearsActive) private var appearsActive
     let metric: DashboardMetric
@@ -1545,13 +1557,16 @@ private struct UsageBarRow: View {
         let targetProgress = DashboardOverviewLayout.usageProgress(for: metric)
 
         HStack(spacing: DashboardOverviewLayout.usageRowSpacing) {
-            Text(AppLocalization.dashboardMetricTitle(for: metric))
-                .font(.caption.monospacedDigit().weight(.semibold))
-                .lineLimit(1)
-                .frame(
-                    width: DashboardOverviewLayout.usageLabelColumnWidth,
-                    alignment: .center
-                )
+            DashboardMetricTitleLabel(
+                metric: metric,
+                font: .caption.monospacedDigit().weight(.semibold),
+                titleColor: .primary,
+                iconColor: color
+            )
+            .frame(
+                width: DashboardOverviewLayout.usageLabelColumnWidth,
+                alignment: .center
+            )
 
             GeometryReader { proxy in
                 let progress = displayedProgress ?? targetProgress
@@ -1608,10 +1623,12 @@ private struct CompactTrendMetricCard: View {
                     isHovered: isCardHovered
                 ) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(AppLocalization.dashboardMetricTitle(for: metric))
-                        .font(.caption2.weight(.semibold))
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
+                    DashboardMetricTitleLabel(
+                        metric: metric,
+                        font: .caption2.weight(.semibold),
+                        titleColor: .secondary,
+                        iconColor: DashboardMetricColor.color(for: metric.kind)
+                    )
                     Text(metric.value)
                         .font(.subheadline.monospacedDigit().weight(.semibold))
                         .lineLimit(1)
@@ -1655,10 +1672,12 @@ private struct SlimTrendMetricCard: View {
     var body: some View {
         HStack(alignment: .center, spacing: DashboardOverviewLayout.compactTrendRestTextChartSpacing) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(.caption2.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: .caption2.weight(.semibold),
+                    titleColor: .secondary,
+                    iconColor: DashboardMetricColor.color(for: metric.kind)
+                )
                 Text(metric.value)
                     .font(.subheadline.monospacedDigit().weight(.semibold))
                     .lineLimit(1)
@@ -1705,9 +1724,12 @@ private struct MetricCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: isCompactChartCard ? 6 : 10) {
             HStack(alignment: .top) {
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold),
+                    titleColor: .secondary,
+                    iconColor: color
+                )
                 Spacer(minLength: 8)
                 trailingValueView
             }
