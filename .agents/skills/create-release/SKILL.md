@@ -20,6 +20,9 @@ the requested version into the runner workspace before packaging. The checked-in
 
 Use calendar-versioned release trains. The first public alpha starts at
 `26.0.0-alpha.1`; the matching final release is `26.0.0`.
+After a final release exists for a train, the next alpha/beta/rc planner
+suggestion opens the next minor train, for example `v26.1.0-beta.1` after
+`v26.0.0`.
 
 Confirm the intended channel and version:
 
@@ -27,7 +30,7 @@ Confirm the intended channel and version:
 - `release` creates the final tag like `v26.0.0`
 - `version` must be `MAJOR.MINOR.PATCH`
 - `prerelease` is the alpha/beta/rc sequence number in the tag suffix; leave it empty for `release`
-- `build` is the bundle `CFBundleVersion` and Sparkle version; it must advance across the whole version train, or be omitted to use the workflow run number
+- `build` is the bundle `CFBundleVersion` and Sparkle version; it must advance across release trains, or be omitted to use the workflow run number
 
 Pick the CI suite:
 
