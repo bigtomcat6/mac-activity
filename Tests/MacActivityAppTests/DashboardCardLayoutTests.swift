@@ -569,10 +569,22 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testHeaderLiveIndicatorUsesCompactChipChrome() {
-        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorDotSize, 6)
-        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorHorizontalPadding, 8)
-        XCTAssertEqual(DashboardHeaderChrome.liveIndicatorVerticalPadding, 4)
+    func testHeaderUsesCompactInlineTitleAndTabPickerChrome() {
+        XCTAssertEqual(DashboardHeaderChrome.horizontalPadding, 18)
+        XCTAssertEqual(DashboardHeaderChrome.topPadding, 18)
+        XCTAssertEqual(DashboardHeaderChrome.bottomPadding, 12)
+        XCTAssertEqual(DashboardHeaderChrome.titlePickerSpacing, 12)
+        XCTAssertEqual(DashboardHeaderChrome.tabPickerMinWidth, 160)
+    }
+
+    func testDashboardHeaderKeepsOnlyAppNameAndInlineTabPicker() throws {
+        let dashboardSource = try Self.dashboardViewSource()
+
+        XCTAssertFalse(dashboardSource.contains("summaryText"))
+        XCTAssertFalse(dashboardSource.contains("liveIndicator"))
+        XCTAssertFalse(dashboardSource.contains("DashboardOverviewChrome.liveIndicatorColor"))
+        XCTAssertTrue(dashboardSource.contains("Text(AppLocalization.string(.appName))"))
+        XCTAssertTrue(dashboardSource.contains("tabPicker"))
     }
 
     func testFooterActionsUseStableSystemImages() {
@@ -941,30 +953,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(
             Self.colorsApproximatelyEqual(inactiveColor, referenceColor, tolerance: 0.01),
             "Expected Overview inactive emphasis fill to reuse the shared neutral tone. inactive=\(Self.debugColor(inactiveColor)) reference=\(Self.debugColor(referenceColor))"
-        )
-    }
-
-    func testOverviewLiveIndicatorColorChangesWhenWindowIsInactive() throws {
-        let activeColor = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle()
-                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: true))
-                    .frame(width: 24, height: 24),
-                atTopLeft: CGPoint(x: 12, y: 12)
-            )
-        )
-        let inactiveColor = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle()
-                    .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: false))
-                    .frame(width: 24, height: 24),
-                atTopLeft: CGPoint(x: 12, y: 12)
-            )
-        )
-
-        XCTAssertFalse(
-            Self.colorsApproximatelyEqual(activeColor, inactiveColor, tolerance: 0.04),
-            "Expected the Live indicator color to lose its active accent when the window becomes inactive. active=\(Self.debugColor(activeColor)) inactive=\(Self.debugColor(inactiveColor))"
         )
     }
 
@@ -1626,6 +1614,17 @@ final class DashboardCardLayoutTests: XCTestCase {
             color.blueComponent,
             color.alphaComponent
         )
+    }
+
+    private static func dashboardViewSource() throws -> String {
+        let testFile = URL(fileURLWithPath: #filePath)
+        let packageRoot = testFile
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/MacActivityApp/Views/DashboardView.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }
 

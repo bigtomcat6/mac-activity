@@ -91,6 +91,40 @@ final class DashboardPopoverControllerTests: XCTestCase {
         ])
     }
 
+    func testOverviewPopoverHeightFitsOverviewContentInsteadOfFixedTallFrame() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let store = MetricsStore()
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 13)),
+                .gpu(GPUReading(usagePercent: 35)),
+                .disk(DiskReading(usedBytes: 917, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 61, totalBytes: 1_000)),
+                .memory(MemoryReading(usedBytes: 30, totalBytes: 36)),
+                .network(NetworkReading(downloadBytesPerSecond: 221_300, uploadBytesPerSecond: 3_000)),
+                .temperature(TemperatureReading(celsius: 55.1, source: .smc)),
+                .fan(FanReading(rpm: 2_497)),
+                .battery(BatteryReading(percentage: 92, isCharging: true))
+            ],
+            timestamp: Date(timeIntervalSince1970: 30)
+        )
+
+        _ = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: store),
+            preferencesController: Self.preferencesController(),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
+        )
+
+        XCTAssertEqual(popover.contentSize.width, 420)
+        XCTAssertEqual(popover.contentSize.height, 524)
+        XCTAssertLessThan(popover.contentSize.height, 560)
+    }
+
     func testPopoverHostCanDeallocateAfterControllerIsReleased() {
         weak var releasedPopover: RecordingPopoverHost?
 
