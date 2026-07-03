@@ -178,6 +178,32 @@ class PlanReleaseTests(unittest.TestCase):
         self.assertEqual(plan["suggested_build"], "4")
         self.assertEqual(plan["suggested_tag"], "v26.0.0")
 
+    def test_suggests_next_minor_prerelease_after_final_release(self):
+        plan = plan_release.plan_release(
+            channel="beta",
+            version=None,
+            prerelease=None,
+            build=None,
+            existing_tags=[
+                "v26.0.0-alpha.1",
+                "v26.0.0-alpha.2",
+                "v26.0.0-beta.5",
+                "v26.0.0",
+            ],
+            existing_releases=[
+                {
+                    "tag_name": "v26.0.0",
+                    "body": "<!-- MacActivityBundleBuild: 7 -->",
+                },
+            ],
+            release_year=26,
+        )
+
+        self.assertEqual(plan["suggested_version"], "26.1.0")
+        self.assertEqual(plan["suggested_prerelease"], "1")
+        self.assertEqual(plan["suggested_build"], "8")
+        self.assertEqual(plan["suggested_tag"], "v26.1.0-beta.1")
+
     def test_detects_build_that_would_not_advance_sparkle_version(self):
         plan = plan_release.plan_release(
             channel="beta",
@@ -193,7 +219,31 @@ class PlanReleaseTests(unittest.TestCase):
         )
 
         self.assertIn(
-            "build 1 must be greater than existing build 2 for 26.0.0",
+            "build 1 must be greater than existing build 2",
+            plan["conflicts"],
+        )
+
+    def test_detects_build_that_would_not_advance_across_release_trains(self):
+        plan = plan_release.plan_release(
+            channel="beta",
+            version="26.1.0",
+            prerelease="1",
+            build="1",
+            existing_tags=[
+                "v26.0.0-beta.5",
+                "v26.0.0",
+            ],
+            existing_releases=[
+                {
+                    "tag_name": "v26.0.0",
+                    "body": "<!-- MacActivityBundleBuild: 7 -->",
+                },
+            ],
+            release_year=26,
+        )
+
+        self.assertIn(
+            "build 1 must be greater than existing build 7",
             plan["conflicts"],
         )
 

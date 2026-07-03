@@ -76,6 +76,11 @@ def sort_version_key(version):
     return tuple(int(part) for part in version.split("."))
 
 
+def next_minor_version(version):
+    major, minor, _patch = sort_version_key(version)
+    return f"{major}.{minor + 1}.0"
+
+
 def release_tags(existing_releases):
     return [
         tag
@@ -114,22 +119,19 @@ def max_prerelease_for_version(channel, version, tags):
     )
 
 
-def max_bundle_build_for_version(version, tags, existing_releases):
-    builds = []
-    for tag in tags:
-        if tag["version"] == version and tag["prerelease"]:
-            builds.append(int(tag["prerelease"]))
+def max_bundle_build(tags, existing_releases):
+    builds = [int(tag["prerelease"]) for tag in tags if tag["prerelease"]]
 
     for release in existing_releases:
-        tag, _ = normalize_release(release)
-        parsed = parse_tag(tag)
-        if not parsed or parsed["version"] != version:
-            continue
         build = release_bundle_build(release)
         if build is not None:
             builds.append(build)
 
     return max(builds, default=0)
+
+
+def has_final_release(version, tags):
+    return any(tag["version"] == version and tag["channel"] == "release" for tag in tags)
 
 
 def suggest_release(channel, existing_tags, existing_releases, release_year):
@@ -141,7 +143,9 @@ def suggest_release(channel, existing_tags, existing_releases, release_year):
         key=sort_version_key,
     )
     version = year_versions[-1] if year_versions else f"{release_year}.0.0"
-    build = str(max_bundle_build_for_version(version, tags, existing_releases) + 1)
+    if channel != "release" and year_versions and has_final_release(version, tags):
+        version = next_minor_version(version)
+    build = str(max_bundle_build(tags, existing_releases) + 1)
 
     if channel == "release":
         prerelease = None
@@ -170,10 +174,10 @@ def detect_conflicts(tag, existing_tags, existing_releases, version, build, tags
         else:
             conflicts.append(f"release already exists: {tag}")
 
-    existing_build = max_bundle_build_for_version(version, tags, existing_releases)
+    existing_build = max_bundle_build(tags, existing_releases)
     if int(build) <= existing_build:
         conflicts.append(
-            f"build {build} must be greater than existing build {existing_build} for {version}"
+            f"build {build} must be greater than existing build {existing_build}"
         )
     return conflicts
 
