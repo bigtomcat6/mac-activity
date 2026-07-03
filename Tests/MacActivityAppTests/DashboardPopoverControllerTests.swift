@@ -125,6 +125,91 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertLessThan(popover.contentSize.height, 560)
     }
 
+    func testPopoverLayoutUsesMaximumHeightForActivesAndFallbackOverviewRows() {
+        XCTAssertEqual(
+            DashboardPopoverLayout.contentSize(for: .actives, metrics: []).height,
+            DashboardPopoverLayout.maximumHeight
+        )
+        XCTAssertEqual(
+            DashboardPopoverLayout.overviewContentHeight(for: [
+                DashboardMetric(kind: .vram, title: "VRAM", value: "Collecting")
+            ]),
+            120 + DashboardPopoverLayout.overviewContentVerticalPadding
+        )
+    }
+
+    func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let store = MetricsStore()
+        store.apply([.cpu(CPUReading(usagePercent: 13))], timestamp: Date(timeIntervalSince1970: 31))
+        let model = DashboardModel(store: store)
+
+        _ = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
+        )
+
+        let hostingController = try XCTUnwrap(popover.contentViewController as? NSHostingController<DashboardView>)
+        let window = NSWindow(contentViewController: hostingController)
+        defer { window.close() }
+        window.setContentSize(popover.contentSize)
+        window.layoutIfNeeded()
+        Self.drainMainRunLoop()
+
+        store.apply(
+            [
+                .cpu(CPUReading(usagePercent: 13)),
+                .gpu(GPUReading(usagePercent: 35)),
+                .disk(DiskReading(usedBytes: 917, totalBytes: 1_000)),
+                .swap(SwapReading(usedBytes: 61, totalBytes: 1_000)),
+                .memory(MemoryReading(usedBytes: 30, totalBytes: 36)),
+                .network(NetworkReading(downloadBytesPerSecond: 221_300, uploadBytesPerSecond: 3_000)),
+                .temperature(TemperatureReading(celsius: 55.1, source: .smc)),
+                .fan(FanReading(rpm: 2_497)),
+                .battery(BatteryReading(percentage: 92, isCharging: true))
+            ],
+            timestamp: Date(timeIntervalSince1970: 32)
+        )
+        XCTAssertTrue(Self.waitUntil { popover.contentSize.height == 524 })
+
+        let segmentedControl = try XCTUnwrap(Self.segmentedControl(in: window.contentView))
+        segmentedControl.setSelected(true, forSegment: 1)
+        _ = segmentedControl.target?.perform(segmentedControl.action, with: segmentedControl)
+
+        XCTAssertTrue(Self.waitUntil { popover.contentSize.height == DashboardPopoverLayout.maximumHeight })
+    }
+
+    func testHostedDashboardActionsClosePopoverBeforeForwarding() throws {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        var forwardedActions: [String] = []
+
+        _ = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore()),
+            preferencesController: Self.preferencesController(),
+            onVisibilityChange: { _ in },
+            openPreferences: { forwardedActions.append("preferences") },
+            quitApplication: { forwardedActions.append("quit") }
+        )
+
+        let dashboardView = try XCTUnwrap(
+            (popover.contentViewController as? NSHostingController<DashboardView>)?.rootView
+        )
+        dashboardView.openPreferences()
+        dashboardView.quitApplication()
+
+        XCTAssertEqual(recorder.events, ["close-popover", "close-popover"])
+        XCTAssertEqual(forwardedActions, ["preferences", "quit"])
+    }
+
     func testPopoverHostCanDeallocateAfterControllerIsReleased() {
         weak var releasedPopover: RecordingPopoverHost?
 
@@ -153,6 +238,31 @@ final class DashboardPopoverControllerTests: XCTestCase {
             store: DashboardPopoverPreferencesStore(initial: .default),
             launchService: NoopLaunchAtLoginService()
         )
+    }
+
+    private static func segmentedControl(in view: NSView?) -> NSSegmentedControl? {
+        allSubviews(of: view).first { $0 is NSSegmentedControl } as? NSSegmentedControl
+    }
+
+    private static func allSubviews(of view: NSView?) -> [NSView] {
+        guard let view else { return [] }
+        return view.subviews + view.subviews.flatMap(allSubviews)
+    }
+
+    private static func waitUntil(
+        timeout: TimeInterval = 2,
+        condition: () -> Bool
+    ) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            drainMainRunLoop()
+            if condition() { break }
+        }
+        return condition()
+    }
+
+    private static func drainMainRunLoop() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.02))
     }
 }
 
