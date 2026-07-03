@@ -22,12 +22,11 @@ enum DashboardCardChrome {
 }
 
 enum DashboardHeaderChrome {
-    static let liveIndicatorDotSize: CGFloat = 6
-    static let liveIndicatorSpacing: CGFloat = 5
-    static let liveIndicatorHorizontalPadding: CGFloat = 8
-    static let liveIndicatorVerticalPadding: CGFloat = 4
-    static let liveIndicatorBackgroundOpacity = 0.42
-    static let liveIndicatorBorderOpacity = 0.35
+    static let horizontalPadding: CGFloat = 18
+    static let topPadding: CGFloat = 18
+    static let bottomPadding: CGFloat = 12
+    static let titlePickerSpacing: CGFloat = 12
+    static let tabPickerMinWidth: CGFloat = 160
 }
 
 enum ActiveCleanupChrome {

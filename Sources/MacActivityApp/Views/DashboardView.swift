@@ -407,10 +407,6 @@ enum DashboardOverviewChrome {
     static let inactiveChartEmptyStroke = Color.black.opacity(0.34)
     static let inactiveMemorySegmentFill = Color.black.opacity(0.38)
 
-    static func liveIndicatorColor(appearsActive: Bool) -> Color {
-        appearsActive ? .green : .secondary
-    }
-
     static func emphasisFillColor(
         baseColor: Color,
         opacity: Double,
@@ -519,7 +515,6 @@ enum DashboardTab: CaseIterable, Identifiable {
 }
 
 struct DashboardView: View {
-    @Environment(\.appearsActive) private var appearsActive
     @ObservedObject var dashboardModel: DashboardModel
     @ObservedObject private var localizationController = AppLocalizationController.shared
     @ObservedObject var preferencesController: PreferencesController
@@ -528,30 +523,30 @@ struct DashboardView: View {
     @State private var activesRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
+    let onPreferredContentSizeChange: (DashboardTab, [DashboardMetric]) -> Void
 
     init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
-        initialSelectedTab: DashboardTab = .overview
+        initialSelectedTab: DashboardTab = .overview,
+        onPreferredContentSizeChange: @escaping (DashboardTab, [DashboardMetric]) -> Void = { _, _ in }
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
+        self.onPreferredContentSizeChange = onPreferredContentSizeChange
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             header
-                .padding([.horizontal, .top], 18)
-                .padding(.bottom, 10)
-
-            tabPicker
-                .padding(.horizontal, 18)
-                .padding(.bottom, 12)
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
 
             Divider()
 
@@ -588,54 +583,26 @@ struct DashboardView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
+            reportPreferredContentSize()
         }
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
         }
+        .onChange(of: dashboardModel.metrics) { _ in
+            reportPreferredContentSize()
+        }
     }
 
     private var header: some View {
-        HStack(alignment: .center) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(AppLocalization.string(.appName))
-                    .font(.headline)
-                Text(summaryText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
+        HStack(alignment: .center, spacing: DashboardHeaderChrome.titlePickerSpacing) {
+            Text(AppLocalization.string(.appName))
+                .font(.headline)
+                .lineLimit(1)
 
-            Spacer()
+            Spacer(minLength: DashboardHeaderChrome.titlePickerSpacing)
 
-            liveIndicator
-        }
-    }
-
-    private var liveIndicator: some View {
-        HStack(spacing: DashboardHeaderChrome.liveIndicatorSpacing) {
-            Circle()
-                .fill(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
-                .frame(
-                    width: DashboardHeaderChrome.liveIndicatorDotSize,
-                    height: DashboardHeaderChrome.liveIndicatorDotSize
-                )
-
-            Text(AppLocalization.string(.live))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(DashboardOverviewChrome.liveIndicatorColor(appearsActive: appearsActive))
-        }
-        .padding(.horizontal, DashboardHeaderChrome.liveIndicatorHorizontalPadding)
-        .padding(.vertical, DashboardHeaderChrome.liveIndicatorVerticalPadding)
-        .background(
-            .quaternary.opacity(DashboardHeaderChrome.liveIndicatorBackgroundOpacity),
-            in: Capsule()
-        )
-        .overlay {
-            Capsule()
-                .stroke(
-                    .separator.opacity(DashboardHeaderChrome.liveIndicatorBorderOpacity),
-                    lineWidth: 1
-                )
+            tabPicker
+                .frame(minWidth: DashboardHeaderChrome.tabPickerMinWidth, alignment: .trailing)
         }
     }
 
@@ -673,6 +640,7 @@ struct DashboardView: View {
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger
                 )
+                reportPreferredContentSize(for: newValue)
             }
         )
     }
@@ -692,11 +660,8 @@ struct DashboardView: View {
         }
     }
 
-    private var summaryText: String {
-        let visible = dashboardModel.metrics.prefix(3).map { metric in
-            "\(AppLocalization.dashboardMetricTitle(for: metric)) \(metric.value)"
-        }
-        return visible.isEmpty ? AppLocalization.string(.dashboardWaitingFirstSample) : visible.joined(separator: " · ")
+    private func reportPreferredContentSize(for tab: DashboardTab? = nil) {
+        onPreferredContentSizeChange(tab ?? selectedTab, dashboardModel.metrics)
     }
 }
 
