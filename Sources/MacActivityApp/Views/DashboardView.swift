@@ -358,6 +358,15 @@ enum DashboardOverviewLayout {
         }
     }
 
+    static func overviewCardShowsTitleText(for kind: MetricKind) -> Bool {
+        switch kind {
+        case .memory, .network, .battery:
+            return false
+        default:
+            return true
+        }
+    }
+
     static func compactTrendShowsReadout(
         for kind: MetricKind,
         isHovered: Bool
@@ -1565,6 +1574,7 @@ private struct DashboardMetricTitleLabel: View {
     let iconColor: Color
     var spacing: CGFloat = DashboardOverviewLayout.metricTitleIconSpacing
     var textAlignment: TextAlignment = .leading
+    var showsText = true
 
     var body: some View {
         HStack(spacing: spacing) {
@@ -1575,11 +1585,13 @@ private struct DashboardMetricTitleLabel: View {
                     .accessibilityHidden(true)
             }
 
-            Text(AppLocalization.dashboardMetricTitle(for: metric))
-                .font(font)
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-                .multilineTextAlignment(textAlignment)
+            if showsText {
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
+                    .font(font)
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
+            }
         }
         .lineLimit(1)
         .accessibilityElement(children: .combine)
@@ -1800,7 +1812,8 @@ private struct SlimTrendMetricCard: View {
                     metric: metric,
                     font: .caption2.weight(.semibold),
                     titleColor: .secondary,
-                    iconColor: DashboardMetricColor.color(for: metric.kind)
+                    iconColor: DashboardMetricColor.color(for: metric.kind),
+                    showsText: DashboardOverviewLayout.overviewCardShowsTitleText(for: metric.kind)
                 )
                 Text(metric.value)
                     .font(.subheadline.monospacedDigit().weight(.semibold))
@@ -1852,7 +1865,8 @@ private struct MetricCard: View {
                     metric: metric,
                     font: isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold),
                     titleColor: .secondary,
-                    iconColor: color
+                    iconColor: color,
+                    showsText: DashboardOverviewLayout.overviewCardShowsTitleText(for: metric.kind)
                 )
                 Spacer(minLength: 8)
                 trailingValueView
