@@ -153,9 +153,11 @@ public struct TemperatureReading: Equatable, Sendable {
 
 public struct FanReading: Equatable, Sendable {
     public var rpm: Int
+    public var fanRPMs: [Int]
 
-    public init(rpm: Int) {
+    public init(rpm: Int, fanRPMs: [Int]? = nil) {
         self.rpm = rpm
+        self.fanRPMs = fanRPMs ?? [rpm]
     }
 }
 
