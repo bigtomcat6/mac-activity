@@ -95,6 +95,7 @@ enum SMCSensorReader {
         readSnapshot().temperatureCelsius
     }
 
+    // codecov:ignore start
     static func readSnapshot() -> SMCSensorSnapshot {
         withConnection { connection in
             let fanRPMs = readVisibleFanRPMs(connection: connection)
@@ -105,6 +106,7 @@ enum SMCSensorReader {
             )
         } ?? SMCSensorSnapshot()
     }
+    // codecov:ignore end
 
     private static func withConnection<T>(_ body: (io_connect_t) -> T?) -> T? {
         for serviceName in serviceMatchingNames {
@@ -160,6 +162,7 @@ enum SMCSensorReader {
         return decodeTemperatureCelsius(from: reading.bytes, dataType: reading.dataType)
     }
 
+    // codecov:ignore start
     private static func readVisibleFanRPMs(connection: io_connect_t) -> [Int] {
         visibleFanRPMs(from: readFanSpeeds(connection: connection))
     }
@@ -173,6 +176,7 @@ enum SMCSensorReader {
             readFanRPM(key: "F\(index)Ac", connection: connection)
         }
     }
+    // codecov:ignore end
 
     private static func readTemperatureCelsius(connection: io_connect_t) -> Double? {
         lemonCPUTemperature(

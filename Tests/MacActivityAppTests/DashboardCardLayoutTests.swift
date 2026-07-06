@@ -617,9 +617,28 @@ final class DashboardCardLayoutTests: XCTestCase {
             value: "42.0 C",
             style: .chart
         )
+        let batteryTemperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.battery),
+            value: "31.0 C",
+            style: .chart
+        )
+        let fallbackTemperature = DashboardMetric(
+            kind: .temperature,
+            value: "41.0 C",
+            style: .chart
+        )
 
         XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: temperature))
         XCTAssertEqual(DashboardOverviewLayout.compactTrendReadoutTitle(for: temperature), "CPU")
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendReadoutTitle(for: batteryTemperature),
+            AppLocalization.temperatureSourceTitle(for: .battery)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendReadoutTitle(for: fallbackTemperature),
+            AppLocalization.dashboardMetricTitle(for: fallbackTemperature)
+        )
         XCTAssertEqual(
             DashboardOverviewLayout.trendChartHeight(for: temperature),
             DashboardOverviewLayout.compactFanTrendChartHeight
@@ -871,7 +890,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         store.apply(
             [
                 .temperature(TemperatureReading(celsius: 42, source: .smc)),
-                .fan(FanReading(rpm: 1_800)),
+                .fan(FanReading(rpm: 3_100, fanRPMs: [1_800, 3_100])),
                 .battery(BatteryReading(percentage: 82, isCharging: false))
             ],
             timestamp: Date(timeIntervalSince1970: 24)
@@ -885,6 +904,8 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
         .frame(width: 360, height: 320)
 
+        let fanMetric = try XCTUnwrap(model.metrics.first { $0.kind == .fan })
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: fanMetric))
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 128)))
     }
 
