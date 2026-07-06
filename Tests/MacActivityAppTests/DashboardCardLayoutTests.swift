@@ -552,6 +552,56 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
     }
 
+    func testOverviewFanReadoutValuesUseTwoRowsOnlyForDualFanMetrics() {
+        let dualFan = DashboardMetric(
+            kind: .fan,
+            value: "1800 RPM",
+            secondaryText: "3100 RPM",
+            style: .chart
+        )
+        let singleFan = DashboardMetric(kind: .fan, value: "1800 RPM", style: .chart)
+        let temperature = DashboardMetric(
+            kind: .temperature,
+            value: "42.0 C",
+            secondaryText: "31.0 C",
+            style: .chart
+        )
+
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: dualFan), ["1800 RPM", "3100 RPM"])
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: singleFan), ["1800 RPM"])
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: temperature), ["42.0 C"])
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: dualFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: singleFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: temperature))
+    }
+
+    func testOverviewDualFanUsesTopReadoutAndShorterChartWithoutGrowingCard() {
+        let dualFan = DashboardMetric(
+            kind: .fan,
+            value: "1800 RPM",
+            secondaryText: "3100 RPM",
+            style: .chart
+        )
+        let singleFan = DashboardMetric(kind: .fan, value: "1800 RPM", style: .chart)
+
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: dualFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: singleFan))
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: dualFan),
+            DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: singleFan),
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertLessThan(
+            DashboardOverviewLayout.compactFanTrendChartHeight,
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertEqual(DashboardOverviewLayout.metricTitleIconSpacing, 4)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+    }
+
     func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
         XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
     }
