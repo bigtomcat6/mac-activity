@@ -552,6 +552,14 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
     }
 
+    func testOverviewDataOnlyMetricHeadersHideTitleTextButKeepIcons() {
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .memory))
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .network))
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .battery))
+        XCTAssertTrue(DashboardOverviewLayout.overviewCardShowsTitleText(for: .temperature))
+        XCTAssertTrue(DashboardOverviewLayout.overviewCardShowsTitleText(for: .fan))
+    }
+
     func testOverviewFanReadoutValuesUseTwoRowsOnlyForDualFanMetrics() {
         let dualFan = DashboardMetric(
             kind: .fan,
@@ -858,7 +866,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 270, y: 128)))
     }
 
-    func testRenderedOverviewDisplaysTemperatureFanAndBatteryTrendTitles() throws {
+    func testRenderedOverviewDisplaysTemperatureFanAndBatteryTrendCards() throws {
         let store = MetricsStore()
         store.apply(
             [
