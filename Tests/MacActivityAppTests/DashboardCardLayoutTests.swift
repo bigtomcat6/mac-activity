@@ -602,6 +602,24 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
     }
 
+    func testOverviewCPUTemperatureUsesTopReadoutAndShorterChartWithoutGrowingCard() {
+        let temperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.smc),
+            value: "42.0 C",
+            style: .chart
+        )
+
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: temperature))
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendReadoutTitle(for: temperature), "CPU")
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: temperature),
+            DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(DashboardOverviewLayout.metricIconName(for: .temperature), "thermometer")
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+    }
+
     func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
         XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
     }
