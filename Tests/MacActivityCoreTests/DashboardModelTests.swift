@@ -139,6 +139,25 @@ final class DashboardModelTests: XCTestCase {
         XCTAssertNotNil(fan.trend)
     }
 
+    func testModelBuildsDualFanMetricWithLeftAndRightReadouts() async throws {
+        let store = MetricsStore()
+        let model = DashboardModel(store: store)
+
+        store.apply(
+            [.fan(FanReading(rpm: 3_100, fanRPMs: [1_800, 3_100]))],
+            timestamp: Date(timeIntervalSince1970: 17)
+        )
+
+        let metrics = await waitForMetrics(in: model) { metrics in
+            metrics.contains { $0.kind == .fan }
+        }
+        let fan = try XCTUnwrap(metrics.first { $0.kind == .fan })
+
+        XCTAssertEqual(fan.value, "1800 RPM")
+        XCTAssertEqual(fan.secondaryText, "3100 RPM")
+        XCTAssertEqual(fan.trend?.samples.last?.primaryValue, 3_100)
+    }
+
     func testModelPreservesHistoricalMemoryBreakdownForStackedBars() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)

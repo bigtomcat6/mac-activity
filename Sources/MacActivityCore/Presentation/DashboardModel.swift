@@ -412,11 +412,13 @@ public final class DashboardModel: ObservableObject {
         }
 
         if let fan = snapshot.fan {
+            let displayRPMs = Array(fan.fanRPMs.prefix(2))
             items.append(
                 DashboardMetric(
                     kind: .fan,
                     titleRole: .metric(.fan),
-                    value: "\(fan.rpm) RPM",
+                    value: "\(displayRPMs.first ?? fan.rpm) RPM",
+                    secondaryText: displayRPMs.count > 1 ? "\(displayRPMs[1]) RPM" : nil,
                     title: MetricKind.fan.title,
                     style: .chart,
                     trend: trend(from: history, kind: .fan, scale: .automatic)

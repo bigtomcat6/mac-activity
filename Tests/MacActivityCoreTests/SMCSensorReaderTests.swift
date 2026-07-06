@@ -275,12 +275,32 @@ final class SMCSensorReaderTests: XCTestCase {
         )
     }
 
+    func testFanProviderReportsPerFanRPMsAndMaximumVisibleRPM() async {
+        let fanCache = SMCSensorSnapshotCache(
+            readSnapshot: {
+                SMCSensorSnapshot(fanRPM: 3_111, fanRPMs: [1_200, 3_111])
+            }
+        )
+
+        let fanUpdate = await FanProvider(smcSnapshotCache: fanCache).sample()
+
+        XCTAssertEqual(fanUpdate, .fan(FanReading(rpm: 3_111, fanRPMs: [1_200, 3_111])))
+    }
+
     func testVisibleFanRPMMatchesLemonByUsingMaximumTruncatedSpeed() {
         XCTAssertEqual(
             SMCSensorReader.visibleFanRPM(from: [1200.8, 3111.9, 3000.4]),
             3111
         )
         XCTAssertNil(SMCSensorReader.visibleFanRPM(from: []))
+    }
+
+    func testVisibleFanRPMsPreserveFanOrderAndTruncateSpeeds() {
+        XCTAssertEqual(
+            SMCSensorReader.visibleFanRPMs(from: [1200.8, 3111.9]),
+            [1200, 3111]
+        )
+        XCTAssertEqual(SMCSensorReader.visibleFanRPMs(from: []), [])
     }
 
     private func bytes(from value: Float) -> [UInt8] {

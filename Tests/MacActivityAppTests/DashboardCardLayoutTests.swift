@@ -552,6 +552,133 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: .memory))
     }
 
+    func testOverviewDataOnlyMetricHeadersHideTitleTextButKeepIcons() {
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .memory))
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .network))
+        XCTAssertFalse(DashboardOverviewLayout.overviewCardShowsTitleText(for: .battery))
+        XCTAssertTrue(DashboardOverviewLayout.overviewCardShowsTitleText(for: .temperature))
+        XCTAssertTrue(DashboardOverviewLayout.overviewCardShowsTitleText(for: .fan))
+    }
+
+    func testOverviewFanReadoutValuesUseTwoRowsOnlyForDualFanMetrics() {
+        let dualFan = DashboardMetric(
+            kind: .fan,
+            value: "1800 RPM",
+            secondaryText: "3100 RPM",
+            style: .chart
+        )
+        let singleFan = DashboardMetric(kind: .fan, value: "1800 RPM", style: .chart)
+        let temperature = DashboardMetric(
+            kind: .temperature,
+            value: "42.0 C",
+            secondaryText: "31.0 C",
+            style: .chart
+        )
+
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: dualFan), ["1800 RPM", "3100 RPM"])
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: singleFan), ["1800 RPM"])
+        XCTAssertEqual(DashboardOverviewLayout.fanReadoutValues(for: temperature), ["42.0 C"])
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: dualFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: singleFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: temperature))
+    }
+
+    func testOverviewDualFanUsesTopReadoutAndShorterChartWithoutGrowingCard() {
+        let dualFan = DashboardMetric(
+            kind: .fan,
+            value: "1800 RPM",
+            secondaryText: "3100 RPM",
+            style: .chart
+        )
+        let singleFan = DashboardMetric(kind: .fan, value: "1800 RPM", style: .chart)
+
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: dualFan))
+        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: singleFan))
+        XCTAssertTrue(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: dualFan,
+                isHovered: false
+            )
+        )
+        XCTAssertFalse(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: dualFan,
+                isHovered: true
+            )
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: dualFan),
+            DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: dualFan, isHovered: true),
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: singleFan),
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertLessThan(
+            DashboardOverviewLayout.compactFanTrendChartHeight,
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertEqual(DashboardOverviewLayout.metricTitleIconSpacing, 4)
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+    }
+
+    func testOverviewCPUTemperatureUsesTopReadoutAndShorterChartWithoutGrowingCard() {
+        let temperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.smc),
+            value: "42.0 C",
+            style: .chart
+        )
+        let batteryTemperature = DashboardMetric(
+            kind: .temperature,
+            titleRole: .temperature(.battery),
+            value: "31.0 C",
+            style: .chart
+        )
+        let fallbackTemperature = DashboardMetric(
+            kind: .temperature,
+            value: "41.0 C",
+            style: .chart
+        )
+
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: temperature))
+        XCTAssertTrue(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: temperature,
+                isHovered: false
+            )
+        )
+        XCTAssertFalse(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: temperature,
+                isHovered: true
+            )
+        )
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendReadoutTitle(for: temperature), "CPU")
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendReadoutTitle(for: batteryTemperature),
+            AppLocalization.temperatureSourceTitle(for: .battery)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.compactTrendReadoutTitle(for: fallbackTemperature),
+            AppLocalization.dashboardMetricTitle(for: fallbackTemperature)
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: temperature),
+            DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: temperature, isHovered: true),
+            DashboardOverviewLayout.compactTrendChartHeight
+        )
+        XCTAssertEqual(DashboardOverviewLayout.metricIconName(for: .temperature), "thermometer")
+        XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
+    }
+
     func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
         XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
     }
@@ -790,12 +917,12 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 270, y: 128)))
     }
 
-    func testRenderedOverviewDisplaysTemperatureFanAndBatteryTrendTitles() throws {
+    func testRenderedOverviewDisplaysTemperatureFanAndBatteryTrendCards() throws {
         let store = MetricsStore()
         store.apply(
             [
                 .temperature(TemperatureReading(celsius: 42, source: .smc)),
-                .fan(FanReading(rpm: 1_800)),
+                .fan(FanReading(rpm: 3_100, fanRPMs: [1_800, 3_100])),
                 .battery(BatteryReading(percentage: 82, isCharging: false))
             ],
             timestamp: Date(timeIntervalSince1970: 24)
@@ -809,6 +936,8 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
         .frame(width: 360, height: 320)
 
+        let fanMetric = try XCTUnwrap(model.metrics.first { $0.kind == .fan })
+        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: fanMetric))
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 128)))
     }
 

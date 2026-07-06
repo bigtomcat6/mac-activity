@@ -103,6 +103,7 @@ enum DashboardOverviewLayout {
     static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
     static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
+    static let compactFanTrendChartHeight: CGFloat = 32
     static let compactTrendRestTextChartSpacing: CGFloat = 12
     static let compactTrendCardHeight: CGFloat = 64
     static let secondRowHeight = compactTrendCardHeight * 2 + sectionSpacing
@@ -357,6 +358,15 @@ enum DashboardOverviewLayout {
         }
     }
 
+    static func overviewCardShowsTitleText(for kind: MetricKind) -> Bool {
+        switch kind {
+        case .memory, .network, .battery:
+            return false
+        default:
+            return true
+        }
+    }
+
     static func compactTrendShowsReadout(
         for kind: MetricKind,
         isHovered: Bool
@@ -387,6 +397,50 @@ enum DashboardOverviewLayout {
         }
 
         return true
+    }
+
+    static func compactTrendUsesDualFanReadout(for metric: DashboardMetric) -> Bool {
+        metric.kind == .fan && metric.secondaryText != nil
+    }
+
+    static func compactTrendUsesTopFanReadout(for metric: DashboardMetric) -> Bool {
+        compactTrendUsesDualFanReadout(for: metric)
+    }
+
+    static func compactTrendUsesTopReadout(for metric: DashboardMetric) -> Bool {
+        metric.kind == .temperature || compactTrendUsesTopFanReadout(for: metric)
+    }
+
+    static func compactTrendShowsTopReadout(for metric: DashboardMetric, isHovered: Bool) -> Bool {
+        compactTrendUsesTopReadout(for: metric)
+        && compactTrendShowsReadout(for: metric.kind, isHovered: isHovered)
+    }
+
+    static func compactTrendReadoutTitle(for metric: DashboardMetric) -> String {
+        if case .temperature(let source) = metric.titleRole {
+            switch source {
+            case .smc:
+                return "CPU"
+            case .battery:
+                return AppLocalization.temperatureSourceTitle(for: .battery)
+            }
+        }
+
+        return AppLocalization.dashboardMetricTitle(for: metric)
+    }
+
+    static func trendChartHeight(for metric: DashboardMetric, isHovered: Bool = false) -> CGFloat {
+        compactTrendUsesTopReadout(for: metric) && !isHovered
+        ? compactFanTrendChartHeight
+        : compactTrendChartHeight
+    }
+
+    static func fanReadoutValues(for metric: DashboardMetric) -> [String] {
+        guard compactTrendUsesDualFanReadout(for: metric), let secondaryText = metric.secondaryText else {
+            return [metric.value]
+        }
+
+        return [metric.value, secondaryText]
     }
 }
 
@@ -1525,6 +1579,7 @@ private struct DashboardMetricTitleLabel: View {
     let iconColor: Color
     var spacing: CGFloat = DashboardOverviewLayout.metricTitleIconSpacing
     var textAlignment: TextAlignment = .leading
+    var showsText = true
 
     var body: some View {
         HStack(spacing: spacing) {
@@ -1535,11 +1590,13 @@ private struct DashboardMetricTitleLabel: View {
                     .accessibilityHidden(true)
             }
 
-            Text(AppLocalization.dashboardMetricTitle(for: metric))
-                .font(font)
-                .foregroundStyle(titleColor)
-                .lineLimit(1)
-                .multilineTextAlignment(textAlignment)
+            if showsText {
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
+                    .font(font)
+                    .foregroundStyle(titleColor)
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
+            }
         }
         .lineLimit(1)
         .accessibilityElement(children: .combine)
@@ -1610,45 +1667,51 @@ private struct CompactTrendMetricCard: View {
     @State private var isCardHovered = false
 
     var body: some View {
-        HStack(
-            alignment: .center,
-            spacing: DashboardOverviewLayout.compactTrendTextChartSpacing(
-                for: metric.kind,
-                isHovered: isCardHovered
-            )
-        ) {
-            if DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: metric.kind)
-                && DashboardOverviewLayout.compactTrendShowsReadout(
-                    for: metric.kind,
-                    isHovered: isCardHovered
-                ) {
-                VStack(alignment: .leading, spacing: 3) {
-                    DashboardMetricTitleLabel(
-                        metric: metric,
-                        font: .caption2.weight(.semibold),
-                        titleColor: .secondary,
-                        iconColor: DashboardMetricColor.color(for: metric.kind)
-                    )
-                    Text(metric.value)
-                        .font(.subheadline.monospacedDigit().weight(.semibold))
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
+        Group {
+            if DashboardOverviewLayout.compactTrendUsesTopReadout(for: metric) {
+                VStack(alignment: .leading, spacing: 2) {
+                    if DashboardOverviewLayout.compactTrendShowsTopReadout(
+                        for: metric,
+                        isHovered: isCardHovered
+                    ) {
+                        if metric.kind == .fan {
+                            CompactFanReadout(metric: metric)
+                        } else {
+                            CompactTemperatureReadout(metric: metric)
+                        }
+                    }
+                    trendChart
                 }
-                .fixedSize(horizontal: true, vertical: false)
+            } else {
+                HStack(
+                    alignment: .center,
+                    spacing: DashboardOverviewLayout.compactTrendTextChartSpacing(
+                        for: metric.kind,
+                        isHovered: isCardHovered
+                    )
+                ) {
+                    if DashboardOverviewLayout.trendReadoutUsesIntrinsicWidth(for: metric.kind)
+                        && DashboardOverviewLayout.compactTrendShowsReadout(
+                            for: metric.kind,
+                            isHovered: isCardHovered
+                        ) {
+                        VStack(alignment: .leading, spacing: 3) {
+                            DashboardMetricTitleLabel(
+                                metric: metric,
+                                font: .caption2.weight(.semibold),
+                                titleColor: .secondary,
+                                iconColor: DashboardMetricColor.color(for: metric.kind)
+                            )
+                            Text(metric.value)
+                                .font(.subheadline.monospacedDigit().weight(.semibold))
+                                .lineLimit(1)
+                                .minimumScaleFactor(0.7)
+                        }
+                        .fixedSize(horizontal: true, vertical: false)
+                    }
+                    trendChart
+                }
             }
-
-            DashboardTrendChart(
-                metric: metric,
-                color: DashboardMetricColor.color(for: metric.kind),
-                isCardHovered: isCardHovered,
-                showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
-                    for: metric.kind,
-                    isCompactOverviewChart: true
-                )
-            )
-            .id(metric.id)
-            .frame(height: DashboardOverviewLayout.compactTrendChartHeight)
-            .frame(maxWidth: .infinity)
         }
         .padding(DashboardCardLayout.compactChartInsets)
         .frame(
@@ -1663,6 +1726,89 @@ private struct CompactTrendMetricCard: View {
         }
         .animation(DashboardMotion.hoverAnimation, value: isCardHovered)
     }
+
+    private var trendChart: some View {
+        DashboardTrendChart(
+            metric: metric,
+            color: DashboardMetricColor.color(for: metric.kind),
+            isCardHovered: isCardHovered,
+            showsYAxisLabels: DashboardOverviewLayout.showsTrendYAxisLabels(
+                for: metric.kind,
+                isCompactOverviewChart: true
+            )
+        )
+        .id(metric.id)
+        .frame(height: DashboardOverviewLayout.trendChartHeight(for: metric, isHovered: isCardHovered))
+        .frame(maxWidth: .infinity)
+    }
+}
+
+private struct CompactFanReadout: View {
+    let metric: DashboardMetric
+
+    private var color: Color {
+        DashboardMetricColor.color(for: .fan)
+    }
+
+    var body: some View {
+        HStack(spacing: DashboardOverviewLayout.metricTitleIconSpacing) {
+            fanIcon
+            fanText(metric.value)
+            Spacer(minLength: 8)
+            if let secondaryText = metric.secondaryText {
+                fanText(secondaryText)
+                fanIcon
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(AppLocalization.dashboardMetricTitle(for: metric)))
+        .accessibilityValue(Text(DashboardOverviewLayout.fanReadoutValues(for: metric).joined(separator: ", ")))
+    }
+
+    private var fanIcon: some View {
+        Image(systemName: "fanblades")
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(color)
+            .accessibilityHidden(true)
+    }
+
+    private func fanText(_ value: String) -> some View {
+        Text(value)
+            .font(.caption.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
+    }
+}
+
+private struct CompactTemperatureReadout: View {
+    let metric: DashboardMetric
+
+    private var color: Color {
+        DashboardMetricColor.color(for: .temperature)
+    }
+
+    var body: some View {
+        HStack(spacing: DashboardOverviewLayout.metricTitleIconSpacing) {
+            Image(systemName: "thermometer")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(DashboardOverviewLayout.compactTrendReadoutTitle(for: metric))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(metric.value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(AppLocalization.dashboardMetricTitle(for: metric)))
+        .accessibilityValue(Text(metric.value))
+    }
 }
 
 private struct SlimTrendMetricCard: View {
@@ -1676,7 +1822,8 @@ private struct SlimTrendMetricCard: View {
                     metric: metric,
                     font: .caption2.weight(.semibold),
                     titleColor: .secondary,
-                    iconColor: DashboardMetricColor.color(for: metric.kind)
+                    iconColor: DashboardMetricColor.color(for: metric.kind),
+                    showsText: DashboardOverviewLayout.overviewCardShowsTitleText(for: metric.kind)
                 )
                 Text(metric.value)
                     .font(.subheadline.monospacedDigit().weight(.semibold))
@@ -1728,7 +1875,8 @@ private struct MetricCard: View {
                     metric: metric,
                     font: isCompactChartCard ? .caption2.weight(.semibold) : .caption.weight(.semibold),
                     titleColor: .secondary,
-                    iconColor: color
+                    iconColor: color,
+                    showsText: DashboardOverviewLayout.overviewCardShowsTitleText(for: metric.kind)
                 )
                 Spacer(minLength: 8)
                 trailingValueView
