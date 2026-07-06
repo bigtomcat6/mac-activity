@@ -398,8 +398,25 @@ enum DashboardOverviewLayout {
         compactTrendUsesDualFanReadout(for: metric)
     }
 
+    static func compactTrendUsesTopReadout(for metric: DashboardMetric) -> Bool {
+        metric.kind == .temperature || compactTrendUsesTopFanReadout(for: metric)
+    }
+
+    static func compactTrendReadoutTitle(for metric: DashboardMetric) -> String {
+        if case .temperature(let source) = metric.titleRole {
+            switch source {
+            case .smc:
+                return "CPU"
+            case .battery:
+                return AppLocalization.temperatureSourceTitle(for: .battery)
+            }
+        }
+
+        return AppLocalization.dashboardMetricTitle(for: metric)
+    }
+
     static func trendChartHeight(for metric: DashboardMetric) -> CGFloat {
-        compactTrendUsesTopFanReadout(for: metric)
+        compactTrendUsesTopReadout(for: metric)
         ? compactFanTrendChartHeight
         : compactTrendChartHeight
     }
@@ -1634,9 +1651,13 @@ private struct CompactTrendMetricCard: View {
 
     var body: some View {
         Group {
-            if DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: metric) {
+            if DashboardOverviewLayout.compactTrendUsesTopReadout(for: metric) {
                 VStack(alignment: .leading, spacing: 2) {
-                    CompactFanReadout(metric: metric)
+                    if metric.kind == .fan {
+                        CompactFanReadout(metric: metric)
+                    } else {
+                        CompactTemperatureReadout(metric: metric)
+                    }
                     trendChart
                 }
             } else {
@@ -1735,6 +1756,36 @@ private struct CompactFanReadout: View {
             .font(.caption.monospacedDigit().weight(.semibold))
             .lineLimit(1)
             .minimumScaleFactor(0.72)
+    }
+}
+
+private struct CompactTemperatureReadout: View {
+    let metric: DashboardMetric
+
+    private var color: Color {
+        DashboardMetricColor.color(for: .temperature)
+    }
+
+    var body: some View {
+        HStack(spacing: DashboardOverviewLayout.metricTitleIconSpacing) {
+            Image(systemName: "thermometer")
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(color)
+                .accessibilityHidden(true)
+            Text(DashboardOverviewLayout.compactTrendReadoutTitle(for: metric))
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            Spacer(minLength: 8)
+            Text(metric.value)
+                .font(.caption.monospacedDigit().weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.72)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(Text(AppLocalization.dashboardMetricTitle(for: metric)))
+        .accessibilityValue(Text(metric.value))
     }
 }
 
