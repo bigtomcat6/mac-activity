@@ -411,6 +411,11 @@ enum DashboardOverviewLayout {
         metric.kind == .temperature || compactTrendUsesTopFanReadout(for: metric)
     }
 
+    static func compactTrendShowsTopReadout(for metric: DashboardMetric, isHovered: Bool) -> Bool {
+        compactTrendUsesTopReadout(for: metric)
+        && compactTrendShowsReadout(for: metric.kind, isHovered: isHovered)
+    }
+
     static func compactTrendReadoutTitle(for metric: DashboardMetric) -> String {
         if case .temperature(let source) = metric.titleRole {
             switch source {
@@ -424,8 +429,8 @@ enum DashboardOverviewLayout {
         return AppLocalization.dashboardMetricTitle(for: metric)
     }
 
-    static func trendChartHeight(for metric: DashboardMetric) -> CGFloat {
-        compactTrendUsesTopReadout(for: metric)
+    static func trendChartHeight(for metric: DashboardMetric, isHovered: Bool = false) -> CGFloat {
+        compactTrendUsesTopReadout(for: metric) && !isHovered
         ? compactFanTrendChartHeight
         : compactTrendChartHeight
     }
@@ -1665,10 +1670,15 @@ private struct CompactTrendMetricCard: View {
         Group {
             if DashboardOverviewLayout.compactTrendUsesTopReadout(for: metric) {
                 VStack(alignment: .leading, spacing: 2) {
-                    if metric.kind == .fan {
-                        CompactFanReadout(metric: metric)
-                    } else {
-                        CompactTemperatureReadout(metric: metric)
+                    if DashboardOverviewLayout.compactTrendShowsTopReadout(
+                        for: metric,
+                        isHovered: isCardHovered
+                    ) {
+                        if metric.kind == .fan {
+                            CompactFanReadout(metric: metric)
+                        } else {
+                            CompactTemperatureReadout(metric: metric)
+                        }
                     }
                     trendChart
                 }
@@ -1728,7 +1738,7 @@ private struct CompactTrendMetricCard: View {
             )
         )
         .id(metric.id)
-        .frame(height: DashboardOverviewLayout.trendChartHeight(for: metric))
+        .frame(height: DashboardOverviewLayout.trendChartHeight(for: metric, isHovered: isCardHovered))
         .frame(maxWidth: .infinity)
     }
 }

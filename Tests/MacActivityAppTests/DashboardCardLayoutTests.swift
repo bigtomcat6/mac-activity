@@ -594,9 +594,25 @@ final class DashboardCardLayoutTests: XCTestCase {
 
         XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: dualFan))
         XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: singleFan))
+        XCTAssertTrue(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: dualFan,
+                isHovered: false
+            )
+        )
+        XCTAssertFalse(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: dualFan,
+                isHovered: true
+            )
+        )
         XCTAssertEqual(
             DashboardOverviewLayout.trendChartHeight(for: dualFan),
             DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: dualFan, isHovered: true),
+            DashboardOverviewLayout.compactTrendChartHeight
         )
         XCTAssertEqual(
             DashboardOverviewLayout.trendChartHeight(for: singleFan),
@@ -630,6 +646,18 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
 
         XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: temperature))
+        XCTAssertTrue(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: temperature,
+                isHovered: false
+            )
+        )
+        XCTAssertFalse(
+            DashboardOverviewLayout.compactTrendShowsTopReadout(
+                for: temperature,
+                isHovered: true
+            )
+        )
         XCTAssertEqual(DashboardOverviewLayout.compactTrendReadoutTitle(for: temperature), "CPU")
         XCTAssertEqual(
             DashboardOverviewLayout.compactTrendReadoutTitle(for: batteryTemperature),
@@ -642,6 +670,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(
             DashboardOverviewLayout.trendChartHeight(for: temperature),
             DashboardOverviewLayout.compactFanTrendChartHeight
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.trendChartHeight(for: temperature, isHovered: true),
+            DashboardOverviewLayout.compactTrendChartHeight
         )
         XCTAssertEqual(DashboardOverviewLayout.metricIconName(for: .temperature), "thermometer")
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
