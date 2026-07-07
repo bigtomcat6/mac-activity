@@ -280,7 +280,7 @@ jobs:
     name: Deploy GitHub Pages
     runs-on: ubuntu-latest
     needs: [appcast]
-    if: ${{ needs.appcast.outputs.publish == 'true' && needs.appcast.outputs.pages_changed == 'true' }}
+    if: ${{ needs.appcast.outputs.publish == 'true' }}
     timeout-minutes: 10
 
     steps:
