@@ -5,9 +5,35 @@ from pathlib import Path
 
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+EXTERNAL_WORKFLOW_ACTION_REF = re.compile(
+    r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+@[0-9a-f]{40}$"
+)
+WORKFLOW_USES_LINE = re.compile(r"^\s*uses:\s*([^#\s]+)")
 
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_external_workflow_actions_are_pinned_to_full_commit_sha(self):
+        workflow_dir = REPO_ROOT / ".github" / "workflows"
+
+        for workflow_path in sorted(workflow_dir.glob("*.yml")):
+            for line_number, line in enumerate(
+                workflow_path.read_text().splitlines(),
+                start=1,
+            ):
+                match = WORKFLOW_USES_LINE.match(line)
+                if not match:
+                    continue
+
+                action_ref = match.group(1)
+                if action_ref.startswith("./"):
+                    continue
+
+                self.assertRegex(
+                    action_ref,
+                    EXTERNAL_WORKFLOW_ACTION_REF,
+                    f"{workflow_path.relative_to(REPO_ROOT)}:{line_number} uses an unpinned external action",
+                )
+
     def test_release_workflow_does_not_expose_draft_input(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
@@ -146,9 +172,16 @@ class ReleasePolicyTests(unittest.TestCase):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
         package_section = workflow.split("\n  package:", 1)[1]
 
+        self.assertIn("Install pinned XcodeGen", package_section)
+        self.assertIn(".github/scripts/install_pinned_xcodegen.sh", package_section)
         self.assertIn("Verify generated Xcode project is current", package_section)
         self.assertIn("xcodegen generate --quiet", package_section)
         self.assertIn("git diff --exit-code -- MacActivity.xcodeproj", package_section)
+        self.assertNotIn("brew install xcodegen", package_section)
+        self.assertLess(
+            package_section.index("Install pinned XcodeGen"),
+            package_section.index("xcodegen generate --quiet"),
+        )
 
     def test_release_workflow_uses_release_signing_environment(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
@@ -212,9 +245,9 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("needs: [appcast]", appcast_section)
         self.assertIn("Check Pages build type", appcast_section)
         self.assertIn("steps.pages.outputs.build_type == 'workflow'", appcast_section)
-        self.assertIn("uses: actions/checkout@v7", appcast_section)
-        self.assertIn("uses: actions/upload-pages-artifact@v5", appcast_section)
-        self.assertIn("uses: actions/deploy-pages@v5", appcast_section)
+        self.assertRegex(appcast_section, re.compile(r"uses: actions/checkout@[0-9a-f]{40}"))
+        self.assertRegex(appcast_section, re.compile(r"uses: actions/upload-pages-artifact@[0-9a-f]{40}"))
+        self.assertRegex(appcast_section, re.compile(r"uses: actions/deploy-pages@[0-9a-f]{40}"))
 
         deploy_section = appcast_section.split("deploy-pages:", 1)[1]
         self.assertNotIn("name: github-pages", deploy_section)
@@ -410,7 +443,7 @@ class ReleasePolicyTests(unittest.TestCase):
 
         self.assertIn("CODECOV_TOKEN:", workflow)
         self.assertIn("Upload SwiftPM coverage to Codecov", workflow)
-        self.assertIn("uses: codecov/codecov-action@v7", workflow)
+        self.assertRegex(workflow, re.compile(r"uses: codecov/codecov-action@[0-9a-f]{40}"))
         self.assertIn("coverage/swiftpm-codecov.json", workflow)
         self.assertIn("xcrun llvm-cov export", workflow)
         self.assertIn("coverage/swiftpm.lcov", workflow)
@@ -484,9 +517,17 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Remove unused runner Homebrew taps", xcode_section)
         self.assertIn("aws/tap", xcode_section)
         self.assertIn("azure/bicep", xcode_section)
+        self.assertIn("Install pinned XcodeGen", xcode_section)
+        self.assertIn(".github/scripts/install_pinned_xcodegen.sh", xcode_section)
+        self.assertIn("xcodegen generate --quiet", xcode_section)
+        self.assertNotIn("brew install xcodegen", xcode_section)
         self.assertLess(
             xcode_section.index("Remove unused runner Homebrew taps"),
-            xcode_section.index("brew install xcodegen"),
+            xcode_section.index("Install pinned XcodeGen"),
+        )
+        self.assertLess(
+            xcode_section.index("Install pinned XcodeGen"),
+            xcode_section.index("xcodegen generate --quiet"),
         )
 
         lint_section = workflow.split("\n  lint:", 1)[1].split("\n  ci-summary:", 1)[0]
@@ -497,6 +538,16 @@ class ReleasePolicyTests(unittest.TestCase):
             lint_section.index("Remove unused runner Homebrew taps"),
             lint_section.index("brew install swiftlint"),
         )
+
+    def test_xcodegen_installer_downloads_pinned_release_archive(self):
+        script = (REPO_ROOT / ".github" / "scripts" / "install_pinned_xcodegen.sh").read_text()
+
+        self.assertIn('XCODEGEN_VERSION="${XCODEGEN_VERSION:-2.45.4}"', script)
+        self.assertIn("090ec29491aad50aec10631bf6e62253fed733c50f3aab0f5ffc86bc170bdbef", script)
+        self.assertIn("github.com/yonaskolb/XcodeGen/releases/download", script)
+        self.assertIn("curl --fail --location --silent --show-error", script)
+        self.assertIn("shasum -a 256", script)
+        self.assertIn("ditto -x -k", script)
 
     def test_create_release_skill_requires_two_phase_release(self):
         skill = (

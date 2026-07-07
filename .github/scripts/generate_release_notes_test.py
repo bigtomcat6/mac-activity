@@ -174,6 +174,35 @@ class GenerateReleaseNotesTests(unittest.TestCase):
 
         self.assertEqual(previous_tag, "v26.0.0-beta.4")
 
+    def test_escapes_markdown_special_characters_in_pr_titles(self):
+        notes = generate_release_notes.render_release_notes(
+            [
+                generate_release_notes.PullRequest(
+                    number=9,
+                    title="fix: close <img src=x onerror=alert(1)> and [run](javascript:alert(1))",
+                    labels=("security",),
+                ),
+            ]
+        )
+
+        self.assertNotIn("<img", notes)
+        self.assertNotIn("[run](javascript:", notes)
+        self.assertIn(r"&lt;img src=x onerror=alert\(1\)&gt;", notes)
+        self.assertIn(r"\[run\]\(javascript:alert\(1\)\)", notes)
+
+    def test_escapes_leading_markdown_block_markers_in_pr_titles(self):
+        notes = generate_release_notes.render_release_notes(
+            [
+                generate_release_notes.PullRequest(
+                    number=10,
+                    title="> quoted release note",
+                    labels=("bugfix",),
+                ),
+            ]
+        )
+
+        self.assertIn("- &gt; quoted release note. (#10)", notes)
+
 
 if __name__ == "__main__":
     unittest.main()

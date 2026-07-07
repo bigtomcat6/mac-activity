@@ -76,6 +76,13 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
     }
 
+    func testViewActiveAppProviderForwardsTerminationResults() {
+        let app = Self.entries(count: 1)[0]
+        let provider = ViewActiveAppProviderRecorder(terminationResults: [.requested])
+
+        XCTAssertEqual(provider.requestTermination(app), .requested)
+    }
+
     func testRenderedProcessProgressUsesNeutralToneWhenWindowIsInactive() throws {
         let app = ActiveAppMemoryEntry(
             processIdentifier: 2_210,
@@ -779,7 +786,7 @@ private final class ViewActiveAppProviderRecorder: ActiveAppMemoryProviding {
         Array(entries.prefix(limit))
     }
 
-    func requestTermination(processIdentifier: pid_t) -> ActiveAppTerminationResult {
+    func requestTermination(_: ActiveAppMemoryEntry) -> ActiveAppTerminationResult {
         guard terminationResults.isEmpty == false else { return .notFound }
         return terminationResults.removeFirst()
     }

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import html
 import json
 import re
 import subprocess
@@ -22,6 +23,7 @@ SKIP_LABEL = "skip-release-notes"
 CONVENTIONAL_TITLE_PREFIX = re.compile(r"^[a-zA-Z]+(?:\([^)]+\))?!?:\s+")
 STABLE_RELEASE_TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 TERMINAL_PUNCTUATION = (".", "!", "?", ")", "]", "`")
+MARKDOWN_TEXT_ESCAPE_CHARACTERS = frozenset("\\`*_{}[]()#+!<>|")
 
 
 @dataclass(frozen=True)
@@ -52,15 +54,26 @@ def is_skipped(labels: tuple[str, ...]) -> bool:
     return SKIP_LABEL in {normalize_label(label) for label in labels}
 
 
+def escape_markdown_text(text: str) -> str:
+    text = html.escape(text, quote=False)
+    escaped = "".join(
+        f"\\{character}" if character in MARKDOWN_TEXT_ESCAPE_CHARACTERS else character
+        for character in text
+    )
+    if escaped.startswith(("-", "+", ">")):
+        return f"\\{escaped}"
+    return escaped
+
+
 def release_note_title(title: str) -> str:
     title = CONVENTIONAL_TITLE_PREFIX.sub("", title).strip()
     if not title:
         return "Untitled change."
 
     title = title[0].upper() + title[1:]
-    if title.endswith(TERMINAL_PUNCTUATION):
-        return title
-    return f"{title}."
+    if not title.endswith(TERMINAL_PUNCTUATION):
+        title = f"{title}."
+    return escape_markdown_text(title)
 
 
 def release_note_entry(pr: PullRequest) -> str:

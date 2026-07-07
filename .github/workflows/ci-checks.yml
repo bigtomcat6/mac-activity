@@ -39,7 +39,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Check development version
         run: python3 .github/scripts/check_development_version.py
@@ -78,7 +78,7 @@ jobs:
             > coverage/swiftpm.lcov
 
       - name: Upload SwiftPM coverage
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: swiftpm-coverage
           path: |
@@ -119,7 +119,7 @@ jobs:
 
       - name: Upload SwiftPM coverage to Codecov
         if: ${{ github.event_name == 'push' || github.event_name == 'pull_request' }}
-        uses: codecov/codecov-action@v7
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f
         with:
           files: coverage/swiftpm.lcov
           flags: swiftpm
@@ -139,7 +139,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Check development version
         run: python3 .github/scripts/check_development_version.py
@@ -153,11 +153,11 @@ jobs:
         run: |
           bash .github/scripts/remove_unused_homebrew_taps.sh aws/tap azure/bicep
 
+      - name: Install pinned XcodeGen
+        run: bash .github/scripts/install_pinned_xcodegen.sh
+
       - name: Verify generated Xcode project is current
         run: |
-          if ! command -v xcodegen >/dev/null; then
-            brew install xcodegen
-          fi
           xcodegen generate --quiet
           if ! git diff --exit-code -- MacActivity.xcodeproj; then
             echo "::error::MacActivity.xcodeproj is out of sync with project.yml. Run xcodegen generate."
@@ -228,7 +228,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Remove unused runner Homebrew taps
         run: |

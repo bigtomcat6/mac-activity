@@ -1,3 +1,4 @@
+import AppKit
 import Darwin.Mach
 import XCTest
 @testable import MacActivityCore
@@ -161,6 +162,138 @@ final class MemoryProviderTests: XCTestCase {
         )
 
         XCTAssertEqual(entry.bundleURL, bundleURL)
+    }
+
+    func testActiveAppMemoryEntryMatchesTerminationTargetUsingStableBundleIdentity() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertTrue(entry.hasStableTerminationIdentity)
+        XCTAssertTrue(
+            entry.matchesTerminationTarget(
+                processIdentifier: 104,
+                bundleIdentifier: "com.apple.Safari",
+                bundleURL: bundleURL
+            )
+        )
+    }
+
+    func testActiveAppMemoryEntryRejectsReusedPIDWithDifferentBundleIdentifier() {
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"),
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertFalse(
+            entry.matchesTerminationTarget(
+                processIdentifier: 104,
+                bundleIdentifier: "com.example.Other",
+                bundleURL: URL(fileURLWithPath: "/Applications/Safari.app")
+            )
+        )
+    }
+
+    func testActiveAppMemoryEntryRejectsReusedPIDWithDifferentBundleURL() {
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: URL(fileURLWithPath: "/Applications/Safari.app"),
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertFalse(
+            entry.matchesTerminationTarget(
+                processIdentifier: 104,
+                bundleIdentifier: "com.apple.Safari",
+                bundleURL: URL(fileURLWithPath: "/Applications/Other.app")
+            )
+        )
+    }
+
+    func testActiveAppMemoryEntryRequiresStableTerminationIdentity() {
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Process 104",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertFalse(entry.hasStableTerminationIdentity)
+        XCTAssertFalse(
+            entry.matchesTerminationTarget(
+                processIdentifier: 104,
+                bundleIdentifier: nil,
+                bundleURL: nil
+            )
+        )
+    }
+
+    @MainActor
+    func testActiveAppMemoryServiceRejectsTerminationWithoutStableIdentity() {
+        let service = ActiveAppMemoryService()
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: 104,
+            name: "Process 104",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(service.requestTermination(entry), .notTerminable)
+    }
+
+    @MainActor
+    func testActiveAppMemoryServiceReportsNotFoundForMissingStableTarget() {
+        let service = ActiveAppMemoryService()
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: -1,
+            name: "Missing App",
+            bundleIdentifier: "com.example.missing",
+            bundleURL: nil,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(service.requestTermination(entry), .notFound)
+    }
+
+    @MainActor
+    func testActiveAppMemoryServiceRejectsReusedPIDIdentityMismatch() throws {
+        let runningApp = try XCTUnwrap(
+            NSWorkspace.shared.runningApplications.first { app in
+                app.activationPolicy == .regular
+                    && app.isTerminated == false
+                    && app.bundleIdentifier != nil
+            }
+        )
+        let bundleIdentifier = try XCTUnwrap(runningApp.bundleIdentifier)
+        let service = ActiveAppMemoryService()
+        let entry = ActiveAppMemoryEntry(
+            processIdentifier: runningApp.processIdentifier,
+            name: runningApp.localizedName ?? bundleIdentifier,
+            bundleIdentifier: "\(bundleIdentifier).mismatch",
+            bundleURL: runningApp.bundleURL,
+            residentMemoryBytes: 4_096,
+            isTerminable: true
+        )
+
+        XCTAssertEqual(service.requestTermination(entry), .notFound)
     }
 
     func testCleanMemoryDefaultCommandsPreferSystemSbinPurgeThenLegacyUsrBinPurge() {

@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Check localization coverage
         run: python3 .github/scripts/update_localization_coverage.py --check
@@ -38,7 +38,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
 
       - name: Generate Shields endpoint JSON
         run: python3 .github/scripts/update_localization_coverage.py --badge-json-dir "${RUNNER_TEMP}/localization-badges"
