@@ -1009,7 +1009,10 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/MacActivity.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "Configuration/MacActivity-Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity;
 				PRODUCT_MODULE_NAME = MacActivityApp;
 				PRODUCT_NAME = "Mac Activity";
@@ -1128,7 +1131,10 @@
 				CODE_SIGN_ENTITLEMENTS = Configuration/MacActivity.entitlements;
 				COMBINE_HIDPI_IMAGES = YES;
 				INFOPLIST_FILE = "Configuration/MacActivity-Info.plist";
-				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/../Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity;
 				PRODUCT_MODULE_NAME = MacActivityApp;
 				PRODUCT_NAME = "Mac Activity";

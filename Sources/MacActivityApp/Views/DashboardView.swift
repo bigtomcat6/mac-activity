@@ -227,15 +227,24 @@ enum DashboardOverviewLayout {
             return equalSlotStorageUsageSegments(for: visibleMetrics)
         }
 
-        var startProgress = 0.0
+        let diskEndProgress = visibleMetrics
+            .first { $0.kind == .disk }
+            .map { storageWidthProgress(for: $0, diskTotalBytes: diskTotalBytes) } ?? 0
         return visibleMetrics.map { metric in
-            let widthProgress = min(storageWidthProgress(for: metric, diskTotalBytes: diskTotalBytes), max(0, 1 - startProgress))
+            let widthProgress = storageWidthProgress(
+                for: metric,
+                diskTotalBytes: diskTotalBytes,
+                diskEndProgress: diskEndProgress
+            )
             let segment = DashboardStorageUsageSegment(
                 kind: metric.kind,
-                startProgress: startProgress,
+                startProgress: storageStartProgress(
+                    for: metric,
+                    widthProgress: widthProgress,
+                    diskEndProgress: diskEndProgress
+                ),
                 widthProgress: widthProgress
             )
-            startProgress = clampedProgress(startProgress + widthProgress)
             return segment
         }
     }
@@ -334,13 +343,30 @@ enum DashboardOverviewLayout {
             + storageDetailBarSpacing
     }
 
-    private static func storageWidthProgress(for metric: DashboardMetric, diskTotalBytes: UInt64) -> Double {
+    private static func storageWidthProgress(
+        for metric: DashboardMetric,
+        diskTotalBytes: UInt64,
+        diskEndProgress: Double? = nil
+    ) -> Double {
         guard let usedBytes = metric.usedBytes else { return usageProgress(for: metric) }
         let widthProgress = Double(usedBytes) / Double(diskTotalBytes)
-        guard metric.kind == .swap, usedBytes > 0 else {
+        guard metric.kind == .swap else {
             return clampedProgress(widthProgress)
         }
-        return clampedProgress(max(widthProgress, storageSwapMinimumVisibleWidth))
+        guard usedBytes > 0 else {
+            return clampedProgress(min(widthProgress, diskEndProgress ?? 1))
+        }
+        let visibleWidthProgress = max(widthProgress, storageSwapMinimumVisibleWidth)
+        return clampedProgress(min(visibleWidthProgress, diskEndProgress ?? 1))
+    }
+
+    private static func storageStartProgress(
+        for metric: DashboardMetric,
+        widthProgress: Double,
+        diskEndProgress: Double
+    ) -> Double {
+        guard metric.kind == .swap else { return 0 }
+        return clampedProgress(diskEndProgress - widthProgress)
     }
 
     private static func clampedProgress(_ progress: Double) -> Double {
