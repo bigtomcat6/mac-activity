@@ -242,7 +242,7 @@ final class ActiveCleanupModel: ObservableObject {
     }
 
     func quit(_ app: ActiveAppMemoryEntry) {
-        switch appProvider.requestTermination(processIdentifier: app.processIdentifier) {
+        switch appProvider.requestTermination(app) {
         case .requested:
             processActionState = .requested(app.name)
             markQuitPending(for: app.processIdentifier)

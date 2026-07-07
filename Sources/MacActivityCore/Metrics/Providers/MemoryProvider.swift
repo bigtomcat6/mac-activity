@@ -106,6 +106,47 @@ public struct ActiveAppMemoryEntry: Identifiable, Equatable, Sendable {
     public var formattedResidentMemory: String {
         ByteCountFormatter.string(fromByteCount: Int64(min(residentMemoryBytes, UInt64(Int64.max))), countStyle: .memory)
     }
+
+    public var hasStableTerminationIdentity: Bool {
+        Self.hasStableTerminationIdentity(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
+    }
+
+    public static func hasStableTerminationIdentity(bundleIdentifier: String?, bundleURL: URL?) -> Bool {
+        normalizedBundleIdentifier(bundleIdentifier) != nil || normalizedBundlePath(bundleURL) != nil
+    }
+
+    public func matchesTerminationTarget(
+        processIdentifier: pid_t,
+        bundleIdentifier: String?,
+        bundleURL: URL?
+    ) -> Bool {
+        guard self.processIdentifier == processIdentifier else { return false }
+
+        var matchedStableIdentity = false
+        if let expectedBundleIdentifier = Self.normalizedBundleIdentifier(self.bundleIdentifier) {
+            guard expectedBundleIdentifier == Self.normalizedBundleIdentifier(bundleIdentifier) else {
+                return false
+            }
+            matchedStableIdentity = true
+        }
+        if let expectedBundlePath = Self.normalizedBundlePath(self.bundleURL) {
+            guard expectedBundlePath == Self.normalizedBundlePath(bundleURL) else {
+                return false
+            }
+            matchedStableIdentity = true
+        }
+
+        return matchedStableIdentity
+    }
+
+    private static func normalizedBundleIdentifier(_ bundleIdentifier: String?) -> String? {
+        guard let bundleIdentifier, bundleIdentifier.isEmpty == false else { return nil }
+        return bundleIdentifier
+    }
+
+    private static func normalizedBundlePath(_ bundleURL: URL?) -> String? {
+        bundleURL?.standardizedFileURL.path
+    }
 }
 
 public enum ActiveAppTerminationResult: Equatable, Sendable {
@@ -142,14 +183,17 @@ public final class ActiveAppMemoryService {
             let residentBytes = aggregates[pid]?.aggregateResidentBytes
                 ?? memoryReader.residentMemoryBytes(for: pid)
             guard let residentBytes, residentBytes > 0 else { return nil }
+            let bundleIdentifier = app.bundleIdentifier
+            let bundleURL = app.bundleURL
 
             return ActiveAppMemoryEntry(
                 processIdentifier: pid,
                 name: app.localizedName ?? app.bundleIdentifier ?? "Process \(pid)",
-                bundleIdentifier: app.bundleIdentifier,
-                bundleURL: app.bundleURL,
+                bundleIdentifier: bundleIdentifier,
+                bundleURL: bundleURL,
                 residentMemoryBytes: residentBytes,
                 isTerminable: app.isTerminated == false
+                    && ActiveAppMemoryEntry.hasStableTerminationIdentity(bundleIdentifier: bundleIdentifier, bundleURL: bundleURL)
             )
         }
 
@@ -169,12 +213,24 @@ public final class ActiveAppMemoryService {
     }
 
     @discardableResult
-    public func requestTermination(processIdentifier: pid_t) -> ActiveAppTerminationResult {
-        guard let app = workspace.runningApplications.first(where: { $0.processIdentifier == processIdentifier }) else {
+    public func requestTermination(_ target: ActiveAppMemoryEntry) -> ActiveAppTerminationResult {
+        guard target.hasStableTerminationIdentity else {
+            return .notTerminable
+        }
+        guard let app = workspace.runningApplications.first(
+            where: { $0.processIdentifier == target.processIdentifier }
+        ) else {
             return .notFound
         }
         guard app.activationPolicy == .regular, app.isTerminated == false else {
             return .notTerminable
+        }
+        guard target.matchesTerminationTarget(
+            processIdentifier: app.processIdentifier,
+            bundleIdentifier: app.bundleIdentifier,
+            bundleURL: app.bundleURL
+        ) else {
+            return .notFound
         }
         return app.terminate() ? .requested : .notTerminable
     }

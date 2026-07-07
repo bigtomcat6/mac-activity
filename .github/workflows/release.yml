@@ -145,7 +145,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}
@@ -154,11 +154,11 @@ jobs:
         run: |
           bash .github/scripts/remove_unused_homebrew_taps.sh aws/tap azure/bicep
 
+      - name: Install pinned XcodeGen
+        run: bash .github/scripts/install_pinned_xcodegen.sh
+
       - name: Verify generated Xcode project is current
         run: |
-          if ! command -v xcodegen >/dev/null; then
-            brew install xcodegen
-          fi
           xcodegen generate --quiet
           if ! git diff --exit-code -- MacActivity.xcodeproj; then
             echo "::error::MacActivity.xcodeproj is out of sync with project.yml. Run xcodegen generate."
@@ -437,7 +437,7 @@ jobs:
           echo "notes_path=${notes_path}" >> "${GITHUB_OUTPUT}"
 
       - name: Upload workflow artifact
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f
         with:
           name: ${{ steps.release.outputs.artifact_stem }}
           path: |
@@ -492,7 +492,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10
         with:
           fetch-depth: 0
           ref: ${{ github.ref_name }}

@@ -402,6 +402,7 @@ final class ActiveCleanupModelTests: XCTestCase {
         model.quit(app)
         XCTAssertEqual(model.processActionState, .notTerminable(app.name))
         XCTAssertFalse(model.isQuitPending(for: app.processIdentifier))
+        XCTAssertEqual(provider.terminationRequests, [app, app, app])
     }
 
     func testPendingQuitClearsWhenRefreshedAppsNoLongerContainProcess() {
@@ -693,6 +694,7 @@ private final class ActiveAppProviderRecorder: ActiveAppMemoryProviding {
     var entries: [ActiveAppMemoryEntry]
     var entriesByCall: [[ActiveAppMemoryEntry]]
     var terminationResults: [ActiveAppTerminationResult]
+    private(set) var terminationRequests: [ActiveAppMemoryEntry] = []
     private(set) var topAppsCallCount = 0
 
     init(
@@ -713,7 +715,8 @@ private final class ActiveAppProviderRecorder: ActiveAppMemoryProviding {
         return Array(entries.prefix(limit))
     }
 
-    func requestTermination(processIdentifier: pid_t) -> ActiveAppTerminationResult {
+    func requestTermination(_ app: ActiveAppMemoryEntry) -> ActiveAppTerminationResult {
+        terminationRequests.append(app)
         guard terminationResults.isEmpty == false else { return .notFound }
         return terminationResults.removeFirst()
     }
