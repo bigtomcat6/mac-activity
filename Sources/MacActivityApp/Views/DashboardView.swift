@@ -304,8 +304,12 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        let markerProgress = label.kind == .swap ? label.endProgress ?? label.startProgress : label.startProgress
-        let iconOffset = label.kind == .swap || storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth),
+           storageDetailIconName(for: label.kind) != nil {
+            return min(max(containerWidth - storageDetailIconCenterOffset, 0), max(0, containerWidth - storageDetailMarkerWidth))
+        }
+        let markerProgress = label.startProgress
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
         return min(
             max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
             max(0, containerWidth - storageDetailMarkerWidth)
@@ -1574,20 +1578,32 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            DashboardMetricTitleLabel(
-                metric: metric,
-                font: .caption2.monospacedDigit().weight(.semibold),
-                titleColor: DashboardMetricColor.color(for: metric.kind),
-                iconColor: DashboardMetricColor.color(for: metric.kind),
-                textAlignment: textAlignment
-            )
+            if alignment == .trailing {
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
 
-            Text(DashboardOverviewLayout.storageDetailValue(for: metric))
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-                .multilineTextAlignment(textAlignment)
+                storageValueText
+
+                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
+                    Image(systemName: iconName)
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                        .accessibilityHidden(true)
+                }
+            } else {
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: .caption2.monospacedDigit().weight(.semibold),
+                    titleColor: DashboardMetricColor.color(for: metric.kind),
+                    iconColor: DashboardMetricColor.color(for: metric.kind),
+                    textAlignment: textAlignment
+                )
+
+                storageValueText
+            }
         }
         .lineLimit(1)
         .frame(
@@ -1595,6 +1611,15 @@ private struct StorageUsageDetailRow: View {
             maxHeight: .infinity,
             alignment: alignment
         )
+    }
+
+    private var storageValueText: some View {
+        Text(DashboardOverviewLayout.storageDetailValue(for: metric))
+            .font(.caption2.monospacedDigit().weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .multilineTextAlignment(textAlignment)
     }
 }
 
