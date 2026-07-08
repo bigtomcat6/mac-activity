@@ -47,4 +47,17 @@ final class EnergyImpactModel: ObservableObject {
         entries = provider.topApps(limit: limit)
         isRefreshing = false
     }
+
+    func refreshWhileVisible(refreshIntervalNanoseconds: UInt64 = 3_000_000_000) async {
+        await refresh()
+        while Task.isCancelled == false {
+            do {
+                try await sleep(refreshIntervalNanoseconds)
+            } catch {
+                return
+            }
+            guard Task.isCancelled == false else { return }
+            entries = provider.topApps(limit: limit)
+        }
+    }
 }

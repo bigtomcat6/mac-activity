@@ -3,6 +3,8 @@ import SwiftUI
 import MacActivityCore
 
 struct EnergyImpactView: View {
+    static let visibleRefreshIntervalNanoseconds: UInt64 = 3_000_000_000
+
     @ObservedObject var model: EnergyImpactModel
     let refreshTrigger: Int
     let showsApplicationIdentifier: Bool
@@ -43,7 +45,9 @@ struct EnergyImpactView: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task(id: refreshTrigger) {
-            await model.refresh()
+            await model.refreshWhileVisible(
+                refreshIntervalNanoseconds: Self.visibleRefreshIntervalNanoseconds
+            )
         }
     }
 
