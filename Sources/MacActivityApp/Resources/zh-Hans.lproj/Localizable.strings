@@ -5,7 +5,7 @@
 "dashboard.status.live" = "实时";
 "dashboard.tab.overview" = "概览";
 "dashboard.tab.actives" = "活跃";
-"dashboard.tab.energyImpact" = "能耗";
+"dashboard.tab.energyImpact" = "耗电影响";
 "dashboard.section.label" = "仪表盘分区";
 "dashboard.waiting.firstSample" = "正在等待第一组样本";
 "dashboard.waiting.firstMetricSample" = "正在等待第一组指标样本。";

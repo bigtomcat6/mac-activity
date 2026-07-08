@@ -82,40 +82,35 @@ public struct SystemProcessEnergyReader: ProcessEnergyReadingProvider {
 
 @MainActor
 public final class EnergyImpactService {
-    private let workspace: NSWorkspace
     private let reader: any ProcessEnergyReadingProvider
+    private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
+    private var previousReadings: [pid_t: ProcessEnergyReading] = [:]
 
     public init(
         workspace: NSWorkspace = .shared,
-        reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader()
+        reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
+        appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil
     ) {
-        self.workspace = workspace
         self.reader = reader
+        self.appSnapshotProvider = appSnapshotProvider ?? {
+            workspace.runningApplications
+                .filter { $0.activationPolicy == .regular }
+                .map {
+                    EnergyImpactAppSnapshot(
+                        processIdentifier: $0.processIdentifier,
+                        name: $0.localizedName ?? $0.bundleIdentifier ?? "Process \($0.processIdentifier)",
+                        bundleIdentifier: $0.bundleIdentifier,
+                        bundleURL: $0.bundleURL
+                    )
+                }
+        }
     }
 
     public func topApps(limit: Int = 20) -> [EnergyImpactEntry] {
-        let apps = workspace.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .map {
-                EnergyImpactAppSnapshot(
-                    processIdentifier: $0.processIdentifier,
-                    name: $0.localizedName ?? $0.bundleIdentifier ?? "Process \($0.processIdentifier)",
-                    bundleIdentifier: $0.bundleIdentifier,
-                    bundleURL: $0.bundleURL
-                )
-            }
-        return Self.energyEntries(apps: apps, reader: reader, limit: limit)
-    }
-
-    public nonisolated static func energyEntries(
-        apps: [EnergyImpactAppSnapshot],
-        reader: any ProcessEnergyReadingProvider,
-        limit: Int
-    ) -> [EnergyImpactEntry] {
+        let apps = appSnapshotProvider()
+        var nextReadings: [pid_t: ProcessEnergyReading] = [:]
         let entries = apps.map { app -> EnergyImpactEntry in
-            guard let first = reader.reading(for: app.processIdentifier),
-                  let second = reader.reading(for: app.processIdentifier),
-                  second.energyNanojoules >= first.energyNanojoules else {
+            guard let current = reader.reading(for: app.processIdentifier) else {
                 return EnergyImpactEntry(
                     processIdentifier: app.processIdentifier,
                     name: app.name,
@@ -125,18 +120,26 @@ public final class EnergyImpactService {
                     isReadable: false
                 )
             }
+            nextReadings[app.processIdentifier] = current
+            let impact: Double
+            if let previous = previousReadings[app.processIdentifier],
+               current.energyNanojoules >= previous.energyNanojoules {
+                impact = Double(current.energyNanojoules - previous.energyNanojoules) / 1_000.0
+            } else {
+                impact = 0
+            }
 
             return EnergyImpactEntry(
                 processIdentifier: app.processIdentifier,
                 name: app.name,
                 bundleIdentifier: app.bundleIdentifier,
                 bundleURL: app.bundleURL,
-                impact: Double(second.energyNanojoules - first.energyNanojoules) / 1_000.0,
+                impact: impact,
                 isReadable: true
             )
         }
-
-        return sortedByImpact(entries, limit: limit)
+        previousReadings = nextReadings
+        return Self.sortedByImpact(entries, limit: limit)
     }
 
     public nonisolated static func sortedByImpact(_ entries: [EnergyImpactEntry], limit: Int) -> [EnergyImpactEntry] {

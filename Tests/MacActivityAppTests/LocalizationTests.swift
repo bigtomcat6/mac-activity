@@ -252,7 +252,7 @@ final class LocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             AppLocalization.string(.dashboardTabEnergyImpact, bundle: simplifiedChinese),
-            "能耗"
+            "耗电影响"
         )
     }
 

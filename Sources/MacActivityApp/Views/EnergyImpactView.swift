@@ -20,10 +20,15 @@ struct EnergyImpactView: View {
                     )
                     .padding(.horizontal, 12)
             } else {
+                let maximumReadableImpact = model.entries
+                    .filter(\.isReadable)
+                    .map(\.impact)
+                    .max() ?? 0
                 VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
                     ForEach(model.entries) { entry in
                         EnergyImpactRow(
                             entry: entry,
+                            maximumImpact: maximumReadableImpact,
                             showsApplicationIdentifier: showsApplicationIdentifier
                         )
                     }
@@ -46,12 +51,15 @@ struct EnergyImpactView: View {
 struct EnergyImpactRow: View {
     @Environment(\.appearsActive) private var appearsActive
     let entry: EnergyImpactEntry
+    let maximumImpact: Double
     let showsApplicationIdentifier: Bool
     @State private var isHovered = false
 
     var body: some View {
         GeometryReader { proxy in
-            let progressWidth = proxy.size.width * CGFloat(min(max(entry.impact / 100.0, 0), 1))
+            let progressWidth = proxy.size.width * CGFloat(
+                Self.progressFraction(for: entry, maximumImpact: maximumImpact)
+            )
 
             ZStack(alignment: .leading) {
                 Rectangle()
@@ -119,6 +127,11 @@ struct EnergyImpactRow: View {
             return .fallbackSystemSymbol
         }
         return .bundle(bundleURL)
+    }
+
+    static func progressFraction(for entry: EnergyImpactEntry, maximumImpact: Double) -> Double {
+        guard entry.isReadable, maximumImpact > 0 else { return 0 }
+        return min(max(entry.impact / maximumImpact, 0), 1)
     }
 
     static func trailingText(for entry: EnergyImpactEntry, bundle: Bundle? = nil) -> String {
