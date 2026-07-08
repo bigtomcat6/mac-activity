@@ -515,7 +515,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[1]), 4, accuracy: 0.001)
     }
 
-    func testOverviewStorageDetailMarkersAlignDiskWithIconAndSwapWithSegmentEnd() {
+    func testOverviewStorageDetailMarkersAlignWithMetricIcons() {
         let metrics = [
             DashboardMetric(
                 kind: .disk,
@@ -567,7 +567,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 600
             ),
-            480,
+            427,
             accuracy: 0.001
         )
     }
@@ -610,6 +610,14 @@ final class DashboardCardLayoutTests: XCTestCase {
                 containerWidth: 180
             ),
             .trailing
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            173,
+            accuracy: 0.001
         )
     }
 
