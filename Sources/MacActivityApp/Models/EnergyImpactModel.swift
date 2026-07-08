@@ -16,14 +16,34 @@ final class EnergyImpactModel: ObservableObject {
 
     private let provider: any EnergyImpactProviding
     private let limit: Int
+    private let samplingDelayNanoseconds: UInt64
+    private let sleep: (UInt64) async throws -> Void
 
-    init(provider: any EnergyImpactProviding = EnergyImpactService(), limit: Int = 20) {
+    init(
+        provider: any EnergyImpactProviding = EnergyImpactService(),
+        limit: Int = 20,
+        samplingDelayNanoseconds: UInt64 = 250_000_000,
+        sleep: @escaping (UInt64) async throws -> Void = { try await Task.sleep(nanoseconds: $0) }
+    ) {
         self.provider = provider
         self.limit = limit
+        self.samplingDelayNanoseconds = samplingDelayNanoseconds
+        self.sleep = sleep
     }
 
-    func refresh() {
+    func refresh() async {
         isRefreshing = true
+        _ = provider.topApps(limit: limit)
+        do {
+            try await sleep(samplingDelayNanoseconds)
+        } catch {
+            isRefreshing = false
+            return
+        }
+        guard Task.isCancelled == false else {
+            isRefreshing = false
+            return
+        }
         entries = provider.topApps(limit: limit)
         isRefreshing = false
     }

@@ -4,38 +4,54 @@ import MacActivityCore
 
 @MainActor
 final class EnergyImpactModelTests: XCTestCase {
-    func testRefreshLoadsEnergyImpactEntries() {
-        let provider = EnergyImpactProviderStub(entries: [
-            EnergyImpactEntry(
-                processIdentifier: 101,
-                name: "Safari",
-                bundleIdentifier: "com.apple.Safari",
-                bundleURL: nil,
-                impact: 8.4,
-                isReadable: true
-            )
-        ])
-        let model = EnergyImpactModel(provider: provider, limit: 20)
+    func testRefreshPrimesAndPublishesFollowUpEnergyImpactSample() async {
+        let baseline = EnergyImpactEntry(
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 0,
+            isReadable: true
+        )
+        let ranked = EnergyImpactEntry(
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 8.4,
+            isReadable: true
+        )
+        let provider = EnergyImpactProviderStub(responses: [[baseline], [ranked]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            limit: 20,
+            samplingDelayNanoseconds: 1,
+            sleep: { _ in }
+        )
 
-        model.refresh()
+        await model.refresh()
 
         XCTAssertEqual(model.entries.map(\.name), ["Safari"])
-        XCTAssertEqual(provider.requestedLimits, [20])
+        XCTAssertEqual(model.entries.first?.impact, 8.4)
+        XCTAssertEqual(provider.requestedLimits, [20, 20])
         XCTAssertFalse(model.isRefreshing)
     }
 }
 
 @MainActor
 private final class EnergyImpactProviderStub: EnergyImpactProviding {
-    let entries: [EnergyImpactEntry]
+    private var responses: [[EnergyImpactEntry]]
     private(set) var requestedLimits: [Int] = []
 
-    init(entries: [EnergyImpactEntry]) {
-        self.entries = entries
+    init(responses: [[EnergyImpactEntry]]) {
+        self.responses = responses
     }
 
     func topApps(limit: Int) -> [EnergyImpactEntry] {
         requestedLimits.append(limit)
-        return Array(entries.prefix(limit))
+        guard responses.isEmpty == false else {
+            return []
+        }
+        return Array(responses.removeFirst().prefix(limit))
     }
 }

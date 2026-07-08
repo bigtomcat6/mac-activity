@@ -21,6 +21,17 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertEqual(EnergyImpactRow.trailingText(for: entry, bundle: Self.englishBundle), "7.4")
     }
 
+    func testEnergyImpactViewShowsCollectingMessageWhileRefreshingWithoutRows() {
+        XCTAssertEqual(
+            EnergyImpactView.emptyMessage(isRefreshing: true, bundle: Self.englishBundle),
+            "Waiting for the first sample"
+        )
+        XCTAssertEqual(
+            EnergyImpactView.emptyMessage(isRefreshing: false, bundle: Self.englishBundle),
+            "No foreground apps are reporting energy impact."
+        )
+    }
+
     func testEnergyImpactRowShowsUnavailableWhenUnreadable() {
         let entry = EnergyImpactEntry(
             processIdentifier: 102,

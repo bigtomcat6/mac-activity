@@ -10,7 +10,7 @@ struct EnergyImpactView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
             if model.entries.isEmpty {
-                Text(AppLocalization.string(.energyImpactEmpty))
+                Text(Self.emptyMessage(isRefreshing: model.isRefreshing))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(
@@ -43,8 +43,15 @@ struct EnergyImpactView: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task(id: refreshTrigger) {
-            model.refresh()
+            await model.refresh()
         }
+    }
+
+    static func emptyMessage(isRefreshing: Bool, bundle: Bundle? = nil) -> String {
+        if isRefreshing {
+            return AppLocalization.string(.dashboardWaitingFirstSample, bundle: bundle)
+        }
+        return AppLocalization.string(.energyImpactEmpty, bundle: bundle)
     }
 }
 
