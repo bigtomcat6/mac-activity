@@ -36,6 +36,53 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertEqual(provider.requestedLimits, [20, 20])
         XCTAssertFalse(model.isRefreshing)
     }
+
+    func testRefreshWhileVisibleRepeatsAfterVisibleRefreshInterval() async {
+        let baseline = EnergyImpactEntry(
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 0,
+            isReadable: true
+        )
+        let firstSample = EnergyImpactEntry(
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 3.2,
+            isReadable: true
+        )
+        let secondSample = EnergyImpactEntry(
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 7.6,
+            isReadable: true
+        )
+        let provider = EnergyImpactProviderStub(responses: [[baseline], [firstSample], [secondSample]])
+        var requestedSleeps: [UInt64] = []
+        let model = EnergyImpactModel(
+            provider: provider,
+            limit: 20,
+            samplingDelayNanoseconds: 1,
+            sleep: { duration in
+                requestedSleeps.append(duration)
+                guard requestedSleeps != [1, 3, 3] else {
+                    throw CancellationError()
+                }
+            }
+        )
+
+        await model.refreshWhileVisible(refreshIntervalNanoseconds: 3)
+
+        XCTAssertEqual(model.entries.map(\.impact), [7.6])
+        XCTAssertEqual(provider.requestedLimits, [20, 20, 20])
+        XCTAssertEqual(requestedSleeps, [1, 3, 3])
+        XCTAssertFalse(model.isRefreshing)
+    }
 }
 
 @MainActor

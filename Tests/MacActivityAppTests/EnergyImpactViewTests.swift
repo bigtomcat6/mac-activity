@@ -32,6 +32,10 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactViewVisibleRefreshIntervalIsThreeSeconds() {
+        XCTAssertEqual(EnergyImpactView.visibleRefreshIntervalNanoseconds, 3_000_000_000)
+    }
+
     func testEnergyImpactRowShowsUnavailableWhenUnreadable() {
         let entry = EnergyImpactEntry(
             processIdentifier: 102,
