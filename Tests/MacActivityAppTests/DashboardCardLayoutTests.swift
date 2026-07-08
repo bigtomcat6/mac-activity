@@ -908,24 +908,25 @@ final class DashboardCardLayoutTests: XCTestCase {
 
     func testRenderedFooterUsesOverviewGrayBackgroundTone() throws {
         let model = DashboardModel(store: MetricsStore())
+        let contentWidth = DashboardPopoverLayout.contentWidth
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             openPreferences: {},
             quitApplication: {}
         )
-        .frame(width: 360, height: 260)
+        .frame(width: contentWidth, height: 260)
 
         let referenceColor = try XCTUnwrap(
             Self.renderedColor(
                 of: Rectangle()
                     .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
-                    .frame(width: 360, height: 60),
-                atTopLeft: CGPoint(x: 180, y: 30)
+                    .frame(width: contentWidth, height: 60),
+                atTopLeft: CGPoint(x: contentWidth / 2, y: 30)
             )
         )
         let footerColor = try XCTUnwrap(
-            Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 236))
+            Self.renderedColor(of: content, atTopLeft: CGPoint(x: contentWidth / 2, y: 236))
         )
 
         XCTAssertTrue(
