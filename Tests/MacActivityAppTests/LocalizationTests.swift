@@ -234,6 +234,28 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactPageStringsAreLocalized() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            AppLocalization.string(.dashboardTabEnergyImpact, bundle: english),
+            "Energy"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.energyImpactEmpty, bundle: english),
+            "No foreground apps are reporting energy impact."
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.energyImpactUnavailable, bundle: english),
+            "Unavailable"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.dashboardTabEnergyImpact, bundle: simplifiedChinese),
+            "能耗"
+        )
+    }
+
     func testChartReadoutsUseLocalizedUnits() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let sample = DashboardTrendSample(timestamp: Date(), primaryValue: 31.2, secondaryValue: 20.4)

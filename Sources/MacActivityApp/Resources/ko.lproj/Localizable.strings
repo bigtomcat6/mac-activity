@@ -5,6 +5,7 @@
 "dashboard.status.live" = "실시간";
 "dashboard.tab.overview" = "개요";
 "dashboard.tab.actives" = "활성 항목";
+"dashboard.tab.energyImpact" = "Energy";
 "dashboard.section.label" = "대시보드 섹션";
 "dashboard.waiting.firstSample" = "첫 번째 샘플 대기 중";
 "dashboard.waiting.firstMetricSample" = "첫 번째 메트릭 샘플 대기 중.";
@@ -77,6 +78,9 @@
 "diskCleanup.category.userCaches" = "캐시";
 "diskCleanup.category.trash" = "휴지통";
 "diskCleanup.category.userLogs" = "로그";
+
+"energyImpact.empty" = "No foreground apps are reporting energy impact.";
+"energyImpact.unavailable" = "Unavailable";
 
 "memoryRelease.action.release" = "해제";
 "memoryRelease.action.releasing" = "해제 중";

@@ -5,6 +5,7 @@
 "dashboard.status.live" = "Live";
 "dashboard.tab.overview" = "Übersicht";
 "dashboard.tab.actives" = "Aktive";
+"dashboard.tab.energyImpact" = "Energy";
 "dashboard.section.label" = "Dashboard-Bereich";
 "dashboard.waiting.firstSample" = "Warten auf die erste Messung";
 "dashboard.waiting.firstMetricSample" = "Warten auf die erste Metrikmessung.";
@@ -77,6 +78,9 @@
 "diskCleanup.category.userCaches" = "Caches";
 "diskCleanup.category.trash" = "Papierkorb";
 "diskCleanup.category.userLogs" = "Protokolle";
+
+"energyImpact.empty" = "No foreground apps are reporting energy impact.";
+"energyImpact.unavailable" = "Unavailable";
 
 "memoryRelease.action.release" = "Freigeben";
 "memoryRelease.action.releasing" = "Wird freigegeben";

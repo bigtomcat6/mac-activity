@@ -5,6 +5,7 @@
 "dashboard.status.live" = "ライブ";
 "dashboard.tab.overview" = "概要";
 "dashboard.tab.actives" = "アクティブ";
+"dashboard.tab.energyImpact" = "Energy";
 "dashboard.section.label" = "ダッシュボードセクション";
 "dashboard.waiting.firstSample" = "最初のサンプルを待機中";
 "dashboard.waiting.firstMetricSample" = "最初の指標サンプルを待機中。";
@@ -77,6 +78,9 @@
 "diskCleanup.category.userCaches" = "キャッシュ";
 "diskCleanup.category.trash" = "ゴミ箱";
 "diskCleanup.category.userLogs" = "ログ";
+
+"energyImpact.empty" = "No foreground apps are reporting energy impact.";
+"energyImpact.unavailable" = "Unavailable";
 
 "memoryRelease.action.release" = "解放";
 "memoryRelease.action.releasing" = "解放中";
