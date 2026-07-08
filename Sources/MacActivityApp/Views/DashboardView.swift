@@ -227,15 +227,24 @@ enum DashboardOverviewLayout {
             return equalSlotStorageUsageSegments(for: visibleMetrics)
         }
 
-        var startProgress = 0.0
+        let diskEndProgress = visibleMetrics
+            .first { $0.kind == .disk }
+            .map { storageWidthProgress(for: $0, diskTotalBytes: diskTotalBytes) } ?? 0
         return visibleMetrics.map { metric in
-            let widthProgress = min(storageWidthProgress(for: metric, diskTotalBytes: diskTotalBytes), max(0, 1 - startProgress))
+            let widthProgress = storageWidthProgress(
+                for: metric,
+                diskTotalBytes: diskTotalBytes,
+                diskEndProgress: diskEndProgress
+            )
             let segment = DashboardStorageUsageSegment(
                 kind: metric.kind,
-                startProgress: startProgress,
+                startProgress: storageStartProgress(
+                    for: metric,
+                    widthProgress: widthProgress,
+                    diskEndProgress: diskEndProgress
+                ),
                 widthProgress: widthProgress
             )
-            startProgress = clampedProgress(startProgress + widthProgress)
             return segment
         }
     }
@@ -295,8 +304,12 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        let markerProgress = label.kind == .swap ? label.endProgress ?? label.startProgress : label.startProgress
-        let iconOffset = label.kind == .swap || storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth),
+           storageDetailIconName(for: label.kind) != nil {
+            return min(max(containerWidth - storageDetailIconCenterOffset, 0), max(0, containerWidth - storageDetailMarkerWidth))
+        }
+        let markerProgress = label.startProgress
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
         return min(
             max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
             max(0, containerWidth - storageDetailMarkerWidth)
@@ -334,13 +347,27 @@ enum DashboardOverviewLayout {
             + storageDetailBarSpacing
     }
 
-    private static func storageWidthProgress(for metric: DashboardMetric, diskTotalBytes: UInt64) -> Double {
+    private static func storageWidthProgress(
+        for metric: DashboardMetric,
+        diskTotalBytes: UInt64,
+        diskEndProgress: Double? = nil
+    ) -> Double {
         guard let usedBytes = metric.usedBytes else { return usageProgress(for: metric) }
         let widthProgress = Double(usedBytes) / Double(diskTotalBytes)
-        guard metric.kind == .swap, usedBytes > 0 else {
+        guard metric.kind == .swap else {
             return clampedProgress(widthProgress)
         }
-        return clampedProgress(max(widthProgress, storageSwapMinimumVisibleWidth))
+        let visibleWidthProgress = max(widthProgress, storageSwapMinimumVisibleWidth)
+        return clampedProgress(min(visibleWidthProgress, diskEndProgress ?? 1))
+    }
+
+    private static func storageStartProgress(
+        for metric: DashboardMetric,
+        widthProgress: Double,
+        diskEndProgress: Double
+    ) -> Double {
+        guard metric.kind == .swap else { return 0 }
+        return clampedProgress(diskEndProgress - widthProgress)
     }
 
     private static func clampedProgress(_ progress: Double) -> Double {
@@ -1548,20 +1575,32 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            DashboardMetricTitleLabel(
-                metric: metric,
-                font: .caption2.monospacedDigit().weight(.semibold),
-                titleColor: DashboardMetricColor.color(for: metric.kind),
-                iconColor: DashboardMetricColor.color(for: metric.kind),
-                textAlignment: textAlignment
-            )
+            if alignment == .trailing {
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
 
-            Text(DashboardOverviewLayout.storageDetailValue(for: metric))
-                .font(.caption2.monospacedDigit().weight(.semibold))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.65)
-                .multilineTextAlignment(textAlignment)
+                storageValueText
+
+                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
+                    Image(systemName: iconName)
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                        .accessibilityHidden(true)
+                }
+            } else {
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: .caption2.monospacedDigit().weight(.semibold),
+                    titleColor: DashboardMetricColor.color(for: metric.kind),
+                    iconColor: DashboardMetricColor.color(for: metric.kind),
+                    textAlignment: textAlignment
+                )
+
+                storageValueText
+            }
         }
         .lineLimit(1)
         .frame(
@@ -1569,6 +1608,15 @@ private struct StorageUsageDetailRow: View {
             maxHeight: .infinity,
             alignment: alignment
         )
+    }
+
+    private var storageValueText: some View {
+        Text(DashboardOverviewLayout.storageDetailValue(for: metric))
+            .font(.caption2.monospacedDigit().weight(.semibold))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.65)
+            .multilineTextAlignment(textAlignment)
     }
 }
 
