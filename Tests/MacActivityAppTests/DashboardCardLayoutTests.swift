@@ -7,6 +7,11 @@ import XCTest
 
 @MainActor
 final class DashboardCardLayoutTests: XCTestCase {
+    func testDashboardTabsIncludeEnergyImpactAsSeparatePage() {
+        XCTAssertEqual(DashboardTab.allCases, [.overview, .actives, .energyImpact])
+        XCTAssertEqual(DashboardTab.energyImpact.title, AppLocalization.string(.dashboardTabEnergyImpact))
+    }
+
     func testSelectingActivesTabAdvancesActivesRefreshTrigger() {
         XCTAssertEqual(
             DashboardView.activesRefreshTrigger(afterSelecting: .overview, currentTrigger: 4),
@@ -15,6 +20,17 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(
             DashboardView.activesRefreshTrigger(afterSelecting: .actives, currentTrigger: 4),
             5
+        )
+    }
+
+    func testEnergyImpactRefreshTriggerOnlyChangesForEnergyImpactTab() {
+        XCTAssertEqual(
+            DashboardView.energyImpactRefreshTrigger(afterSelecting: .energyImpact, currentTrigger: 3),
+            4
+        )
+        XCTAssertEqual(
+            DashboardView.energyImpactRefreshTrigger(afterSelecting: .actives, currentTrigger: 3),
+            3
         )
     }
 
