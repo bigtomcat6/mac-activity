@@ -357,9 +357,6 @@ enum DashboardOverviewLayout {
         guard metric.kind == .swap else {
             return clampedProgress(widthProgress)
         }
-        guard usedBytes > 0 else {
-            return clampedProgress(min(widthProgress, diskEndProgress ?? 1))
-        }
         let visibleWidthProgress = max(widthProgress, storageSwapMinimumVisibleWidth)
         return clampedProgress(min(visibleWidthProgress, diskEndProgress ?? 1))
     }
