@@ -60,4 +60,34 @@ final class EnergyImpactViewTests: XCTestCase {
             )
         )
     }
+
+    func testEnergyImpactRowUsesBundleIconWhenBundleExists() {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        let entry = EnergyImpactEntry(
+            processIdentifier: 104,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL,
+            impact: 3.1,
+            isReadable: true
+        )
+
+        XCTAssertEqual(EnergyImpactRow.iconSource(for: entry), .bundle(bundleURL))
+    }
+
+    func testEnergyImpactRowFallsBackToSystemIconWhenBundleMissing() {
+        let entry = EnergyImpactEntry(
+            processIdentifier: 105,
+            name: "Unknown",
+            bundleIdentifier: nil,
+            bundleURL: URL(fileURLWithPath: "/Applications/Missing.app"),
+            impact: 0.2,
+            isReadable: true
+        )
+
+        XCTAssertEqual(
+            EnergyImpactRow.iconSource(for: entry, fileExists: { _ in false }),
+            .fallbackSystemSymbol
+        )
+    }
 }

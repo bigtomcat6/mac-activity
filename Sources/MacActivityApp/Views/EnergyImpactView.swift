@@ -96,18 +96,29 @@ struct EnergyImpactRow: View {
 
     @ViewBuilder
     private var icon: some View {
-        if let bundleURL = entry.bundleURL, FileManager.default.fileExists(atPath: bundleURL.path) {
-            Image(nsImage: NSWorkspace.shared.icon(forFile: bundleURL.path))
+        switch Self.iconSource(for: entry) {
+        case .bundle(let bundleURL):
+            Image(nsImage: ActiveProcessIconCache.shared.icon(for: bundleURL))
                 .resizable()
                 .scaledToFit()
                 .frame(width: 20, height: 20)
                 .cornerRadius(4)
-        } else {
+        case .fallbackSystemSymbol:
             Image(systemName: "app")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .frame(width: 20, height: 20)
         }
+    }
+
+    static func iconSource(
+        for entry: EnergyImpactEntry,
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> ActiveProcessIconSource {
+        guard let bundleURL = entry.bundleURL, fileExists(bundleURL) else {
+            return .fallbackSystemSymbol
+        }
+        return .bundle(bundleURL)
     }
 
     static func trailingText(for entry: EnergyImpactEntry, bundle: Bundle? = nil) -> String {
