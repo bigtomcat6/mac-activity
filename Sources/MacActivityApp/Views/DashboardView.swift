@@ -280,7 +280,8 @@ enum DashboardOverviewLayout {
 
     static func storageDetailUsesTrailingFallback(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Bool {
         label.kind == .swap
-            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageTrailingFallbackMinWidth
+            && containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth)
+                < storageTrailingFallbackMinWidth
     }
 
     static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
@@ -292,7 +293,7 @@ enum DashboardOverviewLayout {
     static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
         storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
             ? containerWidth
-            : max(0, containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth))
+            : max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
     }
 
     static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
@@ -304,20 +305,46 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth),
-           storageDetailIconName(for: label.kind) != nil {
-            return min(max(containerWidth - storageDetailIconCenterOffset, 0), max(0, containerWidth - storageDetailMarkerWidth))
-        }
-        let markerProgress = label.startProgress
-        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
         return min(
-            max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
+            max(storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth), 0),
             max(0, containerWidth - storageDetailMarkerWidth)
         )
     }
 
     static func storageDetailRowAnchorXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        min(max(CGFloat(label.startProgress) * containerWidth, 0), containerWidth)
+        storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth)
+    }
+
+    private static func storageDetailNormalRowXPosition(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let iconCenterX = storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth)
+        guard storageDetailIconName(for: label.kind) != nil else {
+            return iconCenterX
+        }
+        return min(max(iconCenterX - storageDetailIconCenterOffset, 0), containerWidth)
+    }
+
+    private static func storageDetailIconCenterXPosition(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let progressX = min(max(CGFloat(storageDetailAnchorProgress(for: label)) * containerWidth, 0), containerWidth)
+        guard storageDetailIconName(for: label.kind) != nil else {
+            return progressX
+        }
+        guard label.kind == .swap, label.endProgress != nil else {
+            return progressX + storageDetailIconCenterOffset
+        }
+        return progressX
+    }
+
+    private static func storageDetailAnchorProgress(for label: DashboardStorageUsageLabel) -> Double {
+        guard label.kind == .swap, let endProgress = label.endProgress else {
+            return label.startProgress
+        }
+        return clampedProgress((label.startProgress + endProgress) / 2)
     }
 
     private static func equalSlotStorageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {
@@ -1599,32 +1626,15 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            if alignment == .trailing {
-                Text(AppLocalization.dashboardMetricTitle(for: metric))
-                    .font(.caption2.monospacedDigit().weight(.semibold))
-                    .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
-                    .lineLimit(1)
-                    .multilineTextAlignment(textAlignment)
+            DashboardMetricTitleLabel(
+                metric: metric,
+                font: .caption2.monospacedDigit().weight(.semibold),
+                titleColor: DashboardMetricColor.color(for: metric.kind),
+                iconColor: DashboardMetricColor.color(for: metric.kind),
+                textAlignment: textAlignment
+            )
 
-                storageValueText
-
-                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
-                    Image(systemName: iconName)
-                        .font(.caption2.monospacedDigit().weight(.semibold))
-                        .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
-                        .accessibilityHidden(true)
-                }
-            } else {
-                DashboardMetricTitleLabel(
-                    metric: metric,
-                    font: .caption2.monospacedDigit().weight(.semibold),
-                    titleColor: DashboardMetricColor.color(for: metric.kind),
-                    iconColor: DashboardMetricColor.color(for: metric.kind),
-                    textAlignment: textAlignment
-                )
-
-                storageValueText
-            }
+            storageValueText
         }
         .lineLimit(1)
         .frame(
