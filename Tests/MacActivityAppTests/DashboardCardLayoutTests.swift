@@ -13,6 +13,10 @@ final class DashboardCardLayoutTests: XCTestCase {
             4
         )
         XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .audio, currentTrigger: 4),
+            4
+        )
+        XCTAssertEqual(
             DashboardView.activesRefreshTrigger(afterSelecting: .actives, currentTrigger: 4),
             5
         )

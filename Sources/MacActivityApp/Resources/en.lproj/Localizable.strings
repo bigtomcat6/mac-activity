@@ -5,9 +5,13 @@
 "dashboard.status.live" = "Live";
 "dashboard.tab.overview" = "Overview";
 "dashboard.tab.actives" = "Actives";
+"dashboard.tab.audio" = "Audio";
 "dashboard.section.label" = "Dashboard section";
 "dashboard.waiting.firstSample" = "Waiting for the first sample";
 "dashboard.waiting.firstMetricSample" = "Waiting for the first metric sample.";
+"audio.devices.title" = "Devices";
+"audio.processes.title" = "Per App";
+"audio.status.unsupported" = "Unsupported";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecting trend";
 "dashboard.storage.accessibility" = "Disk and Swap usage";

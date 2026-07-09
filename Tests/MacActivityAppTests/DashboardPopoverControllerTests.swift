@@ -131,6 +131,10 @@ final class DashboardPopoverControllerTests: XCTestCase {
             DashboardPopoverLayout.maximumHeight
         )
         XCTAssertEqual(
+            DashboardPopoverLayout.contentSize(for: .audio, metrics: []).height,
+            DashboardPopoverLayout.maximumHeight
+        )
+        XCTAssertEqual(
             DashboardPopoverLayout.overviewContentHeight(for: []),
             120
                 + DashboardPopoverLayout.emptyStateVerticalPadding

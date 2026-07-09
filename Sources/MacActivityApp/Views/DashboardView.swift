@@ -582,6 +582,7 @@ enum DashboardOverviewChrome {
 enum DashboardTab: CaseIterable, Identifiable {
     case overview
     case actives
+    case audio
 
     var id: Self { self }
 
@@ -591,6 +592,8 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabOverview)
         case .actives:
             return AppLocalization.string(.dashboardTabActives)
+        case .audio:
+            return AppLocalization.string(.dashboardTabAudio)
         }
     }
 }
@@ -600,6 +603,7 @@ struct DashboardView: View {
     @ObservedObject private var localizationController = AppLocalizationController.shared
     @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
+    @StateObject private var audioDashboardModel = AudioDashboardModel()
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
     let openPreferences: () -> Void
@@ -637,6 +641,8 @@ struct DashboardView: View {
                     overviewContent
                 case .actives:
                     activesContent
+                case .audio:
+                    audioContent
                 }
             }
 
@@ -709,6 +715,11 @@ struct DashboardView: View {
             usedMemoryBytes: Self.currentUsedMemoryBytes(in: dashboardModel.metrics) ?? 0,
             showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
         )
+            .padding(18)
+    }
+
+    private var audioContent: some View {
+        AudioDashboardView(model: audioDashboardModel)
             .padding(18)
     }
 
