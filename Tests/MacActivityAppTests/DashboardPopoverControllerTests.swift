@@ -148,6 +148,13 @@ final class DashboardPopoverControllerTests: XCTestCase {
         )
     }
 
+    func testPopoverLayoutUsesMaximumHeightForEnergyImpactPage() {
+        XCTAssertEqual(
+            DashboardPopoverLayout.contentSize(for: .energyImpact, metrics: []).height,
+            DashboardPopoverLayout.maximumHeight
+        )
+    }
+
     func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)

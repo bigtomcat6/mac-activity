@@ -5,6 +5,7 @@
 "dashboard.status.live" = "Live";
 "dashboard.tab.overview" = "Overview";
 "dashboard.tab.actives" = "Actives";
+"dashboard.tab.energyImpact" = "Energy";
 "dashboard.tab.audio" = "Audio";
 "dashboard.section.label" = "Dashboard section";
 "dashboard.waiting.firstSample" = "Waiting for the first sample";
@@ -142,6 +143,9 @@
 "diskCleanup.item.plural" = "items";
 "diskCleanup.category.singular" = "category";
 "diskCleanup.category.plural" = "categories";
+
+"energyImpact.empty" = "No foreground apps are reporting energy impact.";
+"energyImpact.unavailable" = "Unavailable";
 
 "process.empty" = "No foreground apps are reporting memory usage.";
 "process.fallbackName" = "Process %d";

@@ -5,6 +5,7 @@
 "dashboard.status.live" = "En direct";
 "dashboard.tab.overview" = "Aperçu";
 "dashboard.tab.actives" = "Actifs";
+"dashboard.tab.energyImpact" = "Énergie";
 "dashboard.tab.audio" = "Audio";
 "dashboard.section.label" = "Section du tableau de bord";
 "dashboard.waiting.firstSample" = "En attente du premier échantillon";
@@ -81,6 +82,9 @@
 "diskCleanup.category.userCaches" = "Caches";
 "diskCleanup.category.trash" = "Corbeille";
 "diskCleanup.category.userLogs" = "Journaux";
+
+"energyImpact.empty" = "Aucune app au premier plan ne signale d’impact énergétique.";
+"energyImpact.unavailable" = "Indisponible";
 
 "memoryRelease.action.release" = "Libérer";
 "memoryRelease.action.releasing" = "Libération en cours";

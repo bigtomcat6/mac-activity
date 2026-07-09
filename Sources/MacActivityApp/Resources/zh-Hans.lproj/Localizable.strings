@@ -5,6 +5,7 @@
 "dashboard.status.live" = "实时";
 "dashboard.tab.overview" = "概览";
 "dashboard.tab.actives" = "活跃";
+"dashboard.tab.energyImpact" = "耗电影响";
 "dashboard.tab.audio" = "音频";
 "dashboard.section.label" = "仪表盘分区";
 "dashboard.waiting.firstSample" = "正在等待第一组样本";
@@ -142,6 +143,9 @@
 "diskCleanup.item.plural" = "个项目";
 "diskCleanup.category.singular" = "个分类";
 "diskCleanup.category.plural" = "个分类";
+
+"energyImpact.empty" = "当前没有前台应用报告耗电影响。";
+"energyImpact.unavailable" = "不可读取";
 
 "process.empty" = "当前没有前台应用报告内存用量。";
 "process.fallbackName" = "进程 %d";

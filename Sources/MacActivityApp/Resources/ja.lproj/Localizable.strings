@@ -5,6 +5,7 @@
 "dashboard.status.live" = "ライブ";
 "dashboard.tab.overview" = "概要";
 "dashboard.tab.actives" = "アクティブ";
+"dashboard.tab.energyImpact" = "エネルギー";
 "dashboard.tab.audio" = "オーディオ";
 "dashboard.section.label" = "ダッシュボードセクション";
 "dashboard.waiting.firstSample" = "最初のサンプルを待機中";
@@ -81,6 +82,9 @@
 "diskCleanup.category.userCaches" = "キャッシュ";
 "diskCleanup.category.trash" = "ゴミ箱";
 "diskCleanup.category.userLogs" = "ログ";
+
+"energyImpact.empty" = "エネルギー影響を報告している前面アプリはありません。";
+"energyImpact.unavailable" = "利用不可";
 
 "memoryRelease.action.release" = "解放";
 "memoryRelease.action.releasing" = "解放中";

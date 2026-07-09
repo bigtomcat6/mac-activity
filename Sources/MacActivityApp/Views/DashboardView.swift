@@ -582,6 +582,7 @@ enum DashboardOverviewChrome {
 enum DashboardTab: CaseIterable, Identifiable {
     case overview
     case actives
+    case energyImpact
     case audio
 
     var id: Self { self }
@@ -592,6 +593,8 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabOverview)
         case .actives:
             return AppLocalization.string(.dashboardTabActives)
+        case .energyImpact:
+            return AppLocalization.string(.dashboardTabEnergyImpact)
         case .audio:
             return AppLocalization.string(.dashboardTabAudio)
         }
@@ -603,9 +606,11 @@ struct DashboardView: View {
     @ObservedObject private var localizationController = AppLocalizationController.shared
     @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
+    @StateObject private var energyImpactModel = EnergyImpactModel()
     @StateObject private var audioDashboardModel = AudioDashboardModel()
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
+    @State private var energyImpactRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
     let onPreferredContentSizeChange: (DashboardTab, [DashboardMetric]) -> Void
@@ -641,6 +646,8 @@ struct DashboardView: View {
                     overviewContent
                 case .actives:
                     activesContent
+                case .energyImpact:
+                    energyImpactContent
                 case .audio:
                     audioContent
                 }
@@ -718,6 +725,15 @@ struct DashboardView: View {
             .padding(18)
     }
 
+    private var energyImpactContent: some View {
+        EnergyImpactView(
+            model: energyImpactModel,
+            refreshTrigger: energyImpactRefreshTrigger,
+            showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
+        )
+        .padding(18)
+    }
+
     private var audioContent: some View {
         AudioDashboardView(model: audioDashboardModel)
             .padding(18)
@@ -732,6 +748,10 @@ struct DashboardView: View {
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger
                 )
+                energyImpactRefreshTrigger = Self.energyImpactRefreshTrigger(
+                    afterSelecting: newValue,
+                    currentTrigger: energyImpactRefreshTrigger
+                )
                 reportPreferredContentSize(for: newValue)
             }
         )
@@ -739,6 +759,10 @@ struct DashboardView: View {
 
     static func activesRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
         selectedTab == .actives ? currentTrigger + 1 : currentTrigger
+    }
+
+    static func energyImpactRefreshTrigger(afterSelecting selectedTab: DashboardTab, currentTrigger: Int) -> Int {
+        selectedTab == .energyImpact ? currentTrigger + 1 : currentTrigger
     }
 
     static func currentUsedMemoryBytes(in metrics: [DashboardMetric]) -> UInt64? {

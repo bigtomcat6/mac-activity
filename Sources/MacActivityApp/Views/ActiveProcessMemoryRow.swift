@@ -325,7 +325,7 @@ struct ActiveProcessMemoryRow: View {
 }
 
 @MainActor
-private final class ActiveProcessIconCache {
+final class ActiveProcessIconCache {
     static let shared = ActiveProcessIconCache()
 
     private let cache = NSCache<NSURL, NSImage>()
