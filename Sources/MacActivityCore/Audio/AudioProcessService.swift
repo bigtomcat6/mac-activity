@@ -70,16 +70,18 @@ public protocol AudioProcessProviding: AnyObject {
 
 @MainActor
 public final class AudioProcessService: AudioProcessProviding {
-    private let workspace: NSWorkspace
+    private let availability: AudioFeatureAvailability
+    private let processSnapshotReader: @MainActor @Sendable () -> [AudioProcessSnapshot]
+    private let appSnapshotReader: @MainActor () -> [AudioProcessAppSnapshot]
 
-    public init(workspace: NSWorkspace = .shared) {
-        self.workspace = workspace
-    }
-
-    public func audibleOutputProcesses() -> [AudioProcessEntry] {
-        Self.makeEntries(
-            processObjects: Self.readProcessSnapshots(),
-            apps: workspace.runningApplications.map {
+    public init(
+        workspace: NSWorkspace = .shared,
+        availability: AudioFeatureAvailability = .current
+    ) {
+        self.availability = availability
+        self.processSnapshotReader = Self.readProcessSnapshots
+        self.appSnapshotReader = {
+            workspace.runningApplications.map {
                 AudioProcessAppSnapshot(
                     processIdentifier: $0.processIdentifier,
                     name: $0.localizedName ?? $0.bundleIdentifier ?? "Process \($0.processIdentifier)",
@@ -87,6 +89,27 @@ public final class AudioProcessService: AudioProcessProviding {
                     bundleURL: $0.bundleURL
                 )
             }
+        }
+    }
+
+    init(
+        availability: AudioFeatureAvailability,
+        processSnapshotReader: @escaping @MainActor @Sendable () -> [AudioProcessSnapshot],
+        appSnapshotReader: @escaping @MainActor () -> [AudioProcessAppSnapshot]
+    ) {
+        self.availability = availability
+        self.processSnapshotReader = processSnapshotReader
+        self.appSnapshotReader = appSnapshotReader
+    }
+
+    public func audibleOutputProcesses() -> [AudioProcessEntry] {
+        guard availability.supportsProcessVolume else {
+            return []
+        }
+
+        return Self.makeEntries(
+            processObjects: processSnapshotReader(),
+            apps: appSnapshotReader()
         )
     }
 
