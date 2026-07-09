@@ -285,15 +285,20 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
+            ? 0
+            : storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
     }
 
     static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
+        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) {
+            return storageDetailTrailingFallbackRowWidth(for: label, containerWidth: containerWidth)
+        }
+        return max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
     }
 
     static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
-        .leading
+        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : .leading
     }
 
     static func storageDetailRowTextAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> TextAlignment {
@@ -316,10 +321,18 @@ enum DashboardOverviewLayout {
         containerWidth: CGFloat
     ) -> CGFloat {
         let iconCenterX = storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth)
-        guard storageDetailIconName(for: label.kind) != nil else {
-            return iconCenterX
-        }
-        return min(max(iconCenterX - storageDetailIconCenterOffset, 0), containerWidth)
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        return min(max(iconCenterX - iconOffset, 0), containerWidth)
+    }
+
+    private static func storageDetailTrailingFallbackRowWidth(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        min(
+            containerWidth,
+            max(0, storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth) + storageDetailIconCenterOffset)
+        )
     }
 
     private static func storageDetailIconCenterXPosition(
@@ -327,11 +340,9 @@ enum DashboardOverviewLayout {
         containerWidth: CGFloat
     ) -> CGFloat {
         let progressX = min(max(CGFloat(storageDetailAnchorProgress(for: label)) * containerWidth, 0), containerWidth)
-        guard storageDetailIconName(for: label.kind) != nil else {
-            return progressX
-        }
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
         guard label.kind == .swap, label.endProgress != nil else {
-            return progressX + storageDetailIconCenterOffset
+            return progressX + iconOffset
         }
         return progressX
     }
@@ -1622,15 +1633,32 @@ private struct StorageUsageDetailRow: View {
 
     var body: some View {
         HStack(spacing: DashboardOverviewLayout.storageDetailSpacing) {
-            DashboardMetricTitleLabel(
-                metric: metric,
-                font: .caption2.monospacedDigit().weight(.semibold),
-                titleColor: DashboardMetricColor.color(for: metric.kind),
-                iconColor: DashboardMetricColor.color(for: metric.kind),
-                textAlignment: textAlignment
-            )
+            if alignment == .trailing {
+                Text(AppLocalization.dashboardMetricTitle(for: metric))
+                    .font(.caption2.monospacedDigit().weight(.semibold))
+                    .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                    .lineLimit(1)
+                    .multilineTextAlignment(textAlignment)
 
-            storageValueText
+                storageValueText
+
+                if let iconName = DashboardOverviewLayout.storageDetailIconName(for: metric.kind) {
+                    Image(systemName: iconName)
+                        .font(.caption2.monospacedDigit().weight(.semibold))
+                        .foregroundStyle(DashboardMetricColor.color(for: metric.kind))
+                        .accessibilityHidden(true)
+                }
+            } else {
+                DashboardMetricTitleLabel(
+                    metric: metric,
+                    font: .caption2.monospacedDigit().weight(.semibold),
+                    titleColor: DashboardMetricColor.color(for: metric.kind),
+                    iconColor: DashboardMetricColor.color(for: metric.kind),
+                    textAlignment: textAlignment
+                )
+
+                storageValueText
+            }
         }
         .lineLimit(1)
         .frame(

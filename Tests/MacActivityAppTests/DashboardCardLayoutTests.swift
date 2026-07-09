@@ -620,7 +620,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            164,
+            0,
             accuracy: 0.001
         )
         XCTAssertEqual(
@@ -628,7 +628,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            16,
+            178,
             accuracy: 0.001
         )
         XCTAssertEqual(
@@ -636,7 +636,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            .leading
+            .trailing
         )
         XCTAssertEqual(
             DashboardOverviewLayout.storageDetailRowTextAlignment(
@@ -657,7 +657,10 @@ final class DashboardCardLayoutTests: XCTestCase {
             DashboardOverviewLayout.storageDetailRowXPosition(
                 for: swapLabel,
                 containerWidth: 180
-            ) + DashboardOverviewLayout.storageDetailIconCenterOffset,
+            ) + DashboardOverviewLayout.storageDetailRowWidth(
+                for: swapLabel,
+                containerWidth: 180
+            ) - DashboardOverviewLayout.storageDetailIconCenterOffset,
             DashboardOverviewLayout.storageDetailMarkerXPosition(
                 for: swapLabel,
                 containerWidth: 180
