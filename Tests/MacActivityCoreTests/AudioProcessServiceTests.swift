@@ -3,6 +3,29 @@ import XCTest
 
 final class AudioProcessServiceTests: XCTestCase {
     @MainActor
+    func testDefaultLiveReaderReturnsEmptyWithoutCallingHALWhenRuntimeUnavailable() {
+        var didReadSnapshots = false
+
+        let snapshots = AudioProcessService.readProcessSnapshotsIfAvailable(
+            isRuntimeProcessDiscoveryAvailable: false,
+            reader: {
+                didReadSnapshots = true
+                return [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: "com.apple.Music",
+                        isRunningOutput: true
+                    ),
+                ]
+            }
+        )
+
+        XCTAssertEqual(snapshots, [])
+        XCTAssertFalse(didReadSnapshots)
+    }
+
+    @MainActor
     func testAudibleOutputProcessesReturnsEmptyWithoutTouchingSnapshotsWhenAvailabilityUnsupported() {
         var didReadSnapshots = false
         let service = AudioProcessService(

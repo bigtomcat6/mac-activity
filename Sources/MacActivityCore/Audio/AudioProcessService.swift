@@ -79,7 +79,7 @@ public final class AudioProcessService: AudioProcessProviding {
         availability: AudioFeatureAvailability = .current
     ) {
         self.availability = availability
-        self.processSnapshotReader = Self.readProcessSnapshots
+        self.processSnapshotReader = Self.readProcessSnapshotsIfAvailable
         self.appSnapshotReader = {
             workspace.runningApplications.map {
                 AudioProcessAppSnapshot(
@@ -133,9 +133,36 @@ public final class AudioProcessService: AudioProcessProviding {
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
+
+    static func readProcessSnapshotsIfAvailable(
+    ) -> [AudioProcessSnapshot] {
+        readProcessSnapshotsIfAvailable(
+            isRuntimeProcessDiscoveryAvailable: runtimeProcessDiscoveryAvailable,
+            reader: readProcessSnapshots
+        )
+    }
+
+    static func readProcessSnapshotsIfAvailable(
+        isRuntimeProcessDiscoveryAvailable: Bool = runtimeProcessDiscoveryAvailable,
+        reader: @escaping @MainActor @Sendable () -> [AudioProcessSnapshot]
+    ) -> [AudioProcessSnapshot] {
+        guard isRuntimeProcessDiscoveryAvailable else {
+            return []
+        }
+
+        return reader()
+    }
 }
 
 private extension AudioProcessService {
+    static var runtimeProcessDiscoveryAvailable: Bool {
+        if #available(macOS 14.2, *) {
+            return true
+        }
+
+        return false
+    }
+
     static func readProcessSnapshots() -> [AudioProcessSnapshot] {
         let address = propertyAddress(
             selector: kAudioHardwarePropertyProcessObjectList,
