@@ -1,4 +1,5 @@
 import CoreAudio
+import Darwin
 import Foundation
 
 public struct ProcessAudioVolumeState: Equatable, Sendable {
@@ -235,12 +236,16 @@ private extension ProcessTapVolumeEngine {
         var status = AudioDeviceCreateIOProcID(
             aggregateDeviceID,
             processTapVolumeIOProc,
-            UnsafeMutableRawPointer(mutating: gainBox.pointer),
+            UnsafeMutableRawPointer(gainBox.pointer),
             &ioProcID
         )
-        guard status == noErr, let ioProcID else {
+        guard status == noErr else {
             AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
             throw Error.tapCreationFailed(status)
+        }
+        guard let ioProcID else {
+            AudioHardwareDestroyAggregateDevice(aggregateDeviceID)
+            throw Error.tapCreationFailed(kAudioHardwareUnspecifiedError)
         }
 
         status = AudioDeviceStart(aggregateDeviceID, ioProcID)
@@ -274,11 +279,11 @@ private extension ProcessTapVolumeEngine {
 }
 
 final class RealtimeProcessGainBox: @unchecked Sendable {
-    private let storage: UnsafeMutablePointer<Float32>
+    private let storage: UnsafeMutablePointer<Int32>
 
     init(initialValue: Float32 = 1) {
         storage = .allocate(capacity: 1)
-        storage.initialize(to: initialValue)
+        storage.initialize(to: Int32(bitPattern: initialValue.bitPattern))
     }
 
     deinit {
@@ -287,11 +292,22 @@ final class RealtimeProcessGainBox: @unchecked Sendable {
     }
 
     func set(_ value: Float32) {
-        storage.pointee = value
+        let newValue = Int32(bitPattern: value.bitPattern)
+        var didSwap = false
+
+        repeat {
+            let currentValue = OSAtomicOr32Barrier(0, storage)
+            didSwap = OSAtomicCompareAndSwap32Barrier(currentValue, newValue, storage)
+        } while !didSwap
     }
 
-    var pointer: UnsafePointer<Float32> {
-        UnsafePointer(storage)
+    func load() -> Float32 {
+        let bitPattern = OSAtomicOr32Barrier(0, storage)
+        return Float32(bitPattern: UInt32(bitPattern: bitPattern))
+    }
+
+    var pointer: UnsafeMutablePointer<Int32> {
+        storage
     }
 }
 
@@ -300,7 +316,8 @@ private let processTapVolumeIOProc: AudioDeviceIOProc = { _, _, inputData, _, ou
         return noErr
     }
 
-    let gain = clientData.assumingMemoryBound(to: Float32.self).pointee
+    let gainBits = OSAtomicOr32Barrier(0, clientData.assumingMemoryBound(to: Int32.self))
+    let gain = Float32(bitPattern: UInt32(bitPattern: gainBits))
     let inputBuffers = UnsafeMutableAudioBufferListPointer(UnsafeMutablePointer(mutating: inputData))
     let outputBuffers = UnsafeMutableAudioBufferListPointer(outputData)
     let bufferCount = min(inputBuffers.count, outputBuffers.count)

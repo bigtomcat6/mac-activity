@@ -18,6 +18,17 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertEqual(state.effectiveVolume, 0.7, accuracy: 0.001)
     }
 
+    func testRealtimeGainBoxAtomicallyStoresAndLoadsFloatBitPattern() {
+        let box = RealtimeProcessGainBox(initialValue: 1)
+        XCTAssertEqual(box.load(), 1, accuracy: 0.001)
+
+        box.set(0.375)
+        XCTAssertEqual(box.load(), 0.375, accuracy: 0.001)
+
+        box.set(0)
+        XCTAssertEqual(box.load(), 0, accuracy: 0.001)
+    }
+
     @MainActor
     func testEngineRefusesProcessTapWhenFeatureGateIsDisabled() {
         let engine = ProcessTapVolumeEngine(
