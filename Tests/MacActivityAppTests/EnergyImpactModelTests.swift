@@ -37,6 +37,60 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertFalse(model.isRefreshing)
     }
 
+    func testRefreshClearsRefreshingWhenSamplingSleepThrows() async {
+        let provider = EnergyImpactProviderStub(responses: [[]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            limit: 20,
+            samplingDelayNanoseconds: 1,
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.entries, [])
+        XCTAssertEqual(provider.requestedLimits, [20])
+        XCTAssertFalse(model.isRefreshing)
+    }
+
+    func testRefreshWithDefaultSleepCanUseZeroSamplingDelay() async {
+        let provider = EnergyImpactProviderStub(responses: [[], []])
+        let model = EnergyImpactModel(
+            provider: provider,
+            limit: 1,
+            samplingDelayNanoseconds: 0
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.entries, [])
+        XCTAssertEqual(provider.requestedLimits, [1, 1])
+        XCTAssertFalse(model.isRefreshing)
+    }
+
+    func testRefreshWhileVisibleReturnsWhenInitialRefreshCancelsTask() async {
+        let provider = EnergyImpactProviderStub(responses: [[]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            limit: 20,
+            samplingDelayNanoseconds: 1,
+            sleep: { _ in
+                withUnsafeCurrentTask { task in
+                    task?.cancel()
+                }
+            }
+        )
+
+        let task = Task {
+            await model.refreshWhileVisible(refreshIntervalNanoseconds: 3)
+        }
+        await task.value
+
+        XCTAssertEqual(model.entries, [])
+        XCTAssertEqual(provider.requestedLimits, [20])
+        XCTAssertFalse(model.isRefreshing)
+    }
+
     func testRefreshWhileVisibleRepeatsAfterVisibleRefreshInterval() async {
         let baseline = EnergyImpactEntry(
             processIdentifier: 101,
@@ -82,6 +136,7 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertEqual(provider.requestedLimits, [20, 20, 20])
         XCTAssertEqual(requestedSleeps, [1, 3, 3])
         XCTAssertFalse(model.isRefreshing)
+        XCTAssertEqual(provider.topApps(limit: 20), [])
     }
 }
 

@@ -1062,6 +1062,26 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 170)))
     }
 
+    func testRenderedDashboardCanStartOnEnergyImpactTab() throws {
+        let model = DashboardModel(store: MetricsStore())
+        let content = DashboardView(
+            dashboardModel: model,
+            preferencesController: Self.preferencesController(
+                initial: AppPreferences(
+                    launchAtLoginEnabled: false,
+                    selectedSummaryMetrics: AppPreferences.default.selectedSummaryMetrics,
+                    showsProcessApplicationIdentifier: true
+                )
+            ),
+            openPreferences: {},
+            quitApplication: {},
+            initialSelectedTab: .energyImpact
+        )
+        .frame(width: 360, height: 320)
+
+        XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 170)))
+    }
+
     func testActivesCurrentUsedMemoryComesFromMemoryMetricLatestSample() {
         let metrics = [
             DashboardMetric(

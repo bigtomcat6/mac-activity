@@ -1,8 +1,25 @@
+import Darwin
 import XCTest
 @testable import MacActivityCore
 
 @MainActor
 final class EnergyImpactProviderTests: XCTestCase {
+    func testSystemProcessEnergyReaderReadsCurrentProcess() throws {
+        let reading = try XCTUnwrap(SystemProcessEnergyReader().reading(for: getpid()))
+
+        XCTAssertGreaterThan(reading.processStartAbsoluteTime, 0)
+    }
+
+    func testDefaultWorkspaceSnapshotProviderBuildsEntriesFromRunningApplications() {
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(readings: [:]),
+            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: [])
+        )
+        let entries = service.topApps(limit: 1)
+
+        XCTAssertLessThanOrEqual(entries.count, 1)
+    }
+
     func testEnergyImpactServiceUsesPreviousRefreshSnapshotsForImpact() {
         let apps = [
             EnergyImpactAppSnapshot(

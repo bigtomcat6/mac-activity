@@ -1,3 +1,5 @@
+import AppKit
+import SwiftUI
 import XCTest
 import MacActivityCore
 @testable import MacActivityApp
@@ -34,6 +36,125 @@ final class EnergyImpactViewTests: XCTestCase {
 
     func testEnergyImpactViewVisibleRefreshIntervalIsThreeSeconds() {
         XCTAssertEqual(EnergyImpactView.visibleRefreshIntervalNanoseconds, 3_000_000_000)
+    }
+
+    func testRenderedEnergyImpactViewShowsEmptyState() {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: []),
+            samplingDelayNanoseconds: 1,
+            sleep: { _ in throw CancellationError() }
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 360, height: 80)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedEnergyImpactViewShowsEnergyRows() async {
+        let readableEntry = EnergyImpactEntry(
+            processIdentifier: 201,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            impact: 8.4,
+            isReadable: true
+        )
+        let unreadableEntry = EnergyImpactEntry(
+            processIdentifier: 202,
+            name: "Protected App",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            impact: 0,
+            isReadable: false
+        )
+        var sleepCount = 0
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [[readableEntry], [readableEntry, unreadableEntry]]),
+            samplingDelayNanoseconds: 1,
+            sleep: { _ in
+                sleepCount += 1
+                guard sleepCount == 1 else { throw CancellationError() }
+            }
+        )
+
+        await model.refresh()
+
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 360, height: 120)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedEnergyImpactRowUsesBundleIcon() {
+        let entry = EnergyImpactEntry(
+            processIdentifier: 203,
+            name: "Test Host",
+            bundleIdentifier: Bundle.main.bundleIdentifier,
+            bundleURL: Bundle.main.bundleURL,
+            impact: 2.5,
+            isReadable: true
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactRow(
+                entry: entry,
+                maximumImpact: 5,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testEnergyImpactViewRefreshTaskRunsWhenHosted() async {
+        var sleepRequests: [UInt64] = []
+        let refreshTaskStarted = expectation(description: "Energy Impact refresh task started")
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: []),
+            samplingDelayNanoseconds: 1,
+            sleep: { duration in
+                if sleepRequests.isEmpty {
+                    refreshTaskStarted.fulfill()
+                }
+                sleepRequests.append(duration)
+                throw CancellationError()
+            }
+        )
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 360, height: 80),
+            styleMask: [],
+            backing: .buffered,
+            defer: false
+        )
+        window.contentView = NSHostingView(
+            rootView: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 360, height: 80)
+        )
+        window.orderFrontRegardless()
+        defer { window.close() }
+
+        await fulfillment(of: [refreshTaskStarted], timeout: 1)
+
+        XCTAssertEqual(sleepRequests.first, 1)
     }
 
     func testEnergyImpactRowShowsUnavailableWhenUnreadable() {
@@ -159,5 +280,18 @@ final class EnergyImpactViewTests: XCTestCase {
         )
 
         XCTAssertEqual(EnergyImpactRow.progressFraction(for: entry, maximumImpact: 6), 1)
+    }
+}
+
+@MainActor
+private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
+    private var responses: [[EnergyImpactEntry]]
+
+    init(responses: [[EnergyImpactEntry]]) {
+        self.responses = responses
+    }
+
+    func topApps(limit: Int) -> [EnergyImpactEntry] {
+        responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
     }
 }
