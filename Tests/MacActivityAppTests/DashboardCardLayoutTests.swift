@@ -586,6 +586,17 @@ final class DashboardCardLayoutTests: XCTestCase {
             450,
             accuracy: 0.001
         )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ) + DashboardOverviewLayout.storageDetailIconCenterOffset,
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
+            accuracy: 0.001
+        )
     }
 
     func testOverviewStorageSwapLabelFallsBackToTrailingWhenStartLeavesTooLittleRoom() {
@@ -609,7 +620,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            0,
+            164,
             accuracy: 0.001
         )
         XCTAssertEqual(
@@ -617,11 +628,18 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            180,
+            16,
             accuracy: 0.001
         )
         XCTAssertEqual(
             DashboardOverviewLayout.storageDetailRowAlignment(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            .leading
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowTextAlignment(
                 for: swapLabel,
                 containerWidth: 180
             ),
@@ -633,6 +651,17 @@ final class DashboardCardLayoutTests: XCTestCase {
                 containerWidth: 180
             ),
             171,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ) + DashboardOverviewLayout.storageDetailIconCenterOffset,
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ),
             accuracy: 0.001
         )
     }

@@ -285,19 +285,15 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
-            ? 0
-            : storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
+        storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth)
     }
 
     static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
-            ? containerWidth
-            : max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
+        max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
     }
 
     static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
-        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) ? .trailing : .leading
+        .leading
     }
 
     static func storageDetailRowTextAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> TextAlignment {
