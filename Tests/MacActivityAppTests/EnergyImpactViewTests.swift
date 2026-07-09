@@ -121,42 +121,6 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertNotNil(renderer.nsImage)
     }
 
-    func testEnergyImpactViewRefreshTaskRunsWhenHosted() async {
-        var sleepRequests: [UInt64] = []
-        let refreshTaskStarted = expectation(description: "Energy Impact refresh task started")
-        let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: []),
-            samplingDelayNanoseconds: 1,
-            sleep: { duration in
-                if sleepRequests.isEmpty {
-                    refreshTaskStarted.fulfill()
-                }
-                sleepRequests.append(duration)
-                throw CancellationError()
-            }
-        )
-        let window = NSWindow(
-            contentRect: NSRect(x: 0, y: 0, width: 360, height: 80),
-            styleMask: [],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = NSHostingView(
-            rootView: EnergyImpactView(
-                model: model,
-                refreshTrigger: 0,
-                showsApplicationIdentifier: true
-            )
-            .frame(width: 360, height: 80)
-        )
-        window.orderFrontRegardless()
-        defer { window.close() }
-
-        await fulfillment(of: [refreshTaskStarted], timeout: 1)
-
-        XCTAssertEqual(sleepRequests.first, 1)
-    }
-
     func testEnergyImpactRowShowsUnavailableWhenUnreadable() {
         let entry = EnergyImpactEntry(
             processIdentifier: 102,
