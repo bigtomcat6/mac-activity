@@ -5,9 +5,13 @@
 "dashboard.status.live" = "실시간";
 "dashboard.tab.overview" = "개요";
 "dashboard.tab.actives" = "활성 항목";
+"dashboard.tab.audio" = "오디오";
 "dashboard.section.label" = "대시보드 섹션";
 "dashboard.waiting.firstSample" = "첫 번째 샘플 대기 중";
 "dashboard.waiting.firstMetricSample" = "첫 번째 메트릭 샘플 대기 중.";
+"audio.devices.title" = "출력 기기";
+"audio.processes.title" = "오디오 재생 앱";
+"audio.device.volume.unsupported" = "음량 사용 불가";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "추세 수집 중";
 "dashboard.storage.accessibility" = "디스크 및 스왑 사용량";

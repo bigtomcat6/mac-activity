@@ -5,9 +5,13 @@
 "dashboard.status.live" = "实时";
 "dashboard.tab.overview" = "概览";
 "dashboard.tab.actives" = "活跃";
+"dashboard.tab.audio" = "音频";
 "dashboard.section.label" = "仪表盘分区";
 "dashboard.waiting.firstSample" = "正在等待第一组样本";
 "dashboard.waiting.firstMetricSample" = "正在等待第一组指标样本。";
+"audio.devices.title" = "输出设备";
+"audio.processes.title" = "正在播放音频的应用";
+"audio.device.volume.unsupported" = "音量不可用";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "正在收集趋势";
 "dashboard.storage.accessibility" = "磁盘和交换空间用量";

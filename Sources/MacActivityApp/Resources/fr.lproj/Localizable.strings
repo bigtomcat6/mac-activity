@@ -5,9 +5,13 @@
 "dashboard.status.live" = "En direct";
 "dashboard.tab.overview" = "Aperçu";
 "dashboard.tab.actives" = "Actifs";
+"dashboard.tab.audio" = "Audio";
 "dashboard.section.label" = "Section du tableau de bord";
 "dashboard.waiting.firstSample" = "En attente du premier échantillon";
 "dashboard.waiting.firstMetricSample" = "En attente du premier échantillon de mesure.";
+"audio.devices.title" = "Périphériques de sortie";
+"audio.processes.title" = "Apps avec audio";
+"audio.device.volume.unsupported" = "Volume indisponible";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecte des tendances";
 "dashboard.storage.accessibility" = "Utilisation du disque et du swap";

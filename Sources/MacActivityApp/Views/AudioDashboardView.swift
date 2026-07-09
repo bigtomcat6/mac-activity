@@ -51,7 +51,7 @@ private struct AudioDeviceVolumeRow: View {
     @ObservedObject var model: AudioDashboardModel
 
     private var showsUnsupportedStatus: Bool {
-        device.volumeAvailability != .writable || device.muteAvailability != .writable
+        device.volumeAvailability != .writable
     }
 
     var body: some View {
@@ -62,7 +62,7 @@ private struct AudioDeviceVolumeRow: View {
                     .lineLimit(1)
 
                 if showsUnsupportedStatus {
-                    Text(AppLocalization.string(.audioUnsupportedShort))
+                    Text(AppLocalization.string(.audioUnsupportedDeviceVolume))
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                 }
@@ -72,6 +72,7 @@ private struct AudioDeviceVolumeRow: View {
 
             Slider(value: deviceVolumeBinding, in: 0...1)
                 .frame(maxWidth: 130)
+                .disabled(device.volumeAvailability != .writable)
 
             Button {
                 model.setDeviceMuted(!device.isMuted, for: device.id)
@@ -83,7 +84,6 @@ private struct AudioDeviceVolumeRow: View {
             .disabled(device.muteAvailability != .writable)
         }
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-        .disabled(device.volumeAvailability != .writable)
     }
 
     private var deviceVolumeBinding: Binding<Double> {

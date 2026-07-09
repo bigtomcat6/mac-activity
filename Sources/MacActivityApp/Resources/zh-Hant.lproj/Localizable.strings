@@ -5,9 +5,13 @@
 "dashboard.status.live" = "即時";
 "dashboard.tab.overview" = "概覽";
 "dashboard.tab.actives" = "活躍中";
+"dashboard.tab.audio" = "音訊";
 "dashboard.section.label" = "儀表板分區";
 "dashboard.waiting.firstSample" = "正在等待第一組樣本";
 "dashboard.waiting.firstMetricSample" = "正在等待第一組指標樣本。";
+"audio.devices.title" = "輸出裝置";
+"audio.processes.title" = "正在播放音訊的 App";
+"audio.device.volume.unsupported" = "音量無法使用";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "正在收集趨勢";
 "dashboard.storage.accessibility" = "磁碟和交換空間用量";

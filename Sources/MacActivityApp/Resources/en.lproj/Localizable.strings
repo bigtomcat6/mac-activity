@@ -9,9 +9,9 @@
 "dashboard.section.label" = "Dashboard section";
 "dashboard.waiting.firstSample" = "Waiting for the first sample";
 "dashboard.waiting.firstMetricSample" = "Waiting for the first metric sample.";
-"audio.devices.title" = "Devices";
-"audio.processes.title" = "Per App";
-"audio.status.unsupported" = "Unsupported";
+"audio.devices.title" = "Output devices";
+"audio.processes.title" = "Apps playing audio";
+"audio.device.volume.unsupported" = "Volume unavailable";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecting trend";
 "dashboard.storage.accessibility" = "Disk and Swap usage";

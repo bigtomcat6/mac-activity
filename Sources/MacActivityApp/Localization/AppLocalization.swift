@@ -21,7 +21,7 @@ enum AppLocalization {
         case dashboardWaitingFirstMetricSample = "dashboard.waiting.firstMetricSample"
         case audioDevicesTitle = "audio.devices.title"
         case audioProcessesTitle = "audio.processes.title"
-        case audioUnsupportedShort = "audio.status.unsupported"
+        case audioUnsupportedDeviceVolume = "audio.device.volume.unsupported"
         case dashboardCPUGPU = "dashboard.cpuGpu"
         case dashboardTrendCollecting = "dashboard.trend.collecting"
         case dashboardStorageAccessibility = "dashboard.storage.accessibility"

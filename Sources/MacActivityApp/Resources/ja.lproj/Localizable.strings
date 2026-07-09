@@ -5,9 +5,13 @@
 "dashboard.status.live" = "ライブ";
 "dashboard.tab.overview" = "概要";
 "dashboard.tab.actives" = "アクティブ";
+"dashboard.tab.audio" = "オーディオ";
 "dashboard.section.label" = "ダッシュボードセクション";
 "dashboard.waiting.firstSample" = "最初のサンプルを待機中";
 "dashboard.waiting.firstMetricSample" = "最初の指標サンプルを待機中。";
+"audio.devices.title" = "出力デバイス";
+"audio.processes.title" = "音声再生中のアプリ";
+"audio.device.volume.unsupported" = "音量を使用できません";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "トレンド収集中";
 "dashboard.storage.accessibility" = "ディスクとスワップの使用状況";
