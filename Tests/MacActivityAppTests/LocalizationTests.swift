@@ -59,6 +59,28 @@ final class LocalizationTests: XCTestCase {
         XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "fr" })
     }
 
+    func testAudioDashboardStringsExistForAllSupportedLanguages() throws {
+        let audioKeys: [AppLocalization.Key] = [
+            .dashboardTabAudio,
+            .audioDevicesTitle,
+            .audioProcessesTitle,
+            .audioUnsupportedDeviceVolume
+        ]
+
+        for language in AppLanguage.supportedLanguages() {
+            guard let languageIdentifier = language.preferredLanguageIdentifier else {
+                continue
+            }
+
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: languageIdentifier))
+            for key in audioKeys {
+                let localized = AppLocalization.string(key, bundle: bundle)
+                XCTAssertNotEqual(localized, key.rawValue, "Missing \(key.rawValue) in \(languageIdentifier)")
+                XCTAssertFalse(localized.isEmpty, "\(key.rawValue) in \(languageIdentifier) must not be empty")
+            }
+        }
+    }
+
     func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
