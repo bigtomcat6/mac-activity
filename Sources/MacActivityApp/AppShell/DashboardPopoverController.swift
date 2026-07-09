@@ -35,7 +35,7 @@ enum DashboardPopoverLayout {
         switch tab {
         case .overview:
             return overviewContentHeight(for: metrics) + fixedChromeHeight
-        case .actives:
+        case .actives, .energyImpact:
             return maximumHeight
         }
     }

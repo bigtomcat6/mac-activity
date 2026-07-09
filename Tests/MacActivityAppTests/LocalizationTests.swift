@@ -234,6 +234,39 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactPageStringsAreLocalized() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+
+        XCTAssertEqual(
+            AppLocalization.string(.dashboardTabEnergyImpact, bundle: english),
+            "Energy"
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.energyImpactEmpty, bundle: english),
+            "No foreground apps are reporting energy impact."
+        )
+        XCTAssertEqual(
+            AppLocalization.string(.energyImpactUnavailable, bundle: english),
+            "Unavailable"
+        )
+
+        let localizedExpectations = [
+            ("de", "Energie", "Keine Vordergrund-Apps melden Energieauswirkungen.", "Nicht verfügbar"),
+            ("fr", "Énergie", "Aucune app au premier plan ne signale d’impact énergétique.", "Indisponible"),
+            ("ja", "エネルギー", "エネルギー影響を報告している前面アプリはありません。", "利用不可"),
+            ("ko", "에너지", "에너지 영향을 보고하는 전면 앱이 없습니다.", "사용할 수 없음"),
+            ("zh-Hans", "耗电影响", "当前没有前台应用报告耗电影响。", "不可读取"),
+            ("zh-Hant", "耗電影響", "目前沒有前景應用程式回報耗電影響。", "無法讀取"),
+        ]
+
+        for (identifier, title, empty, unavailable) in localizedExpectations {
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: identifier))
+            XCTAssertEqual(AppLocalization.string(.dashboardTabEnergyImpact, bundle: bundle), title)
+            XCTAssertEqual(AppLocalization.string(.energyImpactEmpty, bundle: bundle), empty)
+            XCTAssertEqual(AppLocalization.string(.energyImpactUnavailable, bundle: bundle), unavailable)
+        }
+    }
+
     func testChartReadoutsUseLocalizedUnits() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let sample = DashboardTrendSample(timestamp: Date(), primaryValue: 31.2, secondaryValue: 20.4)

@@ -16,4 +16,5 @@ ignore:
 
   # SwiftUI view-builder closures and button actions are exercised indirectly by
   # layout/model tests; exclude the declarative view body from patch gating.
+  - "Sources/MacActivityApp/Views/EnergyImpactView.swift"
   - "Sources/MacActivityApp/Views/PreferencesView.swift"

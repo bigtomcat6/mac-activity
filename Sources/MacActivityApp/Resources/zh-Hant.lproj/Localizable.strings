@@ -5,6 +5,7 @@
 "dashboard.status.live" = "即時";
 "dashboard.tab.overview" = "概覽";
 "dashboard.tab.actives" = "活躍中";
+"dashboard.tab.energyImpact" = "耗電影響";
 "dashboard.section.label" = "儀表板分區";
 "dashboard.waiting.firstSample" = "正在等待第一組樣本";
 "dashboard.waiting.firstMetricSample" = "正在等待第一組指標樣本。";
@@ -77,6 +78,9 @@
 "diskCleanup.category.userCaches" = "快取";
 "diskCleanup.category.trash" = "垃圾桶";
 "diskCleanup.category.userLogs" = "日誌";
+
+"energyImpact.empty" = "目前沒有前景應用程式回報耗電影響。";
+"energyImpact.unavailable" = "無法讀取";
 
 "memoryRelease.action.release" = "釋放";
 "memoryRelease.action.releasing" = "釋放中";
