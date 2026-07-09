@@ -55,9 +55,14 @@ public struct EnergyImpactAppSnapshot: Equatable, Sendable {
 
 public struct ProcessEnergyReading: Equatable, Sendable {
     public let energyNanojoules: UInt64
+    public let processStartAbsoluteTime: UInt64
 
-    public init(energyNanojoules: UInt64) {
+    public init(
+        energyNanojoules: UInt64,
+        processStartAbsoluteTime: UInt64 = 0
+    ) {
         self.energyNanojoules = energyNanojoules
+        self.processStartAbsoluteTime = processStartAbsoluteTime
     }
 }
 
@@ -76,22 +81,31 @@ public struct SystemProcessEnergyReader: ProcessEnergyReadingProvider {
             }
         }
         guard result == 0 else { return nil }
-        return ProcessEnergyReading(energyNanojoules: info.ri_energy_nj)
+        return ProcessEnergyReading(
+            energyNanojoules: info.ri_energy_nj,
+            processStartAbsoluteTime: info.ri_proc_start_abstime
+        )
     }
 }
 
 @MainActor
 public final class EnergyImpactService {
     private let reader: any ProcessEnergyReadingProvider
+    private let processSnapshotReader: any ProcessMemorySnapshotReading
     private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
-    private var previousReadings: [pid_t: ProcessEnergyReading] = [:]
+    private let now: () -> Date
+    private var previousReadings: [pid_t: TimedProcessEnergyReading] = [:]
 
     public init(
         workspace: NSWorkspace = .shared,
         reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
-        appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil
+        processSnapshotReader: any ProcessMemorySnapshotReading = SystemProcessMemorySnapshotReader(),
+        appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil,
+        now: @escaping () -> Date = { Date() }
     ) {
         self.reader = reader
+        self.processSnapshotReader = processSnapshotReader
+        self.now = now
         self.appSnapshotProvider = appSnapshotProvider ?? {
             workspace.runningApplications
                 .filter { $0.activationPolicy == .regular }
@@ -108,9 +122,29 @@ public final class EnergyImpactService {
 
     public func topApps(limit: Int = 20) -> [EnergyImpactEntry] {
         let apps = appSnapshotProvider()
-        var nextReadings: [pid_t: ProcessEnergyReading] = [:]
+        let sampleTime = now().timeIntervalSinceReferenceDate
+        let processIdentifiersByRoot = Self.processIdentifiersByRoot(
+            rootProcessIdentifiers: apps.map(\.processIdentifier),
+            snapshots: processSnapshotReader.snapshots()
+        )
+        var nextReadings: [pid_t: TimedProcessEnergyReading] = [:]
         let entries = apps.map { app -> EnergyImpactEntry in
-            guard let current = reader.reading(for: app.processIdentifier) else {
+            var impact = 0.0
+            var isReadable = false
+
+            for processIdentifier in processIdentifiersByRoot[app.processIdentifier] ?? [app.processIdentifier] {
+                guard let current = reader.reading(for: processIdentifier) else { continue }
+                isReadable = true
+                nextReadings[processIdentifier] = TimedProcessEnergyReading(
+                    reading: current,
+                    sampleTime: sampleTime
+                )
+                if let previous = previousReadings[processIdentifier] {
+                    impact += Self.impactRate(from: previous, to: current, sampleTime: sampleTime)
+                }
+            }
+
+            guard isReadable else {
                 return EnergyImpactEntry(
                     processIdentifier: app.processIdentifier,
                     name: app.name,
@@ -119,14 +153,6 @@ public final class EnergyImpactService {
                     impact: 0,
                     isReadable: false
                 )
-            }
-            nextReadings[app.processIdentifier] = current
-            let impact: Double
-            if let previous = previousReadings[app.processIdentifier],
-               current.energyNanojoules >= previous.energyNanojoules {
-                impact = Double(current.energyNanojoules - previous.energyNanojoules) / 1_000.0
-            } else {
-                impact = 0
             }
 
             return EnergyImpactEntry(
@@ -153,4 +179,45 @@ public final class EnergyImpactService {
             .prefix(max(0, limit))
             .map { $0 }
     }
+
+    public nonisolated static func processIdentifiersByRoot(
+        rootProcessIdentifiers: [pid_t],
+        snapshots: [ProcessMemorySnapshot]
+    ) -> [pid_t: [pid_t]] {
+        let childrenByParent = Dictionary(grouping: snapshots, by: \.parentProcessIdentifier)
+
+        return Dictionary(uniqueKeysWithValues: rootProcessIdentifiers.map { rootProcessIdentifier in
+            var identifiers = [rootProcessIdentifier]
+            var visited = Set<pid_t>([rootProcessIdentifier])
+            var stack = childrenByParent[rootProcessIdentifier] ?? []
+
+            while let child = stack.popLast() {
+                guard visited.insert(child.processIdentifier).inserted else { continue }
+                identifiers.append(child.processIdentifier)
+                stack.append(contentsOf: childrenByParent[child.processIdentifier] ?? [])
+            }
+
+            return (rootProcessIdentifier, identifiers)
+        })
+    }
+
+    private nonisolated static func impactRate(
+        from previous: TimedProcessEnergyReading,
+        to current: ProcessEnergyReading,
+        sampleTime: TimeInterval
+    ) -> Double {
+        guard current.processStartAbsoluteTime == previous.reading.processStartAbsoluteTime,
+              current.energyNanojoules >= previous.reading.energyNanojoules else {
+            return 0
+        }
+        let elapsedSeconds = sampleTime - previous.sampleTime
+        guard elapsedSeconds > 0 else { return 0 }
+        let deltaMicrojoules = Double(current.energyNanojoules - previous.reading.energyNanojoules) / 1_000.0
+        return deltaMicrojoules / elapsedSeconds
+    }
+}
+
+private struct TimedProcessEnergyReading: Sendable {
+    let reading: ProcessEnergyReading
+    let sampleTime: TimeInterval
 }
