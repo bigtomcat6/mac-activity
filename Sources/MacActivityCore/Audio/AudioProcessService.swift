@@ -85,7 +85,9 @@ public final class AudioProcessService: AudioProcessProviding {
         availability: AudioFeatureAvailability = .current
     ) {
         self.availability = availability
-        self.processSnapshotReader = Self.readProcessSnapshotsIfAvailable
+        self.processSnapshotReader = {
+            Self.readProcessSnapshotsIfAvailable(client: .system)
+        }
         self.appSnapshotReader = {
             workspace.runningApplications.map {
                 AudioProcessAppSnapshot(
@@ -141,12 +143,17 @@ public final class AudioProcessService: AudioProcessProviding {
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
+    static func readProcessSnapshotsIfAvailable() -> [AudioProcessSnapshot] {
+        readProcessSnapshotsIfAvailable(client: .system)
+    }
+
     static func readProcessSnapshotsIfAvailable(
+        client: AudioHALClient
     ) -> [AudioProcessSnapshot] {
-        readProcessSnapshotsIfAvailable(
-            isRuntimeProcessDiscoveryAvailable: runtimeProcessDiscoveryAvailable,
-            reader: readProcessSnapshots
-        )
+        if #available(macOS 14.2, *) {
+            return readProcessSnapshots(client: client)
+        }
+        return []
     }
 
     static func readProcessSnapshotsIfAvailable(
@@ -166,62 +173,59 @@ private extension AudioProcessService {
         if #available(macOS 14.2, *) {
             return true
         }
-
         return false
     }
 
-    static func readProcessSnapshots() -> [AudioProcessSnapshot] {
-        let address = propertyAddress(
-            selector: kAudioHardwarePropertyProcessObjectList,
-            scope: kAudioObjectPropertyScopeGlobal
+    @available(macOS 14.2, *)
+    static func readProcessSnapshots(
+        client: AudioHALClient
+    ) -> [AudioProcessSnapshot] {
+        let address = AudioHALPropertyAddress(
+            selector: kAudioHardwarePropertyProcessObjectList
         )
-
-        guard let processObjectIDs = getArray(
-            for: AudioObjectID(kAudioObjectSystemObject),
-            address: address,
-            as: AudioObjectID.self
+        guard let processObjectIDs = try? client.readArray(
+            AudioObjectID.self,
+            from: AudioObjectID(kAudioObjectSystemObject),
+            address: address
         ) else {
             return []
         }
 
-        return processObjectIDs.compactMap(processSnapshot)
+        return processObjectIDs.compactMap {
+            processSnapshot(for: $0, client: client)
+        }
     }
 
-    static func processSnapshot(for processObjectID: AudioObjectID) -> AudioProcessSnapshot? {
-        guard let processIdentifier = getPID(
-            for: processObjectID,
-            address: propertyAddress(
-                selector: kAudioProcessPropertyPID,
-                scope: kAudioObjectPropertyScopeGlobal
-            )
+    @available(macOS 14.2, *)
+    static func processSnapshot(
+        for processObjectID: AudioObjectID,
+        client: AudioHALClient
+    ) -> AudioProcessSnapshot? {
+        guard let processIdentifier = try? client.readScalar(
+            pid_t.self,
+            from: processObjectID,
+            address: .init(selector: kAudioProcessPropertyPID)
         ) else {
             return nil
         }
 
-        let bundleIdentifier = getRetainedCFString(
-            for: processObjectID,
-            address: propertyAddress(
-                selector: kAudioProcessPropertyBundleID,
-                scope: kAudioObjectPropertyScopeGlobal
-            )
-        ) as String?
-
-        let isRunningOutput = getUInt32(
-            for: processObjectID,
-            address: propertyAddress(
-                selector: kAudioProcessPropertyIsRunningOutput,
-                scope: kAudioObjectPropertyScopeGlobal
-            )
-        ).map { $0 != 0 } ?? false
-
-        let outputDeviceIDs = getArray(
-            for: processObjectID,
-            address: propertyAddress(
+        let bundleIdentifier = try? client.readRetainedString(
+            from: processObjectID,
+            address: .init(selector: kAudioProcessPropertyBundleID)
+        )
+        let isRunningOutput = ((try? client.readScalar(
+            UInt32.self,
+            from: processObjectID,
+            address: .init(selector: kAudioProcessPropertyIsRunningOutput)
+        )) ?? 0) != 0
+        let outputDeviceIDs = (try? client.readArray(
+            AudioDeviceID.self,
+            from: processObjectID,
+            address: .init(
                 selector: kAudioProcessPropertyDevices,
                 scope: kAudioObjectPropertyScopeOutput
-            ),
-            as: AudioDeviceID.self
-        ) ?? []
+            )
+        )) ?? []
 
         return AudioProcessSnapshot(
             processObjectID: processObjectID,
@@ -230,88 +234,5 @@ private extension AudioProcessService {
             isRunningOutput: isRunningOutput,
             outputDeviceIDs: outputDeviceIDs
         )
-    }
-
-    static func propertyAddress(
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-    }
-
-    static func getArray<T>(
-        for objectID: AudioObjectID,
-        address: AudioObjectPropertyAddress,
-        as type: T.Type
-    ) -> [T]? {
-        var address = address
-        var byteCount: UInt32 = 0
-
-        guard AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &byteCount) == noErr else {
-            return nil
-        }
-
-        let count = Int(byteCount) / MemoryLayout<T>.stride
-        let buffer = UnsafeMutablePointer<T>.allocate(capacity: count)
-        defer { buffer.deallocate() }
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &byteCount, buffer) == noErr else {
-            return nil
-        }
-
-        return Array(UnsafeBufferPointer(start: buffer, count: count))
-    }
-
-    static func getPID(
-        for objectID: AudioObjectID,
-        address: AudioObjectPropertyAddress
-    ) -> pid_t? {
-        var address = address
-        var value = pid_t.zero
-        var byteCount = UInt32(MemoryLayout<pid_t>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &byteCount, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    static func getUInt32(
-        for objectID: AudioObjectID,
-        address: AudioObjectPropertyAddress
-    ) -> UInt32? {
-        var address = address
-        var value = UInt32.zero
-        var byteCount = UInt32(MemoryLayout<UInt32>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &byteCount, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    static func getRetainedCFString(
-        for objectID: AudioObjectID,
-        address: AudioObjectPropertyAddress
-    ) -> String? {
-        var address = address
-        let pointer = UnsafeMutablePointer<Unmanaged<CFString>?>.allocate(capacity: 1)
-        defer { pointer.deallocate() }
-        pointer.initialize(to: nil)
-        defer { pointer.deinitialize(count: 1) }
-        var byteCount = UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
-
-        guard AudioObjectGetPropertyData(objectID, &address, 0, nil, &byteCount, pointer) == noErr,
-              let value = pointer.pointee?.takeRetainedValue() else {
-            return nil
-        }
-
-        return value as String
     }
 }

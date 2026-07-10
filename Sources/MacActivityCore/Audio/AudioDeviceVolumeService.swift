@@ -33,6 +33,14 @@ public struct AudioOutputDeviceVolume: Identifiable, Equatable, Sendable {
 }
 
 @MainActor
+public protocol AudioDeviceControlProviding: AnyObject {
+    func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot]
+    func outputDeviceSnapshot(forUID uid: String) throws -> AudioOutputDeviceSnapshot
+    func writeVolume(_ volume: Double, forUID uid: String) throws -> Double
+    func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool
+}
+
+@MainActor
 public protocol AudioDeviceVolumeProviding: AnyObject {
     func outputDevices() -> [AudioOutputDeviceVolume]
     func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool
@@ -40,33 +48,73 @@ public protocol AudioDeviceVolumeProviding: AnyObject {
 }
 
 @MainActor
-public final class AudioDeviceVolumeService: AudioDeviceVolumeProviding {
-    public init() {}
+public final class AudioDeviceVolumeService:
+    AudioDeviceControlProviding,
+    AudioDeviceVolumeProviding {
+    private static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
+
+    private let client: AudioHALClient
+
+    public convenience init() {
+        self.init(client: .system)
+    }
+
+    init(client: AudioHALClient) {
+        self.client = client
+    }
+
+    public func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
+        var snapshots: [AudioOutputDeviceSnapshot] = []
+        for deviceID in try outputDeviceIDs() {
+            let uid = try client.readRetainedString(
+                from: deviceID,
+                address: Self.deviceUIDAddress
+            )
+            guard !Self.isInternalDeviceUID(uid) else { continue }
+            snapshots.append(try snapshot(deviceID: deviceID, uid: uid))
+        }
+        return snapshots
+    }
+
+    public func outputDeviceSnapshot(forUID uid: String) throws -> AudioOutputDeviceSnapshot {
+        let deviceID = try deviceID(forUID: uid)
+        return try snapshot(deviceID: deviceID, uid: uid)
+    }
+
+    public func writeVolume(_ volume: Double, forUID uid: String) throws -> Double {
+        let deviceID = try deviceID(forUID: uid)
+        let value = Float32(Self.clampedVolume(volume))
+        try client.writeScalar(value, to: deviceID, address: Self.volumeAddress)
+        let confirmed = try client.readScalar(
+            Float32.self,
+            from: deviceID,
+            address: Self.volumeAddress
+        )
+        return Self.doubleValue(confirmed)
+    }
+
+    public func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool {
+        let deviceID = try deviceID(forUID: uid)
+        let value: UInt32 = isMuted ? 1 : 0
+        try client.writeScalar(value, to: deviceID, address: Self.muteAddress)
+        let confirmed = try client.readScalar(
+            UInt32.self,
+            from: deviceID,
+            address: Self.muteAddress
+        )
+        return confirmed != 0
+    }
 
     public func outputDevices() -> [AudioOutputDeviceVolume] {
-        Self.readOutputDeviceIDs().compactMap(Self.deviceVolume)
+        (try? outputDeviceSnapshots().map(Self.legacyDevice)) ?? []
     }
 
     public func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        guard let deviceID = Self.deviceID(forUID: id) else { return false }
-        var value = Float32(Self.clampedVolume(volume))
-        return Self.setFloat32(
-            value: &value,
-            deviceID: deviceID,
-            selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
-            scope: kAudioObjectPropertyScopeOutput
-        )
+        (try? writeVolume(volume, forUID: id)) != nil
     }
 
     public func setMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        guard let deviceID = Self.deviceID(forUID: id) else { return false }
-        var value: UInt32 = isMuted ? 1 : 0
-        return Self.setUInt32(
-            value: &value,
-            deviceID: deviceID,
-            selector: kAudioDevicePropertyMute,
-            scope: kAudioObjectPropertyScopeOutput
-        )
+        (try? writeMute(isMuted, forUID: id)) != nil
     }
 
     public nonisolated static func clampedVolume(_ value: Double) -> Double {
@@ -93,228 +141,175 @@ public final class AudioDeviceVolumeService: AudioDeviceVolumeProviding {
 }
 
 private extension AudioDeviceVolumeService {
-    static func readOutputDeviceIDs() -> [AudioDeviceID] {
-        let address = AudioObjectPropertyAddress(
-            mSelector: kAudioHardwarePropertyDevices,
-            mScope: kAudioObjectPropertyScopeGlobal,
-            mElement: kAudioObjectPropertyElementMain
+    static var devicesAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
+    }
+
+    static var outputStreamsAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyStreams,
+            scope: kAudioObjectPropertyScopeOutput
         )
-
-        guard let deviceIDs = getArray(
-            for: AudioObjectID(kAudioObjectSystemObject),
-            address: address,
-            as: AudioDeviceID.self
-        ) else {
-            return []
-        }
-
-        return deviceIDs.filter(deviceHasOutput)
     }
 
-    static func deviceID(forUID uid: String) -> AudioDeviceID? {
-        readOutputDeviceIDs().first { deviceUID(for: $0) == uid }
+    static var deviceUIDAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceUID)
     }
 
-    static func deviceVolume(_ deviceID: AudioDeviceID) -> AudioOutputDeviceVolume? {
-        guard let id = deviceUID(for: deviceID), let name = deviceName(for: deviceID) else {
-            return nil
-        }
+    static var deviceNameAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
+    }
 
-        let volumeAddress = propertyAddress(
+    static var volumeAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(
             selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
             scope: kAudioObjectPropertyScopeOutput
         )
-        let canSetVolume = isPropertySettable(deviceID: deviceID, address: volumeAddress)
-        let volume = canSetVolume ? getFloat32(deviceID: deviceID, address: volumeAddress).map(Double.init) : nil
+    }
 
-        let muteAddress = propertyAddress(
+    static var muteAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(
             selector: kAudioDevicePropertyMute,
             scope: kAudioObjectPropertyScopeOutput
         )
-        let canSetMute = isPropertySettable(deviceID: deviceID, address: muteAddress)
-        let isMuted = canSetMute ? getUInt32(deviceID: deviceID, address: muteAddress).map { $0 != 0 } : nil
+    }
 
-        return makeDevice(
-            id: id,
+    static func isInternalDeviceUID(_ uid: String) -> Bool {
+        uid.hasPrefix(internalDeviceUIDPrefix)
+    }
+
+    static func doubleValue(_ value: Float32) -> Double {
+        Double(String(value)) ?? Double(value)
+    }
+
+    static func legacyDevice(
+        from snapshot: AudioOutputDeviceSnapshot
+    ) -> AudioOutputDeviceVolume {
+        makeDevice(
+            id: snapshot.id,
+            name: snapshot.name,
+            volume: snapshot.volume.value,
+            isMuted: snapshot.mute.value,
+            canSetVolume: snapshot.volume.isWritable,
+            canSetMute: snapshot.mute.isWritable
+        )
+    }
+
+    func outputDeviceIDs() throws -> [AudioDeviceID] {
+        let deviceIDs = try client.readArray(
+            AudioDeviceID.self,
+            from: AudioObjectID(kAudioObjectSystemObject),
+            address: Self.devicesAddress
+        )
+        return deviceIDs.filter(hasOutputStreams)
+    }
+
+    func hasOutputStreams(_ deviceID: AudioDeviceID) -> Bool {
+        guard client.hasProperty(objectID: deviceID, address: Self.outputStreamsAddress) else {
+            return false
+        }
+        guard let streams = try? client.readArray(
+            AudioStreamID.self,
+            from: deviceID,
+            address: Self.outputStreamsAddress
+        ) else {
+            return false
+        }
+        return !streams.isEmpty
+    }
+
+    func deviceID(forUID uid: String) throws -> AudioDeviceID {
+        guard !Self.isInternalDeviceUID(uid) else {
+            throw missingDeviceError()
+        }
+
+        for deviceID in try outputDeviceIDs() {
+            guard let candidateUID = try? client.readRetainedString(
+                from: deviceID,
+                address: Self.deviceUIDAddress
+            ) else {
+                continue
+            }
+            if candidateUID == uid, !Self.isInternalDeviceUID(candidateUID) {
+                return deviceID
+            }
+        }
+        throw missingDeviceError()
+    }
+
+    func snapshot(
+        deviceID: AudioDeviceID,
+        uid: String
+    ) throws -> AudioOutputDeviceSnapshot {
+        let name = try client.readRetainedString(
+            from: deviceID,
+            address: Self.deviceNameAddress
+        )
+        return AudioOutputDeviceSnapshot(
+            id: uid,
+            objectID: deviceID,
             name: name,
-            volume: volume,
-            isMuted: isMuted,
-            canSetVolume: canSetVolume,
-            canSetMute: canSetMute
+            volume: volumeValue(for: deviceID),
+            mute: muteValue(for: deviceID)
         )
     }
 
-    static func deviceHasOutput(_ deviceID: AudioDeviceID) -> Bool {
-        var address = propertyAddress(
-            selector: kAudioDevicePropertyStreamConfiguration,
-            scope: kAudioObjectPropertyScopeOutput
+    func volumeValue(for deviceID: AudioDeviceID) -> AudioPropertyValue<Double> {
+        guard client.hasProperty(objectID: deviceID, address: Self.volumeAddress) else {
+            return .unsupported
+        }
+        do {
+            let value = try client.readScalar(
+                Float32.self,
+                from: deviceID,
+                address: Self.volumeAddress
+            )
+            let isWritable = try client.isPropertySettable(
+                objectID: deviceID,
+                address: Self.volumeAddress
+            )
+            return .value(Self.doubleValue(value), isWritable: isWritable)
+        } catch {
+            return propertyFailure(error)
+        }
+    }
+
+    func muteValue(for deviceID: AudioDeviceID) -> AudioPropertyValue<Bool> {
+        guard client.hasProperty(objectID: deviceID, address: Self.muteAddress) else {
+            return .unsupported
+        }
+        do {
+            let value = try client.readScalar(
+                UInt32.self,
+                from: deviceID,
+                address: Self.muteAddress
+            )
+            let isWritable = try client.isPropertySettable(
+                objectID: deviceID,
+                address: Self.muteAddress
+            )
+            return .value(value != 0, isWritable: isWritable)
+        } catch {
+            return propertyFailure(error)
+        }
+    }
+
+    func propertyFailure<Value>(_ error: any Error) -> AudioPropertyValue<Value> {
+        guard let halError = error as? AudioHALError else {
+            preconditionFailure("AudioHALClient must throw AudioHALError")
+        }
+        if halError.status == kAudioHardwareBadObjectError {
+            return .unavailable
+        }
+        return .failed(halError)
+    }
+
+    func missingDeviceError() -> AudioHALError {
+        AudioHALError(
+            operation: .getData,
+            objectID: AudioObjectID(kAudioObjectSystemObject),
+            address: Self.devicesAddress,
+            reason: .missingValue
         )
-        var byteCount: UInt32 = 0
-
-        guard AudioObjectGetPropertyDataSize(deviceID, &address, 0, nil, &byteCount) == noErr else {
-            return false
-        }
-
-        let buffer = UnsafeMutableRawPointer.allocate(
-            byteCount: Int(byteCount),
-            alignment: MemoryLayout<AudioBufferList>.alignment
-        )
-        defer { buffer.deallocate() }
-
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &byteCount, buffer) == noErr else {
-            return false
-        }
-
-        let bufferList = buffer.assumingMemoryBound(to: AudioBufferList.self)
-        let buffers = UnsafeMutableAudioBufferListPointer(bufferList)
-        return buffers.contains { $0.mNumberChannels > 0 }
-    }
-
-    static func deviceUID(for deviceID: AudioDeviceID) -> String? {
-        let address = propertyAddress(
-            selector: kAudioDevicePropertyDeviceUID,
-            scope: kAudioObjectPropertyScopeGlobal
-        )
-
-        guard let cfString = getCFString(deviceID: deviceID, address: address) else {
-            return nil
-        }
-
-        return cfString as String
-    }
-
-    static func deviceName(for deviceID: AudioDeviceID) -> String? {
-        let address = propertyAddress(
-            selector: kAudioObjectPropertyName,
-            scope: kAudioObjectPropertyScopeGlobal
-        )
-
-        guard let cfString = getCFString(deviceID: deviceID, address: address) else {
-            return nil
-        }
-
-        return cfString as String
-    }
-
-    static func getFloat32(deviceID: AudioDeviceID, address: AudioObjectPropertyAddress) -> Float32? {
-        var address = address
-        var value = Float32.zero
-        var byteCount = UInt32(MemoryLayout<Float32>.size)
-
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &byteCount, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    static func getUInt32(deviceID: AudioDeviceID, address: AudioObjectPropertyAddress) -> UInt32? {
-        var address = address
-        var value = UInt32.zero
-        var byteCount = UInt32(MemoryLayout<UInt32>.size)
-
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &byteCount, &value) == noErr else {
-            return nil
-        }
-
-        return value
-    }
-
-    static func getCFString(deviceID: AudioDeviceID, address: AudioObjectPropertyAddress) -> CFString? {
-        var address = address
-        let pointer = UnsafeMutablePointer<CFString?>.allocate(capacity: 1)
-        defer { pointer.deallocate() }
-        var byteCount = UInt32(MemoryLayout<CFString?>.size)
-
-        guard AudioObjectGetPropertyData(deviceID, &address, 0, nil, &byteCount, pointer) == noErr else {
-            return nil
-        }
-
-        return pointer.pointee
-    }
-
-    static func setFloat32(
-        value: inout Float32,
-        deviceID: AudioDeviceID,
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> Bool {
-        var address = propertyAddress(selector: selector, scope: scope)
-        let byteCount = UInt32(MemoryLayout<Float32>.size)
-
-        guard isPropertySettable(deviceID: deviceID, address: address) else {
-            return false
-        }
-
-        return AudioObjectSetPropertyData(deviceID, &address, 0, nil, byteCount, &value) == noErr
-    }
-
-    static func setUInt32(
-        value: inout UInt32,
-        deviceID: AudioDeviceID,
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> Bool {
-        var address = propertyAddress(selector: selector, scope: scope)
-        let byteCount = UInt32(MemoryLayout<UInt32>.size)
-
-        guard isPropertySettable(deviceID: deviceID, address: address) else {
-            return false
-        }
-
-        return AudioObjectSetPropertyData(deviceID, &address, 0, nil, byteCount, &value) == noErr
-    }
-
-    static func isPropertySettable(deviceID: AudioDeviceID, address: AudioObjectPropertyAddress) -> Bool {
-        var address = address
-        var isSettable: DarwinBoolean = false
-
-        guard AudioObjectIsPropertySettable(deviceID, &address, &isSettable) == noErr else {
-            return false
-        }
-
-        return isSettable.boolValue
-    }
-
-    static func propertyAddress(
-        selector: AudioObjectPropertySelector,
-        scope: AudioObjectPropertyScope
-    ) -> AudioObjectPropertyAddress {
-        AudioObjectPropertyAddress(
-            mSelector: selector,
-            mScope: scope,
-            mElement: kAudioObjectPropertyElementMain
-        )
-    }
-
-    static func getArray<T>(
-        for objectID: AudioObjectID,
-        address: AudioObjectPropertyAddress,
-        as type: T.Type
-    ) -> [T]? {
-        var address = address
-        var byteCount: UInt32 = 0
-
-        guard AudioObjectGetPropertyDataSize(objectID, &address, 0, nil, &byteCount) == noErr else {
-            return nil
-        }
-
-        let itemSize = UInt32(MemoryLayout<T>.stride)
-        guard itemSize > 0 else { return nil }
-        let count = Int(byteCount / itemSize)
-        guard count > 0 else { return [] }
-        var values = Array<T>(unsafeUninitializedCapacity: count) { _, initializedCount in
-            initializedCount = count
-        }
-
-        let status = values.withUnsafeMutableBufferPointer { buffer in
-            AudioObjectGetPropertyData(objectID, &address, 0, nil, &byteCount, buffer.baseAddress!)
-        }
-
-        guard status == noErr else {
-            return nil
-        }
-
-        return values
     }
 }

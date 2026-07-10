@@ -1,3 +1,4 @@
+import CoreAudio
 import XCTest
 @testable import MacActivityCore
 
@@ -184,5 +185,58 @@ final class AudioProcessServiceTests: XCTestCase {
 
         XCTAssertEqual(entries[0].name, "com.example.Player")
         XCTAssertEqual(entries[0].bundleIdentifier, "com.example.Player")
+    }
+
+    @MainActor
+    func testLiveSnapshotsReadEveryProcessPropertyThroughSharedHALClient() throws {
+        guard #available(macOS 14.2, *) else { return }
+
+        let backend = FakeAudioHALBackend()
+        backend.setArray(
+            [AudioObjectID(11)],
+            objectID: AudioObjectID(kAudioObjectSystemObject),
+            address: .init(selector: kAudioHardwarePropertyProcessObjectList)
+        )
+        backend.setScalar(
+            pid_t(101),
+            objectID: 11,
+            address: .init(selector: kAudioProcessPropertyPID)
+        )
+        backend.setString(
+            "com.apple.Music",
+            objectID: 11,
+            address: .init(selector: kAudioProcessPropertyBundleID)
+        )
+        backend.setScalar(
+            UInt32(1),
+            objectID: 11,
+            address: .init(selector: kAudioProcessPropertyIsRunningOutput)
+        )
+        backend.setArray(
+            [AudioDeviceID(50), 51],
+            objectID: 11,
+            address: .init(
+                selector: kAudioProcessPropertyDevices,
+                scope: kAudioObjectPropertyScopeOutput
+            )
+        )
+
+        let snapshots = AudioProcessService.readProcessSnapshotsIfAvailable(
+            client: AudioHALClient(backend: backend)
+        )
+
+        XCTAssertEqual(
+            snapshots,
+            [
+                AudioProcessSnapshot(
+                    processObjectID: 11,
+                    processIdentifier: 101,
+                    bundleIdentifier: "com.apple.Music",
+                    isRunningOutput: true,
+                    outputDeviceIDs: [50, 51]
+                ),
+            ]
+        )
+        XCTAssertTrue(backend.readSelectors.contains(kAudioProcessPropertyDevices))
     }
 }
