@@ -49,6 +49,8 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
     private var processTokens: [AudioObjectID: [AudioHALListenerToken]] = [:]
     private var pendingChanges: Set<AudioSystemChange> = []
     private var pendingEmission: DispatchWorkItem?
+    private var restartRecoveryWorkItem: DispatchWorkItem?
+    private var isRecoveringFromServiceRestart = false
     private var emissionGeneration = 0
 
     public init(
@@ -71,12 +73,16 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
 
     deinit {
         pendingEmission?.cancel()
+        restartRecoveryWorkItem?.cancel()
         continuation.finish()
     }
 
     public func start() throws {
         try serialized {
-            guard !isStarted else { return }
+            guard !isStarted else {
+                retryServiceRestartRecoveryNowIfNeeded()
+                return
+            }
 
             let newBaseTokens = try makeBaseTokens()
             let newDeviceTokens = try makeDeviceTokenMap(for: observedDeviceIDs)
@@ -100,7 +106,7 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
                 || processObjectIDs != observedProcessObjectIDs else {
                 return
             }
-            guard isStarted else {
+            guard isStarted, !isRecoveringFromServiceRestart else {
                 observedDeviceIDs = deviceIDs
                 observedProcessObjectIDs = processObjectIDs
                 return
@@ -140,9 +146,12 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
             }
 
             isStarted = false
+            isRecoveringFromServiceRestart = false
             emissionGeneration += 1
             pendingEmission?.cancel()
             pendingEmission = nil
+            restartRecoveryWorkItem?.cancel()
+            restartRecoveryWorkItem = nil
             pendingChanges.removeAll()
 
             let tokens = allTokens
@@ -289,13 +298,17 @@ private extension AudioSystemMonitor {
     func receive(_ change: AudioSystemChange) {
         guard isStarted else { return }
         if change == .serviceRestarted {
-            guard rebuildAfterServiceRestart() else { return }
+            beginServiceRestartRecovery()
+            return
         }
         pendingChanges.insert(change)
         scheduleEmissionIfNeeded()
     }
 
-    func rebuildAfterServiceRestart() -> Bool {
+    func beginServiceRestartRecovery() {
+        isRecoveringFromServiceRestart = true
+        restartRecoveryWorkItem?.cancel()
+        restartRecoveryWorkItem = nil
         let staleTokens = allTokens
         for token in staleTokens {
             token.invalidateAfterServiceRestart()
@@ -304,6 +317,11 @@ private extension AudioSystemMonitor {
         deviceTokens.removeAll()
         processTokens.removeAll()
 
+        attemptServiceRestartRecovery()
+    }
+
+    func attemptServiceRestartRecovery() {
+        guard isStarted, isRecoveringFromServiceRestart else { return }
         do {
             let newBaseTokens = try makeBaseTokens()
             let newDeviceTokens = try makeDeviceTokenMap(for: observedDeviceIDs)
@@ -313,10 +331,44 @@ private extension AudioSystemMonitor {
             baseTokens = newBaseTokens
             deviceTokens = newDeviceTokens
             processTokens = newProcessTokens
-            return true
+            isRecoveringFromServiceRestart = false
+            restartRecoveryWorkItem = nil
+            pendingChanges.insert(.serviceRestarted)
+            scheduleEmissionIfNeeded()
         } catch {
-            return false
+            scheduleServiceRestartRecovery()
         }
+    }
+
+    func scheduleServiceRestartRecovery() {
+        guard isStarted,
+              isRecoveringFromServiceRestart,
+              restartRecoveryWorkItem == nil else {
+            return
+        }
+        let generation = emissionGeneration
+        let workItem = DispatchWorkItem { [weak self] in
+            guard let self,
+                  generation == emissionGeneration,
+                  isStarted,
+                  isRecoveringFromServiceRestart else {
+                return
+            }
+            restartRecoveryWorkItem = nil
+            attemptServiceRestartRecovery()
+        }
+        restartRecoveryWorkItem = workItem
+        queue.asyncAfter(
+            deadline: .now() + coalescingDelay,
+            execute: workItem
+        )
+    }
+
+    func retryServiceRestartRecoveryNowIfNeeded() {
+        guard isRecoveringFromServiceRestart else { return }
+        restartRecoveryWorkItem?.cancel()
+        restartRecoveryWorkItem = nil
+        attemptServiceRestartRecovery()
     }
 
     func scheduleEmissionIfNeeded() {

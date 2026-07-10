@@ -4,51 +4,30 @@ import Dispatch
 @testable import MacActivityCore
 
 final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
-    struct ListenerBlockIdentifier: Hashable {
-        let function: UInt
-        let context: UInt
-    }
-
     struct ListenerCall {
         let objectID: AudioObjectID
         let address: AudioHALPropertyAddress
         let queue: DispatchQueue
-        let block: AudioObjectPropertyListenerBlock
-        let blockIdentifier: ListenerBlockIdentifier
+        let registration: AudioHALListenerRegistration
+
+        var block: AudioObjectPropertyListenerBlock {
+            registration.block
+        }
+
+        var registrationIdentifier: ObjectIdentifier {
+            ObjectIdentifier(registration)
+        }
 
         init(
             objectID: AudioObjectID,
             address: AudioHALPropertyAddress,
             queue: DispatchQueue,
-            block: @escaping AudioObjectPropertyListenerBlock
+            registration: AudioHALListenerRegistration
         ) {
             self.objectID = objectID
             self.address = address
             self.queue = queue
-            self.block = block
-            blockIdentifier = Self.fingerprint(block)
-        }
-
-        private static func fingerprint(
-            _ block: @escaping AudioObjectPropertyListenerBlock
-        ) -> ListenerBlockIdentifier {
-            // Bridging this imported Swift closure boxes a reabstraction context.
-            // The outer box is temporary, while its captured function/context pair
-            // identifies the retained listener value passed through the backend.
-            let boxedBlock = block as AnyObject
-            return withExtendedLifetime(boxedBlock) {
-                let boxWords = Unmanaged.passUnretained(boxedBlock)
-                    .toOpaque()
-                    .assumingMemoryBound(to: UInt.self)
-                guard let contextPointer = UnsafeRawPointer(bitPattern: boxWords[5]) else {
-                    preconditionFailure("Listener block is missing its closure context")
-                }
-                let contextWords = contextPointer.assumingMemoryBound(to: UInt.self)
-                return ListenerBlockIdentifier(
-                    function: contextWords[2],
-                    context: contextWords[3]
-                )
-            }
+            self.registration = registration
         }
     }
 
@@ -97,6 +76,8 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     private var properties: [PropertyKey: Property] = [:]
     private var queuedSizes: [SizeResult] = []
     private var queuedReads: [ReadResult] = []
+    private var queuedAddListenerStatuses: [OSStatus] = []
+    private var activeListenerCalls: [ObjectIdentifier: ListenerCall] = [:]
 
     private(set) var dataSizeCallCount = 0
     private(set) var readSelectors: [AudioObjectPropertySelector] = []
@@ -106,6 +87,14 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     var addListenerStatus: OSStatus = noErr
     var removeListenerStatus: OSStatus = noErr
+
+    var activeListeners: [ListenerCall] {
+        Array(activeListenerCalls.values)
+    }
+
+    func enqueueAddListenerStatuses(_ statuses: [OSStatus]) {
+        queuedAddListenerStatuses.append(contentsOf: statuses)
+    }
 
     func addedAddresses(for objectID: AudioObjectID) -> [AudioHALPropertyAddress] {
         addedListeners
@@ -128,12 +117,15 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress
     ) -> Bool {
-        guard let listener = addedListeners.last(where: {
+        guard let listener = activeListenerCalls.values.first(where: {
             $0.objectID == objectID && $0.address == address
         }) else {
             return false
         }
 
+        if address.selector == kAudioHardwarePropertyServiceRestarted {
+            activeListenerCalls.removeAll()
+        }
         var rawAddress = address.rawValue
         withUnsafePointer(to: &rawAddress) { pointer in
             listener.block(1, pointer)
@@ -355,23 +347,40 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus {
-        addedListeners.append(
-            ListenerCall(objectID: objectID, address: address, queue: queue, block: block)
+        let call = ListenerCall(
+            objectID: objectID,
+            address: address,
+            queue: queue,
+            registration: registration
         )
-        return addListenerStatus
+        addedListeners.append(call)
+        let status = queuedAddListenerStatuses.isEmpty
+            ? addListenerStatus
+            : queuedAddListenerStatuses.removeFirst()
+        if status == noErr {
+            activeListenerCalls[call.registrationIdentifier] = call
+        }
+        return status
     }
 
     func removePropertyListener(
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus {
-        removedListeners.append(
-            ListenerCall(objectID: objectID, address: address, queue: queue, block: block)
+        let call = ListenerCall(
+            objectID: objectID,
+            address: address,
+            queue: queue,
+            registration: registration
         )
+        removedListeners.append(call)
+        if removeListenerStatus == noErr {
+            activeListenerCalls[call.registrationIdentifier] = nil
+        }
         return removeListenerStatus
     }
 

@@ -104,16 +104,10 @@ final class AudioSystemMonitorTests: XCTestCase {
         fixture.monitor.stop()
         fixture.monitor.stop()
 
-        XCTAssertEqual(fixture.backend.removedListeners.count, registrations.count)
-        for removal in fixture.backend.removedListeners {
-            let exactMatches = registrations.filter {
-                $0.objectID == removal.objectID
-                    && $0.address == removal.address
-                    && $0.queue === removal.queue
-                    && $0.blockIdentifier == removal.blockIdentifier
-            }
-            XCTAssertEqual(exactMatches.count, 1)
-        }
+        XCTAssertEqual(
+            listenerTupleCounts(fixture.backend.removedListeners),
+            listenerTupleCounts(registrations)
+        )
     }
 
     func testStopSuppressesPendingEmission() throws {
@@ -155,15 +149,71 @@ final class AudioSystemMonitorTests: XCTestCase {
         XCTAssertTrue(fixture.backend.removedListeners.isEmpty)
 
         fixture.monitor.stop()
-        let staleBlockIDs = Set(staleRegistrations.map(\.blockIdentifier))
+        let staleRegistrationIDs = Set(
+            staleRegistrations.map(\.registrationIdentifier)
+        )
         XCTAssertEqual(fixture.backend.removedListeners.count, staleRegistrations.count)
         XCTAssertTrue(
             fixture.backend.removedListeners.allSatisfy {
-                !staleBlockIDs.contains($0.blockIdentifier)
+                !staleRegistrationIDs.contains($0.registrationIdentifier)
             },
-            "stale: \(staleBlockIDs), removed: "
-                + "\(fixture.backend.removedListeners.map(\.blockIdentifier))"
+            "stale: \(staleRegistrationIDs), removed: "
+                + "\(fixture.backend.removedListeners.map(\.registrationIdentifier))"
         )
+    }
+
+    func testServiceRestartRetriesTransientRegistrationFailureBeforeEmission() async throws {
+        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+        let initialRegistrationCount = fixture.backend.addedListeners.count
+        fixture.backend.enqueueAddListenerStatuses([
+            noErr,
+            kAudioHardwareUnspecifiedError,
+        ])
+
+        fixture.fire(.serviceRestarted)
+
+        let changes = try await fixture.nextChangeSet(timeout: .milliseconds(250))
+        XCTAssertEqual(changes, [.serviceRestarted])
+        XCTAssertEqual(fixture.backend.addedListeners.count, initialRegistrationCount + 10)
+        XCTAssertEqual(fixture.backend.removedListeners.count, 1)
+        let recoveredRegistrations = Array(fixture.backend.addedListeners.suffix(8))
+        XCTAssertEqual(
+            listenerTupleCounts(fixture.backend.activeListeners),
+            listenerTupleCounts(recoveredRegistrations)
+        )
+
+        fixture.monitor.stop()
+
+        XCTAssertTrue(fixture.backend.activeListeners.isEmpty)
+        XCTAssertEqual(fixture.backend.removedListeners.count, 9)
+        XCTAssertEqual(
+            listenerTupleCounts(Array(fixture.backend.removedListeners.suffix(8))),
+            listenerTupleCounts(recoveredRegistrations)
+        )
+    }
+
+    func testStopCancelsPendingServiceRestartRecovery() throws {
+        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        try fixture.monitor.start()
+        let initialRegistrationCount = fixture.backend.addedListeners.count
+        fixture.backend.enqueueAddListenerStatuses([
+            kAudioHardwareUnspecifiedError,
+        ])
+        let wait = expectation(description: "No registration retry after stop")
+        wait.isInverted = true
+
+        fixture.fire(.serviceRestarted)
+        fixture.monitor.stop()
+
+        XCTAssertEqual(XCTWaiter.wait(for: [wait], timeout: 0.05), .completed)
+        XCTAssertEqual(fixture.backend.addedListeners.count, initialRegistrationCount + 1)
+        XCTAssertTrue(fixture.backend.activeListeners.isEmpty)
+        XCTAssertTrue(fixture.backend.removedListeners.isEmpty)
     }
 }
 
@@ -202,6 +252,30 @@ private final class MonitorFixture: @unchecked Sendable {
         return changes
     }
 
+    func nextChangeSet(timeout: Duration) async throws -> Set<AudioSystemChange> {
+        let stream = monitor.changes
+        return try await withThrowingTaskGroup(
+            of: Set<AudioSystemChange>.self
+        ) { group in
+            group.addTask {
+                var iterator = stream.makeAsyncIterator()
+                guard let changes = await iterator.next() else {
+                    throw MonitorFixtureError.streamEnded
+                }
+                return changes
+            }
+            group.addTask {
+                try await Task.sleep(for: timeout)
+                throw MonitorFixtureError.timedOut
+            }
+            defer { group.cancelAll() }
+            guard let changes = try await group.next() else {
+                throw MonitorFixtureError.streamEnded
+            }
+            return changes
+        }
+    }
+
     func fire(_ change: AudioSystemChange) {
         let registration: (AudioObjectID, AudioHALPropertyAddress)
         switch change {
@@ -234,6 +308,29 @@ private final class MonitorFixture: @unchecked Sendable {
 
 private enum MonitorFixtureError: Error {
     case streamEnded
+    case timedOut
+}
+
+private struct ListenerTuple: Hashable {
+    let objectID: AudioObjectID
+    let address: AudioHALPropertyAddress
+    let queueIdentifier: ObjectIdentifier
+    let registrationIdentifier: ObjectIdentifier
+
+    init(_ call: FakeAudioHALBackend.ListenerCall) {
+        objectID = call.objectID
+        address = call.address
+        queueIdentifier = ObjectIdentifier(call.queue)
+        registrationIdentifier = call.registrationIdentifier
+    }
+}
+
+private func listenerTupleCounts(
+    _ calls: [FakeAudioHALBackend.ListenerCall]
+) -> [ListenerTuple: Int] {
+    calls.reduce(into: [:]) { counts, call in
+        counts[ListenerTuple(call), default: 0] += 1
+    }
 }
 
 private extension AudioObjectID {

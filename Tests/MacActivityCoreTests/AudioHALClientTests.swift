@@ -98,8 +98,39 @@ final class AudioHALClientTests: XCTestCase {
         XCTAssertEqual(backend.removedListeners[0].address, address)
         XCTAssertTrue(backend.removedListeners[0].queue === backend.addedListeners[0].queue)
         XCTAssertEqual(
-            backend.removedListeners[0].blockIdentifier,
-            backend.addedListeners[0].blockIdentifier
+            backend.removedListeners[0].registrationIdentifier,
+            backend.addedListeners[0].registrationIdentifier
+        )
+    }
+
+    func testListenerRegistrationsHaveDistinctStableIdentities() throws {
+        let backend = FakeAudioHALBackend()
+        let client = AudioHALClient(backend: backend)
+        let queue = DispatchQueue(label: "AudioHALClientTests.identities")
+        let firstToken = try client.addPropertyListener(
+            objectID: 41,
+            address: .init(selector: kAudioObjectPropertyName),
+            queue: queue,
+            handler: {}
+        )
+        let secondToken = try client.addPropertyListener(
+            objectID: 42,
+            address: .init(selector: kAudioObjectPropertyName),
+            queue: queue,
+            handler: {}
+        )
+
+        XCTAssertNotEqual(
+            backend.addedListeners[0].registrationIdentifier,
+            backend.addedListeners[1].registrationIdentifier
+        )
+
+        try firstToken.cancel()
+        try secondToken.cancel()
+
+        XCTAssertEqual(
+            backend.removedListeners.map(\.registrationIdentifier),
+            backend.addedListeners.map(\.registrationIdentifier)
         )
     }
 

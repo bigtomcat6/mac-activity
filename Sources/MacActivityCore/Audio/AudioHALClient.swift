@@ -32,14 +32,24 @@ protocol AudioHALBackend: AnyObject, Sendable {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus
     func removePropertyListener(
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus
+}
+
+final class AudioHALListenerRegistration: @unchecked Sendable {
+    let block: AudioObjectPropertyListenerBlock
+
+    init(handler: @escaping @Sendable () -> Void) {
+        block = { _, _ in
+            handler()
+        }
+    }
 }
 
 final class CoreAudioHALBackend: AudioHALBackend, @unchecked Sendable {
@@ -107,20 +117,30 @@ final class CoreAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus {
         var rawAddress = address.rawValue
-        return AudioObjectAddPropertyListenerBlock(objectID, &rawAddress, queue, block)
+        return AudioObjectAddPropertyListenerBlock(
+            objectID,
+            &rawAddress,
+            queue,
+            registration.block
+        )
     }
 
     func removePropertyListener(
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) -> OSStatus {
         var rawAddress = address.rawValue
-        return AudioObjectRemovePropertyListenerBlock(objectID, &rawAddress, queue, block)
+        return AudioObjectRemovePropertyListenerBlock(
+            objectID,
+            &rawAddress,
+            queue,
+            registration.block
+        )
     }
 }
 
@@ -352,14 +372,12 @@ public final class AudioHALClient: @unchecked Sendable {
         queue: DispatchQueue,
         handler: @escaping @Sendable () -> Void
     ) throws -> AudioHALListenerToken {
-        let block: AudioObjectPropertyListenerBlock = { _, _ in
-            handler()
-        }
+        let registration = AudioHALListenerRegistration(handler: handler)
         let status = backend.addPropertyListener(
             objectID: objectID,
             address: address,
             queue: queue,
-            block: block
+            registration: registration
         )
         try check(status, operation: .addListener, objectID: objectID, address: address)
         return AudioHALListenerToken(
@@ -367,7 +385,7 @@ public final class AudioHALClient: @unchecked Sendable {
             objectID: objectID,
             address: address,
             queue: queue,
-            block: block
+            registration: registration
         )
     }
 
@@ -422,7 +440,7 @@ public final class AudioHALListenerToken: @unchecked Sendable {
     private let objectID: AudioObjectID
     private let address: AudioHALPropertyAddress
     private let queue: DispatchQueue
-    private let block: AudioObjectPropertyListenerBlock
+    private let registration: AudioHALListenerRegistration
     private let lock = NSLock()
     private var isRegistered = true
 
@@ -431,13 +449,13 @@ public final class AudioHALListenerToken: @unchecked Sendable {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         queue: DispatchQueue,
-        block: @escaping AudioObjectPropertyListenerBlock
+        registration: AudioHALListenerRegistration
     ) {
         self.backend = backend
         self.objectID = objectID
         self.address = address
         self.queue = queue
-        self.block = block
+        self.registration = registration
     }
 
     deinit {
@@ -453,7 +471,7 @@ public final class AudioHALListenerToken: @unchecked Sendable {
             objectID: objectID,
             address: address,
             queue: queue,
-            block: block
+            registration: registration
         )
         guard status == noErr else {
             throw AudioHALError(
