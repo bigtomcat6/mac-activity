@@ -126,11 +126,15 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         if address.selector == kAudioHardwarePropertyServiceRestarted {
             activeListenerCalls.removeAll()
         }
-        var rawAddress = address.rawValue
+        invokeRetainedListener(listener)
+        return true
+    }
+
+    func invokeRetainedListener(_ listener: ListenerCall) {
+        var rawAddress = listener.address.rawValue
         withUnsafePointer(to: &rawAddress) { pointer in
             listener.block(1, pointer)
         }
-        return true
     }
 
     deinit {

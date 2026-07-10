@@ -1,6 +1,36 @@
 import CoreAudio
 import Foundation
 
+struct AudioRestartRecoveryBackoff: Sendable {
+    private let initialDelayMilliseconds: Int
+    private let maximumDelayMilliseconds: Int
+    private var nextDelayMilliseconds: Int
+
+    init(
+        initialDelayMilliseconds: Int = 250,
+        maximumDelayMilliseconds: Int = 4_000
+    ) {
+        precondition(initialDelayMilliseconds > 0)
+        precondition(maximumDelayMilliseconds >= initialDelayMilliseconds)
+        self.initialDelayMilliseconds = initialDelayMilliseconds
+        self.maximumDelayMilliseconds = maximumDelayMilliseconds
+        nextDelayMilliseconds = initialDelayMilliseconds
+    }
+
+    mutating func nextDelay() -> DispatchTimeInterval {
+        let delay = nextDelayMilliseconds
+        let doubled = nextDelayMilliseconds.multipliedReportingOverflow(by: 2)
+        nextDelayMilliseconds = doubled.overflow
+            ? maximumDelayMilliseconds
+            : min(maximumDelayMilliseconds, doubled.partialValue)
+        return .milliseconds(delay)
+    }
+
+    mutating func reset() {
+        nextDelayMilliseconds = initialDelayMilliseconds
+    }
+}
+
 public enum AudioDeviceSystemChange: Hashable, Sendable {
     case nominalSampleRate
     case liveness
@@ -42,6 +72,8 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
     private let queueKey = DispatchSpecificKey<UInt8>()
 
     private var isStarted = false
+    private var listenerGenerationCounter: UInt64 = 0
+    private var currentListenerGeneration: UInt64?
     private var observedDeviceIDs: Set<AudioDeviceID> = []
     private var observedProcessObjectIDs: Set<AudioObjectID> = []
     private var baseTokens: [AudioHALListenerToken] = []
@@ -50,16 +82,34 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
     private var pendingChanges: Set<AudioSystemChange> = []
     private var pendingEmission: DispatchWorkItem?
     private var restartRecoveryWorkItem: DispatchWorkItem?
+    private var restartRecoveryGeneration: UInt64 = 0
     private var isRecoveringFromServiceRestart = false
+    private var restartRecoveryBackoff: AudioRestartRecoveryBackoff
     private var emissionGeneration = 0
 
-    public init(
+    public convenience init(
         hal: AudioHALClient = .system,
         availability: AudioFeatureAvailability = .current,
         queue: DispatchQueue = DispatchQueue(
             label: "com.how.macactivity.audio.monitor"
         ),
         coalescingDelay: DispatchTimeInterval = .milliseconds(50)
+    ) {
+        self.init(
+            hal: hal,
+            availability: availability,
+            queue: queue,
+            coalescingDelay: coalescingDelay,
+            restartRecoveryBackoff: AudioRestartRecoveryBackoff()
+        )
+    }
+
+    init(
+        hal: AudioHALClient,
+        availability: AudioFeatureAvailability,
+        queue: DispatchQueue,
+        coalescingDelay: DispatchTimeInterval,
+        restartRecoveryBackoff: AudioRestartRecoveryBackoff
     ) {
         let stream = AsyncStream<Set<AudioSystemChange>>.makeStream()
         changes = stream.stream
@@ -68,6 +118,7 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
         self.availability = availability
         self.queue = queue
         self.coalescingDelay = coalescingDelay
+        self.restartRecoveryBackoff = restartRecoveryBackoff
         queue.setSpecific(key: queueKey, value: 1)
     }
 
@@ -84,15 +135,24 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
                 return
             }
 
-            let newBaseTokens = try makeBaseTokens()
-            let newDeviceTokens = try makeDeviceTokenMap(for: observedDeviceIDs)
+            restartRecoveryBackoff.reset()
+            let listenerGeneration = nextListenerGeneration()
+            let newBaseTokens = try makeBaseTokens(
+                listenerGeneration: listenerGeneration
+            )
+            let newDeviceTokens = try makeDeviceTokenMap(
+                for: observedDeviceIDs,
+                listenerGeneration: listenerGeneration
+            )
             let newProcessTokens = try makeProcessTokenMap(
-                for: observedProcessObjectIDs
+                for: observedProcessObjectIDs,
+                listenerGeneration: listenerGeneration
             )
 
             baseTokens = newBaseTokens
             deviceTokens = newDeviceTokens
             processTokens = newProcessTokens
+            currentListenerGeneration = listenerGeneration
             isStarted = true
         }
     }
@@ -106,7 +166,9 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
                 || processObjectIDs != observedProcessObjectIDs else {
                 return
             }
-            guard isStarted, !isRecoveringFromServiceRestart else {
+            guard isStarted,
+                  !isRecoveringFromServiceRestart,
+                  let listenerGeneration = currentListenerGeneration else {
                 observedDeviceIDs = deviceIDs
                 observedProcessObjectIDs = processObjectIDs
                 return
@@ -121,9 +183,13 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
                 observedProcessObjectIDs
             )
 
-            let addedDeviceTokens = try makeDeviceTokenMap(for: addedDeviceIDs)
+            let addedDeviceTokens = try makeDeviceTokenMap(
+                for: addedDeviceIDs,
+                listenerGeneration: listenerGeneration
+            )
             let addedProcessTokens = try makeProcessTokenMap(
-                for: addedProcessObjectIDs
+                for: addedProcessObjectIDs,
+                listenerGeneration: listenerGeneration
             )
 
             for deviceID in removedDeviceIDs.sorted() {
@@ -147,11 +213,12 @@ public final class AudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendabl
 
             isStarted = false
             isRecoveringFromServiceRestart = false
+            currentListenerGeneration = nil
+            restartRecoveryBackoff.reset()
             emissionGeneration += 1
             pendingEmission?.cancel()
             pendingEmission = nil
-            restartRecoveryWorkItem?.cancel()
-            restartRecoveryWorkItem = nil
+            cancelRestartRecoveryWorkItem()
             pendingChanges.removeAll()
 
             let tokens = allTokens
@@ -179,27 +246,32 @@ private extension AudioSystemMonitor {
         return try queue.sync(execute: body)
     }
 
-    func makeBaseTokens() throws -> [AudioHALListenerToken] {
+    func makeBaseTokens(
+        listenerGeneration: UInt64
+    ) throws -> [AudioHALListenerToken] {
         var tokens = [AudioHALListenerToken]()
         tokens.append(
             try makeToken(
                 objectID: AudioObjectID(kAudioObjectSystemObject),
                 address: .init(selector: kAudioHardwarePropertyDevices),
-                change: .deviceList
+                change: .deviceList,
+                listenerGeneration: listenerGeneration
             )
         )
         tokens.append(
             try makeToken(
                 objectID: AudioObjectID(kAudioObjectSystemObject),
                 address: .init(selector: kAudioHardwarePropertyDefaultOutputDevice),
-                change: .defaultOutputDevice
+                change: .defaultOutputDevice,
+                listenerGeneration: listenerGeneration
             )
         )
         tokens.append(
             try makeToken(
                 objectID: AudioObjectID(kAudioObjectSystemObject),
                 address: .init(selector: kAudioHardwarePropertyServiceRestarted),
-                change: .serviceRestarted
+                change: .serviceRestarted,
+                listenerGeneration: listenerGeneration
             )
         )
         if #available(macOS 14.2, *), availability.supportsProcessControls {
@@ -207,7 +279,8 @@ private extension AudioSystemMonitor {
                 try makeToken(
                     objectID: AudioObjectID(kAudioObjectSystemObject),
                     address: .init(selector: kAudioHardwarePropertyProcessObjectList),
-                    change: .processList
+                    change: .processList,
+                    listenerGeneration: listenerGeneration
                 )
             )
         }
@@ -215,41 +288,50 @@ private extension AudioSystemMonitor {
     }
 
     func makeDeviceTokenMap(
-        for deviceIDs: Set<AudioDeviceID>
+        for deviceIDs: Set<AudioDeviceID>,
+        listenerGeneration: UInt64
     ) throws -> [AudioDeviceID: [AudioHALListenerToken]] {
         var tokens: [AudioDeviceID: [AudioHALListenerToken]] = [:]
         for deviceID in deviceIDs.sorted() {
-            tokens[deviceID] = try makeDeviceTokens(for: deviceID)
+            tokens[deviceID] = try makeDeviceTokens(
+                for: deviceID,
+                listenerGeneration: listenerGeneration
+            )
         }
         return tokens
     }
 
     func makeDeviceTokens(
-        for deviceID: AudioDeviceID
+        for deviceID: AudioDeviceID,
+        listenerGeneration: UInt64
     ) throws -> [AudioHALListenerToken] {
         [
             try makeToken(
                 objectID: deviceID,
                 address: .init(selector: kAudioDevicePropertyNominalSampleRate),
-                change: .device(deviceID, .nominalSampleRate)
+                change: .device(deviceID, .nominalSampleRate),
+                listenerGeneration: listenerGeneration
             ),
             try makeToken(
                 objectID: deviceID,
                 address: .init(selector: kAudioDevicePropertyDeviceIsAlive),
-                change: .device(deviceID, .liveness)
+                change: .device(deviceID, .liveness),
+                listenerGeneration: listenerGeneration
             ),
         ]
     }
 
     func makeProcessTokenMap(
-        for processObjectIDs: Set<AudioObjectID>
+        for processObjectIDs: Set<AudioObjectID>,
+        listenerGeneration: UInt64
     ) throws -> [AudioObjectID: [AudioHALListenerToken]] {
         guard availability.supportsProcessControls else { return [:] }
         if #available(macOS 14.2, *) {
             var tokens: [AudioObjectID: [AudioHALListenerToken]] = [:]
             for processObjectID in processObjectIDs.sorted() {
                 tokens[processObjectID] = try makeProcessTokens(
-                    for: processObjectID
+                    for: processObjectID,
+                    listenerGeneration: listenerGeneration
                 )
             }
             return tokens
@@ -259,7 +341,8 @@ private extension AudioSystemMonitor {
 
     @available(macOS 14.2, *)
     func makeProcessTokens(
-        for processObjectID: AudioObjectID
+        for processObjectID: AudioObjectID,
+        listenerGeneration: UInt64
     ) throws -> [AudioHALListenerToken] {
         [
             try makeToken(
@@ -268,12 +351,14 @@ private extension AudioSystemMonitor {
                     selector: kAudioProcessPropertyDevices,
                     scope: kAudioObjectPropertyScopeOutput
                 ),
-                change: .process(processObjectID, .outputDevices)
+                change: .process(processObjectID, .outputDevices),
+                listenerGeneration: listenerGeneration
             ),
             try makeToken(
                 objectID: processObjectID,
                 address: .init(selector: kAudioProcessPropertyIsRunningOutput),
-                change: .process(processObjectID, .runningOutput)
+                change: .process(processObjectID, .runningOutput),
+                listenerGeneration: listenerGeneration
             ),
         ]
     }
@@ -281,7 +366,8 @@ private extension AudioSystemMonitor {
     func makeToken(
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
-        change: AudioSystemChange
+        change: AudioSystemChange,
+        listenerGeneration: UInt64
     ) throws -> AudioHALListenerToken {
         let queue = queue
         return try hal.addPropertyListener(
@@ -290,13 +376,22 @@ private extension AudioSystemMonitor {
             queue: queue
         ) { [weak self] in
             queue.async { [weak self] in
-                self?.receive(change)
+                self?.receive(
+                    change,
+                    listenerGeneration: listenerGeneration
+                )
             }
         }
     }
 
-    func receive(_ change: AudioSystemChange) {
-        guard isStarted else { return }
+    func receive(
+        _ change: AudioSystemChange,
+        listenerGeneration: UInt64
+    ) {
+        guard isStarted,
+              currentListenerGeneration == listenerGeneration else {
+            return
+        }
         if change == .serviceRestarted {
             beginServiceRestartRecovery()
             return
@@ -307,8 +402,9 @@ private extension AudioSystemMonitor {
 
     func beginServiceRestartRecovery() {
         isRecoveringFromServiceRestart = true
-        restartRecoveryWorkItem?.cancel()
-        restartRecoveryWorkItem = nil
+        currentListenerGeneration = nil
+        restartRecoveryBackoff.reset()
+        cancelRestartRecoveryWorkItem()
         let staleTokens = allTokens
         for token in staleTokens {
             token.invalidateAfterServiceRestart()
@@ -322,17 +418,26 @@ private extension AudioSystemMonitor {
 
     func attemptServiceRestartRecovery() {
         guard isStarted, isRecoveringFromServiceRestart else { return }
+        let listenerGeneration = nextListenerGeneration()
         do {
-            let newBaseTokens = try makeBaseTokens()
-            let newDeviceTokens = try makeDeviceTokenMap(for: observedDeviceIDs)
+            let newBaseTokens = try makeBaseTokens(
+                listenerGeneration: listenerGeneration
+            )
+            let newDeviceTokens = try makeDeviceTokenMap(
+                for: observedDeviceIDs,
+                listenerGeneration: listenerGeneration
+            )
             let newProcessTokens = try makeProcessTokenMap(
-                for: observedProcessObjectIDs
+                for: observedProcessObjectIDs,
+                listenerGeneration: listenerGeneration
             )
             baseTokens = newBaseTokens
             deviceTokens = newDeviceTokens
             processTokens = newProcessTokens
+            currentListenerGeneration = listenerGeneration
             isRecoveringFromServiceRestart = false
-            restartRecoveryWorkItem = nil
+            restartRecoveryBackoff.reset()
+            cancelRestartRecoveryWorkItem()
             pendingChanges.insert(.serviceRestarted)
             scheduleEmissionIfNeeded()
         } catch {
@@ -347,9 +452,13 @@ private extension AudioSystemMonitor {
             return
         }
         let generation = emissionGeneration
+        let delay = restartRecoveryBackoff.nextDelay()
+        restartRecoveryGeneration &+= 1
+        let recoveryGeneration = restartRecoveryGeneration
         let workItem = DispatchWorkItem { [weak self] in
             guard let self,
                   generation == emissionGeneration,
+                  recoveryGeneration == restartRecoveryGeneration,
                   isStarted,
                   isRecoveringFromServiceRestart else {
                 return
@@ -359,16 +468,26 @@ private extension AudioSystemMonitor {
         }
         restartRecoveryWorkItem = workItem
         queue.asyncAfter(
-            deadline: .now() + coalescingDelay,
+            deadline: .now() + delay,
             execute: workItem
         )
     }
 
     func retryServiceRestartRecoveryNowIfNeeded() {
         guard isRecoveringFromServiceRestart else { return }
+        cancelRestartRecoveryWorkItem()
+        attemptServiceRestartRecovery()
+    }
+
+    func cancelRestartRecoveryWorkItem() {
+        restartRecoveryGeneration &+= 1
         restartRecoveryWorkItem?.cancel()
         restartRecoveryWorkItem = nil
-        attemptServiceRestartRecovery()
+    }
+
+    func nextListenerGeneration() -> UInt64 {
+        listenerGenerationCounter &+= 1
+        return listenerGenerationCounter
     }
 
     func scheduleEmissionIfNeeded() {

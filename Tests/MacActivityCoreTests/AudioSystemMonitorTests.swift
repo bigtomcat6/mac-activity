@@ -3,6 +3,31 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioSystemMonitorTests: XCTestCase {
+    func testRestartRecoveryBackoffSequenceIsExponentiallyCapped() {
+        var backoff = AudioRestartRecoveryBackoff(
+            initialDelayMilliseconds: 250,
+            maximumDelayMilliseconds: 1_000
+        )
+
+        XCTAssertEqual(backoff.nextDelay(), .milliseconds(250))
+        XCTAssertEqual(backoff.nextDelay(), .milliseconds(500))
+        XCTAssertEqual(backoff.nextDelay(), .milliseconds(1_000))
+        XCTAssertEqual(backoff.nextDelay(), .milliseconds(1_000))
+    }
+
+    func testRestartRecoveryBackoffResetReturnsInitialDelay() {
+        var backoff = AudioRestartRecoveryBackoff(
+            initialDelayMilliseconds: 250,
+            maximumDelayMilliseconds: 1_000
+        )
+        _ = backoff.nextDelay()
+        _ = backoff.nextDelay()
+
+        backoff.reset()
+
+        XCTAssertEqual(backoff.nextDelay(), .milliseconds(250))
+    }
+
     func testBaseListenerAvailabilityMatrix() throws {
         let macOS141 = MonitorFixture(macOS: (14, 1))
         let macOS142 = MonitorFixture(macOS: (14, 2))
@@ -162,6 +187,37 @@ final class AudioSystemMonitorTests: XCTestCase {
         )
     }
 
+    func testDuplicateStaleServiceRestartCallbackDoesNotLeakReplacementGeneration() async throws {
+        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+        let staleRestartListener = try XCTUnwrap(
+            fixture.backend.activeListeners.first {
+                $0.address == .serviceRestarted
+            }
+        )
+        let event = Task { try await fixture.nextChangeSet() }
+
+        fixture.fire(.serviceRestarted)
+        fixture.backend.invokeRetainedListener(staleRestartListener)
+
+        let changes = try await event.value
+        XCTAssertEqual(changes, [.serviceRestarted])
+        let replacementRegistrations = fixture.backend.activeListeners
+        XCTAssertEqual(replacementRegistrations.count, 8)
+
+        fixture.monitor.stop()
+
+        XCTAssertTrue(fixture.backend.activeListeners.isEmpty)
+        XCTAssertEqual(
+            listenerTupleCounts(fixture.backend.removedListeners),
+            listenerTupleCounts(replacementRegistrations)
+        )
+    }
+
     func testServiceRestartRetriesTransientRegistrationFailureBeforeEmission() async throws {
         let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
         try fixture.monitor.start()
@@ -223,7 +279,11 @@ private final class MonitorFixture: @unchecked Sendable {
 
     init(
         macOS: (major: Int, minor: Int),
-        delay: DispatchTimeInterval = .milliseconds(50)
+        delay: DispatchTimeInterval = .milliseconds(50),
+        restartRecoveryBackoff: AudioRestartRecoveryBackoff = .init(
+            initialDelayMilliseconds: 5,
+            maximumDelayMilliseconds: 20
+        )
     ) {
         monitor = AudioSystemMonitor(
             hal: AudioHALClient(backend: backend),
@@ -235,7 +295,8 @@ private final class MonitorFixture: @unchecked Sendable {
                 )
             ),
             queue: DispatchQueue(label: "AudioSystemMonitorTests.monitor"),
-            coalescingDelay: delay
+            coalescingDelay: delay,
+            restartRecoveryBackoff: restartRecoveryBackoff
         )
     }
 
