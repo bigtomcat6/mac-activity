@@ -208,6 +208,42 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
+    func testMacActivityOwnedUIDOutsideAggregateNamespaceIsRejected() {
+        let uid = "com.how.macactivity.audio.legacy-output"
+        let devices = fixtureDevices() + [
+            fixtureDevice(objectID: 74, uid: uid),
+        ]
+
+        assertPlanningError(
+            .macActivityAggregateSelected(uid),
+            request: fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: [uid]),
+                devices: devices
+            )
+        )
+    }
+
+    func testAggregateChildInMacActivityOwnedNamespaceIsRejected() {
+        let ownedUID = "com.how.macactivity.audio.legacy-output"
+        let devices = fixtureDevices() + [
+            fixtureDevice(objectID: 74, uid: ownedUID),
+            fixtureDevice(
+                objectID: 75,
+                uid: "UserAggregate",
+                isAggregate: true,
+                aggregateSubdeviceUIDs: ["USB", ownedUID]
+            ),
+        ]
+
+        assertPlanningError(
+            .macActivityAggregateSelected(ownedUID),
+            request: fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: ["UserAggregate"]),
+                devices: devices
+            )
+        )
+    }
+
     func testNonFloat32SourceStreamIsRejected() {
         let devices = fixtureDevices() + [
             fixtureDevice(

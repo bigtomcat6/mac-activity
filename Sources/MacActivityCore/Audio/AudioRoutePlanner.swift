@@ -1,6 +1,7 @@
 import Foundation
 
 public struct AudioRoutePlanner: Sendable {
+    public static let ownedUIDPrefix = "com.how.macactivity.audio."
     public static let aggregateUIDPrefix = "com.how.macactivity.audio.aggregate."
 
     public init() {}
@@ -35,8 +36,7 @@ public struct AudioRoutePlanner: Sendable {
             )
         }
 
-        let tapSources = try stableUnique(request.sourceDeviceUIDs).flatMap {
-            uid -> [AudioTapSource] in
+        let tapSources = try stableUnique(request.sourceDeviceUIDs).flatMap { uid -> [AudioTapSource] in
             guard let device = devicesByUID[uid] else {
                 throw AudioRoutePlanningError.missingDevice(uid)
             }
@@ -89,7 +89,7 @@ private extension AudioRoutePlanner {
         devicesByUID: [String: AudioRouteDevice],
         path: [String]
     ) throws -> [String] {
-        guard uid.hasPrefix(Self.aggregateUIDPrefix) == false else {
+        guard uid.hasPrefix(Self.ownedUIDPrefix) == false else {
             throw AudioRoutePlanningError.macActivityAggregateSelected(uid)
         }
         guard path.contains(uid) == false else {
