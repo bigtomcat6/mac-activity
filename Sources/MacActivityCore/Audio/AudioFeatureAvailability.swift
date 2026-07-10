@@ -11,10 +11,14 @@ public struct AudioFeatureAvailability: Equatable, Sendable {
         operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion
     )
 
-    public var supportsProcessVolume: Bool {
+    public var supportsProcessControls: Bool {
         operatingSystemVersion.majorVersion > 14
-            || (operatingSystemVersion.majorVersion == 14 && operatingSystemVersion.minorVersion >= 2)
+            || (operatingSystemVersion.majorVersion == 14
+                && operatingSystemVersion.minorVersion >= 2)
     }
+
+    @available(*, deprecated, renamed: "supportsProcessControls")
+    public var supportsProcessVolume: Bool { supportsProcessControls }
 
     public static func == (
         lhs: AudioFeatureAvailability,

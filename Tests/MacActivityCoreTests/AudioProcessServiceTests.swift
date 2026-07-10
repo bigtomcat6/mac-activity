@@ -2,6 +2,28 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioProcessServiceTests: XCTestCase {
+    func testProcessIdentityUsesAudioObjectIDEvenWhenPIDIsReused() {
+        let first = AudioProcessEntry(
+            processObjectID: 11,
+            processIdentifier: 101,
+            name: "Old Player",
+            bundleIdentifier: "com.example.Player",
+            bundleURL: nil,
+            outputDeviceIDs: [50]
+        )
+        let replacement = AudioProcessEntry(
+            processObjectID: 22,
+            processIdentifier: 101,
+            name: "New Player",
+            bundleIdentifier: "com.example.Player",
+            bundleURL: nil,
+            outputDeviceIDs: [50]
+        )
+
+        XCTAssertNotEqual(first.id, replacement.id)
+        XCTAssertEqual(first.processIdentifier, replacement.processIdentifier)
+    }
+
     @MainActor
     func testDefaultLiveReaderReturnsEmptyWithoutCallingHALWhenRuntimeUnavailable() {
         var didReadSnapshots = false
@@ -115,7 +137,8 @@ final class AudioProcessServiceTests: XCTestCase {
                     processObjectID: 11,
                     processIdentifier: 101,
                     bundleIdentifier: "com.apple.Music",
-                    isRunningOutput: true
+                    isRunningOutput: true,
+                    outputDeviceIDs: [50, 51]
                 ),
                 AudioProcessSnapshot(
                     processObjectID: 12,
@@ -143,6 +166,7 @@ final class AudioProcessServiceTests: XCTestCase {
         XCTAssertEqual(entries.map(\.name), ["Music"])
         XCTAssertEqual(entries[0].processObjectID, 11)
         XCTAssertEqual(entries[0].processIdentifier, 101)
+        XCTAssertEqual(entries[0].outputDeviceIDs, [50, 51])
     }
 
     func testEntriesUseBundleIDWhenWorkspaceAppIsMissing() {

@@ -3,25 +3,28 @@ import CoreAudio
 import Foundation
 
 public struct AudioProcessEntry: Identifiable, Equatable, Sendable {
-    public var id: pid_t { processIdentifier }
+    public var id: AudioObjectID { processObjectID }
     public let processObjectID: AudioObjectID
     public let processIdentifier: pid_t
     public let name: String
     public let bundleIdentifier: String?
     public let bundleURL: URL?
+    public let outputDeviceIDs: [AudioDeviceID]
 
     public init(
         processObjectID: AudioObjectID,
         processIdentifier: pid_t,
         name: String,
         bundleIdentifier: String?,
-        bundleURL: URL?
+        bundleURL: URL?,
+        outputDeviceIDs: [AudioDeviceID] = []
     ) {
         self.processObjectID = processObjectID
         self.processIdentifier = processIdentifier
         self.name = name
         self.bundleIdentifier = bundleIdentifier
         self.bundleURL = bundleURL
+        self.outputDeviceIDs = outputDeviceIDs
     }
 }
 
@@ -30,17 +33,20 @@ public struct AudioProcessSnapshot: Equatable, Sendable {
     public let processIdentifier: pid_t
     public let bundleIdentifier: String?
     public let isRunningOutput: Bool
+    public let outputDeviceIDs: [AudioDeviceID]
 
     public init(
         processObjectID: AudioObjectID,
         processIdentifier: pid_t,
         bundleIdentifier: String?,
-        isRunningOutput: Bool
+        isRunningOutput: Bool,
+        outputDeviceIDs: [AudioDeviceID] = []
     ) {
         self.processObjectID = processObjectID
         self.processIdentifier = processIdentifier
         self.bundleIdentifier = bundleIdentifier
         self.isRunningOutput = isRunningOutput
+        self.outputDeviceIDs = outputDeviceIDs
     }
 }
 
@@ -103,7 +109,7 @@ public final class AudioProcessService: AudioProcessProviding {
     }
 
     public func audibleOutputProcesses() -> [AudioProcessEntry] {
-        guard availability.supportsProcessVolume else {
+        guard availability.supportsProcessControls else {
             return []
         }
 
@@ -128,7 +134,8 @@ public final class AudioProcessService: AudioProcessProviding {
                     processIdentifier: snapshot.processIdentifier,
                     name: app?.name ?? snapshot.bundleIdentifier ?? "Process \(snapshot.processIdentifier)",
                     bundleIdentifier: app?.bundleIdentifier ?? snapshot.bundleIdentifier,
-                    bundleURL: app?.bundleURL
+                    bundleURL: app?.bundleURL,
+                    outputDeviceIDs: snapshot.outputDeviceIDs
                 )
             }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
@@ -207,11 +214,21 @@ private extension AudioProcessService {
             )
         ).map { $0 != 0 } ?? false
 
+        let outputDeviceIDs = getArray(
+            for: processObjectID,
+            address: propertyAddress(
+                selector: kAudioProcessPropertyDevices,
+                scope: kAudioObjectPropertyScopeOutput
+            ),
+            as: AudioDeviceID.self
+        ) ?? []
+
         return AudioProcessSnapshot(
             processObjectID: processObjectID,
             processIdentifier: processIdentifier,
             bundleIdentifier: bundleIdentifier,
-            isRunningOutput: isRunningOutput
+            isRunningOutput: isRunningOutput,
+            outputDeviceIDs: outputDeviceIDs
         )
     }
 
