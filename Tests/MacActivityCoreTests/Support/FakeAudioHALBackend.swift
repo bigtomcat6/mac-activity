@@ -4,14 +4,51 @@ import Dispatch
 @testable import MacActivityCore
 
 final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
+    struct ListenerBlockIdentifier: Hashable {
+        let function: UInt
+        let context: UInt
+    }
+
     struct ListenerCall {
         let objectID: AudioObjectID
         let address: AudioHALPropertyAddress
         let queue: DispatchQueue
         let block: AudioObjectPropertyListenerBlock
+        let blockIdentifier: ListenerBlockIdentifier
 
-        var blockIdentifier: ObjectIdentifier {
-            ObjectIdentifier(block as AnyObject)
+        init(
+            objectID: AudioObjectID,
+            address: AudioHALPropertyAddress,
+            queue: DispatchQueue,
+            block: @escaping AudioObjectPropertyListenerBlock
+        ) {
+            self.objectID = objectID
+            self.address = address
+            self.queue = queue
+            self.block = block
+            blockIdentifier = Self.fingerprint(block)
+        }
+
+        private static func fingerprint(
+            _ block: @escaping AudioObjectPropertyListenerBlock
+        ) -> ListenerBlockIdentifier {
+            // Bridging this imported Swift closure boxes a reabstraction context.
+            // The outer box is temporary, while its captured function/context pair
+            // identifies the retained listener value passed through the backend.
+            let boxedBlock = block as AnyObject
+            return withExtendedLifetime(boxedBlock) {
+                let boxWords = Unmanaged.passUnretained(boxedBlock)
+                    .toOpaque()
+                    .assumingMemoryBound(to: UInt.self)
+                guard let contextPointer = UnsafeRawPointer(bitPattern: boxWords[5]) else {
+                    preconditionFailure("Listener block is missing its closure context")
+                }
+                let contextWords = contextPointer.assumingMemoryBound(to: UInt.self)
+                return ListenerBlockIdentifier(
+                    function: contextWords[2],
+                    context: contextWords[3]
+                )
+            }
         }
     }
 
@@ -69,6 +106,40 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     var addListenerStatus: OSStatus = noErr
     var removeListenerStatus: OSStatus = noErr
+
+    func addedAddresses(for objectID: AudioObjectID) -> [AudioHALPropertyAddress] {
+        addedListeners
+            .filter { $0.objectID == objectID }
+            .map(\.address)
+    }
+
+    func removedAddresses(for objectID: AudioObjectID) -> [AudioHALPropertyAddress] {
+        removedListeners
+            .filter { $0.objectID == objectID }
+            .map(\.address)
+    }
+
+    func addCount(for objectID: AudioObjectID) -> Int {
+        addedAddresses(for: objectID).count
+    }
+
+    @discardableResult
+    func invokeLatestListener(
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) -> Bool {
+        guard let listener = addedListeners.last(where: {
+            $0.objectID == objectID && $0.address == address
+        }) else {
+            return false
+        }
+
+        var rawAddress = address.rawValue
+        withUnsafePointer(to: &rawAddress) { pointer in
+            listener.block(1, pointer)
+        }
+        return true
+    }
 
     deinit {
         for result in queuedReads {
