@@ -50,7 +50,8 @@ public protocol AudioDeviceVolumeProviding: AnyObject {
 @MainActor
 public final class AudioDeviceVolumeService:
     AudioDeviceControlProviding,
-    AudioDeviceVolumeProviding {
+    AudioDeviceVolumeProviding,
+    AudioRouteDeviceProviding {
     private static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
 
     private let client: AudioHALClient
@@ -61,6 +62,10 @@ public final class AudioDeviceVolumeService:
 
     init(client: AudioHALClient) {
         self.client = client
+    }
+
+    public func routeDevices() throws -> [AudioRouteDevice] {
+        try outputDeviceIDs().map(routeDevice)
     }
 
     public func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
@@ -160,6 +165,20 @@ private extension AudioDeviceVolumeService {
         AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
     }
 
+    static var deviceAliveAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceIsAlive)
+    }
+
+    static var activeAggregateSubdevicesAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(
+            selector: kAudioAggregateDevicePropertyActiveSubDeviceList
+        )
+    }
+
+    static var streamVirtualFormatAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioStreamPropertyVirtualFormat)
+    }
+
     static var volumeAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
@@ -216,6 +235,80 @@ private extension AudioDeviceVolumeService {
             return false
         }
         return !streams.isEmpty
+    }
+
+    func routeDevice(_ deviceID: AudioDeviceID) throws -> AudioRouteDevice {
+        let uid = try client.readRetainedString(
+            from: deviceID,
+            address: Self.deviceUIDAddress
+        )
+        let name = try client.readRetainedString(
+            from: deviceID,
+            address: Self.deviceNameAddress
+        )
+        let isAlive = try client.readScalar(
+            UInt32.self,
+            from: deviceID,
+            address: Self.deviceAliveAddress
+        ) != 0
+        let streamIDs = try client.readArray(
+            AudioStreamID.self,
+            from: deviceID,
+            address: Self.outputStreamsAddress
+        )
+        let isAggregate = client.hasProperty(
+            objectID: deviceID,
+            address: Self.activeAggregateSubdevicesAddress
+        )
+        let aggregateSubdeviceUIDs = isAggregate
+            ? try activeAggregateSubdeviceUIDs(deviceID)
+            : []
+
+        return AudioRouteDevice(
+            objectID: deviceID,
+            uid: uid,
+            name: name,
+            isAlive: isAlive,
+            isAggregate: isAggregate,
+            aggregateSubdeviceUIDs: aggregateSubdeviceUIDs,
+            outputStreams: try streamIDs.enumerated().map { index, streamID in
+                let format = try client.readScalar(
+                    AudioStreamBasicDescription.self,
+                    from: streamID,
+                    address: Self.streamVirtualFormatAddress
+                )
+                return AudioRouteStream(
+                    streamIndex: UInt(index),
+                    format: Self.routeFormat(format)
+                )
+            }
+        )
+    }
+
+    func activeAggregateSubdeviceUIDs(_ deviceID: AudioDeviceID) throws -> [String] {
+        let subdeviceIDs = try client.readArray(
+            AudioObjectID.self,
+            from: deviceID,
+            address: Self.activeAggregateSubdevicesAddress
+        )
+        return try subdeviceIDs.map {
+            try client.readRetainedString(from: $0, address: Self.deviceUIDAddress)
+        }
+    }
+
+    static func routeFormat(
+        _ format: AudioStreamBasicDescription
+    ) -> ProcessTapAudioFormat {
+        ProcessTapAudioFormat(
+            sampleRate: format.mSampleRate,
+            channelCount: Int(format.mChannelsPerFrame),
+            formatID: format.mFormatID,
+            formatFlags: format.mFormatFlags,
+            bitsPerChannel: format.mBitsPerChannel,
+            interleaving: format.mFormatFlags & kAudioFormatFlagIsNonInterleaved != 0
+                ? .nonInterleaved
+                : .interleaved
+        )
     }
 
     func deviceID(forUID uid: String) throws -> AudioDeviceID {
