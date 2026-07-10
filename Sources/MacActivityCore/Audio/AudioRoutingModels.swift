@@ -6,6 +6,52 @@ public enum AudioRouteMode: Equatable, Sendable {
     case explicit(targetDeviceUIDs: [String])
 }
 
+extension AudioRouteMode: Codable {
+    private enum CodingKeys: String, CodingKey {
+        case kind
+        case targetDeviceUIDs
+    }
+
+    private enum Kind: String, Codable {
+        case followOriginal
+        case explicit
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        switch try container.decode(Kind.self, forKey: .kind) {
+        case .followOriginal:
+            self = .followOriginal
+        case .explicit:
+            let targets = try container.decode([String].self, forKey: .targetDeviceUIDs)
+            let normalized = targets.reduce(into: [String]()) { result, uid in
+                if uid.isEmpty == false && result.contains(uid) == false {
+                    result.append(uid)
+                }
+            }
+            guard normalized.isEmpty == false else {
+                throw DecodingError.dataCorruptedError(
+                    forKey: .targetDeviceUIDs,
+                    in: container,
+                    debugDescription: "An explicit route requires at least one UID"
+                )
+            }
+            self = .explicit(targetDeviceUIDs: normalized)
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        switch self {
+        case .followOriginal:
+            try container.encode(Kind.followOriginal, forKey: .kind)
+        case .explicit(let targetDeviceUIDs):
+            try container.encode(Kind.explicit, forKey: .kind)
+            try container.encode(targetDeviceUIDs, forKey: .targetDeviceUIDs)
+        }
+    }
+}
+
 public enum AudioPCMInterleaving: Equatable, Sendable {
     case interleaved
     case nonInterleaved

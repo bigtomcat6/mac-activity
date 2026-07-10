@@ -132,14 +132,98 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(controller.state.diskCleanupCategories, [.trash, .userLogs])
         XCTAssertEqual(store.savedValues.last?.diskCleanupCategories, [.trash, .userLogs])
     }
+
+    func testNondefaultProfileIsPersistedByController() throws {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+        let profile = AudioProcessProfile(
+            bundleIdentifier: "com.example.Player",
+            volume: 0.4
+        )
+
+        try controller.setAudioProcessProfile(profile, for: "com.example.Player")
+
+        XCTAssertEqual(controller.state.audioProcessProfiles["com.example.Player"], profile)
+        XCTAssertEqual(store.savedValues.last?.audioProcessProfiles["com.example.Player"], profile)
+    }
+
+    func testDefaultProfileIsRemovedByController() throws {
+        let bundleIdentifier = "com.example.Player"
+        var initial = AppPreferences.default
+        initial.audioProcessProfiles[bundleIdentifier] = AudioProcessProfile(
+            bundleIdentifier: bundleIdentifier,
+            volume: 0.4
+        )
+        let store = RecordingPreferencesStore(initial: initial)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        try controller.setAudioProcessProfile(
+            AudioProcessProfile(bundleIdentifier: bundleIdentifier),
+            for: bundleIdentifier
+        )
+
+        XCTAssertNil(controller.state.audioProcessProfiles[bundleIdentifier])
+        XCTAssertNil(store.savedValues.last?.audioProcessProfiles[bundleIdentifier])
+    }
+
+    func testNilProfileIsRemovedByController() throws {
+        let bundleIdentifier = "com.example.Player"
+        var initial = AppPreferences.default
+        initial.audioProcessProfiles[bundleIdentifier] = AudioProcessProfile(
+            bundleIdentifier: bundleIdentifier,
+            isMuted: true
+        )
+        let store = RecordingPreferencesStore(initial: initial)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        try controller.setAudioProcessProfile(nil, for: bundleIdentifier)
+
+        XCTAssertNil(controller.state.audioProcessProfiles[bundleIdentifier])
+        XCTAssertNil(store.savedValues.last?.audioProcessProfiles[bundleIdentifier])
+    }
+
+    func testProfileStateRollsBackWhenStoreSaveFails() {
+        let store = RecordingPreferencesStore(
+            initial: .default,
+            saveError: PreferencesStoreError.saveFailed("Disk full")
+        )
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+        let profile = AudioProcessProfile(
+            bundleIdentifier: "com.example.Player",
+            volume: 0.4
+        )
+
+        XCTAssertThrowsError(
+            try controller.setAudioProcessProfile(profile, for: "com.example.Player")
+        )
+
+        XCTAssertEqual(controller.state, .default)
+        XCTAssertEqual(store.saveAttempts, 1)
+        XCTAssertEqual(store.savedValues, [])
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {
     private var value: AppPreferences
     private(set) var savedValues: [AppPreferences] = []
+    private(set) var saveAttempts = 0
+    private let saveError: PreferencesStoreError?
 
-    init(initial: AppPreferences) {
+    init(initial: AppPreferences, saveError: PreferencesStoreError? = nil) {
         self.value = initial
+        self.saveError = saveError
     }
 
     func load() -> AppPreferences {
@@ -147,6 +231,10 @@ private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Se
     }
 
     func save(_ preferences: AppPreferences) throws {
+        saveAttempts += 1
+        if let saveError {
+            throw saveError
+        }
         value = preferences
         savedValues.append(preferences)
     }
