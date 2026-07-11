@@ -77,7 +77,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var forcedTapObjectID: AudioObjectID?
     var forcedAggregateObjectID: AudioObjectID?
     var aggregateLayoutOverride: AudioAggregateLayout?
-    var aggregateLayoutValidationError: CoreAudioTapHardware.ValidationError?
+    var aggregateTopologyError: AudioAggregateTopologyError?
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
     var ownedObjectValues: [AudioOwnedObject] = []
 
@@ -274,8 +274,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             operation: .getData,
             objectID: aggregate.objectID
         )
-        if let aggregateLayoutValidationError {
-            throw aggregateLayoutValidationError
+        if let aggregateTopologyError {
+            throw aggregateTopologyError
         }
         if let aggregateLayoutOverride {
             return aggregateLayoutOverride

@@ -285,9 +285,9 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertFalse(fixture.hardware.calls.contains(.createIOProc))
     }
 
-    func testHardwareValidationErrorMapsToUnsupportedFormatBeforeIOProc() async {
+    func testAggregateTopologyErrorMapsToUnsupportedFormatBeforeIOProc() async {
         let fixture = EngineFixture()
-        fixture.hardware.aggregateLayoutValidationError = .actualOutputFormatsMismatch
+        fixture.hardware.aggregateTopologyError = .unsupportedTopology
 
         let snapshot = await fixture.engine.apply(
             plan: fixture.plan(generation: 1),

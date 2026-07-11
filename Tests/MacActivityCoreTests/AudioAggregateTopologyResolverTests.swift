@@ -198,6 +198,17 @@ final class AudioAggregateTopologyResolverTests: XCTestCase {
         )
     }
 
+    func testCheckedPlanSumRejectsOverflowWithoutLargeAllocation() {
+        XCTAssertThrowsError(
+            try AudioAggregateTopologyResolver.checkedSum([Int.max, 1])
+        ) { error in
+            XCTAssertEqual(
+                error as? AudioAggregateTopologyError,
+                .unsupportedTopology
+            )
+        }
+    }
+
     func testResolverRejectsDeadZeroDuplicateAndMismatchedStreamTopology() {
         let plan = fixturePlan(outputGroups: [[stereo], [stereo]])
         let cases = [

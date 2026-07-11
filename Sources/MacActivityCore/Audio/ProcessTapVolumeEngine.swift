@@ -1022,7 +1022,9 @@ private extension ProcessTapVolumeEngine {
                 return .aggregateNotReady
             }
         }
-        if error is CoreAudioTapHardware.ValidationError {
+        if error is CoreAudioTapHardware.ValidationError
+            || error is AudioAggregateTopologyError
+        {
             return .unsupportedFormat
         }
         if let halError = error as? AudioHALError {

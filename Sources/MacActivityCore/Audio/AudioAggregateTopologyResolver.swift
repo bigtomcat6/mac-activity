@@ -22,7 +22,65 @@ struct AudioAggregateLayout: Equatable, Sendable {
     let inputStreamUsage: [UInt32]
 }
 
+struct AudioAggregatePlannedTopology: Equatable, Sendable {
+    let outputChannelCounts: [UInt32]
+    let outputStreamCount: Int
+}
+
 enum AudioAggregateTopologyResolver {
+    static func checkedSum(_ values: [Int]) throws -> Int {
+        var total = 0
+        for value in values {
+            guard value >= 0 else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            let result = total.addingReportingOverflow(value)
+            guard result.overflow == false else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            total = result.partialValue
+        }
+        return total
+    }
+
+    static func plannedTopology(
+        for plan: AudioRoutePlan
+    ) throws -> AudioAggregatePlannedTopology {
+        guard plan.tapSources.count == 1,
+              plan.subdevices.isEmpty == false
+        else {
+            throw AudioAggregateTopologyError.unsupportedTopology
+        }
+
+        var outputChannelCounts: [UInt32] = []
+        outputChannelCounts.reserveCapacity(plan.subdevices.count)
+        for subdevice in plan.subdevices {
+            guard subdevice.outputStreams.isEmpty == false,
+                  subdevice.outputStreams.allSatisfy({ $0.format.channelCount > 0 })
+            else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            let channelCount = try checkedSum(
+                subdevice.outputStreams.map(\.format.channelCount)
+            )
+            guard let encodedChannelCount = UInt32(exactly: channelCount) else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            outputChannelCounts.append(encodedChannelCount)
+        }
+
+        let outputStreamCount = try checkedSum(
+            plan.subdevices.map { $0.outputStreams.count }
+        )
+        guard outputStreamCount > 0 else {
+            throw AudioAggregateTopologyError.unsupportedTopology
+        }
+        return AudioAggregatePlannedTopology(
+            outputChannelCounts: outputChannelCounts,
+            outputStreamCount: outputStreamCount
+        )
+    }
+
     static func resolve(
         plan: AudioRoutePlan,
         tap: AudioTapResource,
@@ -45,12 +103,9 @@ enum AudioAggregateTopologyResolver {
             throw AudioAggregateTopologyError.unsupportedTopology
         }
 
-        let plannedOutputCount = plan.subdevices.reduce(0) {
-            $0 + $1.outputStreams.count
-        }
-        guard plan.subdevices.isEmpty == false,
-              plannedOutputCount > 0,
-              snapshot.outputStreamIDs.count == plannedOutputCount,
+        let plannedTopology = try plannedTopology(for: plan)
+        let plannedOutputCount = plannedTopology.outputStreamCount
+        guard snapshot.outputStreamIDs.count == plannedOutputCount,
               snapshot.outputFormats.count == plannedOutputCount,
               snapshot.outputStreamIDs.allSatisfy({ $0 != kAudioObjectUnknown }),
               Set(snapshot.outputStreamIDs).count == snapshot.outputStreamIDs.count,

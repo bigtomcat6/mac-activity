@@ -39,13 +39,11 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 )],
             ]
         )
-        let tapUUIDs = [
-            UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!,
-        ]
+        let tapUUID = UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!
 
-        let description = CoreAudioTapHardware.aggregateDescription(
+        let description = try CoreAudioTapHardware.aggregateDescription(
             plan: plan,
-            tapUUIDs: tapUUIDs
+            tapUUID: tapUUID
         ) as NSDictionary
 
         XCTAssertEqual(description[kAudioAggregateDeviceUIDKey] as? String, plan.aggregateUID)
@@ -89,7 +87,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertEqual(taps.count, 1)
         XCTAssertEqual(
             taps.map { $0[kAudioSubTapUIDKey] as? String },
-            tapUUIDs.map(\.uuidString)
+            [tapUUID.uuidString]
         )
         XCTAssertEqual(taps[0][kAudioSubTapDriftCompensationKey] as? Bool, true)
         XCTAssertEqual(
@@ -153,23 +151,31 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
-    func testAggregateDescriptionDoesNotInventAnImplicitDefaultSubdevice() throws {
-        let description = CoreAudioTapHardware.aggregateDescription(
-            plan: fixturePlan(targets: [], tapSources: []),
-            tapUUIDs: []
-        ) as NSDictionary
+    func testAggregateDescriptionRejectsInvalidTapCardinalityAndEmptyTopology() {
+        let source = fixtureSource(deviceUID: "Source.Device", streamIndex: 0)
+        let invalidPlans = [
+            fixturePlan(targets: [], tapSources: []),
+            fixturePlan(targets: ["USB"], tapSources: [source, source]),
+        ]
 
-        XCTAssertEqual(
-            try dictionaries(in: description, key: kAudioAggregateDeviceSubDeviceListKey).count,
-            0
-        )
+        for plan in invalidPlans {
+            XCTAssertThrowsError(try CoreAudioTapHardware.aggregateDescription(
+                plan: plan,
+                tapUUID: UUID()
+            )) { error in
+                XCTAssertEqual(
+                    error as? AudioAggregateTopologyError,
+                    .unsupportedTopology
+                )
+            }
+        }
     }
 
     @available(macOS 14.2, *)
     func testDisabledSubTapOmitsDriftQuality() throws {
-        let description = CoreAudioTapHardware.aggregateDescription(
+        let description = try CoreAudioTapHardware.aggregateDescription(
             plan: fixturePlan(targets: ["USB"]),
-            tapUUIDs: [UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!]
+            tapUUID: UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!
         ) as NSDictionary
         let taps = try dictionaries(
             in: description,
@@ -219,29 +225,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             XCTAssertEqual(error as? AudioTapHardwareError, .aggregateNotReady)
         }
         XCTAssertEqual(clock.elapsed, 2, accuracy: 0.000_001)
-    }
-
-    func testActualTapFormatMismatchIsRejectedByPreIOProcValidation() {
-        let expected = fixtureFormat(sampleRate: 48_000)
-        let actual = fixtureFormat(sampleRate: 44_100)
-        let plan = fixturePlan(
-            targets: ["USB"],
-            tapSources: [
-                .init(
-                    deviceUID: "Source.Device",
-                    streamIndex: 0,
-                    expectedFormat: expected,
-                    driftCompensation: .disabled
-                ),
-            ]
-        )
-
-        XCTAssertThrowsError(
-            try CoreAudioTapHardware.validateActualTapFormats(
-                plan: plan,
-                actualFormats: [actual]
-            )
-        )
     }
 
     @available(macOS 14.2, *)
@@ -391,6 +374,99 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             tapDictionaries.map { $0[kAudioSubTapUIDKey] as? String },
             taps.map(\.uuid.uuidString)
         )
+    }
+
+    @available(macOS 14.2, *)
+    func testAggregateCreationRejectsTapResourceMismatchBeforeMutableHAL() {
+        let validPlan = fixturePlan(targets: ["USB"])
+        let validSource = validPlan.tapSources[0]
+        let wrongSource = fixtureSource(deviceUID: "Wrong.Source", streamIndex: 9)
+        let multiSourcePlan = fixturePlan(
+            targets: ["USB"],
+            tapSources: [validSource, wrongSource]
+        )
+        let cases: [(AudioRoutePlan, [AudioTapResource])] = [
+            (validPlan, []),
+            (validPlan, [
+                fixtureTap(objectID: 31, source: validSource),
+                fixtureTap(objectID: 32, source: validSource),
+            ]),
+            (validPlan, [fixtureTap(objectID: 33, source: wrongSource)]),
+            (multiSourcePlan, [fixtureTap(objectID: 34, source: validSource)]),
+        ]
+
+        for (plan, taps) in cases {
+            let backend = FakeAudioHALBackend()
+            XCTAssertThrowsError(
+                try makeHardware(backend).createAggregate(plan: plan, taps: taps)
+            ) { error in
+                XCTAssertEqual(
+                    error as? CoreAudioTapHardware.ValidationError,
+                    .tapResourcesMismatch
+                )
+            }
+            XCTAssertTrue(backend.mutableOperations.isEmpty)
+        }
+    }
+
+    @available(macOS 14.2, *)
+    func testDescriptionAndAggregateRejectMalformedPlanBeforeMutableHAL() {
+        let source = fixtureSource(deviceUID: "Source.Device", streamIndex: 0)
+        let emptyTopology = fixturePlan(targets: [], tapSources: [source])
+        let emptySubdevice = fixturePlan(
+            targets: ["USB"],
+            tapSources: [source],
+            targetOutputStreams: [[]]
+        )
+        let zeroChannel = fixturePlan(
+            targets: ["USB"],
+            tapSources: [source],
+            targetOutputStreams: [[AudioRouteStream(
+                streamObjectID: 901,
+                streamIndex: 0,
+                format: fixtureFormat(channelCount: 0)
+            )]]
+        )
+        let overflowingChannels = fixturePlan(
+            targets: ["USB"],
+            tapSources: [source],
+            targetOutputStreams: [[
+                AudioRouteStream(
+                    streamObjectID: 902,
+                    streamIndex: 0,
+                    format: fixtureFormat(channelCount: Int.max)
+                ),
+                AudioRouteStream(
+                    streamObjectID: 903,
+                    streamIndex: 1,
+                    format: fixtureFormat(channelCount: 1)
+                ),
+            ]]
+        )
+
+        for plan in [emptyTopology, emptySubdevice, zeroChannel, overflowingChannels] {
+            XCTAssertThrowsError(try CoreAudioTapHardware.aggregateDescription(
+                plan: plan,
+                tapUUID: UUID()
+            )) { error in
+                XCTAssertEqual(
+                    error as? AudioAggregateTopologyError,
+                    .unsupportedTopology
+                )
+            }
+
+            let backend = FakeAudioHALBackend()
+            XCTAssertThrowsError(try makeHardware(backend).createAggregate(
+                plan: plan,
+                taps: [fixtureTap(objectID: 35, source: source)]
+            )) { error in
+                XCTAssertEqual(
+                    error as? AudioAggregateTopologyError,
+                    .unsupportedTopology
+                )
+            }
+            XCTAssertTrue(backend.mutableOperations.isEmpty)
+        }
     }
 
     @available(macOS 14.2, *)

@@ -35,8 +35,6 @@ enum AudioTapHardwareError: Error, Equatable, Sendable {
 
 final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum ValidationError: Error, Equatable, Sendable {
-        case actualTapFormatsMismatch
-        case actualOutputFormatsMismatch
         case tapResourcesMismatch
     }
 
@@ -77,16 +75,16 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     @available(macOS 14.2, *)
     static func aggregateDescription(
         plan: AudioRoutePlan,
-        tapUUIDs: [UUID]
-    ) -> CFDictionary {
-        let subdevices: [[String: Any]] = plan.subdevices.map { subdevice in
+        tapUUID: UUID
+    ) throws -> CFDictionary {
+        let topology = try AudioAggregateTopologyResolver.plannedTopology(for: plan)
+        let subdevices: [[String: Any]] = plan.subdevices.enumerated().map {
+            index, subdevice in
             let usesDriftCompensation = subdevice.driftCompensation != .disabled
             var description: [String: Any] = [
                 kAudioSubDeviceUIDKey: subdevice.uid,
                 kAudioSubDeviceInputChannelsKey: 0,
-                kAudioSubDeviceOutputChannelsKey: subdevice.outputStreams.reduce(0) {
-                    $0 + $1.format.channelCount
-                },
+                kAudioSubDeviceOutputChannelsKey: topology.outputChannelCounts[index],
                 kAudioSubDeviceDriftCompensationKey: usesDriftCompensation,
             ]
             if usesDriftCompensation {
@@ -95,17 +93,15 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             }
             return description
         }
-        let taps: [[String: Any]] = zip(plan.tapSources, tapUUIDs).map { source, uuid in
-            let usesDriftCompensation = source.driftCompensation != .disabled
-            var description: [String: Any] = [
-                kAudioSubTapUIDKey: uuid.uuidString,
-                kAudioSubTapDriftCompensationKey: usesDriftCompensation,
-            ]
-            if usesDriftCompensation {
-                description[kAudioSubTapDriftCompensationQualityKey] =
-                    kAudioAggregateDriftCompensationHighQuality
-            }
-            return description
+        let source = plan.tapSources[0]
+        let usesSubTapDriftCompensation = source.driftCompensation != .disabled
+        var tap: [String: Any] = [
+            kAudioSubTapUIDKey: tapUUID.uuidString,
+            kAudioSubTapDriftCompensationKey: usesSubTapDriftCompensation,
+        ]
+        if usesSubTapDriftCompensation {
+            tap[kAudioSubTapDriftCompensationQualityKey] =
+                kAudioAggregateDriftCompensationHighQuality
         }
         let description: [String: Any] = [
             kAudioAggregateDeviceNameKey:
@@ -115,7 +111,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             kAudioAggregateDeviceMainSubDeviceKey: plan.mainDeviceUID,
             kAudioAggregateDeviceIsPrivateKey: true,
             kAudioAggregateDeviceIsStackedKey: plan.isStacked,
-            kAudioAggregateDeviceTapListKey: taps,
+            kAudioAggregateDeviceTapListKey: [tap],
         ]
         return description as CFDictionary
     }
@@ -166,15 +162,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
             if isCancelled() { return }
             sleep(min(pollInterval, remaining))
-        }
-    }
-
-    static func validateActualTapFormats(
-        plan: AudioRoutePlan,
-        actualFormats: [ProcessTapAudioFormat]
-    ) throws {
-        guard actualFormats == plan.tapSources.map(\.expectedFormat) else {
-            throw ValidationError.actualTapFormatsMismatch
         }
     }
 
@@ -246,6 +233,12 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         plan: AudioRoutePlan,
         taps: [AudioTapResource]
     ) throws -> AudioAggregateResource {
+        guard taps.count == 1,
+              plan.tapSources.count == 1,
+              taps[0].source == plan.tapSources[0]
+        else {
+            throw ValidationError.tapResourcesMismatch
+        }
         guard #available(macOS 14.2, *) else {
             throw AudioHALError(
                 operation: .createAggregate,
@@ -255,9 +248,9 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             )
         }
 
-        let description = Self.aggregateDescription(
+        let description = try Self.aggregateDescription(
             plan: plan,
-            tapUUIDs: taps.map(\.uuid)
+            tapUUID: taps[0].uuid
         )
         let objectID = try hal.createAggregateDevice(description)
         return AudioAggregateResource(objectID: objectID, uid: plan.aggregateUID)
