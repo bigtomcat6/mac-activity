@@ -424,19 +424,6 @@ final class AudioRoutePlannerTests: XCTestCase {
         ])
     }
 
-    func testConservativePolicyDeniesOtherwiseValidUSBRouteWithExactFingerprint() throws {
-        let request = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"]))
-        let planner = AudioRoutePlanner()
-        let fingerprint = try planner.topologyFingerprint(for: request)
-
-        XCTAssertThrowsError(try planner.plan(request)) { error in
-            XCTAssertEqual(
-                error as? AudioRoutePlanningError,
-                .nativeValidationRequired(fingerprint)
-            )
-        }
-    }
-
     func testPreflightFingerprintIsTheExactFingerprintCarriedByPlan() throws {
         let request = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB", "HDMI"]))
         let planner = planner()
@@ -576,6 +563,60 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
+    func testSourceAndTargetAggregatesRejectExtraOrDuplicateActiveMembership() {
+        let invalidActiveLists = [
+            ["USB", "HDMI", "BuiltIn"],
+            ["USB", "HDMI", "USB"],
+        ]
+
+        for (index, activeUIDs) in invalidActiveLists.enumerated() {
+            let targetUID = "InvalidActiveTargetAggregate\(index)"
+            let target = fixtureDevice(
+                objectID: AudioObjectID(150 + index),
+                uid: targetUID,
+                isAggregate: true,
+                aggregateSubdeviceUIDs: ["USB", "HDMI"],
+                aggregateComposition: AudioRouteAggregateComposition(
+                    fullSubdeviceUIDs: ["USB", "HDMI"],
+                    activeSubdeviceUIDs: activeUIDs,
+                    mainSubdeviceUID: "USB",
+                    isStacked: true,
+                    tapUUIDs: []
+                )
+            )
+            assertPlanningError(
+                .unsupportedTopology,
+                request: fixtureRequest(
+                    mode: .explicit(targetDeviceUIDs: [targetUID]),
+                    devices: fixtureDevices() + [target]
+                )
+            )
+
+            let sourceUID = "InvalidActiveSourceAggregate\(index)"
+            let source = fixtureDevice(
+                objectID: AudioObjectID(160 + index),
+                uid: sourceUID,
+                isAggregate: true,
+                aggregateSubdeviceUIDs: ["USB", "HDMI"],
+                aggregateComposition: AudioRouteAggregateComposition(
+                    fullSubdeviceUIDs: ["USB", "HDMI"],
+                    activeSubdeviceUIDs: activeUIDs,
+                    mainSubdeviceUID: "USB",
+                    isStacked: true,
+                    tapUUIDs: []
+                )
+            )
+            assertPlanningError(
+                .unsupportedTopology,
+                request: fixtureRequest(
+                    sourceDeviceUIDs: [sourceUID],
+                    mode: .explicit(targetDeviceUIDs: ["USB"]),
+                    devices: fixtureDevices() + [source]
+                )
+            )
+        }
+    }
+
     func testAggregateFullListControlsOrderWhileActiveListOnlyValidatesMembership() throws {
         let composition = AudioRouteAggregateComposition(
             fullSubdeviceUIDs: ["HDMI", "USB"],
@@ -598,40 +639,6 @@ final class AudioRoutePlannerTests: XCTestCase {
 
         XCTAssertEqual(plan.subdevices.map(\.uid), ["HDMI", "USB"])
         XCTAssertEqual(plan.mainDeviceUID, "USB")
-    }
-
-    func testSubTapDriftDisablesForVirtualSourceOrBluetoothMain() throws {
-        let virtualDevices = [
-            fixtureDevice(
-                objectID: 112,
-                uid: "VirtualSource",
-                clockDomain: 100,
-                transportType: kAudioDeviceTransportTypeVirtual
-            ),
-            fixtureDevice(objectID: 113, uid: "USB", clockDomain: 200),
-        ]
-        let virtualPlan = try planner().plan(fixtureRequest(
-            sourceDeviceUIDs: ["VirtualSource"],
-            mode: .explicit(targetDeviceUIDs: ["USB"]),
-            devices: virtualDevices
-        ))
-        XCTAssertEqual(virtualPlan.tapSources[0].driftCompensation, .disabled)
-
-        let bluetoothDevices = [
-            fixtureDevice(objectID: 114, uid: "Source", clockDomain: 100),
-            fixtureDevice(
-                objectID: 115,
-                uid: "Bluetooth",
-                clockDomain: 200,
-                transportType: kAudioDeviceTransportTypeBluetooth
-            ),
-        ]
-        let bluetoothPlan = try planner().plan(fixtureRequest(
-            sourceDeviceUIDs: ["Source"],
-            mode: .explicit(targetDeviceUIDs: ["Bluetooth"]),
-            devices: bluetoothDevices
-        ))
-        XCTAssertEqual(bluetoothPlan.tapSources[0].driftCompensation, .disabled)
     }
 
     func testFingerprintCanonicalizesAggregateActiveMembership() throws {

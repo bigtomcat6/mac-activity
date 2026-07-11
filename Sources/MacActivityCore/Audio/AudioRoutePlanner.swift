@@ -180,9 +180,10 @@ private extension AudioRoutePlanner {
         guard let composition = device.aggregateComposition,
               composition.fullSubdeviceUIDs.isEmpty == false,
               Set(composition.fullSubdeviceUIDs).count == composition.fullSubdeviceUIDs.count,
-              Set(composition.activeSubdeviceUIDs).isSuperset(
-                of: composition.fullSubdeviceUIDs
-              ),
+              Set(composition.activeSubdeviceUIDs).count
+                == composition.activeSubdeviceUIDs.count,
+              Set(composition.activeSubdeviceUIDs)
+                == Set(composition.fullSubdeviceUIDs),
               let mainUID = composition.mainSubdeviceUID,
               composition.fullSubdeviceUIDs.contains(mainUID),
               composition.isStacked != nil,
