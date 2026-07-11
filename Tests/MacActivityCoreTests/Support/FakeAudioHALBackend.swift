@@ -51,14 +51,15 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     private enum PropertyPayload {
         case bytes([UInt8])
+        case retainedObject(AnyObject)
         case retainedString(String)
 
         var byteCount: UInt32 {
             switch self {
             case .bytes(let bytes):
                 UInt32(bytes.count)
-            case .retainedString:
-                UInt32(MemoryLayout<Unmanaged<CFString>?>.size)
+            case .retainedObject, .retainedString:
+                UInt32(MemoryLayout<Unmanaged<AnyObject>?>.size)
             }
         }
     }
@@ -361,6 +362,16 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         )
     }
 
+    func setRetainedObject<T: AnyObject>(
+        _ value: T,
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) {
+        properties[PropertyKey(objectID: objectID, address: address)] = Property(
+            payload: .retainedObject(value)
+        )
+    }
+
     func setReadError(
         _ status: OSStatus,
         objectID: AudioObjectID,
@@ -438,6 +449,16 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
                 to: data,
                 availableByteCount: availableByteCount,
                 returnedByteCount: UInt32(bytes.count)
+            )
+        case .retainedObject(let object):
+            let value = Unmanaged.passRetained(object)
+            copy(
+                .retainedObject(
+                    Unmanaged<AnyObject>.fromOpaque(value.toOpaque())
+                ),
+                to: data,
+                availableByteCount: availableByteCount,
+                returnedByteCount: property.payload.byteCount
             )
         case .retainedString(let string):
             let value = Unmanaged.passRetained(string as CFString)

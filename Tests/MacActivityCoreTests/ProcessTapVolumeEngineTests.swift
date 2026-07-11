@@ -1530,7 +1530,11 @@ private final class EngineFixture: @unchecked Sendable {
                     uid: "output",
                     usesDriftCompensation: false,
                     outputStreams: [
-                        AudioRouteStream(streamIndex: 0, format: format),
+                        AudioRouteStream(
+                            streamObjectID: 1_000,
+                            streamIndex: 0,
+                            format: format
+                        ),
                     ]
                 ),
             ],

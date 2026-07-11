@@ -59,11 +59,11 @@ final class AudioRoutePlannerTests: XCTestCase {
 
     func testExplicitMultiDeviceTargetsRetainEachDeviceOutputStreamOrder() throws {
         let usbStreams = [
-            AudioRouteStream(streamIndex: 8, format: fixtureFormat(channelCount: 1)),
-            AudioRouteStream(streamIndex: 2, format: fixtureFormat(channelCount: 2)),
+            AudioRouteStream(streamObjectID: 108, streamIndex: 8, format: fixtureFormat(channelCount: 1)),
+            AudioRouteStream(streamObjectID: 102, streamIndex: 2, format: fixtureFormat(channelCount: 2)),
         ]
         let hdmiStreams = [
-            AudioRouteStream(streamIndex: 5, format: fixtureFormat(channelCount: 6)),
+            AudioRouteStream(streamObjectID: 205, streamIndex: 5, format: fixtureFormat(channelCount: 6)),
         ]
         let plan = try AudioRoutePlanner().plan(fixtureRequest(
             mode: .explicit(targetDeviceUIDs: ["HDMI", "USB"]),
@@ -79,11 +79,11 @@ final class AudioRoutePlannerTests: XCTestCase {
 
     func testAggregateTargetsFlattenWithoutNesting() throws {
         let usbStreams = [
-            AudioRouteStream(streamIndex: 4, format: fixtureFormat(channelCount: 2)),
-            AudioRouteStream(streamIndex: 1, format: fixtureFormat(channelCount: 1)),
+            AudioRouteStream(streamObjectID: 104, streamIndex: 4, format: fixtureFormat(channelCount: 2)),
+            AudioRouteStream(streamObjectID: 101, streamIndex: 1, format: fixtureFormat(channelCount: 1)),
         ]
         let hdmiStreams = [
-            AudioRouteStream(streamIndex: 7, format: fixtureFormat(channelCount: 6)),
+            AudioRouteStream(streamObjectID: 207, streamIndex: 7, format: fixtureFormat(channelCount: 6)),
         ]
         let plan = try AudioRoutePlanner().plan(fixtureRequest(
             mode: .explicit(targetDeviceUIDs: ["StudioAggregate"]),
@@ -529,7 +529,11 @@ private extension AudioRoutePlannerTests {
             isAggregate: isAggregate,
             aggregateSubdeviceUIDs: aggregateSubdeviceUIDs,
             outputStreams: outputStreams ?? [
-                AudioRouteStream(streamIndex: 0, format: format ?? fixtureFormat()),
+                AudioRouteStream(
+                    streamObjectID: AudioStreamID(objectID &* 1_000),
+                    streamIndex: 0,
+                    format: format ?? fixtureFormat()
+                ),
             ]
         )
     }

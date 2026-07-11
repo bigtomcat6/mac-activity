@@ -392,8 +392,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             targets: ["Surround", "Stereo"],
             tapSources: [source],
             targetOutputStreams: [
-                [AudioRouteStream(streamIndex: 6, format: outputFormats[0])],
-                [AudioRouteStream(streamIndex: 1, format: outputFormats[1])],
+                [AudioRouteStream(streamObjectID: 106, streamIndex: 6, format: outputFormats[0])],
+                [AudioRouteStream(streamObjectID: 201, streamIndex: 1, format: outputFormats[1])],
             ]
         )
         let taps = [fixtureTap(objectID: 710, source: source)]
@@ -498,7 +498,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 targets: ["Stereo"],
                 tapSources: [source],
                 targetOutputStreams: [[
-                    AudioRouteStream(streamIndex: 1, format: expectedOutput),
+                    AudioRouteStream(streamObjectID: 101, streamIndex: 1, format: expectedOutput),
                 ]]
             )
             let taps = [fixtureTap(objectID: 710, source: source)]
@@ -538,7 +538,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             targets: ["Stereo"],
             tapSources: [source],
             targetOutputStreams: [[
-                AudioRouteStream(streamIndex: 1, format: outputFormat),
+                AudioRouteStream(streamObjectID: 101, streamIndex: 1, format: outputFormat),
             ]]
         )
         let taps = [fixtureTap(objectID: 710, source: source)]
@@ -603,7 +603,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             targets: ["Mono"],
             tapSources: [source],
             targetOutputStreams: [[
-                AudioRouteStream(streamIndex: 1, format: outputFormat),
+                AudioRouteStream(streamObjectID: 101, streamIndex: 1, format: outputFormat),
             ]]
         )
         let taps = [fixtureTap(objectID: 710, source: source)]
@@ -674,7 +674,11 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             targets: ["Target.Noninterleaved"],
             tapSources: [source],
             targetOutputStreams: [[
-                AudioRouteStream(streamIndex: 2, format: noninterleavedThreeChannel),
+                AudioRouteStream(
+                    streamObjectID: 102,
+                    streamIndex: 2,
+                    format: noninterleavedThreeChannel
+                ),
             ]]
         )
         let taps = [fixtureTap(objectID: 710, source: source)]
@@ -1088,8 +1092,12 @@ private func fixturePlan(
     tapSources: [AudioTapSource]? = nil,
     targetOutputStreams: [[AudioRouteStream]]? = nil
 ) -> AudioRoutePlan {
-    let outputStreams = targetOutputStreams ?? targets.map { _ in
-        [AudioRouteStream(streamIndex: 0, format: fixtureFormat())]
+    let outputStreams = targetOutputStreams ?? targets.indices.map { index in
+        [AudioRouteStream(
+            streamObjectID: AudioStreamID(1_000 + index),
+            streamIndex: 0,
+            format: fixtureFormat()
+        )]
     }
     precondition(outputStreams.count == targets.count)
     return AudioRoutePlan(

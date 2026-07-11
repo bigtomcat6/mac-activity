@@ -52,12 +52,12 @@ extension AudioRouteMode: Codable {
     }
 }
 
-public enum AudioPCMInterleaving: Equatable, Sendable {
+public enum AudioPCMInterleaving: String, Codable, Hashable, Sendable {
     case interleaved
     case nonInterleaved
 }
 
-public struct ProcessTapAudioFormat: Equatable, Sendable {
+public struct ProcessTapAudioFormat: Codable, Hashable, Sendable {
     public let sampleRate: Double
     public let channelCount: Int
     public let formatID: AudioFormatID
@@ -91,13 +91,51 @@ public struct ProcessTapAudioFormat: Equatable, Sendable {
     }
 }
 
-public struct AudioRouteStream: Equatable, Sendable {
+public struct AudioRouteStream: Codable, Hashable, Sendable {
+    public let streamObjectID: AudioStreamID
     public let streamIndex: UInt
     public let format: ProcessTapAudioFormat
 
-    public init(streamIndex: UInt, format: ProcessTapAudioFormat) {
+    public init(
+        streamObjectID: AudioStreamID,
+        streamIndex: UInt,
+        format: ProcessTapAudioFormat
+    ) {
+        self.streamObjectID = streamObjectID
         self.streamIndex = streamIndex
         self.format = format
+    }
+}
+
+public struct AudioRouteDriverIdentity: Equatable, Hashable, Codable, Sendable {
+    public let plugInBundleID: String
+    public let availableVersion: String?
+
+    public init(plugInBundleID: String, availableVersion: String?) {
+        self.plugInBundleID = plugInBundleID
+        self.availableVersion = availableVersion
+    }
+}
+
+public struct AudioRouteAggregateComposition: Equatable, Hashable, Codable, Sendable {
+    public let fullSubdeviceUIDs: [String]
+    public let activeSubdeviceUIDs: [String]
+    public let mainSubdeviceUID: String?
+    public let isStacked: Bool?
+    public let tapUUIDs: [String]
+
+    public init(
+        fullSubdeviceUIDs: [String],
+        activeSubdeviceUIDs: [String],
+        mainSubdeviceUID: String?,
+        isStacked: Bool?,
+        tapUUIDs: [String]
+    ) {
+        self.fullSubdeviceUIDs = fullSubdeviceUIDs
+        self.activeSubdeviceUIDs = activeSubdeviceUIDs
+        self.mainSubdeviceUID = mainSubdeviceUID
+        self.isStacked = isStacked
+        self.tapUUIDs = tapUUIDs
     }
 }
 
@@ -108,7 +146,13 @@ public struct AudioRouteDevice: Equatable, Sendable {
     public let isAlive: Bool
     public let isAggregate: Bool
     public let aggregateSubdeviceUIDs: [String]
+    public let inputStreams: [AudioRouteStream]
     public let outputStreams: [AudioRouteStream]
+    public let clockDomain: UInt32?
+    public let transportType: UInt32?
+    public let modelUID: String?
+    public let driverIdentity: AudioRouteDriverIdentity?
+    public let aggregateComposition: AudioRouteAggregateComposition?
 
     public init(
         objectID: AudioObjectID,
@@ -117,7 +161,13 @@ public struct AudioRouteDevice: Equatable, Sendable {
         isAlive: Bool,
         isAggregate: Bool,
         aggregateSubdeviceUIDs: [String],
-        outputStreams: [AudioRouteStream]
+        inputStreams: [AudioRouteStream] = [],
+        outputStreams: [AudioRouteStream],
+        clockDomain: UInt32? = nil,
+        transportType: UInt32? = nil,
+        modelUID: String? = nil,
+        driverIdentity: AudioRouteDriverIdentity? = nil,
+        aggregateComposition: AudioRouteAggregateComposition? = nil
     ) {
         self.objectID = objectID
         self.uid = uid
@@ -125,7 +175,13 @@ public struct AudioRouteDevice: Equatable, Sendable {
         self.isAlive = isAlive
         self.isAggregate = isAggregate
         self.aggregateSubdeviceUIDs = aggregateSubdeviceUIDs
+        self.inputStreams = inputStreams
         self.outputStreams = outputStreams
+        self.clockDomain = clockDomain
+        self.transportType = transportType
+        self.modelUID = modelUID
+        self.driverIdentity = driverIdentity
+        self.aggregateComposition = aggregateComposition
     }
 }
 
