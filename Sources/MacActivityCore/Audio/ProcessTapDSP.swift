@@ -73,8 +73,8 @@ struct ProcessTapDSPConfiguration: Equatable, Sendable {
               inputFormats.isEmpty == false,
               outputFormats.isEmpty == false,
               channelMaps.isEmpty == false,
-              inputFormats.allSatisfy({ isSupported($0, sampleRate: sampleRate) }),
-              outputFormats.allSatisfy({ isSupported($0, sampleRate: sampleRate) })
+              inputFormats.allSatisfy({ supports($0, sampleRate: sampleRate) }),
+              outputFormats.allSatisfy({ supports($0, sampleRate: sampleRate) })
         else {
             throw ProcessTapDSPValidationError.unsupportedConfiguration
         }
@@ -108,7 +108,7 @@ struct ProcessTapDSPConfiguration: Equatable, Sendable {
         )
     }
 
-    private static func isSupported(
+    static func supports(
         _ format: ProcessTapAudioFormat,
         sampleRate: Double
     ) -> Bool {

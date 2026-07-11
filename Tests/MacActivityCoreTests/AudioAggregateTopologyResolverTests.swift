@@ -147,6 +147,43 @@ final class AudioAggregateTopologyResolverTests: XCTestCase {
         )
     }
 
+    func testResolverRejectsInputAndOutputFormatsOutsideStrictDSPContract() {
+        let malformedFormats = [
+            fixtureFormat(
+                formatFlags: kAudioFormatFlagIsFloat
+                    | kAudioFormatFlagIsPacked
+                    | kAudioFormatFlagIsSignedInteger
+            ),
+            fixtureFormat(formatFlags: kAudioFormatFlagIsFloat),
+            fixtureFormat(
+                interleaving: .interleaved,
+                formatFlags: kAudioFormatFlagIsFloat
+                    | kAudioFormatFlagIsPacked
+                    | kAudioFormatFlagIsNonInterleaved
+            ),
+            fixtureFormat(
+                interleaving: .nonInterleaved,
+                formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked
+            ),
+        ]
+
+        for malformed in malformedFormats {
+            let source = fixtureSource(format: malformed)
+            let inputPlan = fixturePlan(tapSources: [source])
+            assertUnsupported(
+                plan: inputPlan,
+                tap: fixtureTap(source: source),
+                snapshot: fixtureSnapshot(inputFormats: [malformed])
+            )
+
+            let outputPlan = fixturePlan(outputGroups: [[stereo]])
+            assertUnsupported(
+                plan: outputPlan,
+                snapshot: fixtureSnapshot(outputFormats: [malformed])
+            )
+        }
+    }
+
     func testResolverRejectsEmptyPlannedOutputTopologyAndCrossDirectionIDReuse() {
         assertUnsupported(
             plan: fixturePlan(outputGroups: []),
@@ -379,15 +416,17 @@ private extension AudioAggregateTopologyResolverTests {
 private func fixtureFormat(
     sampleRate: Double = 48_000,
     channelCount: Int = 2,
-    interleaving: AudioPCMInterleaving = .interleaved
+    interleaving: AudioPCMInterleaving = .interleaved,
+    formatFlags: AudioFormatFlags? = nil
 ) -> ProcessTapAudioFormat {
     ProcessTapAudioFormat(
         sampleRate: sampleRate,
         channelCount: channelCount,
         formatID: kAudioFormatLinearPCM,
-        formatFlags: kAudioFormatFlagIsFloat
-            | kAudioFormatFlagIsPacked
-            | (interleaving == .nonInterleaved ? kAudioFormatFlagIsNonInterleaved : 0),
+        formatFlags: formatFlags
+            ?? kAudioFormatFlagIsFloat
+                | kAudioFormatFlagIsPacked
+                | (interleaving == .nonInterleaved ? kAudioFormatFlagIsNonInterleaved : 0),
         bitsPerChannel: 32,
         interleaving: interleaving
     )

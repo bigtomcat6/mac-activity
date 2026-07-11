@@ -34,7 +34,10 @@ enum AudioAggregateTopologyResolver {
               snapshot.inputStreamIDs.count == 1,
               snapshot.inputStreamIDs[0] != kAudioObjectUnknown,
               snapshot.inputFormats == [tap.source.expectedFormat],
-              snapshot.inputFormats[0].isSupportedFloat32LinearPCM,
+              ProcessTapDSPConfiguration.supports(
+                  snapshot.inputFormats[0],
+                  sampleRate: tap.source.expectedFormat.sampleRate
+              ),
               snapshot.tapUUIDs == [tap.uuid],
               snapshot.activeSubTapIDs.count == 1,
               snapshot.activeSubTapIDs[0] != kAudioObjectUnknown
@@ -52,9 +55,11 @@ enum AudioAggregateTopologyResolver {
               snapshot.outputStreamIDs.allSatisfy({ $0 != kAudioObjectUnknown }),
               Set(snapshot.outputStreamIDs).count == snapshot.outputStreamIDs.count,
               snapshot.outputStreamIDs.contains(snapshot.inputStreamIDs[0]) == false,
-              snapshot.outputFormats.allSatisfy(\.isSupportedFloat32LinearPCM),
               snapshot.outputFormats.allSatisfy({
-                  $0.sampleRate == tap.source.expectedFormat.sampleRate
+                  ProcessTapDSPConfiguration.supports(
+                      $0,
+                      sampleRate: tap.source.expectedFormat.sampleRate
+                  )
               })
         else {
             throw AudioAggregateTopologyError.unsupportedTopology
