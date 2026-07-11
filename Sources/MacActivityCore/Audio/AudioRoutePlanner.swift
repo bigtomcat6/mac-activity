@@ -61,13 +61,22 @@ private extension AudioRoutePlanner {
     }
 
     func candidate(for request: AudioRouteRequest) throws -> Candidate {
-        let devicesByUID = Dictionary(
-            uniqueKeysWithValues: request.devices.map { ($0.uid, $0) }
-        )
+        let devicesByUID = try indexedDevices(request.devices)
+        let sourceUIDs = stableUnique(request.sourceDeviceUIDs)
+        let sourceLeafUIDs = try stableUnique(sourceUIDs.flatMap {
+            try flatten(uid: $0, devicesByUID: devicesByUID)
+        })
         let selectedUIDs = try selectedUIDs(for: request)
         let flattenedUIDs = try stableUnique(selectedUIDs.flatMap {
             try flatten(uid: $0, devicesByUID: devicesByUID)
         })
+        let participatingUIDs = stableUnique(
+            sourceUIDs + sourceLeafUIDs + selectedUIDs + flattenedUIDs
+        )
+        try validateStreamIdentities(
+            participatingUIDs,
+            devicesByUID: devicesByUID
+        )
         try validateTargets(flattenedUIDs, devicesByUID: devicesByUID)
 
         let mainDeviceUID = try mainDeviceUID(
@@ -80,7 +89,7 @@ private extension AudioRoutePlanner {
         }
 
         let tapSources = try buildTapSources(
-            sourceDeviceUIDs: stableUnique(request.sourceDeviceUIDs),
+            sourceDeviceUIDs: sourceUIDs,
             mainDevice: mainDevice,
             devicesByUID: devicesByUID
         )
@@ -108,7 +117,8 @@ private extension AudioRoutePlanner {
                 (devicesByUID[uid]?.outputStreams.count ?? 0) > 1
             }
         let fingerprint = try fingerprint(
-            request: request,
+            sourceUIDs: sourceUIDs,
+            sourceLeafUIDs: sourceLeafUIDs,
             selectedUIDs: selectedUIDs,
             flattenedUIDs: flattenedUIDs,
             devicesByUID: devicesByUID
@@ -122,6 +132,18 @@ private extension AudioRoutePlanner {
             isStacked: isStacked,
             topologyFingerprint: fingerprint
         )
+    }
+
+    func indexedDevices(
+        _ devices: [AudioRouteDevice]
+    ) throws -> [String: AudioRouteDevice] {
+        var devicesByUID: [String: AudioRouteDevice] = [:]
+        for device in devices {
+            guard devicesByUID.updateValue(device, forKey: device.uid) == nil else {
+                throw AudioRoutePlanningError.unsupportedTopology
+            }
+        }
+        return devicesByUID
     }
 
     func selectedUIDs(for request: AudioRouteRequest) throws -> [String] {
@@ -279,7 +301,8 @@ private extension AudioRoutePlanner {
     }
 
     func fingerprint(
-        request: AudioRouteRequest,
+        sourceUIDs: [String],
+        sourceLeafUIDs: [String],
         selectedUIDs: [String],
         flattenedUIDs: [String],
         devicesByUID: [String: AudioRouteDevice]
@@ -294,7 +317,7 @@ private extension AudioRoutePlanner {
             throw AudioRoutePlanningError.unsupportedTopology
         }
         let orderedUIDs = stableUnique(
-            request.sourceDeviceUIDs + selectedUIDs + flattenedUIDs
+            sourceUIDs + sourceLeafUIDs + selectedUIDs + flattenedUIDs
         )
         let fingerprints = try orderedUIDs.map { uid in
             guard let device = devicesByUID[uid] else {
@@ -305,8 +328,8 @@ private extension AudioRoutePlanner {
                 uid: device.uid,
                 modelUID: device.modelUID,
                 driverIdentity: device.driverIdentity,
-                inputStreams: device.isAggregate ? [] : device.inputStreams,
-                outputStreams: device.isAggregate ? [] : device.outputStreams,
+                inputStreams: device.inputStreams,
+                outputStreams: device.outputStreams,
                 fullSubdeviceUIDs: composition?.fullSubdeviceUIDs ?? [],
                 activeSubdeviceUIDs: composition?.activeSubdeviceUIDs.sorted() ?? [],
                 aggregateMainSubdeviceUID: composition?.mainSubdeviceUID,
@@ -319,10 +342,47 @@ private extension AudioRoutePlanner {
         }
         return AudioRouteTopologyFingerprint(
             osBuild: osBuild,
-            sourceDeviceUIDs: stableUnique(request.sourceDeviceUIDs),
+            sourceDeviceUIDs: sourceUIDs,
             selectedTargetUIDs: selectedUIDs,
             devices: fingerprints
         )
+    }
+
+    func validateStreamIdentities(
+        _ deviceUIDs: [String],
+        devicesByUID: [String: AudioRouteDevice]
+    ) throws {
+        var inputObjectIDs: Set<AudioStreamID> = []
+        var outputObjectIDs: Set<AudioStreamID> = []
+        for uid in deviceUIDs {
+            guard let device = devicesByUID[uid] else {
+                throw AudioRoutePlanningError.missingDevice(uid)
+            }
+            try validateStreamIdentities(
+                device.inputStreams,
+                objectIDs: &inputObjectIDs
+            )
+            try validateStreamIdentities(
+                device.outputStreams,
+                objectIDs: &outputObjectIDs
+            )
+        }
+    }
+
+    func validateStreamIdentities(
+        _ streams: [AudioRouteStream],
+        objectIDs: inout Set<AudioStreamID>
+    ) throws {
+        guard Set(streams.map(\.streamIndex)).count == streams.count else {
+            throw AudioRoutePlanningError.unsupportedTopology
+        }
+        for stream in streams {
+            guard stream.streamObjectID != kAudioObjectUnknown,
+                  objectIDs.insert(stream.streamObjectID).inserted
+            else {
+                throw AudioRoutePlanningError.unsupportedTopology
+            }
+        }
     }
 
     func stableUnique(_ values: [String]) -> [String] {

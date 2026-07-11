@@ -640,6 +640,11 @@ final class AudioRoutePlannerTests: XCTestCase {
             uid: "Aggregate",
             isAggregate: true,
             aggregateSubdeviceUIDs: ["USB", "HDMI"],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 116_000,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )],
             aggregateComposition: AudioRouteAggregateComposition(
                 fullSubdeviceUIDs: ["USB", "HDMI"],
                 activeSubdeviceUIDs: ["HDMI", "USB"],
@@ -653,6 +658,11 @@ final class AudioRoutePlannerTests: XCTestCase {
             uid: "Aggregate",
             isAggregate: true,
             aggregateSubdeviceUIDs: ["USB", "HDMI"],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 116_000,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )],
             aggregateComposition: AudioRouteAggregateComposition(
                 fullSubdeviceUIDs: ["USB", "HDMI"],
                 activeSubdeviceUIDs: ["USB", "HDMI"],
@@ -712,6 +722,439 @@ final class AudioRoutePlannerTests: XCTestCase {
             request: fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"])),
             planner: planner
         )
+    }
+
+    func testPlannerRejectsUnknownStreamIdentitiesForSourceAndTarget() {
+        let unknownSource = fixtureDevice(
+            objectID: 120,
+            uid: "UnknownSource",
+            outputStreams: [AudioRouteStream(
+                streamObjectID: kAudioObjectUnknown,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )]
+        )
+        assertPlanningError(
+            .unsupportedTopology,
+            request: fixtureRequest(
+                sourceDeviceUIDs: ["UnknownSource"],
+                mode: .explicit(targetDeviceUIDs: ["USB"]),
+                devices: fixtureDevices() + [unknownSource]
+            )
+        )
+
+        let unknownTarget = fixtureDevice(
+            objectID: 121,
+            uid: "UnknownTarget",
+            outputStreams: [AudioRouteStream(
+                streamObjectID: kAudioObjectUnknown,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )]
+        )
+        assertPlanningError(
+            .unsupportedTopology,
+            request: fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: ["UnknownTarget"]),
+                devices: fixtureDevices() + [unknownTarget]
+            )
+        )
+    }
+
+    func testPlannerRejectsDuplicateStreamObjectIDsAndIndexesPerDirection() {
+        let duplicateSourceIDs = fixtureDevice(
+            objectID: 122,
+            uid: "DuplicateSourceIDs",
+            outputStreams: [
+                AudioRouteStream(streamObjectID: 1_220, streamIndex: 0, format: fixtureFormat()),
+                AudioRouteStream(streamObjectID: 1_220, streamIndex: 1, format: fixtureFormat()),
+            ]
+        )
+        let duplicateSourceIndexes = fixtureDevice(
+            objectID: 123,
+            uid: "DuplicateSourceIndexes",
+            outputStreams: [
+                AudioRouteStream(streamObjectID: 1_231, streamIndex: 0, format: fixtureFormat()),
+                AudioRouteStream(streamObjectID: 1_232, streamIndex: 0, format: fixtureFormat()),
+            ]
+        )
+        for source in [duplicateSourceIDs, duplicateSourceIndexes] {
+            assertPlanningError(
+                .unsupportedTopology,
+                request: fixtureRequest(
+                    sourceDeviceUIDs: [source.uid],
+                    mode: .explicit(targetDeviceUIDs: ["USB"]),
+                    devices: fixtureDevices() + [source]
+                )
+            )
+        }
+
+        let duplicateTargetIDs = fixtureDevice(
+            objectID: 124,
+            uid: "DuplicateTargetIDs",
+            outputStreams: [
+                AudioRouteStream(streamObjectID: 1_240, streamIndex: 0, format: fixtureFormat()),
+                AudioRouteStream(streamObjectID: 1_240, streamIndex: 1, format: fixtureFormat()),
+            ]
+        )
+        let duplicateTargetIndexes = fixtureDevice(
+            objectID: 125,
+            uid: "DuplicateTargetIndexes",
+            outputStreams: [
+                AudioRouteStream(streamObjectID: 1_251, streamIndex: 0, format: fixtureFormat()),
+                AudioRouteStream(streamObjectID: 1_252, streamIndex: 0, format: fixtureFormat()),
+            ]
+        )
+        for target in [duplicateTargetIDs, duplicateTargetIndexes] {
+            assertPlanningError(
+                .unsupportedTopology,
+                request: fixtureRequest(
+                    mode: .explicit(targetDeviceUIDs: [target.uid]),
+                    devices: fixtureDevices() + [target]
+                )
+            )
+        }
+    }
+
+    func testPlannerRejectsInvalidInputStreamIdentitiesOnParticipatingDevice() {
+        let target = fixtureDevice(
+            objectID: 126,
+            uid: "InvalidInputTarget",
+            inputStreams: [
+                AudioRouteStream(streamObjectID: 1_261, streamIndex: 0, format: fixtureFormat()),
+                AudioRouteStream(streamObjectID: 1_262, streamIndex: 0, format: fixtureFormat()),
+            ]
+        )
+        assertPlanningError(
+            .unsupportedTopology,
+            request: fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: [target.uid]),
+                devices: fixtureDevices() + [target]
+            )
+        )
+    }
+
+    func testPlannerRejectsStreamObjectIDReusedAcrossParticipatingDevices() {
+        let sharedID: AudioStreamID = 1_270
+        let source = fixtureDevice(
+            objectID: 127,
+            uid: "ReusedIDSource",
+            outputStreams: [AudioRouteStream(
+                streamObjectID: sharedID,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )]
+        )
+        let target = fixtureDevice(
+            objectID: 128,
+            uid: "ReusedIDTarget",
+            outputStreams: [AudioRouteStream(
+                streamObjectID: sharedID,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )]
+        )
+        assertPlanningError(
+            .unsupportedTopology,
+            request: fixtureRequest(
+                sourceDeviceUIDs: [source.uid],
+                mode: .explicit(targetDeviceUIDs: [target.uid]),
+                devices: fixtureDevices() + [source, target]
+            )
+        )
+    }
+
+    func testCompleteSourceAggregatePlansOnePresentationTapAndFingerprintsPhysicalLeaves() throws {
+        let leaves = [
+            fixtureDevice(objectID: 127, uid: "SourceLeafA"),
+            fixtureDevice(objectID: 128, uid: "SourceLeafB"),
+        ]
+        let presentation = AudioRouteStream(
+            streamObjectID: 1_290,
+            streamIndex: 4,
+            format: fixtureFormat(channelCount: 4)
+        )
+        let sourceAggregate = fixtureDevice(
+            objectID: 129,
+            uid: "SourceAggregate",
+            isAggregate: true,
+            aggregateSubdeviceUIDs: leaves.map(\.uid),
+            outputStreams: [presentation]
+        )
+        let request = fixtureRequest(
+            sourceDeviceUIDs: [sourceAggregate.uid],
+            mode: .explicit(targetDeviceUIDs: ["USB"]),
+            devices: fixtureDevices() + leaves + [sourceAggregate]
+        )
+        let plan = try planner().plan(request)
+
+        XCTAssertEqual(plan.tapSources.map(\.deviceUID), ["SourceAggregate"])
+        XCTAssertEqual(plan.tapSources.map(\.streamIndex), [4])
+        XCTAssertEqual(
+            plan.topologyFingerprint.devices.map(\.uid),
+            ["SourceAggregate", "SourceLeafA", "SourceLeafB", "USB"]
+        )
+        XCTAssertEqual(plan.topologyFingerprint.devices[0].outputStreams, [presentation])
+        XCTAssertEqual(
+            plan.topologyFingerprint.devices
+                .filter { ["SourceLeafA", "SourceLeafB"].contains($0.uid) }
+                .flatMap(\.outputStreams).count,
+            2
+        )
+    }
+
+    func testIncompleteTappedNestedOwnedAndInactiveSourceAggregatesAreRejected() {
+        let leaf = fixtureDevice(objectID: 130, uid: "SourceLeaf")
+        let inactiveLeaf = fixtureDevice(objectID: 131, uid: "InactiveLeaf", isAlive: false)
+        let nestedLeaf = fixtureDevice(
+            objectID: 132,
+            uid: "NestedSourceLeaf",
+            isAggregate: true,
+            aggregateSubdeviceUIDs: [leaf.uid]
+        )
+        let ownedUID = "com.how.macactivity.audio.source-leaf"
+        let ownedLeaf = fixtureDevice(objectID: 133, uid: ownedUID)
+        let cases: [(AudioRouteDevice, [AudioRouteDevice])] = [
+            (
+                fixtureDevice(
+                    objectID: 134,
+                    uid: "IncompleteSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [leaf.uid],
+                    hasCompleteAggregateComposition: false
+                ),
+                [leaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 135,
+                    uid: "TappedSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [leaf.uid],
+                    aggregateComposition: AudioRouteAggregateComposition(
+                        fullSubdeviceUIDs: [leaf.uid],
+                        activeSubdeviceUIDs: [leaf.uid],
+                        mainSubdeviceUID: leaf.uid,
+                        isStacked: false,
+                        tapUUIDs: ["existing-tap"]
+                    )
+                ),
+                [leaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 1351,
+                    uid: "InactiveMembershipSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [leaf.uid],
+                    aggregateComposition: AudioRouteAggregateComposition(
+                        fullSubdeviceUIDs: [leaf.uid],
+                        activeSubdeviceUIDs: [],
+                        mainSubdeviceUID: leaf.uid,
+                        isStacked: false,
+                        tapUUIDs: []
+                    )
+                ),
+                [leaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 1352,
+                    uid: "DuplicateFullListSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [leaf.uid],
+                    aggregateComposition: AudioRouteAggregateComposition(
+                        fullSubdeviceUIDs: [leaf.uid, leaf.uid],
+                        activeSubdeviceUIDs: [leaf.uid],
+                        mainSubdeviceUID: leaf.uid,
+                        isStacked: true,
+                        tapUUIDs: []
+                    )
+                ),
+                [leaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 136,
+                    uid: "NestedSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [nestedLeaf.uid]
+                ),
+                [leaf, nestedLeaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 137,
+                    uid: "OwnedSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [ownedUID]
+                ),
+                [ownedLeaf]
+            ),
+            (
+                fixtureDevice(
+                    objectID: 138,
+                    uid: "InactiveSourceAggregate",
+                    isAggregate: true,
+                    aggregateSubdeviceUIDs: [inactiveLeaf.uid]
+                ),
+                [inactiveLeaf]
+            ),
+        ]
+
+        for (source, dependencies) in cases {
+            XCTAssertThrowsError(try planner().plan(fixtureRequest(
+                sourceDeviceUIDs: [source.uid],
+                mode: .explicit(targetDeviceUIDs: ["USB"]),
+                devices: fixtureDevices() + dependencies + [source]
+            )))
+        }
+    }
+
+    func testSourceAggregatePresentationOrLeafFormatChangesFingerprint() throws {
+        func request(
+            presentationSampleRate: Double,
+            leafChannels: Int
+        ) -> AudioRouteRequest {
+            let leaf = fixtureDevice(
+                objectID: 139,
+                uid: "SourceLeaf",
+                format: fixtureFormat(channelCount: leafChannels)
+            )
+            let source = fixtureDevice(
+                objectID: 140,
+                uid: "SourceAggregate",
+                isAggregate: true,
+                aggregateSubdeviceUIDs: [leaf.uid],
+                format: fixtureFormat(sampleRate: presentationSampleRate)
+            )
+            return fixtureRequest(
+                sourceDeviceUIDs: [source.uid],
+                mode: .explicit(targetDeviceUIDs: ["USB"]),
+                devices: fixtureDevices() + [leaf, source]
+            )
+        }
+
+        let planner = planner()
+        let baseline = try planner.topologyFingerprint(for: request(
+            presentationSampleRate: 48_000,
+            leafChannels: 2
+        ))
+        XCTAssertNotEqual(baseline, try planner.topologyFingerprint(for: request(
+            presentationSampleRate: 96_000,
+            leafChannels: 2
+        )))
+        XCTAssertNotEqual(baseline, try planner.topologyFingerprint(for: request(
+            presentationSampleRate: 48_000,
+            leafChannels: 6
+        )))
+    }
+
+    func testSubTapDriftDirectMatrix() throws {
+        func drift(
+            sourceUID: String = "Source",
+            sourceClock: UInt32?,
+            sourceTransport: UInt32? = kAudioDeviceTransportTypeUSB,
+            mainUID: String = "Main",
+            mainClock: UInt32?,
+            mainTransport: UInt32? = kAudioDeviceTransportTypeUSB
+        ) throws -> AudioRouteDriftCompensation {
+            let devices = [
+                fixtureDevice(
+                    objectID: 141,
+                    uid: sourceUID,
+                    clockDomain: sourceClock,
+                    transportType: sourceTransport
+                ),
+                fixtureDevice(
+                    objectID: 142,
+                    uid: mainUID,
+                    clockDomain: mainClock,
+                    transportType: mainTransport
+                ),
+            ]
+            return try planner().plan(fixtureRequest(
+                sourceDeviceUIDs: [sourceUID],
+                mode: .explicit(targetDeviceUIDs: [mainUID]),
+                devices: sourceUID == mainUID ? [devices[0]] : devices
+            )).tapSources[0].driftCompensation
+        }
+
+        XCTAssertEqual(try drift(
+            sourceUID: "Same",
+            sourceClock: 0,
+            mainUID: "Same",
+            mainClock: 0
+        ), .disabled)
+        XCTAssertEqual(try drift(sourceClock: 42, mainClock: 42), .disabled)
+        XCTAssertEqual(try drift(sourceClock: 0, mainClock: 0), .highQuality)
+        XCTAssertEqual(try drift(
+            sourceClock: 1,
+            mainClock: 2,
+            mainTransport: kAudioDeviceTransportTypeBluetooth
+        ), .disabled)
+        XCTAssertEqual(try drift(
+            sourceClock: 1,
+            mainClock: 2,
+            mainTransport: kAudioDeviceTransportTypeBluetoothLE
+        ), .disabled)
+        XCTAssertEqual(try drift(
+            sourceClock: 1,
+            sourceTransport: kAudioDeviceTransportTypeVirtual,
+            mainClock: 2
+        ), .disabled)
+    }
+
+    func testConservativePolicyDeniesEveryEmpiricalTransportWithExactFingerprint() throws {
+        let cases: [(UInt32?, UInt32?)] = [
+            (kAudioDeviceTransportTypeBluetooth, 100),
+            (kAudioDeviceTransportTypeBluetoothLE, 100),
+            (kAudioDeviceTransportTypeVirtual, 100),
+            (kAudioDeviceTransportTypeUSB, 0),
+            (kAudioDeviceTransportTypeUSB, 100),
+        ]
+        for (transport, clock) in cases {
+            let target = fixtureDevice(
+                objectID: 143,
+                uid: "EmpiricalTarget",
+                clockDomain: clock,
+                transportType: transport
+            )
+            let request = fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: [target.uid]),
+                devices: fixtureDevices() + [target]
+            )
+            let conservative = AudioRoutePlanner()
+            let fingerprint = try conservative.topologyFingerprint(for: request)
+            XCTAssertThrowsError(try conservative.plan(request)) { error in
+                XCTAssertEqual(
+                    error as? AudioRoutePlanningError,
+                    .nativeValidationRequired(fingerprint)
+                )
+            }
+        }
+    }
+
+    func testExactAllowanceDoesNotPermitNearbyFingerprint() throws {
+        let allowedRequest = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"]))
+        let preflight = planner()
+        let allowedFingerprint = try preflight.topologyFingerprint(for: allowedRequest)
+        let exact = AudioRoutePlanner(
+            policy: AudioRouteNativeValidationPolicy(
+                validatedFingerprints: [allowedFingerprint]
+            ),
+            osBuildProvider: { "25A123" }
+        )
+        let nearbyRequest = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["HDMI"]))
+
+        XCTAssertNoThrow(try exact.plan(allowedRequest))
+        let nearbyFingerprint = try exact.topologyFingerprint(for: nearbyRequest)
+        XCTAssertThrowsError(try exact.plan(nearbyRequest)) { error in
+            XCTAssertEqual(
+                error as? AudioRoutePlanningError,
+                .nativeValidationRequired(nearbyFingerprint)
+            )
+        }
     }
 
     @MainActor
@@ -856,6 +1299,7 @@ private extension AudioRoutePlannerTests {
         clockDomain: UInt32? = 100,
         transportType: UInt32? = kAudioDeviceTransportTypeUSB,
         format: ProcessTapAudioFormat? = nil,
+        inputStreams: [AudioRouteStream] = [],
         outputStreams: [AudioRouteStream]? = nil,
         aggregateComposition: AudioRouteAggregateComposition? = nil,
         hasCompleteAggregateComposition: Bool = true
@@ -867,6 +1311,7 @@ private extension AudioRoutePlannerTests {
             isAlive: isAlive,
             isAggregate: isAggregate,
             aggregateSubdeviceUIDs: aggregateSubdeviceUIDs,
+            inputStreams: inputStreams,
             outputStreams: outputStreams ?? [
                 AudioRouteStream(
                     streamObjectID: AudioStreamID(objectID &* 1_000),
