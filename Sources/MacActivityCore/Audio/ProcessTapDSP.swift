@@ -35,22 +35,30 @@ struct ProcessTapChannelMap: Equatable, Sendable {
     let mixCoefficient: Float32
 }
 
+struct ProcessTapMappedOutputCapacity: Equatable, Sendable {
+    let bufferIndex: Int
+    let interleavedChannelCount: Int
+}
+
 struct ProcessTapDSPConfiguration: Equatable, Sendable {
     let sampleRate: Double
     let inputFormats: [ProcessTapAudioFormat]
     let outputFormats: [ProcessTapAudioFormat]
     let channelMaps: [ProcessTapChannelMap]
+    let mappedOutputCapacities: [ProcessTapMappedOutputCapacity]
 
     private init(
         sampleRate: Double,
         inputFormats: [ProcessTapAudioFormat],
         outputFormats: [ProcessTapAudioFormat],
-        channelMaps: [ProcessTapChannelMap]
+        channelMaps: [ProcessTapChannelMap],
+        mappedOutputCapacities: [ProcessTapMappedOutputCapacity]
     ) {
         self.sampleRate = sampleRate
         self.inputFormats = inputFormats
         self.outputFormats = outputFormats
         self.channelMaps = channelMaps
+        self.mappedOutputCapacities = mappedOutputCapacities
     }
 
     static func validated(
@@ -71,6 +79,8 @@ struct ProcessTapDSPConfiguration: Equatable, Sendable {
             throw ProcessTapDSPValidationError.unsupportedConfiguration
         }
 
+        var mappedOutputCapacities: [ProcessTapMappedOutputCapacity] = []
+        mappedOutputCapacities.reserveCapacity(min(channelMaps.count, outputFormats.count))
         for map in channelMaps {
             guard map.mixCoefficient.isFinite,
                   isValid(map.input, in: inputFormats),
@@ -78,13 +88,23 @@ struct ProcessTapDSPConfiguration: Equatable, Sendable {
             else {
                 throw ProcessTapDSPValidationError.unsupportedConfiguration
             }
+
+            if mappedOutputCapacities.contains(where: {
+                $0.bufferIndex == map.output.bufferIndex
+            }) == false {
+                mappedOutputCapacities.append(ProcessTapMappedOutputCapacity(
+                    bufferIndex: map.output.bufferIndex,
+                    interleavedChannelCount: map.output.interleavedChannelCount
+                ))
+            }
         }
 
         return Self(
             sampleRate: sampleRate,
             inputFormats: inputFormats,
             outputFormats: outputFormats,
-            channelMaps: channelMaps
+            channelMaps: channelMaps,
+            mappedOutputCapacities: mappedOutputCapacities
         )
     }
 
@@ -265,14 +285,10 @@ final class ProcessTapDSPContext: @unchecked Sendable {
         in buffers: UnsafeMutableAudioBufferListPointer
     ) -> Int {
         var maximumFrameCount = 0
-        let bufferCount = min(buffers.count, configuration.outputFormats.count)
-        for bufferIndex in 0..<bufferCount {
-            let format = configuration.outputFormats[bufferIndex]
-            let interleavedChannelCount = format.interleaving == .interleaved
-                ? format.channelCount
-                : 1
-            let buffer = buffers[bufferIndex]
-            guard Int(buffer.mNumberChannels) == interleavedChannelCount,
+        for capacity in configuration.mappedOutputCapacities {
+            guard capacity.bufferIndex < buffers.count else { continue }
+            let buffer = buffers[capacity.bufferIndex]
+            guard Int(buffer.mNumberChannels) == capacity.interleavedChannelCount,
                   let data = buffer.mData,
                   Int(bitPattern: data) % MemoryLayout<Float32>.alignment == 0
             else {
@@ -280,7 +296,7 @@ final class ProcessTapDSPContext: @unchecked Sendable {
             }
             let frameCount = Int(buffer.mDataByteSize)
                 / MemoryLayout<Float32>.stride
-                / interleavedChannelCount
+                / capacity.interleavedChannelCount
             if frameCount > maximumFrameCount {
                 maximumFrameCount = frameCount
             }

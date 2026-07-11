@@ -114,12 +114,31 @@ private final class OwnedAudioBufferList {
 
         var ownedPointers: [UnsafeMutablePointer<Float32>] = []
         var ownedAllocationCounts: [Int] = []
+        var ownedSampleCounts: [Int] = []
         ownedPointers.reserveCapacity(samples.count)
         ownedAllocationCounts.reserveCapacity(samples.count)
+        ownedSampleCounts.reserveCapacity(samples.count)
 
         let buffers = UnsafeMutableAudioBufferListPointer(pointer)
         for index in samples.indices {
-            let allocationCount = max(1, samples[index].count)
+            let dataByteSize: UInt32
+            if let byteSizes {
+                dataByteSize = byteSizes[index]
+            } else {
+                precondition(
+                    samples[index].count
+                        <= Int(UInt32.max) / MemoryLayout<Float32>.stride
+                )
+                dataByteSize = UInt32(samples[index].count * MemoryLayout<Float32>.stride)
+            }
+            let advertisedByteCount = Int(dataByteSize)
+            let fullAdvertisedSampleCount = advertisedByteCount / MemoryLayout<Float32>.stride
+            let partialSampleCount = advertisedByteCount % MemoryLayout<Float32>.stride == 0 ? 0 : 1
+            let advertisedAllocationCount = fullAdvertisedSampleCount + partialSampleCount
+            let allocationCount = max(
+                1,
+                max(samples[index].count, advertisedAllocationCount)
+            )
             let samplePointer = UnsafeMutablePointer<Float32>.allocate(capacity: allocationCount)
             samplePointer.initialize(repeating: 0, count: allocationCount)
             for sampleIndex in samples[index].indices {
@@ -128,17 +147,17 @@ private final class OwnedAudioBufferList {
 
             ownedPointers.append(samplePointer)
             ownedAllocationCounts.append(allocationCount)
+            ownedSampleCounts.append(max(samples[index].count, fullAdvertisedSampleCount))
             buffers[index] = AudioBuffer(
                 mNumberChannels: channelCounts[index],
-                mDataByteSize: byteSizes?[index]
-                    ?? UInt32(samples[index].count * MemoryLayout<Float32>.stride),
+                mDataByteSize: dataByteSize,
                 mData: UnsafeMutableRawPointer(samplePointer)
             )
         }
 
         samplePointers = ownedPointers
         allocationCounts = ownedAllocationCounts
-        sampleCounts = samples.map(\.count)
+        sampleCounts = ownedSampleCounts
     }
 
     deinit {

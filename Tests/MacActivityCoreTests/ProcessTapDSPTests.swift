@@ -164,6 +164,90 @@ final class ProcessTapDSPTests: XCTestCase {
         XCTAssertEqual(context.testingCurrentGain, 1)
     }
 
+    func testUnavailableMappedOutputWithValidUnmappedOutputDoesNotAdvanceRamp() throws {
+        let storage = AudioBufferListTestStorage(
+            inputs: [[1]],
+            inputChannelCounts: [1],
+            outputs: [[9], [9]],
+            outputChannelCounts: [1, 1]
+        )
+        storage.makeOutputDataUnavailable(at: 0)
+        let context = try makeMonoContext(outputBufferCount: 2)
+        context.setOutputGateOpen(true)
+        context.setTargetGain(0)
+
+        storage.process(with: context)
+
+        XCTAssertEqual(context.testingCurrentGain, 1)
+        XCTAssertEqual(storage.outputBuffers[1], [0])
+    }
+
+    func testLongerUnmappedOutputDoesNotExtendRampPastMappedCapacity() throws {
+        let storage = AudioBufferListTestStorage(
+            inputs: [[1, 1, 1, 1]],
+            inputChannelCounts: [1],
+            outputs: [[9, 9, 7, 7], [9, 9, 9, 9]],
+            outputChannelCounts: [1, 1],
+            outputByteSizes: [
+                UInt32(2 * MemoryLayout<Float32>.stride),
+                UInt32(4 * MemoryLayout<Float32>.stride),
+            ]
+        )
+        let context = try makeMonoContext(outputBufferCount: 2)
+        context.setOutputGateOpen(true)
+        context.setTargetGain(0)
+
+        storage.process(with: context)
+
+        let expectedGain = 1 - Float32(2) / Float32(1_440)
+        XCTAssertEqual(context.testingCurrentGain, expectedGain, accuracy: 0.000_001)
+        XCTAssertEqual(storage.outputBuffers[1], [0, 0, 0, 0])
+    }
+
+    func testDifferingMappedOutputsAdvanceRampThroughLongestSafeCapacity() throws {
+        let storage = AudioBufferListTestStorage(
+            inputs: [[1, 1, 1, 1]],
+            inputChannelCounts: [1],
+            outputs: [[9, 9, 7, 7], [9, 9, 9, 9]],
+            outputChannelCounts: [1, 1],
+            outputByteSizes: [
+                UInt32(2 * MemoryLayout<Float32>.stride),
+                UInt32(4 * MemoryLayout<Float32>.stride),
+            ]
+        )
+        let mono = audioFormat(channelCount: 1)
+        let configuration = try ProcessTapDSPConfiguration.validated(
+            sampleRate: 48_000,
+            inputFormats: [mono],
+            outputFormats: [mono, mono],
+            channelMaps: [
+                map(outputBuffer: 0),
+                map(outputBuffer: 1),
+            ]
+        )
+        let context = ProcessTapDSPContext(configuration: configuration, initialGain: 1)
+        context.setOutputGateOpen(true)
+        context.setTargetGain(0)
+
+        storage.process(with: context)
+
+        let expectedGain = 1 - Float32(4) / Float32(1_440)
+        XCTAssertEqual(context.testingCurrentGain, expectedGain, accuracy: 0.000_001)
+    }
+
+    func testBufferListStorageOwnsAdvertisedOutputByteCapacity() {
+        let storage = AudioBufferListTestStorage(
+            inputs: [[1]],
+            inputChannelCounts: [1],
+            outputs: [[9]],
+            outputChannelCounts: [1],
+            outputByteSizes: [UInt32(3 * MemoryLayout<Float32>.stride)]
+        )
+
+        XCTAssertEqual(storage.outputByteSizes, [UInt32(3 * MemoryLayout<Float32>.stride)])
+        XCTAssertEqual(storage.outputSamples, [9, 0, 0])
+    }
+
     func testMultichannelMappingUsesExplicitInterleavedAddresses() throws {
         let storage = AudioBufferListTestStorage(
             inputs: [[1, 2, 3, 4, 5, 6]],
@@ -469,6 +553,20 @@ private extension ProcessTapDSPTests {
             channelMaps: maps
         )
         return ProcessTapDSPContext(configuration: configuration, initialGain: initialGain)
+    }
+
+    func makeMonoContext(
+        outputBufferCount: Int,
+        mappedOutputBuffer: Int = 0
+    ) throws -> ProcessTapDSPContext {
+        let mono = audioFormat(channelCount: 1)
+        let configuration = try ProcessTapDSPConfiguration.validated(
+            sampleRate: 48_000,
+            inputFormats: [mono],
+            outputFormats: Array(repeating: mono, count: outputBufferCount),
+            channelMaps: [map(outputBuffer: mappedOutputBuffer)]
+        )
+        return ProcessTapDSPContext(configuration: configuration, initialGain: 1)
     }
 
     func processConstantOne(
