@@ -214,30 +214,41 @@ public struct AudioTapSource: Equatable, Sendable {
     public let deviceUID: String
     public let streamIndex: UInt
     public let expectedFormat: ProcessTapAudioFormat
+    public let driftCompensation: AudioRouteDriftCompensation
 
     public init(
         deviceUID: String,
         streamIndex: UInt,
-        expectedFormat: ProcessTapAudioFormat
+        expectedFormat: ProcessTapAudioFormat,
+        driftCompensation: AudioRouteDriftCompensation
     ) {
         self.deviceUID = deviceUID
         self.streamIndex = streamIndex
         self.expectedFormat = expectedFormat
+        self.driftCompensation = driftCompensation
     }
+}
+
+public enum AudioRouteDriftCompensation: Equatable, Hashable, Sendable {
+    case disabled
+    case highQuality
 }
 
 public struct AudioRouteSubdevice: Equatable, Sendable {
     public let uid: String
-    public let usesDriftCompensation: Bool
+    public let driftCompensation: AudioRouteDriftCompensation
+    public let inputStreams: [AudioRouteStream]
     public let outputStreams: [AudioRouteStream]
 
     public init(
         uid: String,
-        usesDriftCompensation: Bool,
+        driftCompensation: AudioRouteDriftCompensation,
+        inputStreams: [AudioRouteStream],
         outputStreams: [AudioRouteStream]
     ) {
         self.uid = uid
-        self.usesDriftCompensation = usesDriftCompensation
+        self.driftCompensation = driftCompensation
+        self.inputStreams = inputStreams
         self.outputStreams = outputStreams
     }
 }
@@ -251,6 +262,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
     public let mainDeviceUID: String
     public let isStacked: Bool
     public let aggregateUID: String
+    public let topologyFingerprint: AudioRouteTopologyFingerprint
 
     public init(
         processObjectID: AudioObjectID,
@@ -260,7 +272,8 @@ public struct AudioRoutePlan: Equatable, Sendable {
         subdevices: [AudioRouteSubdevice],
         mainDeviceUID: String,
         isStacked: Bool,
-        aggregateUID: String
+        aggregateUID: String,
+        topologyFingerprint: AudioRouteTopologyFingerprint
     ) {
         self.processObjectID = processObjectID
         self.generation = generation
@@ -270,6 +283,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
         self.mainDeviceUID = mainDeviceUID
         self.isStacked = isStacked
         self.aggregateUID = aggregateUID
+        self.topologyFingerprint = topologyFingerprint
     }
 }
 
@@ -282,6 +296,8 @@ public enum AudioRoutePlanningError: Error, Equatable, Sendable {
     case macActivityAggregateSelected(String)
     case unsupportedFormat(deviceUID: String, streamIndex: UInt)
     case incompatibleTarget(deviceUID: String)
+    case unsupportedTopology
+    case nativeValidationRequired(AudioRouteTopologyFingerprint)
 }
 
 @MainActor

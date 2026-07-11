@@ -6,10 +6,17 @@ import XCTest
 final class AudioTapHardwareDescriptionTests: XCTestCase {
     @available(macOS 14.2, *)
     func testTwoDeviceDescriptionUsesExactTargetsMainDeviceDriftAndTapDictionaries() throws {
-        let plan = fixturePlan(targets: ["USB", "HDMI"])
+        let plan = fixturePlan(
+            targets: ["USB", "HDMI"],
+            tapSources: [AudioTapSource(
+                deviceUID: "Source.Device",
+                streamIndex: 0,
+                expectedFormat: fixtureFormat(),
+                driftCompensation: .highQuality
+            )]
+        )
         let tapUUIDs = [
             UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!,
-            UUID(uuidString: "4D414341-0000-4000-8000-000000000002")!,
         ]
 
         let description = CoreAudioTapHardware.aggregateDescription(
@@ -43,11 +50,15 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         )
 
         let taps = try dictionaries(in: description, key: kAudioAggregateDeviceTapListKey)
-        XCTAssertEqual(taps.count, 2)
-        XCTAssertTrue(taps.allSatisfy { $0.count == 1 })
+        XCTAssertEqual(taps.count, 1)
         XCTAssertEqual(
             taps.map { $0[kAudioSubTapUIDKey] as? String },
             tapUUIDs.map(\.uuidString)
+        )
+        XCTAssertEqual(taps[0][kAudioSubTapDriftCompensationKey] as? Bool, true)
+        XCTAssertEqual(
+            taps[0][kAudioSubTapDriftCompensationQualityKey] as? UInt32,
+            kAudioAggregateDriftCompensationHighQuality
         )
     }
 
@@ -160,7 +171,12 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let plan = fixturePlan(
             targets: ["USB"],
             tapSources: [
-                .init(deviceUID: "Source.Device", streamIndex: 0, expectedFormat: expected),
+                .init(
+                    deviceUID: "Source.Device",
+                    streamIndex: 0,
+                    expectedFormat: expected,
+                    driftCompensation: .disabled
+                ),
             ]
         )
 
@@ -301,10 +317,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 objectID: 31,
                 uuid: UUID(uuidString: "4D414341-0000-4000-8000-000000000031")!
             ),
-            fixtureTap(
-                objectID: 32,
-                uuid: UUID(uuidString: "4D414341-0000-4000-8000-000000000032")!
-            ),
         ]
 
         let aggregate = try makeHardware(backend).createAggregate(plan: plan, taps: taps)
@@ -386,7 +398,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let source = AudioTapSource(
             deviceUID: "Source.Stereo",
             streamIndex: 9,
-            expectedFormat: sourceFormat
+            expectedFormat: sourceFormat,
+            driftCompensation: .disabled
         )
         let plan = fixturePlan(
             targets: ["Surround", "Stereo"],
@@ -492,7 +505,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             let source = AudioTapSource(
                 deviceUID: "Source.Stereo",
                 streamIndex: 9,
-                expectedFormat: sourceFormat
+                expectedFormat: sourceFormat,
+                driftCompensation: .disabled
             )
             let plan = fixturePlan(
                 targets: ["Stereo"],
@@ -532,7 +546,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let source = AudioTapSource(
             deviceUID: "Source.Mono",
             streamIndex: 3,
-            expectedFormat: sourceFormat
+            expectedFormat: sourceFormat,
+            driftCompensation: .disabled
         )
         let plan = fixturePlan(
             targets: ["Stereo"],
@@ -597,7 +612,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let source = AudioTapSource(
             deviceUID: "Source.Stereo",
             streamIndex: 3,
-            expectedFormat: sourceFormat
+            expectedFormat: sourceFormat,
+            driftCompensation: .disabled
         )
         let plan = fixturePlan(
             targets: ["Mono"],
@@ -668,7 +684,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let source = AudioTapSource(
             deviceUID: "Source.Noninterleaved",
             streamIndex: 3,
-            expectedFormat: noninterleavedThreeChannel
+            expectedFormat: noninterleavedThreeChannel,
+            driftCompensation: .disabled
         )
         let plan = fixturePlan(
             targets: ["Target.Noninterleaved"],
@@ -1108,13 +1125,15 @@ private func fixturePlan(
         subdevices: targets.enumerated().map { index, uid in
             AudioRouteSubdevice(
                 uid: uid,
-                usesDriftCompensation: index > 0,
+                driftCompensation: index > 0 ? .highQuality : .disabled,
+                inputStreams: [],
                 outputStreams: outputStreams[index]
             )
         },
         mainDeviceUID: targets.first ?? "",
         isStacked: true,
-        aggregateUID: "com.how.macactivity.audio.aggregate.fixture"
+        aggregateUID: "com.how.macactivity.audio.aggregate.fixture",
+        topologyFingerprint: fixtureTopologyFingerprint()
     )
 }
 
@@ -1122,7 +1141,17 @@ private func fixtureSource(deviceUID: String, streamIndex: UInt) -> AudioTapSour
     AudioTapSource(
         deviceUID: deviceUID,
         streamIndex: streamIndex,
-        expectedFormat: fixtureFormat()
+        expectedFormat: fixtureFormat(),
+        driftCompensation: .disabled
+    )
+}
+
+private func fixtureTopologyFingerprint() -> AudioRouteTopologyFingerprint {
+    AudioRouteTopologyFingerprint(
+        osBuild: "25A123",
+        sourceDeviceUIDs: ["Source.Device"],
+        selectedTargetUIDs: ["output"],
+        devices: []
     )
 }
 

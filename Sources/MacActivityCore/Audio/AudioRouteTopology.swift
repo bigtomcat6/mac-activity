@@ -1,6 +1,37 @@
 import Darwin
 import Foundation
 
+public struct AudioRouteNativeValidationPolicy: Sendable {
+    public static let conservative = Self(validatedFingerprints: [])
+
+    private let validatedFingerprints: Set<AudioRouteTopologyFingerprint>
+    private let permitsEveryFingerprintForTesting: Bool
+
+    public init(validatedFingerprints: Set<AudioRouteTopologyFingerprint>) {
+        self.validatedFingerprints = validatedFingerprints
+        self.permitsEveryFingerprintForTesting = false
+    }
+
+    public func permits(_ fingerprint: AudioRouteTopologyFingerprint) -> Bool {
+        permitsEveryFingerprintForTesting || validatedFingerprints.contains(fingerprint)
+    }
+
+    #if DEBUG
+    static let allowingAllForTesting = Self(
+        validatedFingerprints: [],
+        permitsEveryFingerprintForTesting: true
+    )
+    #endif
+
+    private init(
+        validatedFingerprints: Set<AudioRouteTopologyFingerprint>,
+        permitsEveryFingerprintForTesting: Bool
+    ) {
+        self.validatedFingerprints = validatedFingerprints
+        self.permitsEveryFingerprintForTesting = permitsEveryFingerprintForTesting
+    }
+}
+
 public struct AudioRouteTopologyFingerprint: Equatable, Hashable, Codable, Sendable {
     public let osBuild: String
     public let sourceDeviceUIDs: [String]

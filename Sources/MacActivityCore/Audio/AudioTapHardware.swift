@@ -85,7 +85,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         tapUUIDs: [UUID]
     ) -> CFDictionary {
         let subdevices: [[String: Any]] = plan.subdevices.map { subdevice in
-            let usesDriftCompensation = subdevice.usesDriftCompensation
+            let usesDriftCompensation = subdevice.driftCompensation != .disabled
             var description: [String: Any] = [
                 kAudioSubDeviceUIDKey: subdevice.uid,
                 kAudioSubDeviceDriftCompensationKey: usesDriftCompensation,
@@ -96,8 +96,17 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             }
             return description
         }
-        let taps: [[String: Any]] = tapUUIDs.map {
-            [kAudioSubTapUIDKey: $0.uuidString]
+        let taps: [[String: Any]] = zip(plan.tapSources, tapUUIDs).map { source, uuid in
+            let usesDriftCompensation = source.driftCompensation != .disabled
+            var description: [String: Any] = [
+                kAudioSubTapUIDKey: uuid.uuidString,
+                kAudioSubTapDriftCompensationKey: usesDriftCompensation,
+            ]
+            if usesDriftCompensation {
+                description[kAudioSubTapDriftCompensationQualityKey] =
+                    kAudioAggregateDriftCompensationHighQuality
+            }
+            return description
         }
         let description: [String: Any] = [
             kAudioAggregateDeviceUIDKey: plan.aggregateUID,

@@ -1512,7 +1512,8 @@ private final class EngineFixture: @unchecked Sendable {
     func plan(
         processObjectID: AudioObjectID = 77,
         generation: UInt64,
-        sourceCount: Int = 1
+        sourceCount: Int = 1,
+        fingerprint: AudioRouteTopologyFingerprint? = nil
     ) -> AudioRoutePlan {
         AudioRoutePlan(
             processObjectID: processObjectID,
@@ -1521,14 +1522,16 @@ private final class EngineFixture: @unchecked Sendable {
                 AudioTapSource(
                     deviceUID: "source-\(index)",
                     streamIndex: UInt(index),
-                    expectedFormat: format
+                    expectedFormat: format,
+                    driftCompensation: .disabled
                 )
             },
             selectedTargetUIDs: ["output"],
             subdevices: [
                 AudioRouteSubdevice(
                     uid: "output",
-                    usesDriftCompensation: false,
+                    driftCompensation: .disabled,
+                    inputStreams: [],
                     outputStreams: [
                         AudioRouteStream(
                             streamObjectID: 1_000,
@@ -1541,7 +1544,13 @@ private final class EngineFixture: @unchecked Sendable {
             mainDeviceUID: "output",
             isStacked: true,
             aggregateUID: AudioRoutePlanner.aggregateUIDPrefix
-                + "\(processObjectID).\(generation)"
+                + "\(processObjectID).\(generation)",
+            topologyFingerprint: fingerprint ?? AudioRouteTopologyFingerprint(
+                osBuild: "25A123",
+                sourceDeviceUIDs: ["source-0"],
+                selectedTargetUIDs: ["output"],
+                devices: []
+            )
         )
     }
 }
