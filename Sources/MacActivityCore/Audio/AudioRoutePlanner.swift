@@ -352,19 +352,18 @@ private extension AudioRoutePlanner {
         _ deviceUIDs: [String],
         devicesByUID: [String: AudioRouteDevice]
     ) throws {
-        var inputObjectIDs: Set<AudioStreamID> = []
-        var outputObjectIDs: Set<AudioStreamID> = []
+        var streamObjectIDs: Set<AudioStreamID> = []
         for uid in deviceUIDs {
             guard let device = devicesByUID[uid] else {
                 throw AudioRoutePlanningError.missingDevice(uid)
             }
             try validateStreamIdentities(
                 device.inputStreams,
-                objectIDs: &inputObjectIDs
+                objectIDs: &streamObjectIDs
             )
             try validateStreamIdentities(
                 device.outputStreams,
-                objectIDs: &outputObjectIDs
+                objectIDs: &streamObjectIDs
             )
         }
     }

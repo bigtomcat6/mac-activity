@@ -864,6 +864,31 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
+    func testPlannerRejectsStreamObjectIDSharedByInputAndOutput() {
+        let sharedID: AudioStreamID = 1_280
+        let target = fixtureDevice(
+            objectID: 128,
+            uid: "CrossDirectionReusedIDTarget",
+            inputStreams: [AudioRouteStream(
+                streamObjectID: sharedID,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: sharedID,
+                streamIndex: 0,
+                format: fixtureFormat()
+            )]
+        )
+        assertPlanningError(
+            .unsupportedTopology,
+            request: fixtureRequest(
+                mode: .explicit(targetDeviceUIDs: [target.uid]),
+                devices: fixtureDevices() + [target]
+            )
+        )
+    }
+
     func testCompleteSourceAggregatePlansOnePresentationTapAndFingerprintsPhysicalLeaves() throws {
         let leaves = [
             fixtureDevice(objectID: 127, uid: "SourceLeafA"),
