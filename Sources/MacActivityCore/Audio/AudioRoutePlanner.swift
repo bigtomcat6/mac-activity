@@ -29,10 +29,14 @@ public struct AudioRoutePlanner: Sendable {
         })
         try validateTargets(flattenedUIDs, devicesByUID: devicesByUID)
 
-        let subdevices = flattenedUIDs.enumerated().map {
-            AudioRouteSubdevice(
-                uid: $0.element,
-                usesDriftCompensation: $0.offset != 0
+        let subdevices = try flattenedUIDs.enumerated().map { index, uid in
+            guard let device = devicesByUID[uid] else {
+                throw AudioRoutePlanningError.missingDevice(uid)
+            }
+            return AudioRouteSubdevice(
+                uid: uid,
+                usesDriftCompensation: index != 0,
+                outputStreams: device.outputStreams
             )
         }
 
@@ -67,7 +71,7 @@ public struct AudioRoutePlanner: Sendable {
             tapSources: tapSources,
             selectedTargetUIDs: selectedUIDs,
             subdevices: subdevices,
-            clockDeviceUID: flattenedUIDs[0],
+            mainDeviceUID: flattenedUIDs[0],
             isStacked: true,
             aggregateUID: Self.aggregateUIDPrefix
                 + "\(request.processObjectID).\(request.generation)"

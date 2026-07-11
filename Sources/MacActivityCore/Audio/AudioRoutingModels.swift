@@ -173,10 +173,16 @@ public struct AudioTapSource: Equatable, Sendable {
 public struct AudioRouteSubdevice: Equatable, Sendable {
     public let uid: String
     public let usesDriftCompensation: Bool
+    public let outputStreams: [AudioRouteStream]
 
-    public init(uid: String, usesDriftCompensation: Bool) {
+    public init(
+        uid: String,
+        usesDriftCompensation: Bool,
+        outputStreams: [AudioRouteStream]
+    ) {
         self.uid = uid
         self.usesDriftCompensation = usesDriftCompensation
+        self.outputStreams = outputStreams
     }
 }
 
@@ -186,7 +192,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
     public let tapSources: [AudioTapSource]
     public let selectedTargetUIDs: [String]
     public let subdevices: [AudioRouteSubdevice]
-    public let clockDeviceUID: String
+    public let mainDeviceUID: String
     public let isStacked: Bool
     public let aggregateUID: String
 
@@ -196,7 +202,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
         tapSources: [AudioTapSource],
         selectedTargetUIDs: [String],
         subdevices: [AudioRouteSubdevice],
-        clockDeviceUID: String,
+        mainDeviceUID: String,
         isStacked: Bool,
         aggregateUID: String
     ) {
@@ -205,7 +211,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
         self.tapSources = tapSources
         self.selectedTargetUIDs = selectedTargetUIDs
         self.subdevices = subdevices
-        self.clockDeviceUID = clockDeviceUID
+        self.mainDeviceUID = mainDeviceUID
         self.isStacked = isStacked
         self.aggregateUID = aggregateUID
     }

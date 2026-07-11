@@ -21,6 +21,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyAggregate
         case destroyTap(sourceIndex: Int)
         case ownedObjects
+        case destroyOwnedObject(object: AudioOwnedObject)
     }
 
     enum FailurePoint: Hashable {
@@ -38,6 +39,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyAggregate
         case destroyTap(Int)
         case ownedObjects
+        case destroyOwnedObject(AudioObjectID)
     }
 
     private final class WeakContext {
@@ -68,11 +70,14 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var nextTapID: AudioObjectID = 1_000
     private var nextAggregateID: AudioObjectID = 2_000
     private var createdProcessObjectIDsStorage: [AudioObjectID] = []
+    private var createdTapResourcesStorage: [AudioTapResource] = []
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
+    var forcedTapObjectID: AudioObjectID?
     var forcedAggregateObjectID: AudioObjectID?
     var aggregateLayoutOverride: AudioAggregateLayout?
+    var aggregateLayoutValidationError: CoreAudioTapHardware.ValidationError?
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
     var ownedObjectValues: [AudioOwnedObject] = []
 
@@ -82,6 +87,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     var createdProcessObjectIDs: [AudioObjectID] {
         locked { createdProcessObjectIDsStorage }
+    }
+
+    var createdTapResources: [AudioTapResource] {
+        locked { createdTapResourcesStorage }
     }
 
     var mainThreadCallCount: Int {
@@ -173,12 +182,20 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         )
 
         return locked {
-            let objectID = nextTapID
-            nextTapID += 1
+            let objectID = forcedTapObjectID ?? nextTapID
+            if forcedTapObjectID == nil {
+                nextTapID += 1
+            }
             tapSourceIndices[objectID] = sourceIndex
             tapFormats[objectID] = source.expectedFormat
             createdProcessObjectIDsStorage.append(processObjectID)
-            return AudioTapResource(objectID: objectID, uuid: uuid, source: source)
+            let resource = AudioTapResource(
+                objectID: objectID,
+                uuid: CoreAudioTapHardware.reservedTapUUID(entropy: uuid),
+                source: source
+            )
+            createdTapResourcesStorage.append(resource)
+            return resource
         }
     }
 
@@ -257,6 +274,9 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             operation: .getData,
             objectID: aggregate.objectID
         )
+        if let aggregateLayoutValidationError {
+            throw aggregateLayoutValidationError
+        }
         if let aggregateLayoutOverride {
             return aggregateLayoutOverride
         }
@@ -396,6 +416,11 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             objectID: AudioObjectID(kAudioObjectSystemObject)
         )
         return locked { ownedObjectValues }
+    }
+
+    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
+        record(.destroyOwnedObject(object: object))
+        return takeStatus(at: .destroyOwnedObject(object.id))
     }
 }
 

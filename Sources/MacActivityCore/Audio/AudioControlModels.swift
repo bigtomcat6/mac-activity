@@ -49,6 +49,7 @@ public struct AudioHALError: Error, Equatable, Sendable {
         case invalidDataSize(byteCount: UInt32, elementStride: Int)
         case retryLimitExceeded
         case missingValue
+        case processTapsUnavailable
     }
 
     public let operation: AudioHALOperation

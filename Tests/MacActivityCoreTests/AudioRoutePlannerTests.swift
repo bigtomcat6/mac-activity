@@ -53,17 +53,49 @@ final class AudioRoutePlannerTests: XCTestCase {
 
         XCTAssertEqual(plan.selectedTargetUIDs, ["USB", "HDMI"])
         XCTAssertEqual(plan.subdevices.map(\.uid), ["USB", "HDMI"])
-        XCTAssertEqual(plan.clockDeviceUID, "USB")
+        XCTAssertEqual(plan.mainDeviceUID, "USB")
         XCTAssertEqual(plan.subdevices.map(\.usesDriftCompensation), [false, true])
     }
 
-    func testAggregateTargetsFlattenWithoutNesting() throws {
+    func testExplicitMultiDeviceTargetsRetainEachDeviceOutputStreamOrder() throws {
+        let usbStreams = [
+            AudioRouteStream(streamIndex: 8, format: fixtureFormat(channelCount: 1)),
+            AudioRouteStream(streamIndex: 2, format: fixtureFormat(channelCount: 2)),
+        ]
+        let hdmiStreams = [
+            AudioRouteStream(streamIndex: 5, format: fixtureFormat(channelCount: 6)),
+        ]
         let plan = try AudioRoutePlanner().plan(fixtureRequest(
-            mode: .explicit(targetDeviceUIDs: ["StudioAggregate"])
+            mode: .explicit(targetDeviceUIDs: ["HDMI", "USB"]),
+            devices: fixtureDevices(
+                usbOutputStreams: usbStreams,
+                hdmiOutputStreams: hdmiStreams
+            )
+        ))
+
+        XCTAssertEqual(plan.subdevices.map(\.uid), ["HDMI", "USB"])
+        XCTAssertEqual(plan.subdevices.map(\.outputStreams), [hdmiStreams, usbStreams])
+    }
+
+    func testAggregateTargetsFlattenWithoutNesting() throws {
+        let usbStreams = [
+            AudioRouteStream(streamIndex: 4, format: fixtureFormat(channelCount: 2)),
+            AudioRouteStream(streamIndex: 1, format: fixtureFormat(channelCount: 1)),
+        ]
+        let hdmiStreams = [
+            AudioRouteStream(streamIndex: 7, format: fixtureFormat(channelCount: 6)),
+        ]
+        let plan = try AudioRoutePlanner().plan(fixtureRequest(
+            mode: .explicit(targetDeviceUIDs: ["StudioAggregate"]),
+            devices: fixtureDevices(
+                usbOutputStreams: usbStreams,
+                hdmiOutputStreams: hdmiStreams
+            )
         ))
 
         XCTAssertEqual(plan.selectedTargetUIDs, ["StudioAggregate"])
         XCTAssertEqual(plan.subdevices.map(\.uid), ["USB", "HDMI"])
+        XCTAssertEqual(plan.subdevices.map(\.outputStreams), [usbStreams, hdmiStreams])
     }
 
     func testNestedAggregatesFlattenInStableOrderAndDeduplicateLeaves() throws {
@@ -451,11 +483,24 @@ private extension AudioRoutePlannerTests {
         )
     }
 
-    func fixtureDevices() -> [AudioRouteDevice] {
+    func fixtureDevices(
+        usbOutputStreams: [AudioRouteStream]? = nil,
+        hdmiOutputStreams: [AudioRouteStream]? = nil
+    ) -> [AudioRouteDevice] {
         [
             fixtureDevice(objectID: 10, uid: "BuiltIn", name: "MacBook Speakers"),
-            fixtureDevice(objectID: 20, uid: "USB", name: "USB Interface"),
-            fixtureDevice(objectID: 30, uid: "HDMI", name: "Display Audio"),
+            fixtureDevice(
+                objectID: 20,
+                uid: "USB",
+                name: "USB Interface",
+                outputStreams: usbOutputStreams
+            ),
+            fixtureDevice(
+                objectID: 30,
+                uid: "HDMI",
+                name: "Display Audio",
+                outputStreams: hdmiOutputStreams
+            ),
             fixtureDevice(
                 objectID: 40,
                 uid: "StudioAggregate",
@@ -492,11 +537,12 @@ private extension AudioRoutePlannerTests {
     func fixtureFormat(
         sampleRate: Double = 48_000,
         isFloat32: Bool = true,
+        channelCount: Int = 2,
         interleaving: AudioPCMInterleaving = .interleaved
     ) -> ProcessTapAudioFormat {
         ProcessTapAudioFormat(
             sampleRate: sampleRate,
-            channelCount: 2,
+            channelCount: channelCount,
             formatID: kAudioFormatLinearPCM,
             formatFlags: isFloat32
                 ? kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked

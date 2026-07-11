@@ -77,6 +77,276 @@ final class AudioHALClientTests: XCTestCase {
         XCTAssertEqual(after, before)
     }
 
+    func testAggregateCreateCoversSuccessAndStatusFailureMetadata() throws {
+        let description = ["uid": "com.how.macactivity.test"] as CFDictionary
+
+        let successBackend = FakeAudioHALBackend()
+        successBackend.nextAggregateDeviceID = 701
+        XCTAssertEqual(
+            try AudioHALClient(backend: successBackend).createAggregateDevice(description),
+            701
+        )
+        XCTAssertEqual(
+            successBackend.mutableOperations,
+            [AudioHALOperation.createAggregate]
+        )
+
+        let failureBackend = FakeAudioHALBackend()
+        failureBackend.createAggregateDeviceStatus = -701
+        assertHALFailure(
+            operation: .createAggregate,
+            objectID: kAudioObjectUnknown,
+            status: -701
+        ) {
+            _ = try AudioHALClient(backend: failureBackend).createAggregateDevice(description)
+        }
+        XCTAssertEqual(
+            failureBackend.mutableOperations,
+            [AudioHALOperation.createAggregate]
+        )
+    }
+
+    @available(macOS 14.2, *)
+    func testProcessTapCreateChecksAvailabilityBeforeTouchingBackend() {
+        let backend = FakeAudioHALBackend()
+        let description = CATapDescription(stereoMixdownOfProcesses: [])
+        let client = AudioHALClient(backend: backend, processTapsAvailable: false)
+
+        XCTAssertThrowsError(try client.createProcessTap(description)) { error in
+            XCTAssertEqual(
+                error as? AudioHALError,
+                AudioHALError(
+                    operation: .createTap,
+                    objectID: kAudioObjectUnknown,
+                    address: nil,
+                    reason: .processTapsUnavailable
+                )
+            )
+        }
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
+    func testProcessTapCreateCoversSuccessAndStatusFailure() throws {
+        let description = CATapDescription(stereoMixdownOfProcesses: [])
+
+        let successBackend = FakeAudioHALBackend()
+        successBackend.nextProcessTapID = 702
+        XCTAssertEqual(
+            try AudioHALClient(backend: successBackend).createProcessTap(description),
+            702
+        )
+        XCTAssertEqual(successBackend.mutableOperations, [AudioHALOperation.createTap])
+
+        let failureBackend = FakeAudioHALBackend()
+        failureBackend.createProcessTapStatus = -702
+        assertHALFailure(
+            operation: .createTap,
+            objectID: kAudioObjectUnknown,
+            status: -702
+        ) {
+            _ = try AudioHALClient(backend: failureBackend).createProcessTap(description)
+        }
+        XCTAssertEqual(failureBackend.mutableOperations, [AudioHALOperation.createTap])
+    }
+
+    @available(macOS 14.2, *)
+    func testDestroyTapAndAggregatePreserveExactOperationObjectAndStatus() {
+        let cases: [(
+            operation: AudioHALOperation,
+            objectID: AudioObjectID,
+            status: OSStatus,
+            configure: (FakeAudioHALBackend) -> Void,
+            invoke: (AudioHALClient, AudioObjectID) throws -> Void
+        )] = [
+            (
+                .destroyTap,
+                703,
+                -703,
+                { $0.destroyProcessTapStatus = -703 },
+                { try $0.destroyProcessTap($1) }
+            ),
+            (
+                .destroyAggregate,
+                704,
+                -704,
+                { $0.destroyAggregateDeviceStatus = -704 },
+                { try $0.destroyAggregateDevice($1) }
+            ),
+        ]
+
+        for testCase in cases {
+            let backend = FakeAudioHALBackend()
+            testCase.configure(backend)
+            assertHALFailure(
+                operation: testCase.operation,
+                objectID: testCase.objectID,
+                status: testCase.status
+            ) {
+                try testCase.invoke(AudioHALClient(backend: backend), testCase.objectID)
+            }
+            XCTAssertEqual(backend.mutableOperations, [testCase.operation])
+        }
+    }
+
+    func testIOProcCreateCoversSuccessMissingValueAndStatusFailure() throws {
+        let deviceID: AudioDeviceID = 705
+        let expectedIOProcID: AudioDeviceIOProcID = testAudioDeviceIOProc
+        let clientData: UnsafeMutableRawPointer? = nil
+
+        let successBackend = FakeAudioHALBackend()
+        successBackend.nextIOProcID = expectedIOProcID
+        let createdIOProcID = try AudioHALClient(backend: successBackend).createIOProc(
+            deviceID: deviceID,
+            callback: testAudioDeviceIOProc,
+            clientData: clientData
+        )
+        XCTAssertEqual(
+            ioProcIdentity(createdIOProcID),
+            ioProcIdentity(expectedIOProcID)
+        )
+
+        let missingBackend = FakeAudioHALBackend()
+        let missingIOProcID: AudioDeviceIOProcID? = nil
+        missingBackend.nextIOProcID = missingIOProcID
+        assertHALError(
+            AudioHALError(
+                operation: .createIOProc,
+                objectID: deviceID,
+                address: nil,
+                reason: .missingValue
+            )
+        ) {
+            _ = try AudioHALClient(backend: missingBackend).createIOProc(
+                deviceID: deviceID,
+                callback: testAudioDeviceIOProc,
+                clientData: clientData
+            )
+        }
+
+        let failureBackend = FakeAudioHALBackend()
+        failureBackend.createIOProcStatus = -705
+        assertHALFailure(operation: .createIOProc, objectID: deviceID, status: -705) {
+            _ = try AudioHALClient(backend: failureBackend).createIOProc(
+                deviceID: deviceID,
+                callback: testAudioDeviceIOProc,
+                clientData: clientData
+            )
+        }
+    }
+
+    func testIOProcLifecycleRecordsDestroyStartStopOrdering() throws {
+        let backend = FakeAudioHALBackend()
+        let deviceID: AudioDeviceID = 706
+        let ioProcID: AudioDeviceIOProcID = testAudioDeviceIOProc
+        let clientData: UnsafeMutableRawPointer? = nil
+        backend.nextIOProcID = ioProcID
+        let client = AudioHALClient(backend: backend)
+
+        let createdID = try client.createIOProc(
+            deviceID: deviceID,
+            callback: testAudioDeviceIOProc,
+            clientData: clientData
+        )
+        try client.startDevice(deviceID: deviceID, ioProcID: createdID)
+        try client.stopDevice(deviceID: deviceID, ioProcID: createdID)
+        try client.destroyIOProc(deviceID: deviceID, ioProcID: createdID)
+
+        XCTAssertEqual(
+            backend.mutableOperations,
+            [
+                AudioHALOperation.createIOProc,
+                .startDevice,
+                .stopDevice,
+                .destroyIOProc,
+            ]
+        )
+    }
+
+    func testRetainedCFObjectIsConsumedOnceAndMalformedSizeIsCleanedUp() throws {
+        let address = AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
+
+        let successBackend = FakeAudioHALBackend()
+        let successValue = CFStringCreateMutable(kCFAllocatorDefault, 0)!
+        CFStringAppend(successValue, "Success" as CFString)
+        let successRetainCount = CFGetRetainCount(successValue)
+        successBackend.enqueueRetainedObject(successValue)
+        try autoreleasepool {
+            let returned = try AudioHALClient(backend: successBackend).readRetainedObject(
+                CFString.self,
+                from: 707,
+                address: address
+            )
+            XCTAssertTrue(CFEqual(returned, successValue))
+        }
+        let observedSuccessRetainCount = CFGetRetainCount(successValue)
+        XCTAssertEqual(observedSuccessRetainCount, successRetainCount)
+
+        let malformedBackend = FakeAudioHALBackend()
+        let malformedValue = CFStringCreateMutable(kCFAllocatorDefault, 0)!
+        let malformedRetainCount = CFGetRetainCount(malformedValue)
+        malformedBackend.enqueueRetainedObject(malformedValue, returnedByteCount: 1)
+        assertHALError(
+            AudioHALError(
+                operation: .getData,
+                objectID: 708,
+                address: address,
+                reason: .invalidDataSize(
+                    byteCount: 1,
+                    elementStride: MemoryLayout<Unmanaged<CFString>?>.stride
+                )
+            )
+        ) {
+            _ = try AudioHALClient(backend: malformedBackend).readRetainedObject(
+                CFString.self,
+                from: 708,
+                address: address
+            )
+        }
+        let observedMalformedRetainCount = CFGetRetainCount(malformedValue)
+        XCTAssertEqual(observedMalformedRetainCount, malformedRetainCount)
+    }
+
+    func testCFObjectWritePassesUnretainedReferenceAndPreservesAddressAndStatus() throws {
+        let address = AudioHALPropertyAddress(
+            selector: kAudioObjectPropertyName,
+            scope: kAudioObjectPropertyScopeInput,
+            element: 3
+        )
+        let value = CFStringCreateMutable(kCFAllocatorDefault, 0)!
+        let pointer = Unmanaged.passUnretained(value).toOpaque()
+
+        let successBackend = FakeAudioHALBackend()
+        let retainCount = CFGetRetainCount(value)
+        try AudioHALClient(backend: successBackend).writeObject(
+            value,
+            to: 709,
+            address: address
+        )
+        let observedRetainCount = CFGetRetainCount(value)
+        XCTAssertEqual(observedRetainCount, retainCount)
+        XCTAssertEqual(successBackend.objectWrites.count, 1)
+        XCTAssertEqual(successBackend.objectWrites[0].objectID, 709)
+        XCTAssertEqual(successBackend.objectWrites[0].address, address)
+        XCTAssertEqual(successBackend.objectWrites[0].objectPointer, pointer)
+
+        let failureBackend = FakeAudioHALBackend()
+        failureBackend.objectWriteStatus = -709
+        assertHALFailure(
+            operation: .setData,
+            objectID: 710,
+            address: address,
+            status: -709
+        ) {
+            try AudioHALClient(backend: failureBackend).writeObject(
+                value,
+                to: 710,
+                address: address
+            )
+        }
+        XCTAssertEqual(failureBackend.objectWrites.first?.address, address)
+    }
+
     func testListenerCancellationUsesExactRegistrationAndIsIdempotent() throws {
         let backend = FakeAudioHALBackend()
         let client = AudioHALClient(backend: backend)
@@ -148,4 +418,45 @@ final class AudioHALClientTests: XCTestCase {
 
         XCTAssertTrue(backend.removedListeners.isEmpty)
     }
+
+    private func assertHALFailure(
+        operation: AudioHALOperation,
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress? = nil,
+        status: OSStatus,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ body: () throws -> Void
+    ) {
+        assertHALError(
+            AudioHALError(
+                operation: operation,
+                objectID: objectID,
+                address: address,
+                reason: .status(status)
+            ),
+            file: file,
+            line: line,
+            body
+        )
+    }
+
+    private func assertHALError(
+        _ expected: AudioHALError,
+        file: StaticString = #filePath,
+        line: UInt = #line,
+        _ body: () throws -> Void
+    ) {
+        XCTAssertThrowsError(try body(), file: file, line: line) { error in
+            XCTAssertEqual(error as? AudioHALError, expected, file: file, line: line)
+        }
+    }
+}
+
+private let testAudioDeviceIOProc: AudioDeviceIOProc = { _, _, _, _, _, _, _ in
+    noErr
+}
+
+private func ioProcIdentity(_ ioProcID: AudioDeviceIOProcID) -> UInt {
+    unsafeBitCast(ioProcID, to: UInt.self)
 }

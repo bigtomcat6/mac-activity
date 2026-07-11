@@ -40,6 +40,36 @@ protocol AudioHALBackend: AnyObject, Sendable {
         queue: DispatchQueue,
         registration: AudioHALListenerRegistration
     ) -> OSStatus
+    @available(macOS 14.2, *)
+    func createProcessTap(
+        _ description: CATapDescription,
+        objectID: inout AudioObjectID
+    ) -> OSStatus
+    @available(macOS 14.2, *)
+    func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus
+    func createAggregateDevice(
+        _ description: CFDictionary,
+        objectID: inout AudioObjectID
+    ) -> OSStatus
+    func destroyAggregateDevice(_ objectID: AudioObjectID) -> OSStatus
+    func createIOProc(
+        deviceID: AudioDeviceID,
+        callback: AudioDeviceIOProc,
+        clientData: UnsafeMutableRawPointer?,
+        ioProcID: inout AudioDeviceIOProcID?
+    ) -> OSStatus
+    func destroyIOProc(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus
+    func startDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus
+    func stopDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus
 }
 
 final class AudioHALListenerRegistration: @unchecked Sendable {
@@ -142,15 +172,79 @@ final class CoreAudioHALBackend: AudioHALBackend, @unchecked Sendable {
             registration.block
         )
     }
+
+    @available(macOS 14.2, *)
+    func createProcessTap(
+        _ description: CATapDescription,
+        objectID: inout AudioObjectID
+    ) -> OSStatus {
+        AudioHardwareCreateProcessTap(description, &objectID)
+    }
+
+    @available(macOS 14.2, *)
+    func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
+        AudioHardwareDestroyProcessTap(objectID)
+    }
+
+    func createAggregateDevice(
+        _ description: CFDictionary,
+        objectID: inout AudioObjectID
+    ) -> OSStatus {
+        AudioHardwareCreateAggregateDevice(description, &objectID)
+    }
+
+    func destroyAggregateDevice(_ objectID: AudioObjectID) -> OSStatus {
+        AudioHardwareDestroyAggregateDevice(objectID)
+    }
+
+    func createIOProc(
+        deviceID: AudioDeviceID,
+        callback: AudioDeviceIOProc,
+        clientData: UnsafeMutableRawPointer?,
+        ioProcID: inout AudioDeviceIOProcID?
+    ) -> OSStatus {
+        AudioDeviceCreateIOProcID(deviceID, callback, clientData, &ioProcID)
+    }
+
+    func destroyIOProc(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        AudioDeviceDestroyIOProcID(deviceID, ioProcID)
+    }
+
+    func startDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        AudioDeviceStart(deviceID, ioProcID)
+    }
+
+    func stopDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        AudioDeviceStop(deviceID, ioProcID)
+    }
 }
 
 public final class AudioHALClient: @unchecked Sendable {
     public static let system = AudioHALClient()
 
     private let backend: any AudioHALBackend
+    private let processTapsAvailable: Bool
 
-    init(backend: any AudioHALBackend = CoreAudioHALBackend()) {
+    init(
+        backend: any AudioHALBackend = CoreAudioHALBackend(),
+        processTapsAvailable: Bool? = nil
+    ) {
         self.backend = backend
+        self.processTapsAvailable = processTapsAvailable ?? {
+            if #available(macOS 14.2, *) {
+                return true
+            }
+            return false
+        }()
     }
 
     public func hasProperty(
@@ -264,6 +358,46 @@ public final class AudioHALClient: @unchecked Sendable {
         return string
     }
 
+    public func readRetainedObject<T: AnyObject>(
+        _ type: T.Type,
+        from objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) throws -> T {
+        var value: Unmanaged<T>? = .none
+        var returnedByteCount = UInt32(MemoryLayout<Unmanaged<T>?>.size)
+        let status = withUnsafeMutablePointer(to: &value) { pointer in
+            backend.getPropertyData(
+                objectID: objectID,
+                address: address,
+                byteCount: &returnedByteCount,
+                data: pointer
+            )
+        }
+        let retainedValue = value?.takeRetainedValue()
+
+        try check(status, operation: .getData, objectID: objectID, address: address)
+        guard returnedByteCount == MemoryLayout<Unmanaged<T>?>.size else {
+            throw AudioHALError(
+                operation: .getData,
+                objectID: objectID,
+                address: address,
+                reason: .invalidDataSize(
+                    byteCount: returnedByteCount,
+                    elementStride: MemoryLayout<Unmanaged<T>?>.stride
+                )
+            )
+        }
+        guard let retainedValue else {
+            throw AudioHALError(
+                operation: .getData,
+                objectID: objectID,
+                address: address,
+                reason: .missingValue
+            )
+        }
+        return retainedValue
+    }
+
     public func readArray<T>(
         _ type: T.Type,
         from objectID: AudioObjectID,
@@ -364,6 +498,185 @@ public final class AudioHALClient: @unchecked Sendable {
             )
         }
         try check(status, operation: .setData, objectID: objectID, address: address)
+    }
+
+    public func writeObject<T: AnyObject>(
+        _ value: T,
+        to objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) throws {
+        var reference = Unmanaged.passUnretained(value)
+        let status = withUnsafePointer(to: &reference) { pointer in
+            backend.setPropertyData(
+                objectID: objectID,
+                address: address,
+                byteCount: UInt32(MemoryLayout<Unmanaged<T>>.size),
+                data: pointer
+            )
+        }
+        withExtendedLifetime(value) {}
+        try check(status, operation: .setData, objectID: objectID, address: address)
+    }
+
+    public func createProcessTap(_ description: CATapDescription) throws -> AudioObjectID {
+        guard processTapsAvailable else {
+            throw AudioHALError(
+                operation: .createTap,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+        guard #available(macOS 14.2, *) else {
+            throw AudioHALError(
+                operation: .createTap,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+
+        var objectID = kAudioObjectUnknown
+        let status = withExtendedLifetime(description) {
+            backend.createProcessTap(description, objectID: &objectID)
+        }
+        try check(
+            status,
+            operation: .createTap,
+            objectID: kAudioObjectUnknown,
+            address: nil
+        )
+        guard objectID != kAudioObjectUnknown else {
+            throw AudioHALError(
+                operation: .createTap,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .missingValue
+            )
+        }
+        return objectID
+    }
+
+    public func destroyProcessTap(_ objectID: AudioObjectID) throws {
+        guard processTapsAvailable else {
+            throw AudioHALError(
+                operation: .destroyTap,
+                objectID: objectID,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+        guard #available(macOS 14.2, *) else {
+            throw AudioHALError(
+                operation: .destroyTap,
+                objectID: objectID,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+
+        try check(
+            backend.destroyProcessTap(objectID),
+            operation: .destroyTap,
+            objectID: objectID,
+            address: nil
+        )
+    }
+
+    public func createAggregateDevice(_ description: CFDictionary) throws -> AudioDeviceID {
+        var objectID = kAudioObjectUnknown
+        let status = withExtendedLifetime(description) {
+            backend.createAggregateDevice(description, objectID: &objectID)
+        }
+        try check(
+            status,
+            operation: .createAggregate,
+            objectID: kAudioObjectUnknown,
+            address: nil
+        )
+        guard objectID != kAudioObjectUnknown else {
+            throw AudioHALError(
+                operation: .createAggregate,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .missingValue
+            )
+        }
+        return objectID
+    }
+
+    public func destroyAggregateDevice(_ objectID: AudioDeviceID) throws {
+        try check(
+            backend.destroyAggregateDevice(objectID),
+            operation: .destroyAggregate,
+            objectID: objectID,
+            address: nil
+        )
+    }
+
+    public func createIOProc(
+        deviceID: AudioDeviceID,
+        callback: AudioDeviceIOProc,
+        clientData: UnsafeMutableRawPointer?
+    ) throws -> AudioDeviceIOProcID {
+        var ioProcID: AudioDeviceIOProcID?
+        let status = backend.createIOProc(
+            deviceID: deviceID,
+            callback: callback,
+            clientData: clientData,
+            ioProcID: &ioProcID
+        )
+        try check(
+            status,
+            operation: .createIOProc,
+            objectID: deviceID,
+            address: nil
+        )
+        guard let ioProcID else {
+            throw AudioHALError(
+                operation: .createIOProc,
+                objectID: deviceID,
+                address: nil,
+                reason: .missingValue
+            )
+        }
+        return ioProcID
+    }
+
+    public func destroyIOProc(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) throws {
+        try check(
+            backend.destroyIOProc(deviceID: deviceID, ioProcID: ioProcID),
+            operation: .destroyIOProc,
+            objectID: deviceID,
+            address: nil
+        )
+    }
+
+    public func startDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) throws {
+        try check(
+            backend.startDevice(deviceID: deviceID, ioProcID: ioProcID),
+            operation: .startDevice,
+            objectID: deviceID,
+            address: nil
+        )
+    }
+
+    public func stopDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) throws {
+        try check(
+            backend.stopDevice(deviceID: deviceID, ioProcID: ioProcID),
+            operation: .stopDevice,
+            objectID: deviceID,
+            address: nil
+        )
     }
 
     public func addPropertyListener(

@@ -1,9 +1,16 @@
 import CoreAudio
 import CoreFoundation
 import Dispatch
+import Foundation
 @testable import MacActivityCore
 
 final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
+    struct ObjectWrite {
+        let objectID: AudioObjectID
+        let address: AudioHALPropertyAddress
+        let objectPointer: UnsafeMutableRawPointer?
+    }
+
     struct ListenerCall {
         let objectID: AudioObjectID
         let address: AudioHALPropertyAddress
@@ -29,6 +36,12 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
             self.queue = queue
             self.registration = registration
         }
+    }
+
+    struct IOProcCreation {
+        let deviceID: AudioDeviceID
+        let callback: AudioDeviceIOProc
+        let clientData: UnsafeMutableRawPointer?
     }
 
     private struct PropertyKey: Hashable {
@@ -63,7 +76,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     private enum ReadPayload {
         case bytes([UInt8])
-        case retainedString(Unmanaged<CFString>)
+        case retainedObject(Unmanaged<AnyObject>)
         case none
     }
 
@@ -78,6 +91,30 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     private var queuedReads: [ReadResult] = []
     private var queuedAddListenerStatuses: [OSStatus] = []
     private var activeListenerCalls: [ObjectIdentifier: ListenerCall] = [:]
+    private let mutableStateLock = NSLock()
+    private var mutableState = MutableState()
+
+    private struct MutableState {
+        var operations: [AudioHALOperation] = []
+        var objectWrites: [ObjectWrite] = []
+        var createdProcessTapDescriptions: [CATapDescription] = []
+        var createdAggregateDeviceDescriptions: [CFDictionary] = []
+        var ioProcCreations: [IOProcCreation] = []
+        var destroyedProcessTapIDs: [AudioObjectID] = []
+        var destroyedAggregateDeviceIDs: [AudioDeviceID] = []
+        var objectWriteStatus: OSStatus = noErr
+        var createProcessTapStatus: OSStatus = noErr
+        var destroyProcessTapStatus: OSStatus = noErr
+        var createAggregateDeviceStatus: OSStatus = noErr
+        var destroyAggregateDeviceStatus: OSStatus = noErr
+        var createIOProcStatus: OSStatus = noErr
+        var destroyIOProcStatus: OSStatus = noErr
+        var startDeviceStatus: OSStatus = noErr
+        var stopDeviceStatus: OSStatus = noErr
+        var nextProcessTapID: AudioObjectID = kAudioObjectUnknown
+        var nextAggregateDeviceID: AudioDeviceID = kAudioObjectUnknown
+        var nextIOProcID: AudioDeviceIOProcID?
+    }
 
     private(set) var dataSizeCallCount = 0
     private(set) var readSelectors: [AudioObjectPropertySelector] = []
@@ -87,6 +124,94 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     var addListenerStatus: OSStatus = noErr
     var removeListenerStatus: OSStatus = noErr
+
+    var mutableOperations: [AudioHALOperation] {
+        withMutableState { $0.operations }
+    }
+
+    var objectWrites: [ObjectWrite] {
+        withMutableState { $0.objectWrites }
+    }
+
+    var createdProcessTapDescriptions: [CATapDescription] {
+        withMutableState { $0.createdProcessTapDescriptions }
+    }
+
+    var createdAggregateDeviceDescriptions: [CFDictionary] {
+        withMutableState { $0.createdAggregateDeviceDescriptions }
+    }
+
+    var ioProcCreations: [IOProcCreation] {
+        withMutableState { $0.ioProcCreations }
+    }
+
+    var destroyedProcessTapIDs: [AudioObjectID] {
+        withMutableState { $0.destroyedProcessTapIDs }
+    }
+
+    var destroyedAggregateDeviceIDs: [AudioDeviceID] {
+        withMutableState { $0.destroyedAggregateDeviceIDs }
+    }
+
+    var objectWriteStatus: OSStatus {
+        get { withMutableState { $0.objectWriteStatus } }
+        set { withMutableState { $0.objectWriteStatus = newValue } }
+    }
+
+    var createProcessTapStatus: OSStatus {
+        get { withMutableState { $0.createProcessTapStatus } }
+        set { withMutableState { $0.createProcessTapStatus = newValue } }
+    }
+
+    var destroyProcessTapStatus: OSStatus {
+        get { withMutableState { $0.destroyProcessTapStatus } }
+        set { withMutableState { $0.destroyProcessTapStatus = newValue } }
+    }
+
+    var createAggregateDeviceStatus: OSStatus {
+        get { withMutableState { $0.createAggregateDeviceStatus } }
+        set { withMutableState { $0.createAggregateDeviceStatus = newValue } }
+    }
+
+    var destroyAggregateDeviceStatus: OSStatus {
+        get { withMutableState { $0.destroyAggregateDeviceStatus } }
+        set { withMutableState { $0.destroyAggregateDeviceStatus = newValue } }
+    }
+
+    var createIOProcStatus: OSStatus {
+        get { withMutableState { $0.createIOProcStatus } }
+        set { withMutableState { $0.createIOProcStatus = newValue } }
+    }
+
+    var destroyIOProcStatus: OSStatus {
+        get { withMutableState { $0.destroyIOProcStatus } }
+        set { withMutableState { $0.destroyIOProcStatus = newValue } }
+    }
+
+    var startDeviceStatus: OSStatus {
+        get { withMutableState { $0.startDeviceStatus } }
+        set { withMutableState { $0.startDeviceStatus = newValue } }
+    }
+
+    var stopDeviceStatus: OSStatus {
+        get { withMutableState { $0.stopDeviceStatus } }
+        set { withMutableState { $0.stopDeviceStatus = newValue } }
+    }
+
+    var nextProcessTapID: AudioObjectID {
+        get { withMutableState { $0.nextProcessTapID } }
+        set { withMutableState { $0.nextProcessTapID = newValue } }
+    }
+
+    var nextAggregateDeviceID: AudioDeviceID {
+        get { withMutableState { $0.nextAggregateDeviceID } }
+        set { withMutableState { $0.nextAggregateDeviceID = newValue } }
+    }
+
+    var nextIOProcID: AudioDeviceIOProcID? {
+        get { withMutableState { $0.nextIOProcID } }
+        set { withMutableState { $0.nextIOProcID = newValue } }
+    }
 
     var activeListeners: [ListenerCall] {
         Array(activeListenerCalls.values)
@@ -139,7 +264,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     deinit {
         for result in queuedReads {
-            if case .retainedString(let value) = result.payload {
+            if case .retainedObject(let value) = result.payload {
                 value.release()
             }
         }
@@ -185,12 +310,21 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     }
 
     func enqueueRetainedString(_ value: CFString) {
+        enqueueRetainedObject(value)
+    }
+
+    func enqueueRetainedObject<T: AnyObject>(
+        _ value: T,
+        returnedByteCount: UInt32 = UInt32(MemoryLayout<Unmanaged<T>?>.size)
+    ) {
         let retained = Unmanaged.passRetained(value)
         queuedReads.append(
             ReadResult(
                 status: noErr,
-                returnedByteCount: UInt32(MemoryLayout<Unmanaged<CFString>?>.size),
-                payload: .retainedString(retained)
+                returnedByteCount: returnedByteCount,
+                payload: .retainedObject(
+                    Unmanaged<AnyObject>.fromOpaque(retained.toOpaque())
+                )
             )
         )
     }
@@ -308,7 +442,9 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         case .retainedString(let string):
             let value = Unmanaged.passRetained(string as CFString)
             copy(
-                .retainedString(value),
+                .retainedObject(
+                    Unmanaged<AnyObject>.fromOpaque(value.toOpaque())
+                ),
                 to: data,
                 availableByteCount: availableByteCount,
                 returnedByteCount: property.payload.byteCount
@@ -325,6 +461,22 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     ) -> OSStatus {
         writeSelectors.append(address.selector)
         let key = PropertyKey(objectID: objectID, address: address)
+        if byteCount == MemoryLayout<Unmanaged<AnyObject>?>.size {
+            let objectPointer = data.load(as: UnsafeMutableRawPointer?.self)
+            let status = withMutableState { state in
+                state.objectWrites.append(
+                    ObjectWrite(
+                        objectID: objectID,
+                        address: address,
+                        objectPointer: objectPointer
+                    )
+                )
+                return state.objectWriteStatus
+            }
+            if status != noErr || properties[key] == nil {
+                return status
+            }
+        }
         guard var property = properties[key] else {
             return kAudioHardwareUnknownPropertyError
         }
@@ -388,6 +540,115 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         return removeListenerStatus
     }
 
+    @available(macOS 14.2, *)
+    func createProcessTap(
+        _ description: CATapDescription,
+        objectID: inout AudioObjectID
+    ) -> OSStatus {
+        let result = withMutableState { state -> (OSStatus, AudioObjectID) in
+            state.operations.append(.createTap)
+            state.createdProcessTapDescriptions.append(description)
+            return (state.createProcessTapStatus, state.nextProcessTapID)
+        }
+        if result.0 == noErr {
+            objectID = result.1
+        }
+        return result.0
+    }
+
+    @available(macOS 14.2, *)
+    func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
+        withMutableState { state in
+            state.operations.append(.destroyTap)
+            state.destroyedProcessTapIDs.append(objectID)
+            return state.destroyProcessTapStatus
+        }
+    }
+
+    func createAggregateDevice(
+        _ description: CFDictionary,
+        objectID: inout AudioObjectID
+    ) -> OSStatus {
+        let result = withMutableState { state -> (OSStatus, AudioDeviceID) in
+            state.operations.append(.createAggregate)
+            state.createdAggregateDeviceDescriptions.append(description)
+            return (state.createAggregateDeviceStatus, state.nextAggregateDeviceID)
+        }
+        if result.0 == noErr {
+            objectID = result.1
+        }
+        return result.0
+    }
+
+    func destroyAggregateDevice(_ objectID: AudioObjectID) -> OSStatus {
+        withMutableState { state in
+            state.operations.append(.destroyAggregate)
+            state.destroyedAggregateDeviceIDs.append(objectID)
+            return state.destroyAggregateDeviceStatus
+        }
+    }
+
+    func createIOProc(
+        deviceID: AudioDeviceID,
+        callback: AudioDeviceIOProc,
+        clientData: UnsafeMutableRawPointer?,
+        ioProcID: inout AudioDeviceIOProcID?
+    ) -> OSStatus {
+        let result = withMutableState { state -> (OSStatus, AudioDeviceIOProcID?) in
+            state.operations.append(.createIOProc)
+            state.ioProcCreations.append(
+                IOProcCreation(
+                    deviceID: deviceID,
+                    callback: callback,
+                    clientData: clientData
+                )
+            )
+            return (state.createIOProcStatus, state.nextIOProcID)
+        }
+        if result.0 == noErr {
+            ioProcID = result.1
+        }
+        return result.0
+    }
+
+    func destroyIOProc(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        withMutableState { state in
+            state.operations.append(.destroyIOProc)
+            return state.destroyIOProcStatus
+        }
+    }
+
+    func startDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        withMutableState { state in
+            state.operations.append(.startDevice)
+            return state.startDeviceStatus
+        }
+    }
+
+    func stopDevice(
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID
+    ) -> OSStatus {
+        withMutableState { state in
+            state.operations.append(.stopDevice)
+            return state.stopDeviceStatus
+        }
+    }
+
+    private func withMutableState<Result>(
+        _ body: (inout MutableState) -> Result
+    ) -> Result {
+        mutableStateLock.lock()
+        defer { mutableStateLock.unlock() }
+        return body(&mutableState)
+    }
+
     private func bytes<T>(of value: T) -> [UInt8] {
         withUnsafeBytes(of: value) { Array($0) }
     }
@@ -409,12 +670,15 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
             bytes.withUnsafeBytes { source in
                 data.copyMemory(from: source.baseAddress!, byteCount: count)
             }
-        case .retainedString(let value):
+        case .retainedObject(let value):
             guard availableByteCount >= MemoryLayout<Unmanaged<CFString>?>.size else {
                 value.release()
                 return
             }
-            data.assumingMemoryBound(to: Unmanaged<CFString>?.self).pointee = value
+            var pointer: UnsafeMutableRawPointer? = value.toOpaque()
+            withUnsafeBytes(of: &pointer) { source in
+                data.copyMemory(from: source.baseAddress!, byteCount: source.count)
+            }
         case .none:
             break
         }

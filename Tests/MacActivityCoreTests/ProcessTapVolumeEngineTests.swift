@@ -284,6 +284,52 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertFalse(fixture.hardware.calls.contains(.createIOProc))
     }
 
+    func testHardwareValidationErrorMapsToUnsupportedFormatBeforeIOProc() async {
+        let fixture = EngineFixture()
+        fixture.hardware.aggregateLayoutValidationError = .actualOutputFormatsMismatch
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.error, .unsupportedFormat)
+        XCTAssertFalse(fixture.hardware.calls.contains(.createIOProc))
+    }
+
+    @available(macOS 14.2, *)
+    func testProcessTapsUnavailableHALErrorMapsTruthfullyBeforeMutableHAL() async {
+        let backend = FakeAudioHALBackend()
+        let hardware = CoreAudioTapHardware(
+            hal: AudioHALClient(
+                backend: backend,
+                processTapsAvailable: false
+            )
+        )
+        let fixture = EngineFixture()
+        let engine = ProcessTapVolumeEngine(
+            hardware: hardware,
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: OperatingSystemVersion(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                )
+            ),
+            queue: DispatchQueue(
+                label: "ProcessTapVolumeEngineTests.process-taps-unavailable"
+            )
+        )
+
+        let snapshot = await engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.error, .processTapsUnavailable)
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
     func testLifecycleHardwareCallsNeverRunOnMainThread() async {
         let fixture = EngineFixture()
         let snapshot = await fixture.engine.apply(
@@ -563,6 +609,399 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
     }
 
+    @available(macOS 14.2, *)
+    func testCleanupDestroysOnlyExactOwnedClassesInDeterministicOrder() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [
+            ownedTap(id: 30),
+            ownedAggregate(id: 20),
+            AudioOwnedObject(
+                id: 5,
+                classID: kAudioDeviceClassID,
+                uid: AudioRoutePlanner.aggregateUIDPrefix + "foreign-class",
+                name: "MacActivity"
+            ),
+            AudioOwnedObject(
+                id: 6,
+                classID: kAudioTapClassID,
+                uid: "11111111-0000-4000-8000-000000000006",
+                name: "MacActivity"
+            ),
+            ownedAggregate(id: 10),
+            ownedTap(id: 25),
+        ]
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 10)),
+            .destroyOwnedObject(object: ownedAggregate(id: 20)),
+            .destroyOwnedObject(object: ownedTap(id: 25)),
+            .destroyOwnedObject(object: ownedTap(id: 30)),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testFailedStartupDeleteRetriesAndSuccessfulRetrySuppressesAsyncEnumeration() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 40)]
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(40)
+        )
+
+        let firstFailures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(firstFailures, [
+            AudioTeardownFailure(
+                processObjectID: nil,
+                operation: .destroyAggregate,
+                objectID: 40,
+                status: kAudioHardwareUnspecifiedError
+            ),
+        ])
+        fixture.hardware.clearCalls()
+
+        let retryFailures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(retryFailures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 40)),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testSuccessfulStartupDeleteIsNotRepeatedWhileHALStillEnumeratesObject() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedTap(id: 50)]
+
+        _ = await fixture.engine.cleanupOrphans()
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+    }
+
+    @available(macOS 14.2, *)
+    func testDisappearedStartupObjectPrunesSuccessSuppressionForReusedIdentity() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 60)]
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.ownedObjectValues = []
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 60)]
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 60)),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testReenumeratedOwnedIdentityAtNewObjectIDReplacesStaleRetry() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 70)]
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(70)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 71)]
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 71)),
+        ])
+
+        fixture.hardware.clearCalls()
+        _ = await fixture.engine.cleanupOrphans()
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+    }
+
+    @available(macOS 14.2, *)
+    func testSuccessfulOldObjectRetryDoesNotSuppressNewObjectIDWithSameIdentity() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 80)]
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(80)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 81)]
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 81)),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testSameObjectIDWithDifferentOwnedUIDNeverRunsStaleRetry() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 90)]
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(90)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+
+        let replacement = AudioOwnedObject(
+            id: 90,
+            classID: kAudioAggregateDeviceClassID,
+            uid: AudioRoutePlanner.aggregateUIDPrefix + "replacement",
+            name: "Replacement aggregate"
+        )
+        fixture.hardware.ownedObjectValues = [replacement]
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: replacement),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testOwnedRetryAndFreshDiscoveryStillDestroyAggregatesBeforeTaps() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedTap(id: 100)]
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(100)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.ownedObjectValues = [
+            ownedTap(id: 100),
+            ownedAggregate(id: 50),
+        ]
+        fixture.hardware.clearCalls()
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedAggregate(id: 50)),
+            .destroyOwnedObject(object: ownedTap(id: 100)),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testFreshScanDoesNotDuplicateNormalAggregateDestroyRetry() async {
+        let fixture = EngineFixture()
+        let plan = fixture.plan(generation: 1)
+        _ = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyAggregate
+        )
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(2_000)
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        fixture.hardware.ownedObjectValues = [
+            AudioOwnedObject(
+                id: 2_000,
+                classID: kAudioAggregateDeviceClassID,
+                uid: plan.aggregateUID,
+                name: "Pending aggregate"
+            ),
+        ]
+        fixture.hardware.clearCalls()
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(fixture.hardware.calls, [
+            .destroyAggregate,
+            .ownedObjects,
+        ])
+        XCTAssertEqual(failures, [
+            AudioTeardownFailure(
+                processObjectID: 77,
+                operation: .destroyAggregate,
+                objectID: 2_000,
+                status: kAudioHardwareUnspecifiedError
+            ),
+        ])
+    }
+
+    @available(macOS 14.2, *)
+    func testSuccessfulNormalTeardownSuppressesAsynchronouslyEnumeratedObjects() async throws {
+        let fixture = EngineFixture()
+        let plan = fixture.plan(generation: 1)
+        _ = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
+        let tap = try XCTUnwrap(fixture.hardware.createdTapResources.last)
+
+        let stopped = await fixture.engine.stop(
+            processObjectID: plan.processObjectID,
+            generation: plan.generation
+        )
+        XCTAssertEqual(stopped.state, .idle)
+        fixture.hardware.ownedObjectValues = [
+            AudioOwnedObject(
+                id: 2_000,
+                classID: kAudioAggregateDeviceClassID,
+                uid: plan.aggregateUID,
+                name: "Asynchronously enumerated aggregate"
+            ),
+            AudioOwnedObject(
+                id: tap.objectID,
+                classID: kAudioTapClassID,
+                uid: tap.uuid.uuidString,
+                name: "Asynchronously enumerated tap"
+            ),
+        ]
+        fixture.hardware.clearCalls()
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+    }
+
+    @available(macOS 14.2, *)
+    func testLateCleanupNeverTreatsActiveSessionObjectIDsAsStartupOrphans() async {
+        let fixture = EngineFixture()
+        let plan = fixture.plan(generation: 1)
+        let running = await fixture.engine.apply(
+            plan: plan,
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(running.state, .running)
+        fixture.hardware.ownedObjectValues = [
+            ownedTap(id: 1_000),
+            AudioOwnedObject(
+                id: 2_000,
+                classID: kAudioAggregateDeviceClassID,
+                uid: plan.aggregateUID,
+                name: "Active aggregate"
+            ),
+            ownedTap(id: 3_000),
+        ]
+        fixture.hardware.clearCalls()
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .ownedObjects,
+            .destroyOwnedObject(object: ownedTap(id: 3_000)),
+        ])
+        await fixture.engine.stopAll()
+    }
+
+    @available(macOS 14.2, *)
+    func testCleanupRetiresStartupRetryWhoseObjectIDIsNowAnActiveSessionResource() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedAggregate(id: 2_000)]
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(2_000)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+
+        fixture.hardware.forcedAggregateObjectID = 2_000
+        let running = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(running.state, .running)
+        fixture.hardware.setPersistentStatus(nil, at: .destroyOwnedObject(2_000))
+        fixture.hardware.clearCalls()
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+        await fixture.engine.stopAll()
+    }
+
+    @available(macOS 14.2, *)
+    func testActiveDeterministicRouteReuseRetiresEveryOldTeardownPayload() async {
+        let fixture = EngineFixture()
+        fixture.hardware.forcedTapObjectID = 1_400
+        fixture.hardware.forcedAggregateObjectID = 2_400
+        let plan = fixture.plan(generation: 1)
+        _ = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
+
+        for point: FakeAudioTapHardware.FailurePoint in [
+            .stopDevice,
+            .destroyIOProc,
+            .destroyAggregate,
+            .destroyTap(0),
+        ] {
+            fixture.hardware.setPersistentStatus(
+                kAudioHardwareUnspecifiedError,
+                at: point
+            )
+        }
+        let stopped = await fixture.engine.stop(
+            processObjectID: plan.processObjectID,
+            generation: plan.generation
+        )
+        XCTAssertEqual(stopped.state, .failed)
+
+        let replacement = await fixture.engine.apply(
+            plan: plan,
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(replacement.state, .running)
+        for point: FakeAudioTapHardware.FailurePoint in [
+            .stopDevice,
+            .destroyIOProc,
+            .destroyAggregate,
+            .destroyTap(0),
+        ] {
+            fixture.hardware.setPersistentStatus(nil, at: point)
+        }
+        fixture.hardware.clearCalls()
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(failures.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+        await fixture.engine.stopAll()
+    }
+
+    func testOwnedObjectDiscoveryFailureReturnsTruthfulTypedFailure() async {
+        let fixture = EngineFixture()
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .ownedObjects
+        )
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(failures, [
+            AudioTeardownFailure(
+                processObjectID: nil,
+                operation: .getData,
+                objectID: AudioObjectID(kAudioObjectSystemObject),
+                status: kAudioHardwareUnspecifiedError
+            ),
+        ])
+        XCTAssertEqual(fixture.hardware.calls, [.ownedObjects])
+    }
+
     func testRetryLedgerAtCapacityRejectsPreparationWithoutDroppingFailure() async {
         let fixture = EngineFixture(retryLedgerLimit: 1)
         _ = await fixture.engine.apply(
@@ -684,7 +1123,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertNil(weakContext.value)
     }
 
-    func testReusedAggregateObjectIDKeepsIndependentIOProcRetriesAndContexts() async throws {
+    func testReusedAggregateObjectIDRetiresOldIOProcRetryAndKeepsLatestContext() async throws {
         let fixture = EngineFixture(retryLedgerLimit: 4)
         fixture.hardware.forcedAggregateObjectID = 2_400
 
@@ -727,7 +1166,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         _ = await fixture.engine.stop(processObjectID: 88, generation: 1)
         secondContext = nil
 
-        XCTAssertNotNil(weakFirstContext.value)
+        await waitForDeallocation { weakFirstContext.value == nil }
+        XCTAssertNil(weakFirstContext.value)
         XCTAssertNotNil(weakSecondContext.value)
 
         fixture.hardware.setPersistentStatus(
@@ -754,7 +1194,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertNil(weakSecondContext.value)
     }
 
-    func testRetryLedgerCapacityCountsReusedObjectIDAcquisitions() async throws {
+    func testRetryLedgerCapacityDoesNotCountRetiredReusedObjectIDAcquisitions() async throws {
         let fixture = EngineFixture(retryLedgerLimit: 2)
         fixture.hardware.forcedAggregateObjectID = 2_400
 
@@ -780,13 +1220,13 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             )
         }
 
-        let rejected = await fixture.engine.apply(
+        let replacement = await fixture.engine.apply(
             plan: fixture.plan(processObjectID: 99, generation: 1),
             gain: ProcessGainState()
         )
 
-        XCTAssertEqual(rejected.error, .cleanupBacklogFull)
-        XCTAssertEqual(fixture.hardware.createdIOProcKeys.count, 2)
+        XCTAssertEqual(replacement.state, .running)
+        XCTAssertEqual(fixture.hardware.createdIOProcKeys.count, 3)
 
         for ioProcKey in fixture.hardware.createdIOProcKeys {
             fixture.hardware.setPersistentStatus(
@@ -797,6 +1237,40 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         }
         await fixture.engine.stopAll()
         _ = await fixture.engine.cleanupOrphans()
+    }
+
+    func testRetryFailuresBreakOperationAndObjectTiesByOwnership() async {
+        let fixture = EngineFixture()
+        fixture.hardware.forcedTapObjectID = 1_500
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyTap(0)
+        )
+        let processObjectIDs = (200..<210).map(AudioObjectID.init)
+
+        for processObjectID in processObjectIDs {
+            _ = await fixture.engine.apply(
+                plan: fixture.plan(
+                    processObjectID: processObjectID,
+                    generation: 1
+                ),
+                gain: ProcessGainState()
+            )
+        }
+        await fixture.engine.stopAll()
+        let expectedProcessObjectIDs = zip(
+            processObjectIDs,
+            fixture.hardware.createdTapResources
+        )
+        .sorted { $0.1.uuid.uuidString < $1.1.uuid.uuidString }
+        .map { Optional($0.0) }
+
+        let failures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(failures.map(\.processObjectID), expectedProcessObjectIDs)
+        XCTAssertTrue(failures.allSatisfy {
+            $0.operation == .destroyTap && $0.objectID == 1_500
+        })
     }
 
     func testLatestStopTearsDownOlderActiveSessionWhileApplyIsQueued() async {
@@ -932,8 +1406,16 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertTrue(recorder.snapshots.contains { $0.state == .running })
     }
 
-    func testDefaultInitializerKeepsAsyncPathFailClosedUntilHardwareExists() async {
-        let engine = ProcessTapVolumeEngine()
+    func testProductionInitializerStaysUnavailableOnMacOS141WithoutTouchingSystemHardware() async {
+        let engine = ProcessTapVolumeEngine(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: OperatingSystemVersion(
+                    majorVersion: 14,
+                    minorVersion: 1,
+                    patchVersion: 0
+                )
+            )
+        )
         let plan = EngineFixture().plan(generation: 1)
 
         let snapshot = await engine.apply(
@@ -949,6 +1431,26 @@ private let callsThroughTapFormat: [FakeAudioTapHardware.Call] = [
     .createTap(sourceIndex: 0, initiallyMuted: false),
     .readTapFormat(sourceIndex: 0),
 ]
+
+@available(macOS 14.2, *)
+private func ownedAggregate(id: AudioObjectID) -> AudioOwnedObject {
+    AudioOwnedObject(
+        id: id,
+        classID: kAudioAggregateDeviceClassID,
+        uid: AudioRoutePlanner.aggregateUIDPrefix + "owned",
+        name: "Owned aggregate"
+    )
+}
+
+@available(macOS 14.2, *)
+private func ownedTap(id: AudioObjectID) -> AudioOwnedObject {
+    AudioOwnedObject(
+        id: id,
+        classID: kAudioTapClassID,
+        uid: "4D414341-0000-4000-8000-\(String(format: "%012X", id))",
+        name: "Owned tap"
+    )
+}
 
 private let callsThroughAggregate = callsThroughTapFormat + [
     FakeAudioTapHardware.Call.createAggregate(tapAutoStart: false),
@@ -1026,10 +1528,13 @@ private final class EngineFixture: @unchecked Sendable {
             subdevices: [
                 AudioRouteSubdevice(
                     uid: "output",
-                    usesDriftCompensation: false
+                    usesDriftCompensation: false,
+                    outputStreams: [
+                        AudioRouteStream(streamIndex: 0, format: format),
+                    ]
                 ),
             ],
-            clockDeviceUID: "output",
+            mainDeviceUID: "output",
             isStacked: true,
             aggregateUID: AudioRoutePlanner.aggregateUIDPrefix
                 + "\(processObjectID).\(generation)"
