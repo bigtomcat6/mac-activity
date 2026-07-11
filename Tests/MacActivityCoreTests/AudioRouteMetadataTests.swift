@@ -15,7 +15,7 @@ final class AudioRouteMetadataTests: XCTestCase {
             outputStreams: [(402, fixture.format(channels: 8))],
             clockDomain: 0,
             transportType: kAudioDeviceTransportTypeUSB,
-            plugInID: 900,
+            ownerID: 900,
             plugInBundleID: "com.vendor.driver"
         )
 
@@ -44,14 +44,34 @@ final class AudioRouteMetadataTests: XCTestCase {
             tapUUIDs: []
         )
 
-        let composition = try XCTUnwrap(
-            fixture.service.routeDevices().first?.aggregateComposition
-        )
+        let device = try XCTUnwrap(fixture.service.routeDevices().first)
+        let composition = try XCTUnwrap(device.aggregateComposition)
         XCTAssertEqual(composition.fullSubdeviceUIDs, ["USB", "HDMI"])
         XCTAssertEqual(Set(composition.activeSubdeviceUIDs), Set(["USB", "HDMI"]))
+        XCTAssertEqual(device.aggregateSubdeviceUIDs, composition.activeSubdeviceUIDs)
         XCTAssertEqual(composition.mainSubdeviceUID, "USB")
         XCTAssertEqual(composition.isStacked, true)
         XCTAssertEqual(composition.tapUUIDs, [])
+        XCTAssertEqual(
+            fixture.backend.dataReadCount(
+                for: kAudioAggregateDevicePropertyActiveSubDeviceList
+            ),
+            1
+        )
+    }
+
+    func testDriverIdentityRejectsANonPlugInOwner() throws {
+        let fixture = MetadataFixture()
+        fixture.installDevice(
+            id: 40,
+            uid: "USB",
+            outputStreams: [(402, fixture.format(channels: 2))],
+            ownerID: 900,
+            ownerClassID: kAudioDeviceClassID,
+            plugInBundleID: "not-a-plugin"
+        )
+
+        XCTAssertNil(try fixture.service.routeDevices().first?.driverIdentity)
     }
 
     func testIncompleteAggregateCompositionRemainsExplicitlyIncomplete() throws {
@@ -78,7 +98,14 @@ final class AudioRouteMetadataTests: XCTestCase {
         let device = try XCTUnwrap(fixture.service.routeDevices().first)
 
         XCTAssertTrue(device.isAggregate)
+        XCTAssertEqual(device.aggregateSubdeviceUIDs, [])
         XCTAssertEqual(device.aggregateComposition?.activeSubdeviceUIDs, [])
+        XCTAssertEqual(
+            fixture.backend.dataReadCount(
+                for: kAudioAggregateDevicePropertyActiveSubDeviceList
+            ),
+            0
+        )
     }
 
     func testTopologyFingerprintRoundTripsWithoutParallelSchema() throws {
@@ -127,6 +154,15 @@ final class AudioRouteMetadataTests: XCTestCase {
             fingerprint
         )
     }
+
+    func testOSBuildDecodeUsesReturnedByteCountPrefixBeforeTrimmingNUL() throws {
+        let storage = Array("25A1\0stale".utf8).map { CChar(bitPattern: $0) }
+
+        XCTAssertEqual(
+            try AudioRouteOSBuild.decode(bytes: storage, returnedByteCount: 5),
+            "25A1"
+        )
+    }
 }
 
 @MainActor
@@ -159,7 +195,8 @@ private final class MetadataFixture {
         outputStreams: [(AudioStreamID, AudioStreamBasicDescription)],
         clockDomain: UInt32? = nil,
         transportType: UInt32? = nil,
-        plugInID: AudioObjectID? = nil,
+        ownerID: AudioObjectID? = nil,
+        ownerClassID: AudioClassID = kAudioPlugInClassID,
         plugInBundleID: String? = nil
     ) {
         registerDevice(id)
@@ -194,16 +231,16 @@ private final class MetadataFixture {
                 address: .init(selector: kAudioDevicePropertyTransportType)
             )
         }
-        if let plugInID {
-            backend.setScalar(
-                plugInID,
+        if let ownerID {
+            backend.setOwnerTopology(
                 objectID: id,
-                address: .init(selector: kAudioDevicePropertyPlugIn)
+                ownerID: ownerID,
+                ownerClassID: ownerClassID
             )
             if let plugInBundleID {
                 backend.setString(
                     plugInBundleID,
-                    objectID: plugInID,
+                    objectID: ownerID,
                     address: .init(selector: kAudioPlugInPropertyBundleID)
                 )
             }

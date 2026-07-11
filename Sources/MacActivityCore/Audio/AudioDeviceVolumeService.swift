@@ -219,8 +219,12 @@ private extension AudioDeviceVolumeService {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyClockDomain)
     }
 
-    static var plugInAddress: AudioHALPropertyAddress {
-        AudioHALPropertyAddress(selector: kAudioDevicePropertyPlugIn)
+    static var ownerAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioObjectPropertyOwner)
+    }
+
+    static var classAddress: AudioHALPropertyAddress {
+        AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
     }
 
     static var plugInBundleIDAddress: AudioHALPropertyAddress {
@@ -352,7 +356,12 @@ private extension AudioDeviceVolumeService {
                 address: Self.modelUIDAddress
             ),
             driverIdentity: driverIdentity(deviceID),
-            aggregateComposition: isAggregate ? aggregateComposition(deviceID) : nil
+            aggregateComposition: isAggregate
+                ? aggregateComposition(
+                    deviceID,
+                    activeSubdeviceUIDs: aggregateSubdeviceUIDs
+                )
+                : nil
         )
     }
 
@@ -384,7 +393,10 @@ private extension AudioDeviceVolumeService {
         }
     }
 
-    func aggregateComposition(_ deviceID: AudioDeviceID) -> AudioRouteAggregateComposition? {
+    func aggregateComposition(
+        _ deviceID: AudioDeviceID,
+        activeSubdeviceUIDs: [String]
+    ) -> AudioRouteAggregateComposition? {
         let tapUUIDs: [String]
         if #available(macOS 14.2, *) {
             guard let values = optionalStringArray(
@@ -412,7 +424,7 @@ private extension AudioDeviceVolumeService {
                 objectID: deviceID,
                 address: Self.fullAggregateSubdevicesAddress
             ) ?? [],
-            activeSubdeviceUIDs: activeAggregateSubdeviceUIDs(deviceID) ?? [],
+            activeSubdeviceUIDs: activeSubdeviceUIDs,
             mainSubdeviceUID: optionalString(
                 objectID: deviceID,
                 address: Self.aggregateMainSubdeviceAddress
@@ -423,13 +435,18 @@ private extension AudioDeviceVolumeService {
     }
 
     func driverIdentity(_ deviceID: AudioDeviceID) -> AudioRouteDriverIdentity? {
-        guard let plugInID = optionalScalar(
+        guard let ownerID = optionalScalar(
             AudioObjectID.self,
             objectID: deviceID,
-            address: Self.plugInAddress
-        ), plugInID != kAudioObjectUnknown,
+            address: Self.ownerAddress
+        ), ownerID != kAudioObjectUnknown,
+        optionalScalar(
+            AudioClassID.self,
+            objectID: ownerID,
+            address: Self.classAddress
+        ) == kAudioPlugInClassID,
         let bundleID = optionalString(
-            objectID: plugInID,
+            objectID: ownerID,
             address: Self.plugInBundleIDAddress
         ) else {
             return nil

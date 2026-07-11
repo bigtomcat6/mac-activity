@@ -119,6 +119,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     private(set) var dataSizeCallCount = 0
     private(set) var readSelectors: [AudioObjectPropertySelector] = []
+    private(set) var dataReadSelectors: [AudioObjectPropertySelector] = []
     private(set) var writeSelectors: [AudioObjectPropertySelector] = []
     private(set) var addedListeners: [ListenerCall] = []
     private(set) var removedListeners: [ListenerCall] = []
@@ -216,6 +217,10 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     var activeListeners: [ListenerCall] {
         Array(activeListenerCalls.values)
+    }
+
+    func dataReadCount(for selector: AudioObjectPropertySelector) -> Int {
+        dataReadSelectors.count { $0 == selector }
     }
 
     func enqueueAddListenerStatuses(_ statuses: [OSStatus]) {
@@ -342,6 +347,23 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         )
     }
 
+    func setOwnerTopology(
+        objectID: AudioObjectID,
+        ownerID: AudioObjectID,
+        ownerClassID: AudioClassID
+    ) {
+        setScalar(
+            ownerID,
+            objectID: objectID,
+            address: .init(selector: kAudioObjectPropertyOwner)
+        )
+        setScalar(
+            ownerClassID,
+            objectID: ownerID,
+            address: .init(selector: kAudioObjectPropertyClass)
+        )
+    }
+
     func setArray<T>(
         _ values: [T],
         objectID: AudioObjectID,
@@ -419,6 +441,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         data: UnsafeMutableRawPointer
     ) -> OSStatus {
         readSelectors.append(address.selector)
+        dataReadSelectors.append(address.selector)
 
         if !queuedReads.isEmpty {
             let result = queuedReads.removeFirst()

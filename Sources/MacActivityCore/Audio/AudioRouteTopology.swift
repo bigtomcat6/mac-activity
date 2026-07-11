@@ -82,6 +82,17 @@ enum AudioRouteOSBuild {
         guard sysctlbyname("kern.osversion", &bytes, &byteCount, nil, 0) == 0 else {
             throw ReadError.unavailable
         }
+        return try decode(bytes: bytes, returnedByteCount: byteCount)
+    }
+
+    static func decode(
+        bytes storage: [CChar],
+        returnedByteCount: Int
+    ) throws -> String {
+        guard returnedByteCount > 0, returnedByteCount <= storage.count else {
+            throw ReadError.unavailable
+        }
+        var bytes = Array(storage.prefix(returnedByteCount))
         if bytes.last == 0 {
             bytes.removeLast()
         }
