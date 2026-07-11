@@ -76,6 +76,91 @@ final class AudioAggregateTopologyResolverTests: XCTestCase {
         )
     }
 
+    func testResolverFansSourceOutToEveryStreamWithinOneTargetGroup() throws {
+        let plan = fixturePlan(outputGroups: [[stereo, stereo]])
+        let layout = try resolve(
+            plan: plan,
+            snapshot: fixtureSnapshot(outputFormats: [stereo, stereo])
+        )
+
+        XCTAssertEqual(layout.outputFormats, [stereo, stereo])
+        XCTAssertEqual(layout.channelMaps.count, 4)
+        XCTAssertEqual(layout.channelMaps.map(\.output.bufferIndex), [0, 0, 1, 1])
+        XCTAssertEqual(layout.channelMaps.map(\.output.channelIndex), [0, 1, 0, 1])
+        XCTAssertEqual(layout.channelMaps.map(\.input.channelIndex), [0, 1, 0, 1])
+    }
+
+    func testResolverFansSourceOutAcrossMultipleMultiStreamTargetGroups() throws {
+        let plan = fixturePlan(outputGroups: [
+            [stereo, stereo],
+            [stereo, stereo],
+        ])
+        let layout = try resolve(
+            plan: plan,
+            snapshot: fixtureSnapshot(
+                outputFormats: [stereo, stereo, stereo, stereo]
+            )
+        )
+
+        XCTAssertEqual(layout.channelMaps.count, 8)
+        XCTAssertEqual(
+            layout.channelMaps.map(\.output.bufferIndex),
+            [0, 0, 1, 1, 2, 2, 3, 3]
+        )
+        XCTAssertEqual(
+            layout.channelMaps.map(\.input.channelIndex),
+            [0, 1, 0, 1, 0, 1, 0, 1]
+        )
+    }
+
+    func testResolverUsesSupportedActualOutputLayoutInsteadOfPlannedPhysicalFormat() throws {
+        let mono = fixtureFormat(channelCount: 1)
+        let sixChannel = fixtureFormat(channelCount: 6)
+        let noninterleaved = fixtureFormat(
+            channelCount: 3,
+            interleaving: .nonInterleaved
+        )
+        let actualFormats = [mono, sixChannel, noninterleaved]
+
+        for actualFormat in actualFormats {
+            let plan = fixturePlan(outputGroups: [[stereo]])
+            let layout = try resolve(
+                plan: plan,
+                snapshot: fixtureSnapshot(outputFormats: [actualFormat])
+            )
+
+            let expectedOutputBufferCount = actualFormat.interleaving == .nonInterleaved
+                ? actualFormat.channelCount
+                : 1
+            XCTAssertEqual(layout.outputFormats.count, expectedOutputBufferCount)
+            XCTAssertFalse(layout.channelMaps.isEmpty)
+        }
+    }
+
+    func testResolverStillRejectsActualOutputSampleRateMismatch() {
+        let plan = fixturePlan(outputGroups: [[stereo]])
+        assertUnsupported(
+            plan: plan,
+            snapshot: fixtureSnapshot(outputFormats: [
+                fixtureFormat(sampleRate: 44_100, channelCount: 2),
+            ])
+        )
+    }
+
+    func testResolverRejectsEmptyPlannedOutputTopologyAndCrossDirectionIDReuse() {
+        assertUnsupported(
+            plan: fixturePlan(outputGroups: []),
+            snapshot: fixtureSnapshot(outputStreamIDs: [], outputFormats: [])
+        )
+        assertUnsupported(
+            plan: fixturePlan(outputGroups: [[]]),
+            snapshot: fixtureSnapshot(outputStreamIDs: [], outputFormats: [])
+        )
+        assertUnsupported(
+            snapshot: fixtureSnapshot(outputStreamIDs: [51])
+        )
+    }
+
     func testResolverRejectsDeadZeroDuplicateAndMismatchedStreamTopology() {
         let plan = fixturePlan(outputGroups: [[stereo], [stereo]])
         let cases = [

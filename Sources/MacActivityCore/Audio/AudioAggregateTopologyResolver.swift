@@ -45,10 +45,13 @@ enum AudioAggregateTopologyResolver {
         let plannedOutputCount = plan.subdevices.reduce(0) {
             $0 + $1.outputStreams.count
         }
-        guard snapshot.outputStreamIDs.count == plannedOutputCount,
+        guard plan.subdevices.isEmpty == false,
+              plannedOutputCount > 0,
+              snapshot.outputStreamIDs.count == plannedOutputCount,
               snapshot.outputFormats.count == plannedOutputCount,
               snapshot.outputStreamIDs.allSatisfy({ $0 != kAudioObjectUnknown }),
               Set(snapshot.outputStreamIDs).count == snapshot.outputStreamIDs.count,
+              snapshot.outputStreamIDs.contains(snapshot.inputStreamIDs[0]) == false,
               snapshot.outputFormats.allSatisfy(\.isSupportedFloat32LinearPCM),
               snapshot.outputFormats.allSatisfy({
                   $0.sampleRate == tap.source.expectedFormat.sampleRate
@@ -75,21 +78,19 @@ enum AudioAggregateTopologyResolver {
             let actualGroupFormats = Array(
                 snapshot.outputFormats[outputStreamIndex..<endIndex]
             )
-            guard actualGroupFormats == subdevice.outputStreams.map(\.format) else {
-                throw AudioAggregateTopologyError.unsupportedTopology
+            for actualFormat in actualGroupFormats {
+                let targetLayout = expandABLFormats(
+                    [actualFormat],
+                    startingBufferIndex: outputBufferIndex
+                )
+                outputFormats.append(contentsOf: targetLayout.formats)
+                channelMaps.append(contentsOf: makeChannelMaps(
+                    from: inputLayout.channels,
+                    to: targetLayout.channels
+                ))
+                outputBufferIndex = targetLayout.nextBufferIndex
             }
-
-            let targetLayout = expandABLFormats(
-                actualGroupFormats,
-                startingBufferIndex: outputBufferIndex
-            )
-            outputFormats.append(contentsOf: targetLayout.formats)
-            channelMaps.append(contentsOf: makeChannelMaps(
-                from: inputLayout.channels,
-                to: targetLayout.channels
-            ))
             outputStreamIndex = endIndex
-            outputBufferIndex = targetLayout.nextBufferIndex
         }
 
         guard outputStreamIndex == snapshot.outputFormats.count else {
