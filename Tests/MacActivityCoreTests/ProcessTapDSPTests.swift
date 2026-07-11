@@ -4,6 +4,18 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapDSPTests: XCTestCase {
+    func testCallbackCountChangesOnlyWhenCallbacksAreObserved() throws {
+        let context = try makeMonoContext(outputBufferCount: 1)
+        XCTAssertEqual(context.callbackCount, 0)
+        context.setTargetGain(0.5)
+        context.setOutputGateOpen(true)
+        XCTAssertEqual(context.callbackCount, 0)
+
+        context.markCallbackObserved()
+        context.markCallbackObserved()
+        XCTAssertEqual(context.callbackCount, 2)
+        XCTAssertTrue(context.hasObservedCallback)
+    }
     func testInterleavedStereoMappingPreservesHALByteSizes() throws {
         let storage = AudioBufferListTestStorage.interleavedStereo(
             input: [1, -1, 0.5, -0.5],

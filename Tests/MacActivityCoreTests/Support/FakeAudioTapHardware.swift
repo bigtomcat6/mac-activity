@@ -12,6 +12,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case waitForAggregateReadiness
         case readAggregateLayout
         case createIOProc
+        case configureInputStreamUsage([UInt32])
         case startDevice
         case waitForFirstCallback
         case setTapMutedWhenTapped(sourceIndex: Int)
@@ -31,6 +32,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case waitForAggregateReadiness
         case readAggregateLayout
         case createIOProc
+        case configureInputStreamUsage
         case startDevice
         case setTapMuted(Int)
         case setTapUnmuted(Int)
@@ -71,6 +73,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var nextAggregateID: AudioObjectID = 2_000
     private var createdProcessObjectIDsStorage: [AudioObjectID] = []
     private var createdTapResourcesStorage: [AudioTapResource] = []
+    private var latestPlan: AudioRoutePlan?
+    private var latestTaps: [AudioTapResource] = []
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
@@ -78,8 +82,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var forcedAggregateObjectID: AudioObjectID?
     var aggregateLayoutOverride: AudioAggregateLayout?
     var aggregateTopologyError: AudioAggregateTopologyError?
+    var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
     var ownedObjectValues: [AudioOwnedObject] = []
+    var ownedDiscoveryFailures: [AudioTeardownFailure] = []
 
     var calls: [Call] {
         locked { recordedCalls }
@@ -225,6 +231,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             objectID: plan.processObjectID
         )
         return locked {
+            latestPlan = plan
+            latestTaps = taps
             let objectID = forcedAggregateObjectID ?? nextAggregateID
             if forcedAggregateObjectID == nil {
                 nextAggregateID += 1
@@ -236,11 +244,11 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    func waitUntilReady(
+    func waitForStableTopology(
         _ aggregate: AudioAggregateResource,
         deadline: DispatchTime,
         isCancelled: @escaping @Sendable () -> Bool
-    ) throws {
+    ) throws -> AudioAggregateTopologySnapshot {
         record(.waitForAggregateReadiness)
         locked { readinessCancellationProbe = isCancelled }
         try throwIfNeeded(
@@ -248,19 +256,25 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             operation: .getData,
             objectID: aggregate.objectID
         )
+        try throwIfNeeded(
+            at: .readAggregateLayout,
+            operation: .getData,
+            objectID: aggregate.objectID
+        )
+        if let aggregateTopologyError { throw aggregateTopologyError }
         let shouldBlock = locked { () -> Bool in
             readinessInvocationCount += 1
             let shouldBlock = readinessInitiallyBlocked && readinessInvocationCount == 1
             readinessPolling = shouldBlock
             return shouldBlock
         }
-        guard shouldBlock else { return }
+        guard shouldBlock else { return topologySnapshot() }
 
         while DispatchTime.now() < deadline {
-            if isCancelled() { return }
+            if isCancelled() { throw AudioTapHardwareError.cancelled }
             usleep(1_000)
         }
-        throw AudioTapHardwareError.aggregateNotReady
+        throw AudioTapHardwareError.aggregateNotReady(lastStatus: nil)
     }
 
     func readAggregateLayout(
@@ -338,8 +352,22 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
         return AudioIOProcResource(
             aggregateDeviceID: aggregate.objectID,
+            aggregateUID: aggregate.uid,
             ioProcID: ioProcID
         )
+    }
+
+    func configureInputStreamUsage(
+        _ usage: [UInt32],
+        for ioProc: AudioIOProcResource
+    ) throws -> [UInt32] {
+        record(.configureInputStreamUsage(usage))
+        try throwIfNeeded(
+            at: .configureInputStreamUsage,
+            operation: .setData,
+            objectID: ioProc.aggregateDeviceID
+        )
+        return usage
     }
 
     func start(_ ioProc: AudioIOProcResource) throws {
@@ -381,6 +409,12 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
+    func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
+        let sourceIndex = sourceIndex(for: tap)
+        record(.setTapUnmuted(sourceIndex: sourceIndex))
+        return takeStatus(at: .setTapUnmuted(sourceIndex))
+    }
+
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
         record(.stopDevice)
         return takeStatus(
@@ -409,14 +443,19 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return takeStatus(at: .destroyTap(sourceIndex))
     }
 
-    func ownedObjects() throws -> [AudioOwnedObject] {
+    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
         record(.ownedObjects)
         try throwIfNeeded(
             at: .ownedObjects,
             operation: .getData,
             objectID: AudioObjectID(kAudioObjectSystemObject)
         )
-        return locked { ownedObjectValues }
+        return locked {
+            AudioOwnedObjectDiscovery(
+                objects: ownedObjectValues,
+                failures: ownedDiscoveryFailures
+            )
+        }
     }
 
     func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
@@ -426,6 +465,31 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 }
 
 private extension FakeAudioTapHardware {
+    func topologySnapshot() -> AudioAggregateTopologySnapshot {
+        locked {
+            if let aggregateTopologySnapshotOverride {
+                return aggregateTopologySnapshotOverride
+            }
+            let taps = latestTaps
+            let plan = latestPlan
+            let inputFormats = taps.map { tap in
+                let index = tapSourceIndices[tap.objectID] ?? Int(tap.source.streamIndex)
+                return tapFormatOverrides[index] ?? tapFormats[tap.objectID] ?? tap.source.expectedFormat
+            }
+            let outputFormats = plan?.subdevices.flatMap(\.outputStreams).map(\.format)
+                ?? inputFormats
+            return AudioAggregateTopologySnapshot(
+                isAlive: true,
+                inputStreamIDs: inputFormats.indices.map { AudioStreamID(10_000 + $0) },
+                inputFormats: inputFormats,
+                outputStreamIDs: outputFormats.indices.map { AudioStreamID(20_000 + $0) },
+                outputFormats: outputFormats,
+                tapUUIDs: taps.map(\.uuid),
+                activeSubTapIDs: taps.indices.map { AudioObjectID(30_000 + $0) }
+            )
+        }
+    }
+
     func record(_ call: Call) {
         locked {
             recordedCalls.append(call)

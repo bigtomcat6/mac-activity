@@ -5,6 +5,163 @@ import XCTest
 
 final class AudioTapHardwareDescriptionTests: XCTestCase {
     @available(macOS 14.2, *)
+    func testConfigureInputStreamUsageWritesAndReadsBackExactFlags() throws {
+        let backend = FakeAudioHALBackend()
+        let ioProc = AudioIOProcResource(
+            aggregateDeviceID: 700,
+            aggregateUID: "aggregate",
+            ioProcID: hardwareBoundaryIOProcID
+        )
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
+            scope: kAudioObjectPropertyScopeInput
+        )
+        AudioIOProcStreamUsage.withEncoded(
+            ioProcID: ioProc.ioProcID,
+            flags: [0]
+        ) { bytes in
+            backend.setArray(
+                Array(bytes),
+                objectID: ioProc.aggregateDeviceID,
+                address: address
+            )
+        }
+        backend.setScalar(
+            UInt8(0),
+            objectID: ioProc.aggregateDeviceID,
+            address: address,
+            isSettable: true
+        )
+        AudioIOProcStreamUsage.withEncoded(
+            ioProcID: ioProc.ioProcID,
+            flags: [0]
+        ) { bytes in
+            backend.setArray(
+                Array(bytes),
+                objectID: ioProc.aggregateDeviceID,
+                address: address
+            )
+        }
+        // Preserve the settable bit while installing exact raw storage.
+        backend.setRawBytes(
+            AudioIOProcStreamUsage.withEncoded(ioProcID: ioProc.ioProcID, flags: [0]) {
+                Array($0)
+            },
+            objectID: ioProc.aggregateDeviceID,
+            address: address,
+            isSettable: true
+        )
+
+        XCTAssertEqual(
+            try makeHardware(backend).configureInputStreamUsage([1], for: ioProc),
+            [1]
+        )
+        XCTAssertEqual(
+            backend.writeSelectors,
+            [kAudioDevicePropertyIOProcStreamUsage]
+        )
+        XCTAssertEqual(
+            backend.dataReadCount(for: kAudioDevicePropertyIOProcStreamUsage),
+            1
+        )
+    }
+
+    @available(macOS 14.2, *)
+    func testIdentityCheckedMutationsDoNotTouchReplacementObjects() {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 71)
+        let aggregate = AudioAggregateResource(objectID: 80, uid: "owned")
+        let ioProc = AudioIOProcResource(
+            aggregateDeviceID: aggregate.objectID,
+            aggregateUID: aggregate.uid,
+            ioProcID: hardwareBoundaryIOProcID
+        )
+        configureDestroyIdentity(
+            backend,
+            id: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: UUID().uuidString
+        )
+        configureDestroyIdentity(
+            backend,
+            id: aggregate.objectID,
+            classID: kAudioAggregateDeviceClassID,
+            uid: "replacement"
+        )
+        let hardware = makeHardware(backend)
+
+        XCTAssertEqual(hardware.restoreOriginalAudio(for: tap), noErr)
+        XCTAssertEqual(hardware.stop(ioProc), noErr)
+        XCTAssertEqual(hardware.destroyIOProc(ioProc), noErr)
+        XCTAssertEqual(hardware.destroyAggregate(aggregate), noErr)
+        XCTAssertEqual(hardware.destroyTap(tap), noErr)
+        XCTAssertTrue(backend.objectWrites.isEmpty)
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
+    func testOwnedDiscoveryContinuesAfterPerObjectFailureAndNameIsOptional() throws {
+        let backend = FakeAudioHALBackend()
+        let system = AudioObjectID(kAudioObjectSystemObject)
+        backend.setArray(
+            [AudioDeviceID(1), 2], objectID: system,
+            address: .init(selector: kAudioHardwarePropertyDevices)
+        )
+        backend.setArray(
+            [AudioObjectID](), objectID: system,
+            address: .init(selector: kAudioHardwarePropertyTapList)
+        )
+        backend.setReadError(
+            -777, objectID: 1,
+            address: .init(selector: kAudioObjectPropertyClass),
+            announcedByteCount: UInt32(MemoryLayout<AudioClassID>.size)
+        )
+        backend.setScalar(
+            kAudioAggregateDeviceClassID,
+            objectID: 2,
+            address: .init(selector: kAudioObjectPropertyClass)
+        )
+        backend.setString(
+            AudioRoutePlanner.aggregateUIDPrefix + "old",
+            objectID: 2,
+            address: .init(selector: kAudioDevicePropertyDeviceUID)
+        )
+
+        let discovery = try makeHardware(backend).ownedObjects()
+        XCTAssertEqual(discovery.objects.map(\.id), [2])
+        XCTAssertNil(discovery.objects[0].name)
+        XCTAssertEqual(discovery.failures.map(\.objectID), [1])
+        XCTAssertEqual(discovery.failures.map(\.status), [-777])
+    }
+
+    @available(macOS 14.2, *)
+    func testOwnedDiscoveryFailsWhenRootDeviceListCannotBeRead() {
+        XCTAssertThrowsError(try makeHardware(FakeAudioHALBackend()).ownedObjects())
+    }
+
+    @available(macOS 14.2, *)
+    func testStableTopologyTimeoutPreservesLastRawReadStatus() {
+        let backend = FakeAudioHALBackend()
+        let aggregate = AudioAggregateResource(objectID: 703, uid: "aggregate")
+        backend.setReadError(
+            -777,
+            objectID: aggregate.objectID,
+            address: streamListAddress(scope: kAudioObjectPropertyScopeInput),
+            announcedByteCount: UInt32(MemoryLayout<AudioStreamID>.size)
+        )
+
+        XCTAssertThrowsError(try makeHardware(backend).waitForStableTopology(
+            aggregate,
+            deadline: .now() + .milliseconds(15),
+            isCancelled: { false }
+        )) { error in
+            XCTAssertEqual(
+                error as? AudioTapHardwareError,
+                .aggregateNotReady(lastStatus: -777)
+            )
+        }
+    }
+    @available(macOS 14.2, *)
     func testTwoDeviceDescriptionUsesExactTargetsMainDeviceDriftAndTapDictionaries() throws {
         let plan = fixturePlan(
             targets: ["USB", "HDMI"],
@@ -222,7 +379,10 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 probe: { false }
             )
         ) { error in
-            XCTAssertEqual(error as? AudioTapHardwareError, .aggregateNotReady)
+            XCTAssertEqual(
+                error as? AudioTapHardwareError,
+                .aggregateNotReady(lastStatus: nil)
+            )
         }
         XCTAssertEqual(clock.elapsed, 2, accuracy: 0.000_001)
     }
@@ -473,47 +633,33 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     func testInstanceReadinessUsesAliveAndInputOutputStreamsAndCancellationShortCircuits() throws {
         let backend = FakeAudioHALBackend()
         let aggregate = AudioAggregateResource(objectID: 704, uid: "aggregate")
-        backend.setScalar(
-            UInt32(1),
-            objectID: aggregate.objectID,
-            address: .init(selector: kAudioDevicePropertyDeviceIsAlive)
-        )
-        backend.setArray(
-            [AudioStreamID(41)],
-            objectID: aggregate.objectID,
-            address: streamListAddress(scope: kAudioObjectPropertyScopeInput)
-        )
-        backend.setArray(
-            [AudioStreamID(42)],
-            objectID: aggregate.objectID,
-            address: streamListAddress(scope: kAudioObjectPropertyScopeOutput)
+        configureAggregateStreams(
+            backend,
+            aggregateID: aggregate.objectID,
+            input: [(41, fixtureFormat(channelCount: 2))],
+            output: [(42, fixtureFormat(channelCount: 2))]
         )
         let hardware = makeHardware(backend)
 
-        try hardware.waitUntilReady(
+        let snapshot = try hardware.waitForStableTopology(
             aggregate,
             deadline: .now() + .seconds(1),
             isCancelled: { false }
         )
-
-        XCTAssertEqual(
-            backend.readSelectors,
-            [
-                kAudioDevicePropertyDeviceIsAlive,
-                kAudioDevicePropertyStreams,
-                kAudioDevicePropertyStreams,
-                kAudioDevicePropertyStreams,
-                kAudioDevicePropertyStreams,
-            ]
+        XCTAssertEqual(snapshot.inputStreamIDs, [41])
+        XCTAssertEqual(snapshot.outputStreamIDs, [42])
+        XCTAssertGreaterThanOrEqual(
+            backend.dataReadCount(for: kAudioDevicePropertyDeviceIsAlive),
+            2
         )
         XCTAssertFalse(backend.readSelectors.contains(kAudioStreamPropertyIsActive))
 
         let cancelledBackend = FakeAudioHALBackend()
-        try makeHardware(cancelledBackend).waitUntilReady(
-            aggregate,
-            deadline: .now() + .seconds(30),
-            isCancelled: { true }
-        )
+        XCTAssertThrowsError(try makeHardware(cancelledBackend).waitForStableTopology(
+            aggregate, deadline: .now() + .seconds(30), isCancelled: { true }
+        )) { error in
+            XCTAssertEqual(error as? AudioTapHardwareError, .cancelled)
+        }
         XCTAssertTrue(cancelledBackend.readSelectors.isEmpty)
         XCTAssertTrue(cancelledBackend.mutableOperations.isEmpty)
     }
@@ -909,6 +1055,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         )
         XCTAssertEqual(output, [9])
         XCTAssertFalse(context.hasObservedCallback)
+        XCTAssertEqual(context.callbackCount, 0)
 
         XCTAssertEqual(
             invokeIOProc(
@@ -922,6 +1069,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         )
         XCTAssertEqual(output, [0])
         XCTAssertTrue(context.hasObservedCallback)
+        XCTAssertEqual(context.callbackCount, 1)
         XCTAssertEqual(backend.ioProcCreations.count, 1)
     }
 
@@ -938,13 +1086,25 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         description.uuid = tap.uuid
         description.muteBehavior = .unmuted
         let descriptionPointer = Unmanaged.passUnretained(description).toOpaque()
-        backend.enqueueRetainedObject(description)
-        backend.setScalar(UInt64(0), objectID: tap.objectID, address: address)
+        configureDestroyIdentity(
+            backend,
+            id: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: tap.uuid.uuidString
+        )
+        backend.setRetainedObject(description, objectID: tap.objectID, address: address)
 
         try makeHardware(backend).setMuteState(AudioTapMuteState.mutedWhenTapped, for: tap)
 
         XCTAssertEqual(description.muteBehavior, .mutedWhenTapped)
-        XCTAssertEqual(backend.readSelectors, [kAudioTapPropertyDescription])
+        XCTAssertEqual(
+            backend.readSelectors,
+            [
+                kAudioObjectPropertyClass,
+                kAudioTapPropertyUID,
+                kAudioTapPropertyDescription,
+            ]
+        )
         XCTAssertEqual(backend.writeSelectors, [kAudioTapPropertyDescription])
         XCTAssertEqual(backend.objectWrites.count, 1)
         XCTAssertEqual(backend.objectWrites[0].objectID, tap.objectID)
@@ -958,6 +1118,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let hardware = makeHardware(backend)
         let ioProc = AudioIOProcResource(
             aggregateDeviceID: 709,
+            aggregateUID: "aggregate",
             ioProcID: hardwareBoundaryIOProcID
         )
         let aggregate = AudioAggregateResource(objectID: 710, uid: "aggregate")
@@ -973,6 +1134,12 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             id: tap.objectID,
             classID: kAudioTapClassID,
             uid: tap.uuid.uuidString
+        )
+        configureDestroyIdentity(
+            backend,
+            id: ioProc.aggregateDeviceID,
+            classID: kAudioAggregateDeviceClassID,
+            uid: ioProc.aggregateUID
         )
 
         backend.startDeviceStatus = -801
@@ -1191,7 +1358,7 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         let objects = try makeHardware(backend).ownedObjects()
 
         XCTAssertEqual(
-            objects,
+            objects.objects,
             [
                 AudioOwnedObject(
                     id: 81,
@@ -1314,7 +1481,7 @@ private func fixtureFormat(
 private func makeHardware(
     _ backend: FakeAudioHALBackend,
     processTapsAvailable: Bool = true
-) -> any AudioTapHardware {
+) -> CoreAudioTapHardware {
     CoreAudioTapHardware(
         hal: AudioHALClient(
             backend: backend,

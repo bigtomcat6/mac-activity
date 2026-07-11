@@ -159,6 +159,7 @@ final class ProcessTapDSPContext: @unchecked Sendable {
     private let configuration: ProcessTapDSPConfiguration
     private let targetGainBits: UnsafeMutablePointer<Int32>
     private let gateStateBits: UnsafeMutablePointer<Int32>
+    private let callbackCountBits: UnsafeMutablePointer<Int32>
 
     // These values are owned by the single HAL callback invocation stream.
     private var currentGain: Float32
@@ -176,6 +177,8 @@ final class ProcessTapDSPContext: @unchecked Sendable {
         targetGainBits.initialize(to: Int32(bitPattern: gain.bitPattern))
         gateStateBits = .allocate(capacity: 1)
         gateStateBits.initialize(to: 0)
+        callbackCountBits = .allocate(capacity: 1)
+        callbackCountBits.initialize(to: 0)
     }
 
     deinit {
@@ -183,6 +186,8 @@ final class ProcessTapDSPContext: @unchecked Sendable {
         targetGainBits.deallocate()
         gateStateBits.deinitialize(count: 1)
         gateStateBits.deallocate()
+        callbackCountBits.deinitialize(count: 1)
+        callbackCountBits.deallocate()
     }
 
     func setTargetGain(_ gain: Float32) {
@@ -211,6 +216,11 @@ final class ProcessTapDSPContext: @unchecked Sendable {
 
     func markCallbackObserved() {
         OSAtomicOr32Barrier(UInt32(bitPattern: Self.callbackObservedMask), gateStateBits)
+        OSAtomicIncrement32Barrier(callbackCountBits)
+    }
+
+    var callbackCount: Int32 {
+        OSAtomicOr32Barrier(0, callbackCountBits)
     }
 
     var testingCurrentGain: Float32 {

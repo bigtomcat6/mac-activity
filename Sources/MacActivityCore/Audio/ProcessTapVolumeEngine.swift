@@ -388,7 +388,7 @@ private extension ProcessTapVolumeEngine {
             resources.aggregateAcquisitionID = UUID()
             try ensureCurrent(token)
 
-            try hardware.waitUntilReady(
+            let topology = try hardware.waitForStableTopology(
                 aggregate,
                 deadline: .now() + Self.preparationTimeout,
                 isCancelled: { [generations] in
@@ -397,10 +397,10 @@ private extension ProcessTapVolumeEngine {
             )
             try ensureCurrent(token)
 
-            let layout = try hardware.readAggregateLayout(
-                aggregate,
+            let layout = try AudioAggregateTopologyResolver.resolve(
                 plan: plan,
-                taps: resources.taps
+                tap: resources.taps[0],
+                snapshot: topology
             )
             try ensureCurrent(token)
             guard let sampleRate = layout.inputFormats.first?.sampleRate else {
@@ -430,6 +430,15 @@ private extension ProcessTapVolumeEngine {
             )
             resources.ioProc = ioProc
             resources.ioProcAcquisitionID = UUID()
+            try ensureCurrent(token)
+
+            let verifiedUsage = try hardware.configureInputStreamUsage(
+                layout.inputStreamUsage,
+                for: ioProc
+            )
+            guard verifiedUsage == layout.inputStreamUsage else {
+                throw ProcessTapPreparationAbort(.unsupportedFormat)
+            }
             try ensureCurrent(token)
 
             try hardware.start(ioProc)
@@ -596,14 +605,13 @@ private extension ProcessTapVolumeEngine {
         var failures: [AudioTeardownFailure] = []
 
         for tap in resources.mutedTaps.reversed() {
-            do {
-                try hardware.setMuteState(.unmuted, for: tap)
-            } catch {
-                let failure = teardownFailure(
-                    from: error,
-                    fallbackOperation: .setData,
+            let status = hardware.restoreOriginalAudio(for: tap)
+            if status != noErr {
+                let failure = AudioTeardownFailure(
+                    processObjectID: resources.processObjectID,
+                    operation: .setData,
                     objectID: tap.objectID,
-                    processObjectID: resources.processObjectID
+                    status: status
                 )
                 failures.append(failure)
                 addRetry(
@@ -768,12 +776,7 @@ private extension ProcessTapVolumeEngine {
             let retryStatus: OSStatus
             switch entry.payload {
             case .setTapUnmuted(let tap):
-                do {
-                    try hardware.setMuteState(.unmuted, for: tap)
-                    retryStatus = noErr
-                } catch {
-                    retryStatus = status(from: error)
-                }
+                retryStatus = hardware.restoreOriginalAudio(for: tap)
             case .stop(let ioProc, _):
                 retryStatus = hardware.stop(ioProc)
             case .destroyIOProc(let ioProc, _):
@@ -829,9 +832,9 @@ private extension ProcessTapVolumeEngine {
     func cleanupOwnedObjects(
         using hardware: any AudioTapHardware
     ) -> [AudioTeardownFailure] {
-        let objects: [AudioOwnedObject]
+        let discovery: AudioOwnedObjectDiscovery
         do {
-            objects = try hardware.ownedObjects()
+            discovery = try hardware.ownedObjects()
         } catch {
             return [teardownFailure(
                 from: error,
@@ -841,7 +844,7 @@ private extension ProcessTapVolumeEngine {
             )]
         }
 
-        let ownedObjects = CoreAudioTapHardware.ownedOrphans(in: objects)
+        let ownedObjects = CoreAudioTapHardware.ownedOrphans(in: discovery.objects)
         let enumeratedIdentities = Set(ownedObjects.map(Self.ownedInstanceIdentity))
         successfullyDestroyedOwnedIdentities.formIntersection(enumeratedIdentities)
 
@@ -907,7 +910,7 @@ private extension ProcessTapVolumeEngine {
                 )
             }
         }
-        return []
+        return discovery.failures
     }
 
     @available(macOS 14.2, *)
@@ -1020,11 +1023,12 @@ private extension ProcessTapVolumeEngine {
             switch hardwareError {
             case .aggregateNotReady:
                 return .aggregateNotReady
+            case .cancelled:
+                return .routeSuperseded
             }
         }
         if error is CoreAudioTapHardware.ValidationError
-            || error is AudioAggregateTopologyError
-        {
+            || error is AudioAggregateTopologyError {
             return .unsupportedFormat
         }
         if let halError = error as? AudioHALError {

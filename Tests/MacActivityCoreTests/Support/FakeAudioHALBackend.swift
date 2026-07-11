@@ -374,6 +374,18 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         )
     }
 
+    func setRawBytes(
+        _ bytes: [UInt8],
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress,
+        isSettable: Bool
+    ) {
+        properties[PropertyKey(objectID: objectID, address: address)] = Property(
+            payload: .bytes(bytes),
+            isSettable: isSettable
+        )
+    }
+
     func setString(
         _ value: String,
         objectID: AudioObjectID,

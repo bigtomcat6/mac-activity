@@ -19,6 +19,7 @@ struct AudioAggregateResource: Equatable, Sendable {
 
 struct AudioIOProcResource: @unchecked Sendable {
     let aggregateDeviceID: AudioObjectID
+    let aggregateUID: String
     let ioProcID: AudioDeviceIOProcID
 }
 
@@ -26,11 +27,17 @@ struct AudioOwnedObject: Equatable, Sendable {
     let id: AudioObjectID
     let classID: AudioClassID
     let uid: String
-    let name: String
+    let name: String?
+}
+
+struct AudioOwnedObjectDiscovery: Sendable {
+    let objects: [AudioOwnedObject]
+    let failures: [AudioTeardownFailure]
 }
 
 enum AudioTapHardwareError: Error, Equatable, Sendable {
-    case aggregateNotReady
+    case aggregateNotReady(lastStatus: OSStatus?)
+    case cancelled
 }
 
 final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
@@ -157,7 +164,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                   pollInterval.isFinite,
                   pollInterval > 0
             else {
-                throw AudioTapHardwareError.aggregateNotReady
+                throw AudioTapHardwareError.aggregateNotReady(lastStatus: nil)
             }
 
             if isCancelled() { return }
@@ -256,68 +263,94 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return AudioAggregateResource(objectID: objectID, uid: plan.aggregateUID)
     }
 
-    func waitUntilReady(
+    func waitForStableTopology(
         _ aggregate: AudioAggregateResource,
         deadline: DispatchTime,
         isCancelled: @escaping @Sendable () -> Bool
-    ) throws {
-        let inputStreamsAddress = AudioHALPropertyAddress(
-            selector: kAudioDevicePropertyStreams,
+    ) throws -> AudioAggregateTopologySnapshot {
+        var previous: AudioAggregateTopologySnapshot?
+        var lastStatus: OSStatus?
+        while true {
+            if isCancelled() { throw AudioTapHardwareError.cancelled }
+            guard DispatchTime.now() < deadline else {
+                throw AudioTapHardwareError.aggregateNotReady(lastStatus: lastStatus)
+            }
+            do {
+                let snapshot = try readTopologySnapshot(aggregate)
+                guard snapshot.isAlive,
+                      snapshot.inputStreamIDs.isEmpty == false,
+                      snapshot.outputStreamIDs.isEmpty == false,
+                      snapshot.inputFormats.count == snapshot.inputStreamIDs.count,
+                      snapshot.outputFormats.count == snapshot.outputStreamIDs.count,
+                      snapshot.tapUUIDs.isEmpty == false,
+                      snapshot.activeSubTapIDs.isEmpty == false
+                else {
+                    previous = nil
+                    continueAfterReadinessPoll(deadline: deadline)
+                    continue
+                }
+                if previous == snapshot { return snapshot }
+                previous = snapshot
+                lastStatus = nil
+            } catch {
+                previous = nil
+                lastStatus = rawStatus(from: error)
+            }
+            if isCancelled() { throw AudioTapHardwareError.cancelled }
+            continueAfterReadinessPoll(deadline: deadline)
+        }
+    }
+
+    func configureInputStreamUsage(
+        _ usage: [UInt32],
+        for ioProc: AudioIOProcResource
+    ) throws -> [UInt32] {
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
             scope: kAudioObjectPropertyScopeInput
         )
-        let outputStreamsAddress = AudioHALPropertyAddress(
-            selector: kAudioDevicePropertyStreams,
-            scope: kAudioObjectPropertyScopeOutput
-        )
-
-        while true {
-            if isCancelled() { return }
-            guard DispatchTime.now() < deadline else {
-                throw AudioTapHardwareError.aggregateNotReady
-            }
-
-            if isCancelled() { return }
-            let alive: UInt32 = try hal.readScalar(
-                UInt32.self,
-                from: aggregate.objectID,
-                address: AudioHALPropertyAddress(
-                    selector: kAudioDevicePropertyDeviceIsAlive
-                )
-            )
-            if isCancelled() { return }
-            let inputStreamIDs = try hal.readArray(
-                AudioStreamID.self,
-                from: aggregate.objectID,
-                address: inputStreamsAddress
-            )
-            if isCancelled() { return }
-            let outputStreamIDs = try hal.readArray(
-                AudioStreamID.self,
-                from: aggregate.objectID,
-                address: outputStreamsAddress
-            )
-
-            if Self.isAggregateReady(
-                isAlive: alive != 0,
-                inputStreamIDs: inputStreamIDs,
-                outputStreamIDs: outputStreamIDs
-            ) {
-                return
-            }
-            if isCancelled() { return }
-
-            let now = DispatchTime.now()
-            guard now < deadline else {
-                throw AudioTapHardwareError.aggregateNotReady
-            }
-            let remainingNanoseconds = deadline.uptimeNanoseconds - now.uptimeNanoseconds
-            Thread.sleep(
-                forTimeInterval: min(
-                    0.010,
-                    Double(remainingNanoseconds) / 1_000_000_000
-                )
-            )
+        guard hal.hasProperty(objectID: ioProc.aggregateDeviceID, address: address) else {
+            throw AudioIOProcStreamUsageError.propertyMissing
         }
+        do {
+            guard try hal.isPropertySettable(
+                objectID: ioProc.aggregateDeviceID,
+                address: address
+            ) else {
+                throw AudioIOProcStreamUsageError.propertyNotSettable
+            }
+        } catch let error as AudioIOProcStreamUsageError {
+            throw error
+        } catch {
+            throw AudioIOProcStreamUsageError.writeFailed(rawStatus(from: error) ?? -1)
+        }
+        do {
+            try hal.writeIOProcStreamUsage(
+                usage,
+                deviceID: ioProc.aggregateDeviceID,
+                ioProcID: ioProc.ioProcID,
+                scope: kAudioObjectPropertyScopeInput
+            )
+        } catch {
+            throw AudioIOProcStreamUsageError.writeFailed(rawStatus(from: error) ?? -1)
+        }
+        let verified: [UInt32]
+        do {
+            verified = try hal.readIOProcStreamUsage(
+                streamCount: usage.count,
+                deviceID: ioProc.aggregateDeviceID,
+                ioProcID: ioProc.ioProcID,
+                scope: kAudioObjectPropertyScopeInput
+            )
+        } catch let error as AudioIOProcStreamUsageError {
+            throw error
+        } catch {
+            throw AudioIOProcStreamUsageError.readFailed(rawStatus(from: error) ?? -1)
+        }
+        guard verified == usage else {
+            throw AudioIOProcStreamUsageError.flagsMismatch
+        }
+        return verified
     }
 
     func readAggregateLayout(
@@ -416,6 +449,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
         return AudioIOProcResource(
             aggregateDeviceID: aggregate.objectID,
+            aggregateUID: aggregate.uid,
             ioProcID: ioProcID
         )
     }
@@ -431,6 +465,18 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         _ state: AudioTapMuteState,
         for tap: AudioTapResource
     ) throws {
+        guard try currentIdentityMatches(
+            objectID: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: tap.uuid.uuidString
+        ) else {
+            throw AudioHALError(
+                operation: .setData,
+                objectID: tap.objectID,
+                address: nil,
+                reason: .missingValue
+            )
+        }
         let address = AudioHALPropertyAddress(
             selector: kAudioTapPropertyDescription
         )
@@ -448,8 +494,31 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         try hal.writeObject(description, to: tap.objectID, address: address)
     }
 
+    func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
+        teardownStatus {
+            guard try currentIdentityMatches(
+                objectID: tap.objectID,
+                classID: kAudioTapClassID,
+                uid: tap.uuid.uuidString
+            ) else { return }
+            let address = AudioHALPropertyAddress(selector: kAudioTapPropertyDescription)
+            let description = try hal.readRetainedObject(
+                CATapDescription.self,
+                from: tap.objectID,
+                address: address
+            )
+            description.muteBehavior = .unmuted
+            try hal.writeObject(description, to: tap.objectID, address: address)
+        }
+    }
+
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
         teardownStatus {
+            guard try currentIdentityMatches(
+                objectID: ioProc.aggregateDeviceID,
+                classID: kAudioAggregateDeviceClassID,
+                uid: ioProc.aggregateUID
+            ) else { return }
             try hal.stopDevice(
                 deviceID: ioProc.aggregateDeviceID,
                 ioProcID: ioProc.ioProcID
@@ -459,6 +528,11 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus {
         teardownStatus {
+            guard try currentIdentityMatches(
+                objectID: ioProc.aggregateDeviceID,
+                classID: kAudioAggregateDeviceClassID,
+                uid: ioProc.aggregateUID
+            ) else { return }
             try hal.destroyIOProc(
                 deviceID: ioProc.aggregateDeviceID,
                 ioProcID: ioProc.ioProcID
@@ -520,7 +594,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    func ownedObjects() throws -> [AudioOwnedObject] {
+    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
         let systemObject = AudioObjectID(kAudioObjectSystemObject)
         let deviceIDs = try hal.readArray(
             AudioDeviceID.self,
@@ -529,7 +603,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                 selector: kAudioHardwarePropertyDevices
             )
         )
-        var objects = try deviceIDs.map { try readOwnedObject($0) }
+        var objectIDs = deviceIDs
 
         if #available(macOS 14.2, *) {
             let tapIDs = try hal.readArray(
@@ -539,9 +613,23 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                     selector: kAudioHardwarePropertyTapList
                 )
             )
-            objects.append(contentsOf: try tapIDs.map { try readOwnedObject($0) })
+            objectIDs.append(contentsOf: tapIDs)
         }
-        return objects
+        var objects: [AudioOwnedObject] = []
+        var failures: [AudioTeardownFailure] = []
+        for objectID in objectIDs {
+            do {
+                objects.append(try readOwnedObject(objectID))
+            } catch {
+                failures.append(AudioTeardownFailure(
+                    processObjectID: nil,
+                    operation: .getData,
+                    objectID: objectID,
+                    status: rawStatus(from: error) ?? kAudioHardwareUnspecifiedError
+                ))
+            }
+        }
+        return AudioOwnedObjectDiscovery(objects: objects, failures: failures)
     }
 
     private func readFormat(
@@ -585,11 +673,9 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             from: objectID,
             address: AudioHALPropertyAddress(selector: uidSelector)
         )
-        let name = try hal.readRetainedString(
+        let name = try? hal.readRetainedString(
             from: objectID,
-            address: AudioHALPropertyAddress(
-                selector: kAudioObjectPropertyName
-            )
+            address: AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
         )
         return AudioOwnedObject(
             id: objectID,
@@ -637,10 +723,77 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             try body()
             return noErr
         } catch let error as AudioHALError {
+            if error.status == kAudioHardwareBadObjectError
+                || error.status == kAudioHardwareUnknownPropertyError {
+                return noErr
+            }
             return error.status ?? kAudioHardwareUnspecifiedError
         } catch {
             return kAudioHardwareUnspecifiedError
         }
+    }
+
+    private func readTopologySnapshot(
+        _ aggregate: AudioAggregateResource
+    ) throws -> AudioAggregateTopologySnapshot {
+        let inputStreamIDs = try hal.readArray(
+            AudioStreamID.self,
+            from: aggregate.objectID,
+            address: .init(
+                selector: kAudioDevicePropertyStreams,
+                scope: kAudioObjectPropertyScopeInput
+            )
+        )
+        let outputStreamIDs = try hal.readArray(
+            AudioStreamID.self,
+            from: aggregate.objectID,
+            address: .init(
+                selector: kAudioDevicePropertyStreams,
+                scope: kAudioObjectPropertyScopeOutput
+            )
+        )
+        let formatAddress = AudioHALPropertyAddress(selector: kAudioStreamPropertyVirtualFormat)
+        let tapValues = try hal.readRetainedObject(
+            CFArray.self,
+            from: aggregate.objectID,
+            address: .init(selector: kAudioAggregateDevicePropertyTapList)
+        )
+        let tapUUIDs = try (tapValues as NSArray).map { value -> UUID in
+            guard let string = value as? String, let uuid = UUID(uuidString: string) else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            return uuid
+        }
+        return AudioAggregateTopologySnapshot(
+            isAlive: try hal.readScalar(
+                UInt32.self,
+                from: aggregate.objectID,
+                address: .init(selector: kAudioDevicePropertyDeviceIsAlive)
+            ) != 0,
+            inputStreamIDs: inputStreamIDs,
+            inputFormats: try inputStreamIDs.map { try readFormat(from: $0, address: formatAddress) },
+            outputStreamIDs: outputStreamIDs,
+            outputFormats: try outputStreamIDs.map { try readFormat(from: $0, address: formatAddress) },
+            tapUUIDs: tapUUIDs,
+            activeSubTapIDs: try hal.readArray(
+                AudioObjectID.self,
+                from: aggregate.objectID,
+                address: .init(selector: kAudioAggregateDevicePropertySubTapList)
+            )
+        )
+    }
+
+    private func continueAfterReadinessPoll(deadline: DispatchTime) {
+        let now = DispatchTime.now()
+        guard now < deadline else { return }
+        Thread.sleep(forTimeInterval: min(
+            0.010,
+            Double(deadline.uptimeNanoseconds - now.uptimeNanoseconds) / 1_000_000_000
+        ))
+    }
+
+    private func rawStatus(from error: Error) -> OSStatus? {
+        (error as? AudioHALError)?.status
     }
 
 }
@@ -667,29 +820,29 @@ protocol AudioTapHardware: AnyObject, Sendable {
         plan: AudioRoutePlan,
         taps: [AudioTapResource]
     ) throws -> AudioAggregateResource
-    func waitUntilReady(
+    func waitForStableTopology(
         _ aggregate: AudioAggregateResource,
         deadline: DispatchTime,
         isCancelled: @escaping @Sendable () -> Bool
-    ) throws
-    func readAggregateLayout(
-        _ aggregate: AudioAggregateResource,
-        plan: AudioRoutePlan,
-        taps: [AudioTapResource]
-    ) throws -> AudioAggregateLayout
+    ) throws -> AudioAggregateTopologySnapshot
     func createIOProc(
         aggregate: AudioAggregateResource,
         context: ProcessTapDSPContext
     ) throws -> AudioIOProcResource
     func start(_ ioProc: AudioIOProcResource) throws
+    func configureInputStreamUsage(
+        _ usage: [UInt32],
+        for ioProc: AudioIOProcResource
+    ) throws -> [UInt32]
     func setMuteState(
         _ state: AudioTapMuteState,
         for tap: AudioTapResource
     ) throws
+    func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus
     func destroyTap(_ tap: AudioTapResource) -> OSStatus
-    func ownedObjects() throws -> [AudioOwnedObject]
+    func ownedObjects() throws -> AudioOwnedObjectDiscovery
     func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus
 }

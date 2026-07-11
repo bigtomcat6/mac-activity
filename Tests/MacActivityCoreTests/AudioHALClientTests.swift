@@ -4,6 +4,49 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioHALClientTests: XCTestCase {
+    func testIOProcUsageWritesAndReadsExactOneStream() throws {
+        let backend = FakeAudioHALBackend()
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
+            scope: kAudioObjectPropertyScopeInput
+        )
+        AudioIOProcStreamUsage.withEncoded(ioProcID: testIOProcID, flags: [0]) { bytes in
+            backend.setArray(
+                Array(bytes),
+                objectID: 700,
+                address: address
+            )
+        }
+        let client = AudioHALClient(backend: backend)
+
+        try client.writeIOProcStreamUsage(
+            [1], deviceID: 700, ioProcID: testIOProcID,
+            scope: kAudioObjectPropertyScopeInput
+        )
+        XCTAssertEqual(
+            try client.readIOProcStreamUsage(
+                streamCount: 1,
+                deviceID: 700,
+                ioProcID: testIOProcID,
+                scope: kAudioObjectPropertyScopeInput
+            ),
+            [1]
+        )
+    }
+
+    func testIOProcUsageDecodeRejectsWrongFunctionPointer() throws {
+        try AudioIOProcStreamUsage.withEncoded(ioProcID: testIOProcID, flags: [1]) { bytes in
+            XCTAssertThrowsError(
+                try AudioIOProcStreamUsage.decode(
+                    UnsafeRawBufferPointer(bytes),
+                    expectedIOProcID: alternateTestIOProcID,
+                    expectedStreamCount: 1
+                )
+            ) { error in
+                XCTAssertEqual(error as? AudioIOProcStreamUsageError, .ioProcMismatch)
+            }
+        }
+    }
     func testReadArrayUsesReturnedByteCountAfterShrink() throws {
         let backend = FakeAudioHALBackend()
         backend.enqueueArrayRead(announced: [UInt32(11), 22, 33], returned: [11, 22])
@@ -452,6 +495,9 @@ final class AudioHALClientTests: XCTestCase {
         }
     }
 }
+
+private let testIOProcID: AudioDeviceIOProcID = { _, _, _, _, _, _, _ in noErr }
+private let alternateTestIOProcID: AudioDeviceIOProcID = { _, _, _, _, _, _, _ in noErr }
 
 private let testAudioDeviceIOProc: AudioDeviceIOProc = { _, _, _, _, _, _, _ in
     noErr

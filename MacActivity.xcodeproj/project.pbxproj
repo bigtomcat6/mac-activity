@@ -10,6 +10,7 @@
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
 		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
 		078F652EDE21CCEB0AC6E491 /* ActiveProcessMemoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */; };
+		0ADC9557218EDD2F7F6667F9 /* AudioIOProcStreamUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */; };
 		0BFDE8B415E395427CB657F0 /* SystemStorageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */; };
 		0C235C5AB692A21728D0BA55 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 41DEBECB80588EDCB2B826B3 /* Localizable.strings */; };
 		0EE72E0F0ADBDE77B23D912F /* MemoryReleaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */; };
@@ -312,6 +313,7 @@
 		D22665B317ABFF0111743871 /* MacActivityCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		D2BA440DCE79490C0E6C08F4 /* AudioRouteMetadataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRouteMetadataTests.swift; sourceTree = "<group>"; };
 		D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryList.swift; sourceTree = "<group>"; };
+		D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioIOProcStreamUsage.swift; sourceTree = "<group>"; };
 		D6A085010AE18BDEC0E3BB55 /* AudioControlModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlModels.swift; sourceTree = "<group>"; };
 		D86CFDDB2D5CE86CDA46A87F /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
 		DAC3D5561158D1EC418C2BC9 /* AudioRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRoutingModels.swift; sourceTree = "<group>"; };
@@ -470,6 +472,7 @@
 				4A95453EF1760F93579037B1 /* AudioDeviceVolumeService.swift */,
 				6E4B084B5C8220E7D26CBC42 /* AudioFeatureAvailability.swift */,
 				F87B7F0908FC00B4069386C6 /* AudioHALClient.swift */,
+				D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */,
 				783BAC8E92D1DF859D51D06B /* AudioProcessService.swift */,
 				34E6D5451C332ED7A711F50B /* AudioRoutePlanner.swift */,
 				035BE605FC14FC367F605725 /* AudioRouteTopology.swift */,
@@ -909,6 +912,7 @@
 				10A7E533EB2CE7F1631C7D95 /* AudioDeviceVolumeService.swift in Sources */,
 				1AA15D8699BC3962C6A808DE /* AudioFeatureAvailability.swift in Sources */,
 				F678D61F42977B39F673D889 /* AudioHALClient.swift in Sources */,
+				0ADC9557218EDD2F7F6667F9 /* AudioIOProcStreamUsage.swift in Sources */,
 				2B711103EEAA3A3737FE4207 /* AudioProcessProfile.swift in Sources */,
 				C94D70721B9A9210B31F328D /* AudioProcessService.swift in Sources */,
 				567DA7ABD0418DD81EAD1F54 /* AudioRoutePlanner.swift in Sources */,

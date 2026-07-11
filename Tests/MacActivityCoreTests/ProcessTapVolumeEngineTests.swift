@@ -20,8 +20,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             .readTapFormat(sourceIndex: 0),
             .createAggregate(tapAutoStart: false),
             .waitForAggregateReadiness,
-            .readAggregateLayout,
             .createIOProc,
+            .configureInputStreamUsage([1]),
             .startDevice,
             .waitForFirstCallback,
             .setTapMutedWhenTapped(sourceIndex: 0),
@@ -40,15 +40,15 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
     }
 
-    func testLaterMuteFailureRestoresAlreadyMutedTapBeforeReverseTeardown() async {
+    func testStrictStartupMuteFailureUsesReverseTeardown() async {
         let fixture = EngineFixture()
         fixture.hardware.enqueueStatus(
             kAudioHardwareUnspecifiedError,
-            at: .setTapMuted(1)
+            at: .setTapMuted(0)
         )
 
         let snapshot = await fixture.engine.apply(
-            plan: fixture.plan(generation: 1, sourceCount: 2),
+            plan: fixture.plan(generation: 1),
             gain: ProcessGainState(volume: 0.6)
         )
 
@@ -59,12 +59,10 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 status: kAudioHardwareUnspecifiedError
             )
         )
-        XCTAssertEqual(Array(fixture.hardware.calls.suffix(6)), [
-            .setTapUnmuted(sourceIndex: 0),
+        XCTAssertEqual(Array(fixture.hardware.calls.suffix(4)), [
             .stopDevice,
             .destroyIOProc,
             .destroyAggregate,
-            .destroyTap(sourceIndex: 1),
             .destroyTap(sourceIndex: 0),
         ])
     }
@@ -176,7 +174,6 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 sourceCount: 1,
                 expectedCalls: callsThroughAggregate + [
                     .waitForAggregateReadiness,
-                    .readAggregateLayout,
                     .destroyAggregate,
                     .destroyTap(sourceIndex: 0),
                 ]
@@ -195,7 +192,20 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 sourceCount: 1,
                 expectedCalls: callsThroughLayout + [
                     .createIOProc,
+                    .configureInputStreamUsage([1]),
                     .startDevice,
+                    .stopDevice,
+                    .destroyIOProc,
+                    .destroyAggregate,
+                    .destroyTap(sourceIndex: 0),
+                ]
+            ),
+            Scenario(
+                point: .configureInputStreamUsage,
+                sourceCount: 1,
+                expectedCalls: callsThroughLayout + [
+                    .createIOProc,
+                    .configureInputStreamUsage([1]),
                     .stopDevice,
                     .destroyIOProc,
                     .destroyAggregate,
@@ -255,25 +265,14 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     func testInvalidActualAggregateMappingFailsBeforeIOProcCreation() async {
         let fixture = EngineFixture()
         let format = fixture.format
-        fixture.hardware.aggregateLayoutOverride = AudioAggregateLayout(
+        fixture.hardware.aggregateTopologySnapshotOverride = AudioAggregateTopologySnapshot(
+            isAlive: true,
+            inputStreamIDs: [10],
             inputFormats: [format],
-            outputFormats: [format],
-            channelMaps: [
-                ProcessTapChannelMap(
-                    input: ProcessTapChannelAddress(
-                        bufferIndex: 0,
-                        channelIndex: 2,
-                        interleavedChannelCount: 2
-                    ),
-                    output: ProcessTapChannelAddress(
-                        bufferIndex: 0,
-                        channelIndex: 0,
-                        interleavedChannelCount: 2
-                    ),
-                    mixCoefficient: 1
-                ),
-            ],
-            inputStreamUsage: [1]
+            outputStreamIDs: [],
+            outputFormats: [],
+            tapUUIDs: fixture.hardware.createdTapResources.map(\.uuid),
+            activeSubTapIDs: [30]
         )
 
         let snapshot = await fixture.engine.apply(
@@ -1459,7 +1458,6 @@ private let callsThroughAggregate = callsThroughTapFormat + [
 
 private let callsThroughLayout = callsThroughAggregate + [
     FakeAudioTapHardware.Call.waitForAggregateReadiness,
-    FakeAudioTapHardware.Call.readAggregateLayout,
 ]
 
 private final class EngineFixture: @unchecked Sendable {

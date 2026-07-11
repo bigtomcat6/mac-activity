@@ -500,6 +500,66 @@ public final class AudioHALClient: @unchecked Sendable {
         try check(status, operation: .setData, objectID: objectID, address: address)
     }
 
+    func writeIOProcStreamUsage(
+        _ flags: [UInt32],
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID,
+        scope: AudioObjectPropertyScope
+    ) throws {
+        guard flags.isEmpty == false else {
+            throw AudioIOProcStreamUsageError.streamCountMismatch
+        }
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
+            scope: scope
+        )
+        try AudioIOProcStreamUsage.withEncoded(ioProcID: ioProcID, flags: flags) { bytes in
+            let status = backend.setPropertyData(
+                objectID: deviceID,
+                address: address,
+                byteCount: UInt32(bytes.count),
+                data: bytes.baseAddress!
+            )
+            try check(status, operation: .setData, objectID: deviceID, address: address)
+        }
+    }
+
+    func readIOProcStreamUsage(
+        streamCount: Int,
+        deviceID: AudioDeviceID,
+        ioProcID: AudioDeviceIOProcID,
+        scope: AudioObjectPropertyScope
+    ) throws -> [UInt32] {
+        guard streamCount > 0 else {
+            throw AudioIOProcStreamUsageError.streamCountMismatch
+        }
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
+            scope: scope
+        )
+        return try AudioIOProcStreamUsage.withEncoded(
+            ioProcID: ioProcID,
+            flags: Array(repeating: 0, count: streamCount)
+        ) { bytes in
+            var byteCount = UInt32(bytes.count)
+            let status = backend.getPropertyData(
+                objectID: deviceID,
+                address: address,
+                byteCount: &byteCount,
+                data: bytes.baseAddress!
+            )
+            try check(status, operation: .getData, objectID: deviceID, address: address)
+            guard byteCount == bytes.count else {
+                throw AudioIOProcStreamUsageError.byteCountMismatch
+            }
+            return try AudioIOProcStreamUsage.decode(
+                UnsafeRawBufferPointer(bytes),
+                expectedIOProcID: ioProcID,
+                expectedStreamCount: streamCount
+            )
+        }
+    }
+
     public func writeObject<T: AnyObject>(
         _ value: T,
         to objectID: AudioObjectID,
