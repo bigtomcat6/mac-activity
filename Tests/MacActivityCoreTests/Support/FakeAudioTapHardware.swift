@@ -14,7 +14,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case createIOProc
         case configureInputStreamUsage([UInt32])
         case startDevice
-        case waitForFirstCallback
+        case observeSustainedCallbacks
         case setTapMutedWhenTapped(sourceIndex: Int)
         case setTapUnmuted(sourceIndex: Int)
         case stopDevice
@@ -44,7 +44,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyOwnedObject(AudioObjectID)
     }
 
-    private final class WeakContext {
+    private final class WeakContext: @unchecked Sendable {
         weak var value: ProcessTapDSPContext?
 
         init(_ value: ProcessTapDSPContext) {
@@ -78,6 +78,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
+    var singleCallbackOnly = false
     var forcedTapObjectID: AudioObjectID?
     var forcedAggregateObjectID: AudioObjectID?
     var aggregateLayoutOverride: AudioAggregateLayout?
@@ -382,8 +383,15 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             return firstCallbackInitiallyBlocked && startInvocationCount == 1
         }
         guard shouldBlock == false else { return }
-        context(for: ioProc.aggregateDeviceID)?.markCallbackObserved()
-        record(.waitForFirstCallback)
+        let context = context(for: ioProc.aggregateDeviceID)
+        context?.markCallbackObserved()
+        if singleCallbackOnly == false, let context {
+            let weakContext = WeakContext(context)
+            DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(2)) {
+                weakContext.value?.markCallbackObserved()
+            }
+        }
+        record(.observeSustainedCallbacks)
     }
 
     func setMuteState(

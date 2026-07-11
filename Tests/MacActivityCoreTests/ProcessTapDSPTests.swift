@@ -4,14 +4,22 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapDSPTests: XCTestCase {
-    func testCallbackCountChangesOnlyWhenCallbacksAreObserved() throws {
+    func testCallbackCountChangesOnlyWhenProcessingCallbacksAreObserved() throws {
         let context = try makeMonoContext(outputBufferCount: 1)
         XCTAssertEqual(context.callbackCount, 0)
         context.setTargetGain(0.5)
         context.setOutputGateOpen(true)
         XCTAssertEqual(context.callbackCount, 0)
 
+        let storage = AudioBufferListTestStorage(
+            inputs: [[1]],
+            inputChannelCounts: [1],
+            outputs: [[0]],
+            outputChannelCounts: [1]
+        )
+        storage.process(with: context)
         context.markCallbackObserved()
+        storage.process(with: context)
         context.markCallbackObserved()
         XCTAssertEqual(context.callbackCount, 2)
         XCTAssertTrue(context.hasObservedCallback)

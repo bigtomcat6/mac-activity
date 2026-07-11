@@ -1070,6 +1070,18 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertEqual(output, [0])
         XCTAssertTrue(context.hasObservedCallback)
         XCTAssertEqual(context.callbackCount, 1)
+
+        XCTAssertEqual(
+            invokeIOProc(
+                creation.callback,
+                deviceID: aggregate.objectID,
+                input: &input,
+                output: &output,
+                clientData: creation.clientData
+            ),
+            noErr
+        )
+        XCTAssertEqual(context.callbackCount, 2)
         XCTAssertEqual(backend.ioProcCreations.count, 1)
     }
 

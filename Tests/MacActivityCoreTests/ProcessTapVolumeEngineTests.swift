@@ -23,7 +23,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             .createIOProc,
             .configureInputStreamUsage([1]),
             .startDevice,
-            .waitForFirstCallback,
+            .observeSustainedCallbacks,
             .setTapMutedWhenTapped(sourceIndex: 0),
         ])
 
@@ -37,6 +37,26 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             storage.outputSamples,
             [0.6, -0.6],
             accuracy: 0.000_001
+        )
+    }
+
+    func testSingleCallbackDoesNotQualifyAsSustainedPlayback() async throws {
+        let fixture = EngineFixture()
+        fixture.hardware.singleCallbackOnly = true
+        let task = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 1),
+                gain: ProcessGainState(volume: 0.6)
+            )
+        }
+        await fixture.hardware.waitUntilCall(.observeSustainedCallbacks)
+        try await Task.sleep(for: .milliseconds(20))
+        task.cancel()
+
+        let snapshot = await task.value
+        XCTAssertEqual(snapshot.error, .routeSuperseded)
+        XCTAssertFalse(
+            fixture.hardware.calls.contains(.setTapMutedWhenTapped(sourceIndex: 0))
         )
     }
 

@@ -82,6 +82,7 @@ public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
 
 public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @unchecked Sendable {
     private static let preparationTimeout: DispatchTimeInterval = .seconds(2)
+    private static let callbackObservationInterval: DispatchTimeInterval = .milliseconds(10)
 
     private let hardware: (any AudioTapHardware)?
     private let availability: AudioFeatureAvailability
@@ -441,9 +442,14 @@ private extension ProcessTapVolumeEngine {
             }
             try ensureCurrent(token)
 
+            let callbackCountBeforeStart = context.callbackCount
             try hardware.start(ioProc)
             try ensureCurrent(token)
-            try waitForFirstCallback(context, token: token)
+            try waitForSustainedCallbacks(
+                context,
+                startingAt: callbackCountBeforeStart,
+                token: token
+            )
 
             for tap in resources.taps {
                 try hardware.setMuteState(.mutedWhenTapped, for: tap)
@@ -581,19 +587,33 @@ private extension ProcessTapVolumeEngine {
         return result
     }
 
-    func waitForFirstCallback(
+    func waitForSustainedCallbacks(
         _ context: ProcessTapDSPContext,
+        startingAt initialCount: Int32,
         token: ProcessTapGenerationRegistry.Token
     ) throws {
         let deadline = DispatchTime.now() + Self.preparationTimeout
-        while context.hasObservedCallback == false {
+        var countBeforeObservation: Int32?
+        var observationDeadline: DispatchTime?
+        while true {
             try ensureCurrent(token)
-            guard DispatchTime.now() < deadline else {
+            let now = DispatchTime.now()
+            let currentCount = context.callbackCount
+            if let baseline = countBeforeObservation,
+               let intervalEnd = observationDeadline,
+               now >= intervalEnd {
+                if currentCount != baseline { return }
+                countBeforeObservation = currentCount
+                observationDeadline = now + Self.callbackObservationInterval
+            } else if countBeforeObservation == nil, currentCount != initialCount {
+                countBeforeObservation = currentCount
+                observationDeadline = now + Self.callbackObservationInterval
+            }
+            guard now < deadline else {
                 throw ProcessTapPreparationAbort(.aggregateNotReady)
             }
             usleep(1_000)
         }
-        try ensureCurrent(token)
     }
 
     func teardown(
