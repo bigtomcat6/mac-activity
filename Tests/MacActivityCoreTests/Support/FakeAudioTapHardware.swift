@@ -310,7 +310,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return AudioAggregateLayout(
             inputFormats: inputFormats,
             outputFormats: inputFormats,
-            channelMaps: channelMaps
+            channelMaps: channelMaps,
+            inputStreamUsage: [1]
         )
     }
 

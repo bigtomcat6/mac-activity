@@ -272,7 +272,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                     ),
                     mixCoefficient: 1
                 ),
-            ]
+            ],
+            inputStreamUsage: [1]
         )
 
         let snapshot = await fixture.engine.apply(

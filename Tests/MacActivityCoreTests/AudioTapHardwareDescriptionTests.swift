@@ -13,7 +13,31 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 streamIndex: 0,
                 expectedFormat: fixtureFormat(),
                 driftCompensation: .highQuality
-            )]
+            )],
+            targetInputStreams: [
+                [AudioRouteStream(
+                    streamObjectID: 801,
+                    streamIndex: 1,
+                    format: fixtureFormat(channelCount: 2)
+                )],
+                [AudioRouteStream(
+                    streamObjectID: 802,
+                    streamIndex: 2,
+                    format: fixtureFormat(channelCount: 4)
+                )],
+            ],
+            targetOutputStreams: [
+                [AudioRouteStream(
+                    streamObjectID: 901,
+                    streamIndex: 1,
+                    format: fixtureFormat(channelCount: 8)
+                )],
+                [AudioRouteStream(
+                    streamObjectID: 902,
+                    streamIndex: 2,
+                    format: fixtureFormat(channelCount: 2)
+                )],
+            ]
         )
         let tapUUIDs = [
             UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!,
@@ -25,6 +49,10 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         ) as NSDictionary
 
         XCTAssertEqual(description[kAudioAggregateDeviceUIDKey] as? String, plan.aggregateUID)
+        XCTAssertEqual(
+            description[kAudioAggregateDeviceNameKey] as? String,
+            "MacActivity Audio Aggregate 91.4"
+        )
         XCTAssertEqual(description[kAudioAggregateDeviceMainSubDeviceKey] as? String, "USB")
         XCTAssertNil(description[kAudioAggregateDeviceClockDeviceKey])
         XCTAssertEqual(description[kAudioAggregateDeviceIsStackedKey] as? Bool, true)
@@ -38,6 +66,14 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertEqual(
             subdevices.map { $0[kAudioSubDeviceUIDKey] as? String },
             ["USB", "HDMI"]
+        )
+        XCTAssertEqual(
+            subdevices.map { ($0[kAudioSubDeviceInputChannelsKey] as? NSNumber)?.intValue },
+            [0, 0]
+        )
+        XCTAssertEqual(
+            subdevices.map { ($0[kAudioSubDeviceOutputChannelsKey] as? NSNumber)?.intValue },
+            [8, 2]
         )
         XCTAssertEqual(
             subdevices.map { $0[kAudioSubDeviceDriftCompensationKey] as? Bool },
@@ -76,6 +112,10 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertEqual(description.stream, 7)
         XCTAssertTrue(description.isPrivate)
         XCTAssertEqual(description.muteBehavior, CATapMuteBehavior.unmuted)
+        XCTAssertEqual(
+            description.name,
+            "MacActivity Audio Tap \(description.uuid.uuidString)"
+        )
         XCTAssertTrue(description.uuid.uuidString.hasPrefix("4D414341-"))
     }
 
@@ -123,6 +163,22 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             try dictionaries(in: description, key: kAudioAggregateDeviceSubDeviceListKey).count,
             0
         )
+    }
+
+    @available(macOS 14.2, *)
+    func testDisabledSubTapOmitsDriftQuality() throws {
+        let description = CoreAudioTapHardware.aggregateDescription(
+            plan: fixturePlan(targets: ["USB"]),
+            tapUUIDs: [UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!]
+        ) as NSDictionary
+        let taps = try dictionaries(
+            in: description,
+            key: kAudioAggregateDeviceTapListKey
+        )
+
+        XCTAssertEqual(taps.count, 1)
+        XCTAssertEqual(taps[0][kAudioSubTapDriftCompensationKey] as? Bool, false)
+        XCTAssertNil(taps[0][kAudioSubTapDriftCompensationQualityKey])
     }
 
     func testReadinessRequiresAliveAndNonemptyInputAndOutputStreamIDs() {
@@ -1107,8 +1163,10 @@ private func dictionaries(in description: NSDictionary, key: String) throws -> [
 private func fixturePlan(
     targets: [String],
     tapSources: [AudioTapSource]? = nil,
+    targetInputStreams: [[AudioRouteStream]]? = nil,
     targetOutputStreams: [[AudioRouteStream]]? = nil
 ) -> AudioRoutePlan {
+    let inputStreams = targetInputStreams ?? Array(repeating: [], count: targets.count)
     let outputStreams = targetOutputStreams ?? targets.indices.map { index in
         [AudioRouteStream(
             streamObjectID: AudioStreamID(1_000 + index),
@@ -1116,6 +1174,7 @@ private func fixturePlan(
             format: fixtureFormat()
         )]
     }
+    precondition(inputStreams.count == targets.count)
     precondition(outputStreams.count == targets.count)
     return AudioRoutePlan(
         processObjectID: 91,
@@ -1126,7 +1185,7 @@ private func fixturePlan(
             AudioRouteSubdevice(
                 uid: uid,
                 driftCompensation: index > 0 ? .highQuality : .disabled,
-                inputStreams: [],
+                inputStreams: inputStreams[index],
                 outputStreams: outputStreams[index]
             )
         },
@@ -1225,8 +1284,17 @@ private func configureAggregateStreams(
     _ backend: FakeAudioHALBackend,
     aggregateID: AudioObjectID,
     input: [(AudioStreamID, ProcessTapAudioFormat)],
-    output: [(AudioStreamID, ProcessTapAudioFormat)]
+    output: [(AudioStreamID, ProcessTapAudioFormat)],
+    tapUUIDs: [UUID] = [
+        UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!,
+    ],
+    activeSubTapIDs: [AudioObjectID] = [900]
 ) {
+    backend.setScalar(
+        UInt32(1),
+        objectID: aggregateID,
+        address: AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceIsAlive)
+    )
     backend.setArray(
         input.map(\.0),
         objectID: aggregateID,
@@ -1236,6 +1304,20 @@ private func configureAggregateStreams(
         output.map(\.0),
         objectID: aggregateID,
         address: streamListAddress(scope: kAudioObjectPropertyScopeOutput)
+    )
+    backend.setRetainedObject(
+        tapUUIDs.map(\.uuidString) as CFArray,
+        objectID: aggregateID,
+        address: AudioHALPropertyAddress(
+            selector: kAudioAggregateDevicePropertyTapList
+        )
+    )
+    backend.setArray(
+        activeSubTapIDs,
+        objectID: aggregateID,
+        address: AudioHALPropertyAddress(
+            selector: kAudioAggregateDevicePropertySubTapList
+        )
     )
     let formatAddress = AudioHALPropertyAddress(selector: kAudioStreamPropertyVirtualFormat)
     for (streamID, format) in input + output {

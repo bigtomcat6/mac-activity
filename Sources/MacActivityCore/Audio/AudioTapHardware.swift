@@ -22,12 +22,6 @@ struct AudioIOProcResource: @unchecked Sendable {
     let ioProcID: AudioDeviceIOProcID
 }
 
-struct AudioAggregateLayout: Equatable, Sendable {
-    let inputFormats: [ProcessTapAudioFormat]
-    let outputFormats: [ProcessTapAudioFormat]
-    let channelMaps: [ProcessTapChannelMap]
-}
-
 struct AudioOwnedObject: Equatable, Sendable {
     let id: AudioObjectID
     let classID: AudioClassID
@@ -76,6 +70,7 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         description.isMixdown = false
         description.muteBehavior = .unmuted
         description.uuid = reservedTapUUID(entropy: entropy)
+        description.name = "MacActivity Audio Tap \(description.uuid.uuidString)"
         return description
     }
 
@@ -88,6 +83,10 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             let usesDriftCompensation = subdevice.driftCompensation != .disabled
             var description: [String: Any] = [
                 kAudioSubDeviceUIDKey: subdevice.uid,
+                kAudioSubDeviceInputChannelsKey: 0,
+                kAudioSubDeviceOutputChannelsKey: subdevice.outputStreams.reduce(0) {
+                    $0 + $1.format.channelCount
+                },
                 kAudioSubDeviceDriftCompensationKey: usesDriftCompensation,
             ]
             if usesDriftCompensation {
@@ -109,6 +108,8 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             return description
         }
         let description: [String: Any] = [
+            kAudioAggregateDeviceNameKey:
+                "MacActivity Audio Aggregate \(plan.processObjectID).\(plan.generation)",
             kAudioAggregateDeviceUIDKey: plan.aggregateUID,
             kAudioAggregateDeviceSubDeviceListKey: subdevices,
             kAudioAggregateDeviceMainSubDeviceKey: plan.mainDeviceUID,
@@ -331,10 +332,20 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         plan: AudioRoutePlan,
         taps: [AudioTapResource]
     ) throws -> AudioAggregateLayout {
-        guard taps.map(\.source) == plan.tapSources else {
+        guard taps.count == 1,
+              taps.map(\.source) == plan.tapSources,
+              let tap = taps.first
+        else {
             throw ValidationError.tapResourcesMismatch
         }
 
+        let isAlive: UInt32 = try hal.readScalar(
+            UInt32.self,
+            from: aggregate.objectID,
+            address: AudioHALPropertyAddress(
+                selector: kAudioDevicePropertyDeviceIsAlive
+            )
+        )
         let inputStreamIDs = try hal.readArray(
             AudioStreamID.self,
             from: aggregate.objectID,
@@ -360,49 +371,41 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         let actualOutputFormats = try outputStreamIDs.map {
             try readFormat(from: $0, address: formatAddress)
         }
+        let tapUUIDValues = try hal.readRetainedObject(
+            CFArray.self,
+            from: aggregate.objectID,
+            address: AudioHALPropertyAddress(
+                selector: kAudioAggregateDevicePropertyTapList
+            )
+        )
+        let tapUUIDs = try (tapUUIDValues as NSArray).map { value in
+            guard let string = value as? String,
+                  let uuid = UUID(uuidString: string)
+            else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            return uuid
+        }
+        let activeSubTapIDs = try hal.readArray(
+            AudioObjectID.self,
+            from: aggregate.objectID,
+            address: AudioHALPropertyAddress(
+                selector: kAudioAggregateDevicePropertySubTapList
+            )
+        )
 
-        try Self.validateActualTapFormats(
+        return try AudioAggregateTopologyResolver.resolve(
             plan: plan,
-            actualFormats: actualInputFormats
-        )
-        let expectedOutputFormats = plan.subdevices.flatMap {
-            $0.outputStreams.map(\.format)
-        }
-        guard actualOutputFormats == expectedOutputFormats else {
-            throw ValidationError.actualOutputFormatsMismatch
-        }
-
-        let inputLayout = Self.expandABLFormats(
-            actualInputFormats,
-            startingBufferIndex: 0
-        )
-        var outputFormats: [ProcessTapAudioFormat] = []
-        var channelMaps: [ProcessTapChannelMap] = []
-        var outputStreamIndex = 0
-        var outputBufferIndex = 0
-
-        for subdevice in plan.subdevices {
-            let streamCount = subdevice.outputStreams.count
-            let groupFormats = Array(
-                actualOutputFormats[outputStreamIndex..<(outputStreamIndex + streamCount)]
+            tap: tap,
+            snapshot: AudioAggregateTopologySnapshot(
+                isAlive: isAlive != 0,
+                inputStreamIDs: inputStreamIDs,
+                inputFormats: actualInputFormats,
+                outputStreamIDs: outputStreamIDs,
+                outputFormats: actualOutputFormats,
+                tapUUIDs: tapUUIDs,
+                activeSubTapIDs: activeSubTapIDs
             )
-            let targetLayout = Self.expandABLFormats(
-                groupFormats,
-                startingBufferIndex: outputBufferIndex
-            )
-            outputFormats.append(contentsOf: targetLayout.formats)
-            channelMaps.append(contentsOf: Self.channelMaps(
-                from: inputLayout.channels,
-                to: targetLayout.channels
-            ))
-            outputStreamIndex += streamCount
-            outputBufferIndex = targetLayout.nextBufferIndex
-        }
-
-        return AudioAggregateLayout(
-            inputFormats: inputLayout.formats,
-            outputFormats: outputFormats,
-            channelMaps: channelMaps
         )
     }
 
@@ -647,90 +650,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    private static func expandABLFormats(
-        _ formats: [ProcessTapAudioFormat],
-        startingBufferIndex: Int
-    ) -> (
-        formats: [ProcessTapAudioFormat],
-        channels: [ProcessTapChannelAddress],
-        nextBufferIndex: Int
-    ) {
-        var expandedFormats: [ProcessTapAudioFormat] = []
-        var channels: [ProcessTapChannelAddress] = []
-        var bufferIndex = startingBufferIndex
-
-        for format in formats where format.channelCount > 0 {
-            switch format.interleaving {
-            case .interleaved:
-                expandedFormats.append(format)
-                for channelIndex in 0..<format.channelCount {
-                    channels.append(ProcessTapChannelAddress(
-                        bufferIndex: bufferIndex,
-                        channelIndex: channelIndex,
-                        interleavedChannelCount: format.channelCount
-                    ))
-                }
-                bufferIndex += 1
-            case .nonInterleaved:
-                let bufferFormat = ProcessTapAudioFormat(
-                    sampleRate: format.sampleRate,
-                    channelCount: 1,
-                    formatID: format.formatID,
-                    formatFlags: format.formatFlags,
-                    bitsPerChannel: format.bitsPerChannel,
-                    interleaving: .nonInterleaved
-                )
-                for _ in 0..<format.channelCount {
-                    expandedFormats.append(bufferFormat)
-                    channels.append(ProcessTapChannelAddress(
-                        bufferIndex: bufferIndex,
-                        channelIndex: 0,
-                        interleavedChannelCount: 1
-                    ))
-                    bufferIndex += 1
-                }
-            }
-        }
-        return (expandedFormats, channels, bufferIndex)
-    }
-
-    private static func channelMaps(
-        from sourceChannels: [ProcessTapChannelAddress],
-        to targetChannels: [ProcessTapChannelAddress]
-    ) -> [ProcessTapChannelMap] {
-        guard sourceChannels.isEmpty == false,
-              targetChannels.isEmpty == false
-        else {
-            return []
-        }
-
-        if sourceChannels.count == 1 {
-            return targetChannels.map {
-                ProcessTapChannelMap(
-                    input: sourceChannels[0],
-                    output: $0,
-                    mixCoefficient: 1
-                )
-            }
-        }
-        if targetChannels.count == 1 {
-            let coefficient = Float32(1) / Float32(sourceChannels.count)
-            return sourceChannels.map {
-                ProcessTapChannelMap(
-                    input: $0,
-                    output: targetChannels[0],
-                    mixCoefficient: coefficient
-                )
-            }
-        }
-        return zip(sourceChannels, targetChannels).map {
-            ProcessTapChannelMap(
-                input: $0.0,
-                output: $0.1,
-                mixCoefficient: 1
-            )
-        }
-    }
 }
 
 private let coreAudioTapIOProc: AudioDeviceIOProc = {
