@@ -684,6 +684,230 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertNil(weakContext.value)
     }
 
+    func testReusedAggregateObjectIDKeepsIndependentIOProcRetriesAndContexts() async throws {
+        let fixture = EngineFixture(retryLedgerLimit: 4)
+        fixture.hardware.forcedAggregateObjectID = 2_400
+
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 77, generation: 1),
+            gain: ProcessGainState()
+        )
+        let firstIOProcKey = try XCTUnwrap(
+            fixture.hardware.createdIOProcKeys.last
+        )
+        var firstContext: ProcessTapDSPContext? = try XCTUnwrap(
+            fixture.hardware.lastContext
+        )
+        let weakFirstContext = WeakReference(firstContext)
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc,
+            ioProcKey: firstIOProcKey
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        firstContext = nil
+
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 88, generation: 1),
+            gain: ProcessGainState()
+        )
+        let secondIOProcKey = try XCTUnwrap(
+            fixture.hardware.createdIOProcKeys.last
+        )
+        XCTAssertNotEqual(firstIOProcKey, secondIOProcKey)
+        var secondContext: ProcessTapDSPContext? = try XCTUnwrap(
+            fixture.hardware.lastContext
+        )
+        let weakSecondContext = WeakReference(secondContext)
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc,
+            ioProcKey: secondIOProcKey
+        )
+        _ = await fixture.engine.stop(processObjectID: 88, generation: 1)
+        secondContext = nil
+
+        XCTAssertNotNil(weakFirstContext.value)
+        XCTAssertNotNil(weakSecondContext.value)
+
+        fixture.hardware.setPersistentStatus(
+            nil,
+            at: .destroyIOProc,
+            ioProcKey: firstIOProcKey
+        )
+        let firstCleanup = await fixture.engine.cleanupOrphans()
+        await waitForDeallocation { weakFirstContext.value == nil }
+
+        XCTAssertEqual(firstCleanup.count, 1)
+        XCTAssertNil(weakFirstContext.value)
+        XCTAssertNotNil(weakSecondContext.value)
+
+        fixture.hardware.setPersistentStatus(
+            nil,
+            at: .destroyIOProc,
+            ioProcKey: secondIOProcKey
+        )
+        let finalCleanup = await fixture.engine.cleanupOrphans()
+        await waitForDeallocation { weakSecondContext.value == nil }
+
+        XCTAssertTrue(finalCleanup.isEmpty)
+        XCTAssertNil(weakSecondContext.value)
+    }
+
+    func testRetryLedgerCapacityCountsReusedObjectIDAcquisitions() async throws {
+        let fixture = EngineFixture(retryLedgerLimit: 2)
+        fixture.hardware.forcedAggregateObjectID = 2_400
+
+        for processObjectID: AudioObjectID in [77, 88] {
+            _ = await fixture.engine.apply(
+                plan: fixture.plan(
+                    processObjectID: processObjectID,
+                    generation: 1
+                ),
+                gain: ProcessGainState()
+            )
+            let ioProcKey = try XCTUnwrap(
+                fixture.hardware.createdIOProcKeys.last
+            )
+            fixture.hardware.setPersistentStatus(
+                kAudioHardwareUnspecifiedError,
+                at: .destroyIOProc,
+                ioProcKey: ioProcKey
+            )
+            _ = await fixture.engine.stop(
+                processObjectID: processObjectID,
+                generation: 1
+            )
+        }
+
+        let rejected = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 99, generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(rejected.error, .cleanupBacklogFull)
+        XCTAssertEqual(fixture.hardware.createdIOProcKeys.count, 2)
+
+        for ioProcKey in fixture.hardware.createdIOProcKeys {
+            fixture.hardware.setPersistentStatus(
+                nil,
+                at: .destroyIOProc,
+                ioProcKey: ioProcKey
+            )
+        }
+        await fixture.engine.stopAll()
+        _ = await fixture.engine.cleanupOrphans()
+    }
+
+    func testLatestStopTearsDownOlderActiveSessionWhileApplyIsQueued() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.clearCalls()
+        fixture.queue.suspend()
+
+        let applying = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState(volume: 0.8)
+            )
+        }
+        let applyRegistered = await waitUntilCondition {
+            fixture.hardware.invokeLatestReadinessCancellationProbe() == true
+        }
+        XCTAssertTrue(applyRegistered)
+
+        let stopping = Task {
+            await fixture.engine.stop(
+                processObjectID: 77,
+                generation: 2
+            )
+        }
+        for _ in 0..<100 {
+            await Task.yield()
+        }
+        fixture.queue.resume()
+
+        let applySnapshot = await applying.value
+        let stopSnapshot = await stopping.value
+
+        XCTAssertEqual(applySnapshot.error, .routeSuperseded)
+        XCTAssertEqual(stopSnapshot.state, .idle)
+        XCTAssertNil(stopSnapshot.error)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .setTapUnmuted(sourceIndex: 0),
+            .stopDevice,
+            .destroyIOProc,
+            .destroyAggregate,
+            .destroyTap(sourceIndex: 0),
+        ])
+        await fixture.engine.stopAll()
+    }
+
+    func testSnapshotObserverRunsOutsideGenerationLock() async {
+        let hardware = FakeAudioTapHardware()
+        let result = GenerationLockProbeResult()
+        let fixture = EngineFixture(
+            hardware: hardware,
+            onSessionSnapshot: { snapshot in
+                guard snapshot.state == .running else { return }
+                let finished = DispatchSemaphore(value: 0)
+                DispatchQueue.global().async {
+                    result.recordProbe(
+                        hardware.invokeLatestReadinessCancellationProbe()
+                    )
+                    finished.signal()
+                }
+                result.recordTimeout(
+                    finished.wait(timeout: .now() + .milliseconds(200))
+                        == .timedOut
+                )
+            }
+        )
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.state, .running)
+        XCTAssertFalse(result.didTimeOut)
+        XCTAssertEqual(result.probeValue, false)
+        await fixture.engine.stopAll()
+    }
+
+    func testCancellationDuringThrowingNativeCallReturnsRouteSuperseded() async {
+        let fixture = EngineFixture()
+        fixture.hardware.blockCalls(at: .createTap(1))
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .createTap(1)
+        )
+        let applying = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 1, sourceCount: 2),
+                gain: ProcessGainState()
+            )
+        }
+        await fixture.hardware.waitUntilBlocked(at: .createTap(1))
+
+        applying.cancel()
+        for _ in 0..<10 {
+            await Task.yield()
+        }
+        fixture.hardware.releaseCalls(at: .createTap(1))
+        let snapshot = await applying.value
+
+        XCTAssertEqual(snapshot.error, .routeSuperseded)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .createTap(sourceIndex: 0, initiallyMuted: false),
+            .createTap(sourceIndex: 1, initiallyMuted: false),
+            .destroyTap(sourceIndex: 0),
+        ])
+    }
+
     func testSnapshotObserverDeallocationDoesNotCancelEngineWork() async {
         let hardware = FakeAudioTapHardware()
         let recorder = SnapshotRecorder()
@@ -737,6 +961,7 @@ private let callsThroughLayout = callsThroughAggregate + [
 
 private final class EngineFixture: @unchecked Sendable {
     let hardware: FakeAudioTapHardware
+    let queue: DispatchQueue
     let engine: ProcessTapVolumeEngine
     let format = ProcessTapAudioFormat(
         sampleRate: 48_000,
@@ -754,9 +979,14 @@ private final class EngineFixture: @unchecked Sendable {
         retryLedgerLimit: Int = 32,
         recorder: SnapshotRecorder? = nil,
         hardware: FakeAudioTapHardware = FakeAudioTapHardware(),
+        queue: DispatchQueue? = nil,
         onSessionSnapshot: (@Sendable (ProcessTapSessionSnapshot) -> Void)? = nil
     ) {
         self.hardware = hardware
+        let engineQueue = queue ?? DispatchQueue(
+            label: "ProcessTapVolumeEngineTests.\(UUID().uuidString)"
+        )
+        self.queue = engineQueue
         hardware.readinessInitiallyBlocked = readinessInitiallyBlocked
         hardware.firstCallbackInitiallyBlocked = firstCallbackInitiallyBlocked
         let snapshotHandler = onSessionSnapshot ?? { snapshot in
@@ -771,9 +1001,7 @@ private final class EngineFixture: @unchecked Sendable {
                     patchVersion: 0
                 )
             ),
-            queue: DispatchQueue(
-                label: "ProcessTapVolumeEngineTests.\(UUID().uuidString)"
-            ),
+            queue: engineQueue,
             retryLedgerLimit: retryLedgerLimit,
             onSessionSnapshot: snapshotHandler
         )
@@ -851,6 +1079,36 @@ private final class EngineOwner: @unchecked Sendable {
     }
 }
 
+private final class GenerationLockProbeResult: @unchecked Sendable {
+    private let lock = NSLock()
+    private var timeoutStorage = false
+    private var probeValueStorage: Bool?
+
+    var didTimeOut: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return timeoutStorage
+    }
+
+    var probeValue: Bool? {
+        lock.lock()
+        defer { lock.unlock() }
+        return probeValueStorage
+    }
+
+    func recordTimeout(_ didTimeOut: Bool) {
+        lock.lock()
+        timeoutStorage = didTimeOut
+        lock.unlock()
+    }
+
+    func recordProbe(_ value: Bool?) {
+        lock.lock()
+        probeValueStorage = value
+        lock.unlock()
+    }
+}
+
 private final class WeakReference<Object: AnyObject>: @unchecked Sendable {
     weak var value: Object?
 
@@ -884,6 +1142,16 @@ private func waitForDeallocation(
         if condition() { return }
         await Task.yield()
     }
+}
+
+private func waitUntilCondition(
+    _ condition: @escaping @Sendable () -> Bool
+) async -> Bool {
+    for _ in 0..<10_000 {
+        if condition() { return true }
+        await Task.yield()
+    }
+    return condition()
 }
 
 private func XCTAssertEqualFloatArrays(

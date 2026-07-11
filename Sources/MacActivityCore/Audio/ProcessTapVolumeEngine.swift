@@ -384,6 +384,7 @@ private extension ProcessTapVolumeEngine {
                 taps: resources.taps
             )
             resources.aggregate = aggregate
+            resources.aggregateAcquisitionID = UUID()
             try ensureCurrent(token)
 
             try hardware.waitUntilReady(
@@ -427,6 +428,7 @@ private extension ProcessTapVolumeEngine {
                 context: context
             )
             resources.ioProc = ioProc
+            resources.ioProcAcquisitionID = UUID()
             try ensureCurrent(token)
 
             try hardware.start(ioProc)
@@ -457,16 +459,18 @@ private extension ProcessTapVolumeEngine {
             let installed = generations.performIfCurrent(token) { [self] in
                 sessions[plan.processObjectID] = session
                 lifetimeLease = self
-                onSessionSnapshot(running)
             }
             guard installed else {
                 throw ProcessTapPreparationAbort(.routeSuperseded)
             }
+            onSessionSnapshot(running)
             return running
         } catch {
             resources.context?.setOutputGateOpen(false)
-            let preparationError = map(error)
             _ = teardown(resources, using: hardware)
+            let preparationError = generations.isCurrent(token)
+                ? map(error)
+                : .routeSuperseded
             return publishFailure(
                 preparationError,
                 processObjectID: plan.processObjectID,
@@ -519,7 +523,7 @@ private extension ProcessTapVolumeEngine {
             _ = publish(idle, token: token)
             return idle
         }
-        guard session.generation == generation else {
+        guard session.generation <= generation else {
             return snapshot(
                 processObjectID: processObjectID,
                 generation: generation,
@@ -602,6 +606,7 @@ private extension ProcessTapVolumeEngine {
                 failures.append(failure)
                 addRetry(
                     failure: failure,
+                    ownership: .tap(tap.uuid),
                     payload: .setTapUnmuted(tap)
                 )
             }
@@ -609,10 +614,14 @@ private extension ProcessTapVolumeEngine {
 
         if let ioProc = resources.ioProc,
            let context = resources.context {
+            guard let ioProcAcquisitionID = resources.ioProcAcquisitionID else {
+                preconditionFailure("IOProc ownership identity must accompany the resource")
+            }
             recordTeardownStatus(
                 hardware.stop(ioProc),
                 operation: .stopDevice,
                 objectID: ioProc.aggregateDeviceID,
+                ownership: .ioProc(ioProcAcquisitionID),
                 processObjectID: resources.processObjectID,
                 payload: .stop(ioProc, context),
                 failures: &failures
@@ -621,6 +630,7 @@ private extension ProcessTapVolumeEngine {
                 hardware.destroyIOProc(ioProc),
                 operation: .destroyIOProc,
                 objectID: ioProc.aggregateDeviceID,
+                ownership: .ioProc(ioProcAcquisitionID),
                 processObjectID: resources.processObjectID,
                 payload: .destroyIOProc(ioProc, context),
                 failures: &failures
@@ -628,10 +638,14 @@ private extension ProcessTapVolumeEngine {
         }
 
         if let aggregate = resources.aggregate {
+            guard let aggregateAcquisitionID = resources.aggregateAcquisitionID else {
+                preconditionFailure("aggregate ownership identity must accompany the resource")
+            }
             recordTeardownStatus(
                 hardware.destroyAggregate(aggregate),
                 operation: .destroyAggregate,
                 objectID: aggregate.objectID,
+                ownership: .aggregate(aggregateAcquisitionID),
                 processObjectID: resources.processObjectID,
                 payload: .destroyAggregate(aggregate),
                 failures: &failures
@@ -644,6 +658,7 @@ private extension ProcessTapVolumeEngine {
                 status,
                 operation: .destroyTap,
                 objectID: tap.objectID,
+                ownership: .tap(tap.uuid),
                 processObjectID: resources.processObjectID,
                 payload: .destroyTap(tap),
                 failures: &failures
@@ -651,7 +666,8 @@ private extension ProcessTapVolumeEngine {
             if status == noErr {
                 retryLedger.removeValue(forKey: AudioTeardownRetryKey(
                     operation: .setData,
-                    objectID: tap.objectID
+                    objectID: tap.objectID,
+                    ownership: .tap(tap.uuid)
                 ))
             }
         }
@@ -662,13 +678,15 @@ private extension ProcessTapVolumeEngine {
         _ status: OSStatus,
         operation: AudioHALOperation,
         objectID: AudioObjectID,
+        ownership: AudioTeardownOwnershipIdentity,
         processObjectID: AudioObjectID?,
         payload: AudioTeardownRetryPayload,
         failures: inout [AudioTeardownFailure]
     ) {
         let key = AudioTeardownRetryKey(
             operation: operation,
-            objectID: objectID
+            objectID: objectID,
+            ownership: ownership
         )
         guard status != noErr else {
             retryLedger.removeValue(forKey: key)
@@ -681,16 +699,22 @@ private extension ProcessTapVolumeEngine {
             status: status
         )
         failures.append(failure)
-        addRetry(failure: failure, payload: payload)
+        addRetry(
+            failure: failure,
+            ownership: ownership,
+            payload: payload
+        )
     }
 
     func addRetry(
         failure: AudioTeardownFailure,
+        ownership: AudioTeardownOwnershipIdentity,
         payload: AudioTeardownRetryPayload
     ) {
         let key = AudioTeardownRetryKey(
             operation: failure.operation,
-            objectID: failure.objectID
+            objectID: failure.objectID,
+            ownership: ownership
         )
         retryLedger[key] = AudioTeardownRetryEntry(
             key: key,
@@ -704,6 +728,9 @@ private extension ProcessTapVolumeEngine {
         defer { refreshLifetimeLease() }
         let entries = retryLedger.values.sorted {
             if $0.key.priority == $1.key.priority {
+                if $0.key.objectID == $1.key.objectID {
+                    return $0.key.ownership.sortKey < $1.key.ownership.sortKey
+                }
                 return $0.key.objectID < $1.key.objectID
             }
             return $0.key.priority < $1.key.priority
@@ -733,7 +760,8 @@ private extension ProcessTapVolumeEngine {
                 if entry.key.operation == .destroyTap {
                     retryLedger.removeValue(forKey: AudioTeardownRetryKey(
                         operation: .setData,
-                        objectID: entry.key.objectID
+                        objectID: entry.key.objectID,
+                        ownership: entry.key.ownership
                     ))
                 }
             } else {
@@ -799,9 +827,9 @@ private extension ProcessTapVolumeEngine {
         _ snapshot: ProcessTapSessionSnapshot,
         token: ProcessTapGenerationRegistry.Token
     ) -> Bool {
-        generations.performIfCurrent(token) { [onSessionSnapshot] in
-            onSessionSnapshot(snapshot)
-        }
+        guard generations.isCurrent(token) else { return false }
+        onSessionSnapshot(snapshot)
+        return true
     }
 
     func snapshot(
@@ -914,7 +942,9 @@ private struct ProcessTapSessionResources {
     var taps: [AudioTapResource] = []
     var mutedTaps: [AudioTapResource] = []
     var aggregate: AudioAggregateResource?
+    var aggregateAcquisitionID: UUID?
     var ioProc: AudioIOProcResource?
+    var ioProcAcquisitionID: UUID?
     var context: ProcessTapDSPContext?
 }
 
@@ -929,10 +959,16 @@ private struct ProcessTapPreparationAbort: Swift.Error {
 private struct AudioTeardownRetryKey: Hashable {
     let operationName: String
     let objectID: AudioObjectID
+    let ownership: AudioTeardownOwnershipIdentity
 
-    init(operation: AudioHALOperation, objectID: AudioObjectID) {
+    init(
+        operation: AudioHALOperation,
+        objectID: AudioObjectID,
+        ownership: AudioTeardownOwnershipIdentity
+    ) {
         operationName = operation.rawValue
         self.objectID = objectID
+        self.ownership = ownership
     }
 
     var operation: AudioHALOperation {
@@ -956,6 +992,23 @@ private struct AudioTeardownRetryKey: Hashable {
             3
         default:
             4
+        }
+    }
+}
+
+private enum AudioTeardownOwnershipIdentity: Hashable {
+    case ioProc(UUID)
+    case aggregate(UUID)
+    case tap(UUID)
+
+    var sortKey: String {
+        switch self {
+        case .ioProc(let id):
+            "0-\(id.uuidString)"
+        case .aggregate(let id):
+            "1-\(id.uuidString)"
+        case .tap(let id):
+            "2-\(id.uuidString)"
         }
     }
 }
