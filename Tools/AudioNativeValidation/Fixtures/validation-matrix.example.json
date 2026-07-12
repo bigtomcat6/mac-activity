@@ -1,0 +1,175 @@
+{
+  "aggregateResource" : {
+    "diagnosticOnlyObjectID" : 9001,
+    "uid" : "com.how.macactivity.audio.aggregate.7001.1"
+  },
+  "callbackCountAfterObservation" : 2048,
+  "callbackCountBeforeObservation" : 1024,
+  "eligibleForPolicyPromotion" : false,
+  "exactFingerprint" : {
+    "devices" : [
+      {
+        "activeSubdeviceUIDs" : [
+          "ExampleDeviceUID"
+        ],
+        "aggregateIsStacked" : false,
+        "aggregateMainSubdeviceUID" : "ExampleDeviceUID",
+        "aggregateTapUUIDs" : [
+
+        ],
+        "clockDomain" : 1,
+        "driverIdentity" : {
+          "availableVersion" : "1.0",
+          "plugInBundleID" : "com.example.audio-driver"
+        },
+        "fullSubdeviceUIDs" : [
+          "ExampleDeviceUID"
+        ],
+        "inputStreams" : [
+
+        ],
+        "isAlive" : true,
+        "modelUID" : "ExampleModelUID",
+        "outputStreams" : [
+          {
+            "format" : {
+              "bitsPerChannel" : 32,
+              "channelCount" : 2,
+              "formatFlags" : 9,
+              "formatID" : 1819304813,
+              "interleaving" : "interleaved",
+              "sampleRate" : 48000
+            },
+            "streamIndex" : 0,
+            "streamObjectID" : 1001
+          }
+        ],
+        "transportType" : 1651274862,
+        "uid" : "ExampleDeviceUID"
+      }
+    ],
+    "osBuild" : "23G93",
+    "selectedTargetUIDs" : [
+      "ExampleDeviceUID"
+    ],
+    "sourceDeviceUIDs" : [
+      "ExampleDeviceUID"
+    ]
+  },
+  "ioProcResource" : {
+    "diagnosticOnlyAggregateObjectID" : 9001,
+    "diagnosticOnlyIOProcID" : 123456
+  },
+  "microphoneTCCObservation" : "No microphone permission prompt appeared.",
+  "processObjectID" : 7001,
+  "rawFailures" : [
+
+  ],
+  "sustainedCallbacks" : true,
+  "tapFormats" : [
+    {
+      "diagnosticOnlyObjectID" : 8001,
+      "format" : {
+        "bitsPerChannel" : 32,
+        "channelCount" : 2,
+        "formatFlags" : 9,
+        "formatID" : 1819304813,
+        "interleaving" : "interleaved",
+        "sampleRate" : 48000
+      }
+    }
+  ],
+  "tapResources" : [
+    {
+      "diagnosticOnlyObjectID" : 8001,
+      "uuid" : "4D414341-0000-4000-8000-000000000001"
+    }
+  ],
+  "targetUIDs" : [
+    "ExampleDeviceUID"
+  ],
+  "topology" : {
+    "channelMaps" : [
+      {
+        "input" : {
+          "bufferIndex" : 0,
+          "channelIndex" : 0,
+          "interleavedChannelCount" : 2
+        },
+        "mixCoefficient" : 1,
+        "output" : {
+          "bufferIndex" : 0,
+          "channelIndex" : 0,
+          "interleavedChannelCount" : 2
+        }
+      }
+    ],
+    "diagnosticOnlyActiveSubTapIDs" : [
+      9101
+    ],
+    "diagnosticOnlyInputStreamIDs" : [
+      9201
+    ],
+    "diagnosticOnlyOutputStreamIDs" : [
+      9202
+    ],
+    "drift" : [
+      {
+        "diagnosticOnlyObjectID" : 9301,
+        "enabled" : 0,
+        "kind" : "subdevice",
+        "quality" : 0
+      },
+      {
+        "diagnosticOnlyObjectID" : 9101,
+        "enabled" : 0,
+        "kind" : "subtap",
+        "quality" : 0
+      }
+    ],
+    "fullSubdeviceUIDs" : [
+      "ExampleDeviceUID"
+    ],
+    "hasExactlyOneInput" : true,
+    "inputFormats" : [
+      {
+        "bitsPerChannel" : 32,
+        "channelCount" : 2,
+        "formatFlags" : 9,
+        "formatID" : 1819304813,
+        "interleaving" : "interleaved",
+        "sampleRate" : 48000
+      }
+    ],
+    "isAlive" : true,
+    "outputABLFormats" : [
+      {
+        "bitsPerChannel" : 32,
+        "channelCount" : 2,
+        "formatFlags" : 9,
+        "formatID" : 1819304813,
+        "interleaving" : "interleaved",
+        "sampleRate" : 48000
+      }
+    ],
+    "outputFormats" : [
+      {
+        "bitsPerChannel" : 32,
+        "channelCount" : 2,
+        "formatFlags" : 9,
+        "formatID" : 1819304813,
+        "interleaving" : "interleaved",
+        "sampleRate" : 48000
+      }
+    ],
+    "requestedInputStreamUsage" : [
+      1
+    ],
+    "tapUUIDs" : [
+      "4D414341-0000-4000-8000-000000000001"
+    ]
+  },
+  "verifiedInputStreamUsage" : [
+    1
+  ]
+}
