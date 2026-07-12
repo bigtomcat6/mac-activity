@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Mac Activity";
 "NSHumanReadableCopyright" = "Copyright © 2026 How. Alle Rechte vorbehalten.";
+"NSAudioCaptureUsageDescription" = "Mac Activity erfasst und leitet die Audioausgabe einer App um, um die Lautstärke pro App anzuwenden und sie über die ausgewählten Ausgabegeräte wiederzugeben.";

@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Mac Activity";
 "NSHumanReadableCopyright" = "Copyright © 2026 How. Tous droits réservés.";
+"NSAudioCaptureUsageDescription" = "Mac Activity capture et réachemine l’audio sortant d’une app afin d’appliquer son volume individuel et de le lire sur les appareils de sortie sélectionnés.";

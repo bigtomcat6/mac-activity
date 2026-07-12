@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Mac Activity";
 "NSHumanReadableCopyright" = "版權所有 © 2026 How。保留所有權利。";
+"NSAudioCaptureUsageDescription" = "Mac Activity 會擷取並重新路由 App 的輸出音訊，以套用個別 App 音量並透過您選擇的輸出裝置播放。";
