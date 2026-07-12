@@ -255,6 +255,7 @@ enum NativeTopologyEvidence {
 final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private let delegate = CoreAudioTapHardware(hal: .system)
     private let hal = AudioHALClient.system
+    private let teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)?
     private let stateLock = NSLock()
     private weak var callbackContextStorage: ProcessTapDSPContext?
 
@@ -271,6 +272,12 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
 
     private var recordedPlanStorage: AudioRoutePlan?
     private var recordedTapStorage: AudioTapResource?
+
+    init(
+        teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)? = nil
+    ) {
+        self.teardownOwnedObjects = teardownOwnedObjects
+    }
 
     func createTap(
         processObjectID: AudioObjectID,
@@ -551,17 +558,15 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 tapsStorage
             )
         }
-        guard recorded.0 else {
-            let observation = NativeTeardownObservation(
-                attempts: attempt,
-                callbackContextReleased: false,
-                aggregateIdentityAbsent: false,
-                tapIdentitiesAbsent: false
-            )
-            locked { teardownStorage = observation }
-            return observation
-        }
-        let discovery = try ownedObjects()
+        let conservativeObservation = NativeTeardownObservation(
+            attempts: attempt,
+            callbackContextReleased: recorded.0,
+            aggregateIdentityAbsent: false,
+            tapIdentitiesAbsent: false
+        )
+        locked { teardownStorage = conservativeObservation }
+        guard recorded.0 else { return conservativeObservation }
+        let discovery = try ownedObjectsForTeardown()
         guard discovery.failures.isEmpty else {
             throw NativeRecordingError.ownedObjectScanFailed
         }
@@ -587,6 +592,25 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         )
         locked { teardownStorage = observation }
         return observation
+    }
+
+    private func ownedObjectsForTeardown() throws -> AudioOwnedObjectDiscovery {
+        guard let teardownOwnedObjects else { return try ownedObjects() }
+        do {
+            let discovery = try teardownOwnedObjects()
+            locked {
+                rawFailuresStorage.append(contentsOf: discovery.failures.map {
+                    NativeRawFailure(
+                        seam: "ownedObjects.\($0.operation.rawValue)",
+                        status: $0.status
+                    )
+                })
+            }
+            return discovery
+        } catch {
+            record(error, seam: "ownedObjects")
+            throw error
+        }
     }
 
     private func readFullSubdeviceUIDs(_ aggregateID: AudioObjectID) throws -> [String] {
