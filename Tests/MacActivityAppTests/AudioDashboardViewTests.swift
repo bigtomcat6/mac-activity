@@ -8,29 +8,24 @@ import MacActivityCore
 final class AudioDashboardViewTests: XCTestCase {
     func testLowVersionRendersDeviceSectionWithoutProcessSection() throws {
         let model = AudioDashboardModel(
-            availability: AudioFeatureAvailability(
-                operatingSystemVersion: OperatingSystemVersion(majorVersion: 14, minorVersion: 1, patchVersion: 0)
-            ),
-            deviceProvider: AudioDashboardViewDeviceProviderStub(devices: [
-                AudioDeviceVolumeService.makeDevice(
-                    id: "BuiltInOutput",
-                    name: "MacBook Speakers",
-                    volume: 0.5,
-                    isMuted: false,
-                    canSetVolume: true,
-                    canSetMute: true
+            coordinator: TestAudioControlCoordinator(
+                supportsProcessControls: false,
+                snapshot: AudioControlSnapshot(
+                    devices: [
+                        AudioDeviceControlSnapshot(
+                            device: AudioOutputDeviceSnapshot(
+                                id: "BuiltInOutput",
+                                objectID: 1,
+                                name: "MacBook Speakers",
+                                volume: .value(0.5, isWritable: true),
+                                mute: .value(false, isWritable: true)
+                            ),
+                            error: nil
+                        )
+                    ],
+                    processes: []
                 )
-            ]),
-            processProvider: AudioDashboardViewProcessProviderStub(processes: [
-                AudioProcessEntry(
-                    processObjectID: 11,
-                    processIdentifier: 101,
-                    name: "Music",
-                    bundleIdentifier: nil,
-                    bundleURL: nil
-                )
-            ]),
-            processEngine: AudioDashboardViewProcessEngineStub()
+            )
         )
         model.refresh()
 
@@ -40,48 +35,6 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertNotNil(Self.renderedColor(of: view, atTopLeft: CGPoint(x: 180, y: 170)))
         XCTAssertFalse(model.showsProcessControls)
     }
-}
-
-@MainActor
-private final class AudioDashboardViewDeviceProviderStub: AudioDeviceVolumeProviding {
-    private let devices: [AudioOutputDeviceVolume]
-
-    init(devices: [AudioOutputDeviceVolume]) {
-        self.devices = devices
-    }
-
-    func outputDevices() -> [AudioOutputDeviceVolume] {
-        devices
-    }
-
-    func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        false
-    }
-
-    func setMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        false
-    }
-}
-
-@MainActor
-private final class AudioDashboardViewProcessProviderStub: AudioProcessProviding {
-    private let processes: [AudioProcessEntry]
-
-    init(processes: [AudioProcessEntry]) {
-        self.processes = processes
-    }
-
-    func audibleOutputProcesses() -> [AudioProcessEntry] {
-        processes
-    }
-}
-
-@MainActor
-private final class AudioDashboardViewProcessEngineStub: AudioProcessVolumeControlling {
-    func start(entry: AudioProcessEntry) throws {}
-    func stop(processIdentifier: pid_t) {}
-    func setVolume(_ volume: Double, processIdentifier: pid_t) {}
-    func setMuted(_ isMuted: Bool, processIdentifier: pid_t) {}
 }
 
 private extension AudioDashboardViewTests {

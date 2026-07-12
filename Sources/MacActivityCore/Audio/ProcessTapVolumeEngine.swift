@@ -328,24 +328,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         }
     }
 
-    public enum Error: Swift.Error, Equatable {
-        case processTapsUnavailable
-    }
-
-    @available(*, deprecated, message: "Use the async route-plan API")
-    @MainActor public func start(entry: AudioProcessEntry) throws {
-        throw Error.processTapsUnavailable
-    }
-
-    @available(*, deprecated, message: "Use stop(processObjectID:generation:)")
-    @MainActor public func stop(processIdentifier: pid_t) {}
-
-    @available(*, deprecated, message: "Use updateGain(_:for:)")
-    @MainActor public func setVolume(_ volume: Double, processIdentifier: pid_t) {}
-
-    @available(*, deprecated, message: "Use updateGain(_:for:)")
-    @MainActor public func setMuted(_ isMuted: Bool, processIdentifier: pid_t) {}
-
     static func callbackProgressIsReady(
         now: DispatchTime,
         deadline: DispatchTime,

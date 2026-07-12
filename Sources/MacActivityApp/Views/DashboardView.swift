@@ -607,7 +607,7 @@ struct DashboardView: View {
     @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @StateObject private var energyImpactModel = EnergyImpactModel()
-    @StateObject private var audioDashboardModel = AudioDashboardModel()
+    @ObservedObject var audioDashboardModel: AudioDashboardModel
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
@@ -618,6 +618,7 @@ struct DashboardView: View {
     init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
+        audioDashboardModel: AudioDashboardModel,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
         initialSelectedTab: DashboardTab = .overview,
@@ -625,6 +626,7 @@ struct DashboardView: View {
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
+        self.audioDashboardModel = audioDashboardModel
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
         self.onPreferredContentSizeChange = onPreferredContentSizeChange

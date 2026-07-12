@@ -1,100 +1,92 @@
 import Combine
+import CoreAudio
 import Foundation
 import MacActivityCore
 
 @MainActor
-protocol AudioProcessVolumeControlling: AnyObject {
-    func start(entry: AudioProcessEntry) throws
-    func stop(processIdentifier: pid_t)
-    func setVolume(_ volume: Double, processIdentifier: pid_t)
-    func setMuted(_ isMuted: Bool, processIdentifier: pid_t)
-}
-
-extension ProcessTapVolumeEngine: AudioProcessVolumeControlling {}
-
-@MainActor
 final class AudioDashboardModel: ObservableObject {
-    @Published private(set) var devices: [AudioOutputDeviceVolume] = []
-    @Published private(set) var processes: [AudioProcessEntry] = []
+    @Published private(set) var snapshot: AudioControlSnapshot
+    let supportsProcessControls: Bool
 
-    private let availability: AudioFeatureAvailability
-    private let deviceProvider: any AudioDeviceVolumeProviding
-    private let processProvider: any AudioProcessProviding
-    private let processEngine: any AudioProcessVolumeControlling
-    private var activeProcessIdentifiers: Set<pid_t> = []
+    private let coordinator: any AudioControlCoordinating
+    private var snapshotCancellable: AnyCancellable?
 
-    init(
-        availability: AudioFeatureAvailability = .current,
-        deviceProvider: any AudioDeviceVolumeProviding = AudioDeviceVolumeService(),
-        processProvider: any AudioProcessProviding = AudioProcessService(),
-        processEngine: any AudioProcessVolumeControlling = ProcessTapVolumeEngine()
-    ) {
-        self.availability = availability
-        self.deviceProvider = deviceProvider
-        self.processProvider = processProvider
-        self.processEngine = processEngine
-    }
-
-    var showsProcessControls: Bool {
-        !processes.isEmpty
-    }
-
-    func refresh() {
-        devices = deviceProvider.outputDevices()
-
-        guard availability.supportsProcessVolume else {
-            stopActiveProcesses(activeProcessIdentifiers)
-            activeProcessIdentifiers.removeAll()
-            processes = []
-            return
+    init(coordinator: any AudioControlCoordinating) {
+        self.coordinator = coordinator
+        self.snapshot = coordinator.snapshot
+        self.supportsProcessControls = coordinator.supportsProcessControls
+        self.snapshotCancellable = coordinator.snapshotPublisher.sink { [weak self] snapshot in
+            self?.snapshot = snapshot
         }
+    }
 
-        let candidates = processProvider.audibleOutputProcesses()
-        let candidateIdentifiers = Set(candidates.map(\.processIdentifier))
-        var activeEntries: [AudioProcessEntry] = []
+    func retryDevice(_ uid: String) { coordinator.retryDevice(uid) }
 
-        for entry in candidates {
-            if activeProcessIdentifiers.contains(entry.processIdentifier) {
-                activeEntries.append(entry)
-                continue
+    func setDeviceVolume(_ value: Double, for uid: String) {
+        coordinator.setDeviceVolume(value, for: uid)
+    }
+
+    func setDeviceMuted(_ value: Bool, for uid: String) {
+        coordinator.setDeviceMuted(value, for: uid)
+    }
+
+    func setProcessVolume(_ value: Double, for id: AudioObjectID) {
+        coordinator.setProcessVolume(value, for: id)
+    }
+
+    func setProcessMuted(_ value: Bool, for id: AudioObjectID) {
+        coordinator.setProcessMuted(value, for: id)
+    }
+
+    func setProcessRoute(_ route: AudioRouteMode, for id: AudioObjectID) {
+        coordinator.setProcessRoute(route, for: id)
+    }
+
+    func retry(processObjectID: AudioObjectID) {
+        coordinator.retry(processObjectID: processObjectID)
+    }
+
+    func reset(processObjectID: AudioObjectID) {
+        coordinator.reset(processObjectID: processObjectID)
+    }
+
+    // Removed in Task 11 after AudioDashboardView consumes `snapshot` directly.
+    var devices: [AudioOutputDeviceVolume] {
+        snapshot.devices.compactMap { row in
+            guard case .value(let volume, let canSetVolume) = row.device.volume,
+                  case .value(let isMuted, let canSetMute) = row.device.mute else {
+                return nil
             }
-
-            do {
-                try processEngine.start(entry: entry)
-                activeProcessIdentifiers.insert(entry.processIdentifier)
-                activeEntries.append(entry)
-            } catch {
-                continue
-            }
-        }
-
-        let inactiveIdentifiers = activeProcessIdentifiers.subtracting(candidateIdentifiers)
-        stopActiveProcesses(inactiveIdentifiers)
-        activeProcessIdentifiers.subtract(inactiveIdentifiers)
-        processes = activeEntries
-    }
-
-    func setDeviceVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) {
-        guard deviceProvider.setVolume(volume, for: id) else { return }
-        refresh()
-    }
-
-    func setDeviceMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) {
-        guard deviceProvider.setMuted(isMuted, for: id) else { return }
-        refresh()
-    }
-
-    func setProcessVolume(_ volume: Double, for processIdentifier: pid_t) {
-        processEngine.setVolume(volume, processIdentifier: processIdentifier)
-    }
-
-    func setProcessMuted(_ isMuted: Bool, for processIdentifier: pid_t) {
-        processEngine.setMuted(isMuted, processIdentifier: processIdentifier)
-    }
-
-    private func stopActiveProcesses(_ processIdentifiers: Set<pid_t>) {
-        for processIdentifier in processIdentifiers {
-            processEngine.stop(processIdentifier: processIdentifier)
+            return AudioOutputDeviceVolume(
+                id: row.id,
+                name: row.device.name,
+                volume: volume,
+                isMuted: isMuted,
+                volumeAvailability: canSetVolume ? .writable : .unsupported,
+                muteAvailability: canSetMute ? .writable : .unsupported
+            )
         }
     }
+
+    var processes: [AudioProcessEntry] { snapshot.processes.map(\.process) }
+    var showsProcessControls: Bool { supportsProcessControls && processes.isEmpty == false }
+    func refresh() {}
+
+    func setProcessVolume(_ value: Double, for processIdentifier: pid_t) {
+        guard let process = snapshot.processes.first(where: {
+            $0.process.processIdentifier == processIdentifier
+        }) else { return }
+        setProcessVolume(value, for: process.id)
+    }
+
+    func setProcessMuted(_ value: Bool, for processIdentifier: pid_t) {
+        guard let process = snapshot.processes.first(where: {
+            $0.process.processIdentifier == processIdentifier
+        }) else { return }
+        setProcessMuted(value, for: process.id)
+    }
+
+    #if DEBUG
+    var testingCoordinator: AnyObject { coordinator }
+    #endif
 }

@@ -1,337 +1,187 @@
+import Combine
+import CoreAudio
 import XCTest
 import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
 final class AudioDashboardModelTests: XCTestCase {
-    func testRefreshHidesProcessControlsWhenUnsupported() {
-        let deviceProvider = AudioDeviceVolumeProviderStub(devices: [
-            AudioDeviceVolumeService.makeDevice(
-                id: "BuiltInOutput",
-                name: "MacBook Speakers",
-                volume: 0.5,
-                isMuted: false,
-                canSetVolume: true,
-                canSetMute: true
-            )
-        ])
-        let processProvider = AudioProcessProviderStub(processes: [Self.musicProcess], callCount: 0)
-        let processEngine = AudioProcessVolumeControllerStub()
-        let model = AudioDashboardModel(
-            availability: Self.unsupportedAvailability,
-            deviceProvider: deviceProvider,
-            processProvider: processProvider,
-            processEngine: processEngine
-        )
+    func testInitialStateEqualsCoordinatorSnapshotAndPublisherReplacesIt() {
+        let initial = Self.snapshot(deviceVolume: 0.4, processVolume: 0.7)
+        let replacement = Self.snapshot(deviceVolume: 0.8, processVolume: 0.2)
+        let coordinator = AudioControlCoordinatorSpy(snapshot: initial)
+        let model = AudioDashboardModel(coordinator: coordinator)
 
-        model.refresh()
+        XCTAssertEqual(model.snapshot, initial)
+        XCTAssertEqual(model.supportsProcessControls, coordinator.supportsProcessControls)
+
+        coordinator.publish(replacement)
+
+        XCTAssertEqual(model.snapshot, replacement)
+    }
+
+    func testEveryIntentForwardsStableDeviceUIDAndProcessObjectID() {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        model.retryDevice("BuiltInOutput")
+        model.setDeviceVolume(0.3, for: "BuiltInOutput")
+        model.setDeviceMuted(true, for: "BuiltInOutput")
+        let processObjectID = AudioObjectID(11)
+        model.setProcessVolume(0.4, for: processObjectID)
+        model.setProcessMuted(true, for: processObjectID)
+        model.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: processObjectID)
+        model.retry(processObjectID: 11)
+        model.reset(processObjectID: 11)
+
+        XCTAssertEqual(coordinator.intents, [
+            .retryDevice("BuiltInOutput"),
+            .deviceVolume(0.3, "BuiltInOutput"),
+            .deviceMuted(true, "BuiltInOutput"),
+            .processVolume(0.4, 11),
+            .processMuted(true, 11),
+            .processRoute(.explicit(targetDeviceUIDs: ["USB"]), 11),
+            .retryProcess(11),
+            .resetProcess(11)
+        ])
+    }
+
+    func testCompatibilityPIDSettersResolveAndForwardProcessObjectID() {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        model.setProcessVolume(0.35, for: pid_t(101))
+        model.setProcessMuted(true, for: pid_t(101))
+
+        XCTAssertEqual(coordinator.intents, [
+            .processVolume(0.35, 11),
+            .processMuted(true, 11)
+        ])
+    }
+
+    func testUnsupportedCoordinatorKeepsDeviceControlsButHidesProcessControls() {
+        let coordinator = AudioControlCoordinatorSpy(
+            supportsProcessControls: false,
+            snapshot: Self.snapshot()
+        )
+        let model = AudioDashboardModel(coordinator: coordinator)
 
         XCTAssertEqual(model.devices.count, 1)
-        XCTAssertFalse(model.showsProcessControls)
-        XCTAssertTrue(model.processes.isEmpty)
-        XCTAssertEqual(processProvider.callCount, 0)
-        XCTAssertEqual(processEngine.startedEntries, [])
-        XCTAssertEqual(processEngine.stoppedProcessIdentifiers, [])
-    }
-
-    func testRefreshLoadsProcessControlsOnlyForProcessesWithSuccessfulTapStart() {
-        let processEngine = AudioProcessVolumeControllerStub(startResults: [101: .success(())])
-        let model = AudioDashboardModel(
-            availability: Self.supportedAvailability,
-            deviceProvider: AudioDeviceVolumeProviderStub(devices: []),
-            processProvider: AudioProcessProviderStub(processes: [Self.musicProcess]),
-            processEngine: processEngine
-        )
-
-        model.refresh()
-
-        XCTAssertTrue(model.showsProcessControls)
-        XCTAssertEqual(model.processes.map { $0.name }, ["Music"])
-        XCTAssertEqual(processEngine.startedEntries.map { $0.processIdentifier }, [101])
-    }
-
-    func testRefreshHidesProcessControlsWhenTapStartFails() {
-        let processEngine = AudioProcessVolumeControllerStub(startResults: [101: .failure(ProcessTapVolumeEngine.Error.processTapsUnavailable)])
-        let model = AudioDashboardModel(
-            availability: Self.supportedAvailability,
-            deviceProvider: AudioDeviceVolumeProviderStub(devices: []),
-            processProvider: AudioProcessProviderStub(processes: [Self.musicProcess]),
-            processEngine: processEngine
-        )
-
-        model.refresh()
-
-        XCTAssertFalse(model.showsProcessControls)
-        XCTAssertTrue(model.processes.isEmpty)
-        XCTAssertEqual(processEngine.startedEntries.map { $0.processIdentifier }, [101])
-    }
-
-    func testRefreshDoesNotRestartActiveTapAndStopsMissingProcess() {
-        let processEngine = AudioProcessVolumeControllerStub(startResults: [101: .success(())])
-        let processProvider = AudioProcessProviderStub(processSequences: [
-            [Self.musicProcess],
-            [Self.musicProcess],
-            []
-        ])
-        let model = AudioDashboardModel(
-            availability: Self.supportedAvailability,
-            deviceProvider: AudioDeviceVolumeProviderStub(devices: []),
-            processProvider: processProvider,
-            processEngine: processEngine
-        )
-
-        model.refresh()
-        model.refresh()
-        model.refresh()
-
-        XCTAssertEqual(processEngine.startedEntries.map { $0.processIdentifier }, [101])
-        XCTAssertEqual(processEngine.stoppedProcessIdentifiers, [101])
-        XCTAssertTrue(model.processes.isEmpty)
+        XCTAssertEqual(model.processes.count, 1)
         XCTAssertFalse(model.showsProcessControls)
     }
 
-    func testSetDeviceVolumeRefreshesAfterSuccessfulWrite() {
-        let deviceProvider = AudioDeviceVolumeProviderStub(
-            devices: [Self.device],
-            setVolumeResult: true
-        )
-        let model = AudioDashboardModel(
-            availability: Self.unsupportedAvailability,
-            deviceProvider: deviceProvider,
-            processProvider: AudioProcessProviderStub(processes: []),
-            processEngine: AudioProcessVolumeControllerStub()
-        )
+    func testModelDeallocationDoesNotShutdownCoordinator() {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        weak var releasedModel: AudioDashboardModel?
 
-        model.refresh()
-        model.setDeviceVolume(0.75, for: Self.device.id)
-
-        XCTAssertEqual(deviceProvider.outputDevicesCallCount, 2)
-        XCTAssertEqual(model.devices.first?.volume, 0.75)
-    }
-
-    func testSetDeviceVolumeDoesNotRefreshAfterFailedWrite() {
-        let deviceProvider = AudioDeviceVolumeProviderStub(
-            devices: [Self.device],
-            setVolumeResult: false
-        )
-        let model = AudioDashboardModel(
-            availability: Self.unsupportedAvailability,
-            deviceProvider: deviceProvider,
-            processProvider: AudioProcessProviderStub(processes: []),
-            processEngine: AudioProcessVolumeControllerStub()
-        )
-
-        model.refresh()
-        model.setDeviceVolume(0.75, for: Self.device.id)
-
-        XCTAssertEqual(deviceProvider.outputDevicesCallCount, 1)
-        XCTAssertEqual(model.devices.first?.volume, Self.device.volume)
-    }
-
-    func testSetDeviceMutedRefreshesAfterSuccessfulWrite() {
-        let deviceProvider = AudioDeviceVolumeProviderStub(
-            devices: [Self.device],
-            setMutedResult: true
-        )
-        let model = AudioDashboardModel(
-            availability: Self.unsupportedAvailability,
-            deviceProvider: deviceProvider,
-            processProvider: AudioProcessProviderStub(processes: []),
-            processEngine: AudioProcessVolumeControllerStub()
-        )
-
-        model.refresh()
-        model.setDeviceMuted(true, for: Self.device.id)
-
-        XCTAssertEqual(deviceProvider.outputDevicesCallCount, 2)
-        XCTAssertEqual(model.devices.first?.isMuted, true)
-    }
-
-    func testSetDeviceMutedDoesNotRefreshAfterFailedWrite() {
-        let deviceProvider = AudioDeviceVolumeProviderStub(
-            devices: [Self.device],
-            setMutedResult: false
-        )
-        let model = AudioDashboardModel(
-            availability: Self.unsupportedAvailability,
-            deviceProvider: deviceProvider,
-            processProvider: AudioProcessProviderStub(processes: []),
-            processEngine: AudioProcessVolumeControllerStub()
-        )
-
-        model.refresh()
-        model.setDeviceMuted(true, for: Self.device.id)
-
-        XCTAssertEqual(deviceProvider.outputDevicesCallCount, 1)
-        XCTAssertEqual(model.devices.first?.isMuted, Self.device.isMuted)
-    }
-
-    func testProcessSettersForwardToProcessEngine() {
-        let processEngine = AudioProcessVolumeControllerStub()
-        let model = AudioDashboardModel(
-            availability: Self.supportedAvailability,
-            deviceProvider: AudioDeviceVolumeProviderStub(devices: []),
-            processProvider: AudioProcessProviderStub(processes: []),
-            processEngine: processEngine
-        )
-
-        model.setProcessVolume(0.35, for: 101)
-        model.setProcessMuted(true, for: 101)
-
-        XCTAssertEqual(processEngine.setVolumeCalls.count, 1)
-        XCTAssertEqual(processEngine.setVolumeCalls.first?.volume, 0.35)
-        XCTAssertEqual(processEngine.setVolumeCalls.first?.processIdentifier, 101)
-        XCTAssertEqual(processEngine.setMutedCalls.count, 1)
-        XCTAssertEqual(processEngine.setMutedCalls.first?.isMuted, true)
-        XCTAssertEqual(processEngine.setMutedCalls.first?.processIdentifier, 101)
-    }
-}
-
-@MainActor
-private extension AudioDashboardModelTests {
-    static let unsupportedAvailability = AudioFeatureAvailability(
-        operatingSystemVersion: OperatingSystemVersion(majorVersion: 14, minorVersion: 1, patchVersion: 0)
-    )
-
-    static let supportedAvailability = AudioFeatureAvailability(
-        operatingSystemVersion: OperatingSystemVersion(majorVersion: 14, minorVersion: 2, patchVersion: 0)
-    )
-
-    static let device = AudioDeviceVolumeService.makeDevice(
-        id: "BuiltInOutput",
-        name: "MacBook Speakers",
-        volume: 0.5,
-        isMuted: false,
-        canSetVolume: true,
-        canSetMute: true
-    )
-
-    static let musicProcess = AudioProcessEntry(
-        processObjectID: 11,
-        processIdentifier: 101,
-        name: "Music",
-        bundleIdentifier: nil,
-        bundleURL: nil
-    )
-}
-
-@MainActor
-private final class AudioDeviceVolumeProviderStub: AudioDeviceVolumeProviding {
-    private(set) var devices: [AudioOutputDeviceVolume]
-    private let setVolumeResult: Bool
-    private let setMutedResult: Bool
-    private(set) var outputDevicesCallCount = 0
-
-    init(
-        devices: [AudioOutputDeviceVolume],
-        setVolumeResult: Bool = true,
-        setMutedResult: Bool = true
-    ) {
-        self.devices = devices
-        self.setVolumeResult = setVolumeResult
-        self.setMutedResult = setMutedResult
-    }
-
-    func outputDevices() -> [AudioOutputDeviceVolume] {
-        outputDevicesCallCount += 1
-        return devices
-    }
-
-    func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        guard setVolumeResult, let index = devices.firstIndex(where: { $0.id == id }) else { return false }
-
-        let device = devices[index]
-        devices[index] = AudioOutputDeviceVolume(
-            id: device.id,
-            name: device.name,
-            volume: AudioDeviceVolumeService.clampedVolume(volume),
-            isMuted: device.isMuted,
-            volumeAvailability: device.volumeAvailability,
-            muteAvailability: device.muteAvailability
-        )
-        return true
-    }
-
-    func setMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        guard setMutedResult, let index = devices.firstIndex(where: { $0.id == id }) else { return false }
-
-        let device = devices[index]
-        devices[index] = AudioOutputDeviceVolume(
-            id: device.id,
-            name: device.name,
-            volume: device.volume,
-            isMuted: isMuted,
-            volumeAvailability: device.volumeAvailability,
-            muteAvailability: device.muteAvailability
-        )
-        return true
-    }
-}
-
-@MainActor
-private final class AudioProcessProviderStub: AudioProcessProviding {
-    private let processSequences: [[AudioProcessEntry]]
-    private(set) var callCount: Int
-
-    init(processes: [AudioProcessEntry], callCount: Int = 0) {
-        self.processSequences = [processes]
-        self.callCount = callCount
-    }
-
-    init(processSequences: [[AudioProcessEntry]], callCount: Int = 0) {
-        self.processSequences = processSequences
-        self.callCount = callCount
-    }
-
-    func audibleOutputProcesses() -> [AudioProcessEntry] {
-        let index = min(callCount, processSequences.count - 1)
-        callCount += 1
-        return processSequences[index]
-    }
-}
-
-@MainActor
-private final class AudioProcessVolumeControllerStub: AudioProcessVolumeControlling {
-    private(set) var startedEntries: [AudioProcessEntry] = []
-    private(set) var stoppedProcessIdentifiers: [pid_t] = []
-    private(set) var setVolumeCalls: [SetVolumeCall] = []
-    private(set) var setMutedCalls: [SetMutedCall] = []
-    private let startResults: [pid_t: Result<Void, Error>]
-
-    init(startResults: [pid_t: Result<Void, Error>] = [:]) {
-        self.startResults = startResults
-    }
-
-    func start(entry: AudioProcessEntry) throws {
-        startedEntries.append(entry)
-
-        switch startResults[entry.processIdentifier, default: .success(())] {
-        case .success:
-            return
-        case .failure(let error):
-            throw error
+        autoreleasepool {
+            let model = AudioDashboardModel(coordinator: coordinator)
+            releasedModel = model
+            withExtendedLifetime(model) {}
         }
+
+        XCTAssertNil(releasedModel)
+        XCTAssertEqual(coordinator.shutdownCallCount, 0)
     }
 
-    func stop(processIdentifier: pid_t) {
-        stoppedProcessIdentifiers.append(processIdentifier)
-    }
-
-    func setVolume(_ volume: Double, processIdentifier: pid_t) {
-        setVolumeCalls.append(SetVolumeCall(volume: volume, processIdentifier: processIdentifier))
-    }
-
-    func setMuted(_ isMuted: Bool, processIdentifier: pid_t) {
-        setMutedCalls.append(SetMutedCall(isMuted: isMuted, processIdentifier: processIdentifier))
+    private static func snapshot(
+        deviceVolume: Double = 0.4,
+        processVolume: Double = 0.7
+    ) -> AudioControlSnapshot {
+        AudioControlSnapshot(
+            devices: [
+                AudioDeviceControlSnapshot(
+                    device: AudioOutputDeviceSnapshot(
+                        id: "BuiltInOutput",
+                        objectID: 1,
+                        name: "MacBook Speakers",
+                        volume: .value(deviceVolume, isWritable: true),
+                        mute: .value(false, isWritable: true)
+                    ),
+                    error: nil
+                )
+            ],
+            processes: [
+                AudioProcessControlSnapshot(
+                    process: AudioProcessEntry(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        name: "Music",
+                        bundleIdentifier: "com.apple.Music",
+                        bundleURL: nil
+                    ),
+                    volume: processVolume,
+                    isMuted: false,
+                    route: .followOriginal,
+                    pendingValues: nil,
+                    routeOptions: [],
+                    session: ProcessTapSessionSnapshot(
+                        processObjectID: 11,
+                        generation: 0,
+                        state: .idle,
+                        error: nil,
+                        commandSequence: 0,
+                        emissionOrdinal: 0
+                    ),
+                    error: nil
+                )
+            ]
+        )
     }
 }
 
-private struct SetVolumeCall: Equatable {
-    let volume: Double
-    let processIdentifier: pid_t
-}
+@MainActor
+private final class AudioControlCoordinatorSpy: AudioControlCoordinating {
+    enum Intent: Equatable {
+        case retryDevice(String)
+        case deviceVolume(Double, String)
+        case deviceMuted(Bool, String)
+        case processVolume(Double, AudioObjectID)
+        case processMuted(Bool, AudioObjectID)
+        case processRoute(AudioRouteMode, AudioObjectID)
+        case retryProcess(AudioObjectID)
+        case resetProcess(AudioObjectID)
+    }
 
-private struct SetMutedCall: Equatable {
-    let isMuted: Bool
-    let processIdentifier: pid_t
+    let supportsProcessControls: Bool
+    private(set) var snapshot: AudioControlSnapshot
+    private let subject: CurrentValueSubject<AudioControlSnapshot, Never>
+    var snapshotPublisher: AnyPublisher<AudioControlSnapshot, Never> {
+        subject.eraseToAnyPublisher()
+    }
+    private(set) var intents: [Intent] = []
+    private(set) var shutdownCallCount = 0
+
+    init(supportsProcessControls: Bool = true, snapshot: AudioControlSnapshot) {
+        self.supportsProcessControls = supportsProcessControls
+        self.snapshot = snapshot
+        self.subject = CurrentValueSubject(snapshot)
+    }
+
+    func publish(_ snapshot: AudioControlSnapshot) {
+        self.snapshot = snapshot
+        subject.send(snapshot)
+    }
+
+    func start() async {}
+    func retryDevice(_ deviceUID: String) { intents.append(.retryDevice(deviceUID)) }
+    func setDeviceVolume(_ volume: Double, for deviceUID: String) {
+        intents.append(.deviceVolume(volume, deviceUID))
+    }
+    func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {
+        intents.append(.deviceMuted(isMuted, deviceUID))
+    }
+    func setProcessVolume(_ volume: Double, for processObjectID: AudioObjectID) {
+        intents.append(.processVolume(volume, processObjectID))
+    }
+    func setProcessMuted(_ isMuted: Bool, for processObjectID: AudioObjectID) {
+        intents.append(.processMuted(isMuted, processObjectID))
+    }
+    func setProcessRoute(_ route: AudioRouteMode, for processObjectID: AudioObjectID) {
+        intents.append(.processRoute(route, processObjectID))
+    }
+    func retry(processObjectID: AudioObjectID) { intents.append(.retryProcess(processObjectID)) }
+    func reset(processObjectID: AudioObjectID) { intents.append(.resetProcess(processObjectID)) }
+    func shutdown() async { shutdownCallCount += 1 }
 }

@@ -16,6 +16,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let metricsStore = MetricsStore()
     private let launchService: LaunchAtLoginServicing = AppDelegate.makeLaunchService()
     private let releasePageOpener: (URL) -> Void
+    private let injectedAudioShutdown: (@MainActor () async -> Void)?
+    private let injectedSchedulerStop: (@MainActor () async -> Void)?
+    private let terminationReply: (@MainActor (Bool) -> Void)?
 
     private var preferencesController: PreferencesController?
     private var samplingController: AppSamplingController?
@@ -27,21 +30,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var presentationCoordinator: AppPresentationCoordinator?
     private var sparkleUpdateController: UpdateChecking?
     private var scheduler: MetricsScheduler?
+    private var audioControlCoordinator: AudioControlCoordinator?
+    #if DEBUG
+    private var testingAudioControlCoordinator: (any AudioControlCoordinating)?
+    private var testingResolvedDashboardPopoverController: DashboardPopoverController?
+    #endif
+    private var isPreparingForTermination = false
+    private var didPrepareForTermination = false
     private var cancellables: Set<AnyCancellable> = []
 
     override init() {
         self.releasePageOpener = { url in
             NSWorkspace.shared.open(url)
         }
+        self.injectedAudioShutdown = nil
+        self.injectedSchedulerStop = nil
+        self.terminationReply = nil
         super.init()
     }
 
     init(
         sparkleUpdateController: UpdateChecking? = nil,
-        releasePageOpener: @escaping (URL) -> Void
+        releasePageOpener: @escaping (URL) -> Void,
+        audioShutdown: (@MainActor () async -> Void)? = nil,
+        schedulerStop: (@MainActor () async -> Void)? = nil,
+        terminationReply: (@MainActor (Bool) -> Void)? = nil
     ) {
         self.sparkleUpdateController = sparkleUpdateController
         self.releasePageOpener = releasePageOpener
+        self.injectedAudioShutdown = audioShutdown
+        self.injectedSchedulerStop = schedulerStop
+        self.terminationReply = terminationReply
         super.init()
     }
 
@@ -58,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let samplingController = AppSamplingController(
             initialLowPowerModeEnabled: ProcessInfo.processInfo.isLowPowerModeEnabled
         )
+        let audioControlCoordinator = Self.makeAudioCoordinator(preferencesController: preferencesController)
         let checkForUpdates = makeCheckForUpdatesAction()
         let preferencesWindowController = LazyPreferencesWindowController { [preferencesController, checkForUpdates] in
             return PreferencesWindowController(
@@ -106,6 +126,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.presentationCoordinator = presentationCoordinator
         self.sparkleUpdateController = sparkleUpdateController
         self.scheduler = scheduler
+        self.audioControlCoordinator = audioControlCoordinator
 
         samplingController.onProfileChange = { [weak scheduler] (profile: MetricsSamplingProfile) in
             Task {
@@ -152,13 +173,45 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         Task {
             await scheduler.start()
         }
+        Task {
+            await audioControlCoordinator.start()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        cancellables.removeAll()
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if didPrepareForTermination { return .terminateNow }
+        guard isPreparingForTermination == false else { return .terminateLater }
+        isPreparingForTermination = true
+
+        let audioControlCoordinator = self.audioControlCoordinator
         let scheduler = self.scheduler
-        Task {
-            await scheduler?.stop()
+        let audioShutdown = injectedAudioShutdown
+        let schedulerStop = injectedSchedulerStop
+        let terminationReply = self.terminationReply
+        Task { @MainActor [weak self] in
+            if let audioShutdown {
+                await audioShutdown()
+            } else {
+                await audioControlCoordinator?.shutdown()
+            }
+            if let schedulerStop {
+                await schedulerStop()
+            } else {
+                await scheduler?.stop()
+            }
+            self?.didPrepareForTermination = true
+            self?.isPreparingForTermination = false
+            if let terminationReply {
+                terminationReply(true)
+            } else {
+                sender.reply(toApplicationShouldTerminate: true)
+            }
         }
+        return .terminateLater
     }
 
     private func showPreferences() {
@@ -182,13 +235,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func terminateApplication() {
-        let scheduler = self.scheduler
-        Task {
-            await scheduler?.stop()
-            await MainActor.run {
-                NSApplication.shared.terminate(nil)
-            }
-        }
+        NSApplication.shared.terminate(nil)
     }
 
     private func handleDashboardVisibilityChange(_ isVisible: Bool) {
@@ -216,6 +263,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return DashboardPopoverController(
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
+            audioDashboardModel: makeAudioDashboardModel(),
             onVisibilityChange: { [weak self] isVisible in
                 self?.handleDashboardVisibilityChange(isVisible)
             },
@@ -225,6 +273,60 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             quitApplication: { [weak self] in
                 self?.terminateApplication()
             }
+        )
+    }
+
+    private func makeAudioDashboardModel() -> AudioDashboardModel {
+        #if DEBUG
+        if let testingAudioControlCoordinator {
+            return AudioDashboardModel(coordinator: testingAudioControlCoordinator)
+        }
+        #endif
+        guard let audioControlCoordinator else {
+            fatalError("Dashboard requested before audio control was configured")
+        }
+        return AudioDashboardModel(coordinator: audioControlCoordinator)
+    }
+
+    #if DEBUG
+    func testingConfigureDashboardPopoverFactory(
+        preferencesController: PreferencesController,
+        audioControlCoordinator: any AudioControlCoordinating
+    ) {
+        self.preferencesController = preferencesController
+        self.testingAudioControlCoordinator = audioControlCoordinator
+        self.dashboardPopoverController = LazyDashboardPopoverController { [weak self] in
+            guard let self else {
+                fatalError("Dashboard popover requested after AppDelegate deallocation")
+            }
+            let controller = self.makeDashboardPopoverController()
+            self.testingResolvedDashboardPopoverController = controller
+            return controller
+        }
+    }
+
+    func testingResolveDashboardPopoverController() -> DashboardPopoverController {
+        testingResolvedDashboardPopoverController = nil
+        dashboardPopoverController?.toggle(relativeTo: nil)
+        guard let testingResolvedDashboardPopoverController else {
+            fatalError("Dashboard popover test factory was not configured")
+        }
+        return testingResolvedDashboardPopoverController
+    }
+    #endif
+
+    private static func makeAudioCoordinator(
+        preferencesController: PreferencesController
+    ) -> AudioControlCoordinator {
+        let audioDeviceService = AudioDeviceVolumeService()
+        return AudioControlCoordinator(
+            deviceProvider: audioDeviceService,
+            processProvider: AudioProcessService(),
+            routeDeviceProvider: audioDeviceService,
+            monitor: AudioSystemMonitor(),
+            planner: AudioRoutePlanner(),
+            engine: ProcessTapVolumeEngine(),
+            preferences: preferencesController
         )
     }
 

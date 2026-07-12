@@ -922,6 +922,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -961,6 +962,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -984,6 +986,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let storageOnlyContent = DashboardView(
             dashboardModel: storageOnlyModel,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1012,6 +1015,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1034,6 +1038,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1062,6 +1067,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     showsProcessApplicationIdentifier: true
                 )
             ),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {},
             initialSelectedTab: .actives
@@ -1082,6 +1088,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     showsProcessApplicationIdentifier: true
                 )
             ),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {},
             initialSelectedTab: .energyImpact
