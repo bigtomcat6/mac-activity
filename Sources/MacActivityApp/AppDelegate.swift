@@ -16,9 +16,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let metricsStore = MetricsStore()
     private let launchService: LaunchAtLoginServicing = AppDelegate.makeLaunchService()
     private let releasePageOpener: (URL) -> Void
+    #if DEBUG
     private let injectedAudioShutdown: (@MainActor () async -> Void)?
     private let injectedSchedulerStop: (@MainActor () async -> Void)?
     private let terminationReply: (@MainActor (Bool) -> Void)?
+    #endif
 
     private var preferencesController: PreferencesController?
     private var samplingController: AppSamplingController?
@@ -31,6 +33,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sparkleUpdateController: UpdateChecking?
     private var scheduler: MetricsScheduler?
     private var audioControlCoordinator: AudioControlCoordinator?
+    private var schedulerStartupTask: Task<Void, Never>?
+    private var audioStartupTask: Task<Void, Never>?
     #if DEBUG
     private var testingAudioControlCoordinator: (any AudioControlCoordinating)?
     private var testingResolvedDashboardPopoverController: DashboardPopoverController?
@@ -43,12 +47,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.releasePageOpener = { url in
             NSWorkspace.shared.open(url)
         }
+        #if DEBUG
         self.injectedAudioShutdown = nil
         self.injectedSchedulerStop = nil
         self.terminationReply = nil
+        #endif
         super.init()
     }
 
+    init(
+        sparkleUpdateController: UpdateChecking? = nil,
+        releasePageOpener: @escaping (URL) -> Void
+    ) {
+        self.sparkleUpdateController = sparkleUpdateController
+        self.releasePageOpener = releasePageOpener
+        #if DEBUG
+        self.injectedAudioShutdown = nil
+        self.injectedSchedulerStop = nil
+        self.terminationReply = nil
+        #endif
+        super.init()
+    }
+
+    #if DEBUG
     init(
         sparkleUpdateController: UpdateChecking? = nil,
         releasePageOpener: @escaping (URL) -> Void,
@@ -63,6 +84,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.terminationReply = terminationReply
         super.init()
     }
+    #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         let preferencesController = PreferencesController(
@@ -170,12 +192,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         presentationCoordinator.configureInitialState()
 
-        Task {
-            await scheduler.start()
-        }
-        Task {
-            await audioControlCoordinator.start()
-        }
+        startOwnedLifecycles(
+            audioControlCoordinator: audioControlCoordinator,
+            scheduler: scheduler
+        )
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -189,10 +209,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let audioControlCoordinator = self.audioControlCoordinator
         let scheduler = self.scheduler
+        let audioStartupTask = self.audioStartupTask
+        let schedulerStartupTask = self.schedulerStartupTask
+        #if DEBUG
         let audioShutdown = injectedAudioShutdown
         let schedulerStop = injectedSchedulerStop
         let terminationReply = self.terminationReply
+        #endif
         Task { @MainActor [weak self] in
+            audioStartupTask?.cancel()
+            schedulerStartupTask?.cancel()
+            await audioStartupTask?.value
+            await schedulerStartupTask?.value
+            self?.audioStartupTask = nil
+            self?.schedulerStartupTask = nil
+            #if DEBUG
             if let audioShutdown {
                 await audioShutdown()
             } else {
@@ -203,13 +234,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 await scheduler?.stop()
             }
+            #else
+            await audioControlCoordinator?.shutdown()
+            await scheduler?.stop()
+            #endif
             self?.didPrepareForTermination = true
             self?.isPreparingForTermination = false
+            #if DEBUG
             if let terminationReply {
                 terminationReply(true)
             } else {
                 sender.reply(toApplicationShouldTerminate: true)
             }
+            #else
+            sender.reply(toApplicationShouldTerminate: true)
+            #endif
         }
         return .terminateLater
     }
@@ -288,7 +327,31 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return AudioDashboardModel(coordinator: audioControlCoordinator)
     }
 
+    private func startOwnedLifecycles(
+        audioControlCoordinator: AudioControlCoordinator,
+        scheduler: MetricsScheduler
+    ) {
+        schedulerStartupTask = Task {
+            await scheduler.start()
+        }
+        audioStartupTask = Task {
+            await audioControlCoordinator.start()
+        }
+    }
+
     #if DEBUG
+    func testingStartOwnedLifecycles(
+        audioControlCoordinator: AudioControlCoordinator,
+        scheduler: MetricsScheduler
+    ) {
+        self.audioControlCoordinator = audioControlCoordinator
+        self.scheduler = scheduler
+        startOwnedLifecycles(
+            audioControlCoordinator: audioControlCoordinator,
+            scheduler: scheduler
+        )
+    }
+
     func testingConfigureDashboardPopoverFactory(
         preferencesController: PreferencesController,
         audioControlCoordinator: any AudioControlCoordinating

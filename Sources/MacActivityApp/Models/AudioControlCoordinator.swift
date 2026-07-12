@@ -122,6 +122,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     )] = []
     #endif
     private var hasStarted = false
+    private var didBeginShutdown = false
+    private var didFinishShutdown = false
+    private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         availability: AudioFeatureAvailability = .current,
@@ -157,9 +160,15 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func start() async {
-        guard hasStarted == false else { return }
+        guard hasStarted == false, didBeginShutdown == false else { return }
         hasStarted = true
         _ = await engine.cleanupOrphans()
+        guard Task.isCancelled == false, didBeginShutdown == false else {
+            if didBeginShutdown == false {
+                hasStarted = false
+            }
+            return
+        }
         do {
             try monitor.start()
         } catch {
@@ -280,6 +289,12 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func shutdown() async {
+        if didFinishShutdown { return }
+        if didBeginShutdown {
+            await withCheckedContinuation { shutdownWaiters.append($0) }
+            return
+        }
+        didBeginShutdown = true
         deviceVolumeTasks.values.forEach { $0.cancel() }
         deviceMuteTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
@@ -292,6 +307,11 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         await monitorTask?.value
         await engineSnapshotTask?.value
         await engine.stopAll()
+        hasStarted = false
+        didFinishShutdown = true
+        let waiters = shutdownWaiters
+        shutdownWaiters.removeAll()
+        waiters.forEach { $0.resume() }
     }
 
     #if DEBUG

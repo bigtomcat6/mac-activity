@@ -805,6 +805,35 @@ final class AudioControlCoordinatorTests: XCTestCase {
         )
     }
 
+    func testCanceledStartFinishingCleanupAfterShutdownDoesNotStartRuntimeWork() async {
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            savedProfiles: [
+                "com.example.music": AudioProcessProfile(
+                    bundleIdentifier: "com.example.music",
+                    volume: 0.5
+                ),
+            ]
+        )
+        await fixture.engine.blockCleanup()
+        let startTask = Task { @MainActor in
+            await fixture.coordinator.start()
+        }
+        await fixture.engine.waitUntilCleanupCount(1)
+
+        startTask.cancel()
+        await fixture.coordinator.shutdown()
+        await fixture.engine.resumeCleanup()
+        await startTask.value
+
+        XCTAssertEqual(fixture.monitor.startCount, 0)
+        XCTAssertFalse(fixture.lifecycle.events.contains("monitor.observe"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("devices.read"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("processes.read"))
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+    }
+
     func testChangeBufferedWhileStartingMonitorIsReconciled() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.processProvider.scriptedProcesses = [
@@ -1355,6 +1384,7 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     var lifecycle: LifecycleRecorder?
     private var nextCommandSequence: UInt64 = 0
     private let stopGate = ControlledCallGate()
+    private let cleanupGate = ControlledCallGate()
     private let applyGate = ControlledIndexedCallGate()
     private let applyReturnGate = ControlledIndexedCallGate()
     private var deferredObserverCalls: Set<Int> = []
@@ -1418,12 +1448,16 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     func cleanupOrphans() async -> [AudioTeardownFailure] {
         cleanupCount += 1
         lifecycle?.events.append("engine.cleanup")
+        await cleanupGate.enter()
         return []
     }
     func emit(_ snapshot: ProcessTapSessionSnapshot) { continuation.yield(snapshot) }
     func blockStops() async { await stopGate.block() }
     func resumeStops() async { await stopGate.resumeAll() }
     func waitUntilStopCount(_ count: Int) async { await stopGate.waitUntilEntered(count) }
+    func blockCleanup() async { await cleanupGate.block() }
+    func resumeCleanup() async { await cleanupGate.resumeAll() }
+    func waitUntilCleanupCount(_ count: Int) async { await cleanupGate.waitUntilEntered(count) }
     func blockApplyCall(_ call: Int) async { await applyGate.block(call) }
     func resumeApplies() async { await applyGate.resumeAll() }
     func waitUntilApplyCount(_ count: Int) async { await applyGate.waitUntilEntered(count) }

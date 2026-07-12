@@ -89,6 +89,61 @@ final class AppSamplingControllerTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 
+    func testTerminationCancelsAndAwaitsOwnedStartupBeforeRealLifecycleShutdown() async {
+        let audioEngine = AppTerminationAudioEngine()
+        let audioMonitor = AppTerminationAudioMonitor()
+        let audioServices = AppTerminationAudioServices()
+        let preferences = PreferencesController(
+            store: AppDelegatePreferencesStore(),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let coordinator = AudioControlCoordinator(
+            availability: .init(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0)
+            ),
+            deviceProvider: audioServices,
+            processProvider: audioServices,
+            routeDeviceProvider: audioServices,
+            monitor: audioMonitor,
+            engine: audioEngine,
+            preferences: preferences
+        )
+        let metricsProvider = AppTerminationMetricProvider()
+        let scheduler = MetricsScheduler(
+            providers: [metricsProvider],
+            store: MetricsStore()
+        )
+        let replies = AppTerminationReplyRecorder()
+        let delegate = AppDelegate(
+            sparkleUpdateController: nil,
+            releasePageOpener: { _ in },
+            terminationReply: { accepted in replies.record(accepted) }
+        )
+        await audioEngine.blockCleanup()
+        delegate.testingStartOwnedLifecycles(
+            audioControlCoordinator: coordinator,
+            scheduler: scheduler
+        )
+        await audioEngine.waitUntilCleanupEntered()
+        await metricsProvider.waitUntilEntered()
+
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        await audioEngine.waitUntilCleanupCanceled()
+        XCTAssertEqual(replies.values, [])
+
+        await audioEngine.releaseCleanup()
+        await audioEngine.waitUntilStopAllCount(1)
+        await metricsProvider.waitUntilCanceled()
+        XCTAssertEqual(audioMonitor.startCount, 0)
+        XCTAssertEqual(replies.values, [])
+
+        await metricsProvider.release()
+        await replies.waitForReply()
+        XCTAssertEqual(replies.values, [true])
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+    }
+
     func testClosingAndRecreatingPopoverKeepsOneApplicationAudioCoordinator() throws {
         let coordinator = TestAudioControlCoordinator()
         let delegate = AppDelegate(releasePageOpener: { _ in })
@@ -204,4 +259,193 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
 private final class AppDelegatePreferencesStore: PreferencesStoring, @unchecked Sendable {
     func load() -> AppPreferences { .default }
     func save(_ preferences: AppPreferences) throws {}
+}
+
+@MainActor
+private final class AppTerminationAudioServices:
+    AudioDeviceControlProviding,
+    AudioProcessProviding,
+    AudioRouteDeviceProviding
+{
+    func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] { [] }
+    func outputDeviceSnapshot(forUID uid: String) throws -> AudioOutputDeviceSnapshot {
+        fatalError("No device should be requested")
+    }
+    func writeVolume(_ volume: Double, forUID uid: String) throws -> Double { volume }
+    func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool { isMuted }
+    func audibleOutputProcesses() -> [AudioProcessEntry] { [] }
+    func routeDevices() throws -> [AudioRouteDevice] { [] }
+}
+
+private final class AppTerminationAudioMonitor: AudioSystemMonitoring, @unchecked Sendable {
+    let changes: AsyncStream<Set<AudioSystemChange>>
+    private(set) var startCount = 0
+
+    init() {
+        changes = AsyncStream { _ in }
+    }
+
+    func start() throws { startCount += 1 }
+    func updateObservedObjects(
+        deviceIDs: Set<AudioDeviceID>,
+        processObjectIDs: Set<AudioObjectID>
+    ) throws {}
+    func stop() {}
+}
+
+private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
+    private let state = AppTerminationAudioEngineState()
+
+    init() {
+        sessionSnapshots = AsyncStream { _ in }
+    }
+
+    func apply(
+        plan: AudioRoutePlan,
+        gain: ProcessGainState
+    ) async -> ProcessTapSessionSnapshot {
+        fatalError("No process rule should be restored")
+    }
+    func updateGain(_ gain: ProcessGainState, for processObjectID: AudioObjectID) async {}
+    func stop(
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) async -> ProcessTapSessionSnapshot {
+        fatalError("No process should be stopped")
+    }
+    func stopAll() async { await state.recordStopAll() }
+    func cleanupOrphans() async -> [AudioTeardownFailure] {
+        await state.enterCleanup()
+        return []
+    }
+
+    func blockCleanup() async { await state.blockCleanup() }
+    func releaseCleanup() async { await state.releaseCleanup() }
+    func waitUntilCleanupEntered() async { await state.waitUntilCleanupEntered() }
+    func waitUntilCleanupCanceled() async { await state.waitUntilCleanupCanceled() }
+    func waitUntilStopAllCount(_ count: Int) async { await state.waitUntilStopAllCount(count) }
+}
+
+private actor AppTerminationAudioEngineState {
+    private var blocksCleanup = false
+    private var cleanupEntered = false
+    private var cleanupCanceled = false
+    private var cleanupContinuation: CheckedContinuation<Void, Never>?
+    private var cleanupEntryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cleanupCancellationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var stopAllCount = 0
+    private var stopAllWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+
+    func blockCleanup() { blocksCleanup = true }
+
+    func enterCleanup() async {
+        cleanupEntered = true
+        cleanupEntryWaiters.forEach { $0.resume() }
+        cleanupEntryWaiters.removeAll()
+        guard blocksCleanup else { return }
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { cleanupContinuation = $0 }
+        } onCancel: {
+            Task { await self.recordCleanupCancellation() }
+        }
+    }
+
+    func releaseCleanup() {
+        blocksCleanup = false
+        cleanupContinuation?.resume()
+        cleanupContinuation = nil
+    }
+
+    func waitUntilCleanupEntered() async {
+        guard cleanupEntered == false else { return }
+        await withCheckedContinuation { cleanupEntryWaiters.append($0) }
+    }
+
+    func waitUntilCleanupCanceled() async {
+        guard cleanupCanceled == false else { return }
+        await withCheckedContinuation { cleanupCancellationWaiters.append($0) }
+    }
+
+    func recordStopAll() {
+        stopAllCount += 1
+        let ready = stopAllWaiters.filter { stopAllCount >= $0.0 }
+        stopAllWaiters.removeAll { stopAllCount >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func waitUntilStopAllCount(_ count: Int) async {
+        guard stopAllCount < count else { return }
+        await withCheckedContinuation { stopAllWaiters.append((count, $0)) }
+    }
+
+    private func recordCleanupCancellation() {
+        cleanupCanceled = true
+        cleanupCancellationWaiters.forEach { $0.resume() }
+        cleanupCancellationWaiters.removeAll()
+    }
+}
+
+private actor AppTerminationMetricProvider: MetricProvider {
+    let kind = MetricKind.cpu
+    let cadence = MetricCadenceLane.fast
+
+    private var entered = false
+    private var canceled = false
+    private var released = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func sample() async -> MetricUpdate {
+        entered = true
+        enteredWaiters.forEach { $0.resume() }
+        enteredWaiters.removeAll()
+        await withTaskCancellationHandler {
+            guard released == false else { return }
+            await withCheckedContinuation { releaseContinuation = $0 }
+        } onCancel: {
+            Task { await self.recordCancellation() }
+        }
+        return .cpu(CPUReading(usagePercent: 1))
+    }
+
+    func waitUntilEntered() async {
+        guard entered == false else { return }
+        await withCheckedContinuation { enteredWaiters.append($0) }
+    }
+
+    func waitUntilCanceled() async {
+        guard canceled == false else { return }
+        await withCheckedContinuation { cancellationWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    private func recordCancellation() {
+        canceled = true
+        cancellationWaiters.forEach { $0.resume() }
+        cancellationWaiters.removeAll()
+    }
+}
+
+@MainActor
+private final class AppTerminationReplyRecorder {
+    private(set) var values: [Bool] = []
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func record(_ value: Bool) {
+        values.append(value)
+        waiter?.resume()
+        waiter = nil
+    }
+
+    func waitForReply() async {
+        guard values.isEmpty else { return }
+        await withCheckedContinuation { waiter = $0 }
+    }
 }
