@@ -1844,6 +1844,38 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertEqual(fixture.scheduler.pendingCount, 0)
     }
 
+    func testRuntimeRejectionBlocksActiveSessionRebuildBeforeHAL() async {
+        let fixture = EngineFixture()
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        let active = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(active.state, .running)
+
+        fixture.hardware.aggregateTopologyError = .unsupportedTopology
+        let rejected = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 1,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(rejected.error, .unsupportedFormat)
+
+        fixture.hardware.aggregateTopologyError = nil
+        fixture.hardware.clearCalls()
+        let rebuild = await fixture.engine.apply(
+            plan: fixture.plan(generation: 2, fingerprint: fingerprint),
+            gain: ProcessGainState(volume: 0.2)
+        )
+
+        XCTAssertEqual(rebuild.error, .unsupportedFormat)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        await fixture.engine.stopAll()
+    }
+
     func testRuntimeRejectionDoesNotBlockSameGenerationActiveSessionUpdate() async throws {
         let fixture = EngineFixture()
         let fingerprint = fixture.plan(generation: 1).topologyFingerprint
@@ -1883,6 +1915,83 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         storage.process(with: context)
         let lastSample = try XCTUnwrap(storage.outputSamples.last)
         XCTAssertEqual(lastSample, 0.2, accuracy: 0.000_001)
+    }
+
+    func testInvalidActiveSessionBundleCannotBypassRuntimeRejection() async {
+        let corruptions: [ProcessTapVolumeEngine.ActiveSessionCorruptionForTesting] = [
+            .missingBundle,
+            .releasedBundle,
+            .mismatchedAcquisitionID,
+            .mismatchedProcessObjectID,
+            .missingContext,
+        ]
+
+        for corruption in corruptions {
+            let fixture = EngineFixture()
+            let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+            let active = await fixture.engine.apply(
+                plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+                gain: ProcessGainState(volume: 0.6)
+            )
+            XCTAssertEqual(active.state, .running, "\(corruption)")
+
+            fixture.hardware.aggregateTopologyError = .unsupportedTopology
+            let rejected = await fixture.engine.apply(
+                plan: fixture.plan(
+                    processObjectID: 88,
+                    generation: 1,
+                    fingerprint: fingerprint
+                ),
+                gain: ProcessGainState()
+            )
+            XCTAssertEqual(rejected.error, .unsupportedFormat, "\(corruption)")
+
+            await fixture.engine.corruptActiveSessionForTesting(
+                processObjectID: 77,
+                corruption: corruption
+            )
+            fixture.hardware.aggregateTopologyError = nil
+            fixture.hardware.clearCalls()
+            let result = await fixture.engine.apply(
+                plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+                gain: ProcessGainState(volume: 0.2)
+            )
+
+            XCTAssertEqual(result.error, .unsupportedFormat, "\(corruption)")
+            XCTAssertTrue(fixture.hardware.calls.isEmpty, "\(corruption)")
+            await fixture.engine.stopAll()
+        }
+    }
+
+    func testSupersessionImmediatelyBeforeActiveGainMutationReturnsSuperseded() async throws {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+        let context = try XCTUnwrap(fixture.hardware.lastContext)
+        await fixture.engine.supersedeNextActiveSessionMutationForTesting(
+            processObjectID: 77,
+            generation: 2
+        )
+        fixture.hardware.clearCalls()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.2)
+        )
+
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        let frameCount = 1_440
+        let storage = AudioBufferListTestStorage.interleavedStereo(
+            input: Array(repeating: 1, count: frameCount * 2),
+            outputFrameCount: frameCount
+        )
+        storage.process(with: context)
+        let lastSample = try XCTUnwrap(storage.outputSamples.last)
+        XCTAssertEqual(lastSample, 0.6, accuracy: 0.000_001)
+        await fixture.engine.stopAll()
     }
 
     func testEveryDeterministicRuntimeCompatibilityFailureIsCached() async {

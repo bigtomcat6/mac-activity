@@ -108,6 +108,12 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var maximumConcurrentRetryPasses = 0
     private var orphanCleanupPending = false
     private var lifetimeLease: ProcessTapVolumeEngine?
+    #if DEBUG
+    private var activeSessionMutationSupersessionForTesting: (
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    )?
+    #endif
 
     public convenience init(availability: AudioFeatureAvailability = .current) {
         self.init(
@@ -287,6 +293,14 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     }
 
     #if DEBUG
+    enum ActiveSessionCorruptionForTesting {
+        case missingBundle
+        case releasedBundle
+        case mismatchedAcquisitionID
+        case mismatchedProcessObjectID
+        case missingContext
+    }
+
     func waitUntilIdleForTesting() async {
         await enqueue {}
     }
@@ -297,6 +311,61 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     func retryPassCountForTesting() async -> Int {
         await enqueue { [self] in retryPassCount }
+    }
+
+    func corruptActiveSessionForTesting(
+        processObjectID: AudioObjectID,
+        corruption: ActiveSessionCorruptionForTesting
+    ) async {
+        await enqueue { [self] in
+            guard let session = sessions[processObjectID],
+                  var bundle = bundles[session.acquisitionID]
+            else {
+                return
+            }
+            switch corruption {
+            case .missingBundle:
+                bundles.removeValue(forKey: session.acquisitionID)
+                return
+            case .releasedBundle:
+                bundle.state = .released
+            case .mismatchedAcquisitionID:
+                bundle = AudioAcquisitionBundle(
+                    acquisitionID: UUID(),
+                    resources: bundle.resources,
+                    state: bundle.state,
+                    stage: bundle.stage,
+                    didStartIOProc: bundle.didStartIOProc,
+                    failures: bundle.failures
+                )
+            case .mismatchedProcessObjectID:
+                let resources = bundle.resources
+                bundle.resources = ProcessTapSessionResources(
+                    processObjectID: resources.processObjectID &+ 1,
+                    generation: resources.generation,
+                    taps: resources.taps,
+                    mutedTaps: resources.mutedTaps,
+                    aggregate: resources.aggregate,
+                    ioProc: resources.ioProc,
+                    context: resources.context
+                )
+            case .missingContext:
+                bundle.resources.context = nil
+            }
+            bundles[session.acquisitionID] = bundle
+        }
+    }
+
+    func supersedeNextActiveSessionMutationForTesting(
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) async {
+        await enqueue { [self] in
+            activeSessionMutationSupersessionForTesting = (
+                processObjectID,
+                generation
+            )
+        }
     }
     #endif
 }
@@ -327,19 +396,57 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        if let current = sessions[plan.processObjectID],
-           current.generation == plan.generation {
-            bundles[current.acquisitionID]?.resources.context?.setTargetGain(
-                gain.targetGain
-            )
-            let running = snapshot(
-                processObjectID: plan.processObjectID,
-                generation: plan.generation,
-                state: .running,
-                error: nil
-            )
-            _ = publish(running, token: token)
-            return running
+        if sessions[plan.processObjectID]?.generation == plan.generation {
+            #if DEBUG
+            if let supersession = activeSessionMutationSupersessionForTesting {
+                activeSessionMutationSupersessionForTesting = nil
+                _ = generations.register(
+                    processObjectID: supersession.processObjectID,
+                    generation: supersession.generation
+                )
+            }
+            #endif
+            var didUpdateActiveSession = false
+            guard generations.performIfCurrent(token, { [self] in
+                guard let current = sessions[plan.processObjectID],
+                      current.processObjectID == plan.processObjectID,
+                      current.generation == plan.generation,
+                      let bundle = bundles[current.acquisitionID],
+                      bundle.acquisitionID == current.acquisitionID,
+                      bundle.state == .active,
+                      bundle.resources.processObjectID == current.processObjectID,
+                      bundle.resources.generation == current.generation,
+                      let context = bundle.resources.context
+                else {
+                    return
+                }
+                context.setTargetGain(gain.targetGain)
+                didUpdateActiveSession = true
+            }) else {
+                return snapshot(
+                    processObjectID: plan.processObjectID,
+                    generation: plan.generation,
+                    state: .failed,
+                    error: .routeSuperseded
+                )
+            }
+            if didUpdateActiveSession {
+                let running = snapshot(
+                    processObjectID: plan.processObjectID,
+                    generation: plan.generation,
+                    state: .running,
+                    error: nil
+                )
+                guard publish(running, token: token) else {
+                    return snapshot(
+                        processObjectID: plan.processObjectID,
+                        generation: plan.generation,
+                        state: .failed,
+                        error: .routeSuperseded
+                    )
+                }
+                return running
+            }
         }
 
         guard runtimeRejections.contains(plan.topologyFingerprint) == false else {
