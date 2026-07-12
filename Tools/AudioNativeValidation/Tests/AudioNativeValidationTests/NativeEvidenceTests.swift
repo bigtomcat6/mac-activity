@@ -4,6 +4,119 @@ import Foundation
 import XCTest
 
 final class NativeEvidenceTests: XCTestCase {
+    @MainActor
+    func testRetainedCleanupFailureWritesCurrentEvidenceBeforeRethrow() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let teardown = NativeTeardownObservation(
+            attempts: 1,
+            callbackContextReleased: false,
+            aggregateIdentityAbsent: false,
+            tapIdentitiesAbsent: false
+        )
+        let status = OSStatus(-32_001)
+        let cleanupFailure = AudioTeardownFailure(
+            processObjectID: 42,
+            operation: .destroyAggregate,
+            objectID: 101,
+            status: status
+        )
+        var latestTeardown: NativeTeardownObservation?
+        var rawFailures: [NativeRawFailure] = []
+
+        do {
+            _ = try await persistNativeValidationEvidence(
+                environment: environment(outputURL: outputURL),
+                fingerprint: fingerprint,
+                recordingSnapshot: { self.snapshot(
+                    teardown: latestTeardown,
+                    rawFailures: rawFailures
+                ) },
+                runSession: {
+                    do {
+                        _ = try await waitForNativeTeardownRelease(
+                            maxAttempts: 1,
+                            sleep: {},
+                            advance: {
+                                rawFailures = [NativeRawFailure(
+                                    seam: "retainedCleanup.\(cleanupFailure.operation.rawValue)",
+                                    status: cleanupFailure.status
+                                )]
+                                return [cleanupFailure]
+                            },
+                            observe: { attempt in
+                                latestTeardown = teardown
+                                XCTAssertEqual(attempt, teardown.attempts)
+                                return teardown
+                            }
+                        )
+                    } catch {
+                        throw NativeValidationError.teardownUnproven(String(describing: error))
+                    }
+                }
+            )
+            XCTFail("Expected retained cleanup failure")
+        } catch NativeValidationError.teardownUnproven {
+            let record = try decodeRecord(at: outputURL)
+            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertEqual(record.teardown, teardown)
+            XCTAssertEqual(record.rawFailures, [NativeRawFailure(
+                seam: "retainedCleanup.destroyAggregate",
+                status: status
+            )])
+            XCTAssertTrue(record.sessionError?.contains("retainedFailures") == true)
+        }
+    }
+
+    @MainActor
+    func testTeardownTimeoutWritesLatestEvidenceBeforeRethrow() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let teardown = NativeTeardownObservation(
+            attempts: 3,
+            callbackContextReleased: true,
+            aggregateIdentityAbsent: false,
+            tapIdentitiesAbsent: true
+        )
+        var latestTeardown: NativeTeardownObservation?
+
+        do {
+            _ = try await persistNativeValidationEvidence(
+                environment: environment(outputURL: outputURL),
+                fingerprint: fingerprint,
+                recordingSnapshot: { self.snapshot(teardown: latestTeardown) },
+                runSession: {
+                    do {
+                        _ = try await waitForNativeTeardownRelease(
+                            maxAttempts: 3,
+                            sleep: {},
+                            advance: { [] },
+                            observe: { attempt in
+                                let observation = NativeTeardownObservation(
+                                    attempts: attempt,
+                                    callbackContextReleased: true,
+                                    aggregateIdentityAbsent: false,
+                                    tapIdentitiesAbsent: true
+                                )
+                                latestTeardown = observation
+                                return observation
+                            }
+                        )
+                    } catch {
+                        throw NativeValidationError.teardownUnproven(String(describing: error))
+                    }
+                }
+            )
+            XCTFail("Expected teardown timeout")
+        } catch NativeValidationError.teardownUnproven {
+            let record = try decodeRecord(at: outputURL)
+            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertEqual(record.teardown, teardown)
+            XCTAssertTrue(record.rawFailures.isEmpty)
+            XCTAssertTrue(record.sessionError?.contains("timeout") == true)
+        }
+    }
+
     func testTopologyEvidenceMapsActiveUIDsMainStackedAndExpectedDrift() throws {
         let format = ProcessTapAudioFormat(
             sampleRate: 48_000,
@@ -145,6 +258,61 @@ final class NativeEvidenceTests: XCTestCase {
                 streamIndex: 0,
                 format: format
             )]
+        )
+    }
+
+    private func makeOutputURL() throws -> URL {
+        let directory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Caches", isDirectory: true)
+            .appendingPathComponent("MacActivityNativeEvidence-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false
+        )
+        return directory.appendingPathComponent("evidence.json")
+    }
+
+    private func environment(outputURL: URL) -> NativeValidationEnvironment {
+        NativeValidationEnvironment(
+            processObjectID: 42,
+            targetUIDs: ["output"],
+            outputURL: outputURL,
+            microphoneTCCObservation: "No prompt appeared.",
+            observationSeconds: 1
+        )
+    }
+
+    private var fingerprint: AudioRouteTopologyFingerprint {
+        AudioRouteTopologyFingerprint(
+            osBuild: "build",
+            sourceDeviceUIDs: ["source"],
+            selectedTargetUIDs: ["output"],
+            devices: []
+        )
+    }
+
+    private func snapshot(
+        teardown: NativeTeardownObservation?,
+        rawFailures: [NativeRawFailure] = []
+    ) -> NativeRecordingSnapshot {
+        NativeRecordingSnapshot(
+            taps: [],
+            tapFormats: [],
+            aggregate: nil,
+            ioProc: nil,
+            topology: nil,
+            verifiedInputStreamUsage: [],
+            callbackCountBeforeObservation: nil,
+            callbackCountAfterObservation: nil,
+            teardown: teardown,
+            rawFailures: rawFailures
+        )
+    }
+
+    private func decodeRecord(at outputURL: URL) throws -> NativeAudioValidationRecord {
+        try JSONDecoder().decode(
+            NativeAudioValidationRecord.self,
+            from: Data(contentsOf: outputURL)
         )
     }
 }

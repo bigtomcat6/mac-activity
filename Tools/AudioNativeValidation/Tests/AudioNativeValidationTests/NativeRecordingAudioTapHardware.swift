@@ -132,6 +132,7 @@ enum NativeTeardownWaitError: Error {
     case timeout(NativeTeardownObservation)
 }
 
+@MainActor
 func waitForNativeTeardownRelease(
     maxAttempts: Int,
     sleep: () async throws -> Void,
@@ -141,7 +142,9 @@ func waitForNativeTeardownRelease(
     guard maxAttempts > 0 else { throw NativeTeardownWaitError.invalidAttemptCount }
     var latest: NativeTeardownObservation?
     for attempt in 1...maxAttempts {
-        guard await advance().isEmpty else {
+        let failures = await advance()
+        guard failures.isEmpty else {
+            _ = try observe(attempt)
             throw NativeTeardownWaitError.retainedFailures
         }
         let observation = try observe(attempt)

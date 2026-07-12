@@ -151,29 +151,43 @@ func runNativeValidation(
     let hardware = NativeRecordingAudioTapHardware()
     let engine = ProcessTapVolumeEngine(hardware: hardware)
 
+    return try await persistNativeValidationEvidence(
+        environment: environment,
+        fingerprint: fingerprint,
+        recordingSnapshot: hardware.snapshot,
+        runSession: {
+            try await runNativeSession(
+                environment: environment,
+                plan: plan,
+                hardware: hardware,
+                engine: engine
+            )
+        }
+    )
+}
+
+@MainActor
+func persistNativeValidationEvidence(
+    environment: NativeValidationEnvironment,
+    fingerprint: AudioRouteTopologyFingerprint,
+    recordingSnapshot: () -> NativeRecordingSnapshot,
+    runSession: () async throws -> Void
+) async throws -> NativeAudioValidationRecord {
     do {
-        try await runNativeSession(
-            environment: environment,
-            plan: plan,
-            hardware: hardware,
-            engine: engine
-        )
+        try await runSession()
         let record = makeRecord(
             environment: environment,
             fingerprint: fingerprint,
-            hardware: hardware,
+            snapshot: recordingSnapshot(),
             sessionError: nil
         )
         try write(record, to: environment.outputURL)
         return record
     } catch {
-        if case .teardownUnproven = error as? NativeValidationError {
-            throw error
-        }
         let record = makeRecord(
             environment: environment,
             fingerprint: fingerprint,
-            hardware: hardware,
+            snapshot: recordingSnapshot(),
             sessionError: String(describing: error)
         )
         try write(record, to: environment.outputURL)
@@ -233,10 +247,9 @@ private func runNativeSession(
 private func makeRecord(
     environment: NativeValidationEnvironment,
     fingerprint: AudioRouteTopologyFingerprint,
-    hardware: NativeRecordingAudioTapHardware,
+    snapshot: NativeRecordingSnapshot,
     sessionError: String?
 ) -> NativeAudioValidationRecord {
-    let snapshot = hardware.snapshot()
     let before = snapshot.callbackCountBeforeObservation
     let after = snapshot.callbackCountAfterObservation
     return NativeAudioValidationRecord(
