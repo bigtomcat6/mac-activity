@@ -103,9 +103,11 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var pendingRetryDelay: DispatchTimeInterval?
     private var pendingRetryCancellation: (any ProcessTapRetryCancellation)?
     private var isRetryPassRunning = false
+    #if DEBUG
     private var concurrentRetryPasses = 0
     private var retryPassCount = 0
     private var maximumConcurrentRetryPasses = 0
+    #endif
     private var orphanCleanupPending = false
     private var lifetimeLease: ProcessTapVolumeEngine?
     #if DEBUG
@@ -1108,6 +1110,7 @@ private extension ProcessTapVolumeEngine {
             $0.state == .retainedBundle
         }
         guard hasRetainedBundle || orphanCleanupPending else {
+            retryBackoff.recordProgress()
             cancelPendingRetry()
             refreshLifetimeLease()
             return
@@ -1147,12 +1150,14 @@ private extension ProcessTapVolumeEngine {
         guard isRetryPassRunning == false else { return }
 
         isRetryPassRunning = true
+        #if DEBUG
         concurrentRetryPasses += 1
         retryPassCount += 1
         maximumConcurrentRetryPasses = max(
             maximumConcurrentRetryPasses,
             concurrentRetryPasses
         )
+        #endif
         if availability.supportsProcessControls,
            #available(macOS 14.2, *),
            let hardware {
@@ -1165,7 +1170,9 @@ private extension ProcessTapVolumeEngine {
                 }
             }
         }
+        #if DEBUG
         concurrentRetryPasses -= 1
+        #endif
         isRetryPassRunning = false
         scheduleRetryIfNeeded()
     }

@@ -1690,6 +1690,34 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
     }
 
+    @available(macOS 14.2, *)
+    func testRetryBackoffResetsBetweenIndependentNoProgressEpisodes() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedTap(id: 903)]
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(903)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+        await advanceRetryBackoffToOneSecond(fixture)
+
+        fixture.hardware.ownedObjectValues = []
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        XCTAssertEqual(fixture.scheduler.pendingCount, 0)
+
+        fixture.hardware.ownedDiscoveryFailures = [AudioTeardownFailure(
+            processObjectID: nil,
+            operation: .getData,
+            objectID: 904,
+            status: kAudioHardwareUnspecifiedError
+        )]
+        _ = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(fixture.scheduler.scheduledDelays.last, .milliseconds(50))
+    }
+
     func testDirectBundleProgressReplacesLongPendingRetryWithFiftyMilliseconds() async {
         let fixture = EngineFixture()
         fixture.hardware.setPersistentStatus(
