@@ -137,41 +137,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    static func isAggregateReady(
-        isAlive: Bool,
-        inputStreamIDs: [AudioObjectID],
-        outputStreamIDs: [AudioObjectID]
-    ) -> Bool {
-        isAlive && inputStreamIDs.isEmpty == false && outputStreamIDs.isEmpty == false
-    }
-
-    static func waitUntilReady(
-        timeout: TimeInterval,
-        pollInterval: TimeInterval,
-        now: () -> TimeInterval,
-        sleep: (TimeInterval) -> Void,
-        isCancelled: () -> Bool = { false },
-        probe: () throws -> Bool
-    ) throws {
-        let deadline = now() + max(0, timeout)
-
-        while true {
-            if isCancelled() { return }
-            if try probe() { return }
-
-            let remaining = deadline - now()
-            guard remaining > 0,
-                  pollInterval.isFinite,
-                  pollInterval > 0
-            else {
-                throw AudioTapHardwareError.aggregateNotReady(lastStatus: nil)
-            }
-
-            if isCancelled() { return }
-            sleep(min(pollInterval, remaining))
-        }
-    }
-
     @available(macOS 14.2, *)
     static func destroyOwnedOrphans(
         in objects: [AudioOwnedObject],

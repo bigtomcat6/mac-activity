@@ -16,33 +16,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             selector: kAudioDevicePropertyIOProcStreamUsage,
             scope: kAudioObjectPropertyScopeInput
         )
-        AudioIOProcStreamUsage.withEncoded(
-            ioProcID: ioProc.ioProcID,
-            flags: [0]
-        ) { bytes in
-            backend.setArray(
-                Array(bytes),
-                objectID: ioProc.aggregateDeviceID,
-                address: address
-            )
-        }
-        backend.setScalar(
-            UInt8(0),
-            objectID: ioProc.aggregateDeviceID,
-            address: address,
-            isSettable: true
-        )
-        AudioIOProcStreamUsage.withEncoded(
-            ioProcID: ioProc.ioProcID,
-            flags: [0]
-        ) { bytes in
-            backend.setArray(
-                Array(bytes),
-                objectID: ioProc.aggregateDeviceID,
-                address: address
-            )
-        }
-        // Preserve the settable bit while installing exact raw storage.
         backend.setRawBytes(
             AudioIOProcStreamUsage.withEncoded(ioProcID: ioProc.ioProcID, flags: [0]) {
                 Array($0)
@@ -344,49 +317,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertNil(taps[0][kAudioSubTapDriftCompensationQualityKey])
     }
 
-    func testReadinessRequiresAliveAndNonemptyInputAndOutputStreamIDs() {
-        XCTAssertTrue(CoreAudioTapHardware.isAggregateReady(
-            isAlive: true,
-            inputStreamIDs: [11],
-            outputStreamIDs: [12]
-        ))
-        XCTAssertFalse(CoreAudioTapHardware.isAggregateReady(
-            isAlive: false,
-            inputStreamIDs: [11],
-            outputStreamIDs: [12]
-        ))
-        XCTAssertFalse(CoreAudioTapHardware.isAggregateReady(
-            isAlive: true,
-            inputStreamIDs: [],
-            outputStreamIDs: [12]
-        ))
-        XCTAssertFalse(CoreAudioTapHardware.isAggregateReady(
-            isAlive: true,
-            inputStreamIDs: [11],
-            outputStreamIDs: []
-        ))
-    }
-
-    func testReadinessPollingTimesOutAtTwoSecondsWithoutRealSleeping() {
-        let clock = TestMonotonicClock()
-
-        XCTAssertThrowsError(
-            try CoreAudioTapHardware.waitUntilReady(
-                timeout: 2,
-                pollInterval: 0.25,
-                now: clock.now,
-                sleep: clock.sleep,
-                probe: { false }
-            )
-        ) { error in
-            XCTAssertEqual(
-                error as? AudioTapHardwareError,
-                .aggregateNotReady(lastStatus: nil)
-            )
-        }
-        XCTAssertEqual(clock.elapsed, 2, accuracy: 0.000_001)
-    }
-
     @available(macOS 14.2, *)
     func testFailedOwnedOrphanDeletionIsReported() {
         let calls = OrphanDeletionCalls()
@@ -662,6 +592,73 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         }
         XCTAssertTrue(cancelledBackend.readSelectors.isEmpty)
         XCTAssertTrue(cancelledBackend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
+    func testStableTopologyRequiresSecondConsecutiveChangedObservation() throws {
+        let backend = FakeAudioHALBackend()
+        let aggregate = AudioAggregateResource(objectID: 705, uid: "aggregate")
+        configureAggregateStreams(
+            backend,
+            aggregateID: aggregate.objectID,
+            input: [(41, fixtureFormat(channelCount: 2))],
+            output: [(42, fixtureFormat(channelCount: 2))]
+        )
+        backend.setScalarReadSequence(
+            [
+                (fixtureASBD(sampleRate: 44_100), noErr),
+                (fixtureASBD(sampleRate: 48_000), noErr),
+                (fixtureASBD(sampleRate: 48_000), noErr),
+            ],
+            objectID: 42,
+            address: .init(selector: kAudioStreamPropertyVirtualFormat)
+        )
+
+        let snapshot = try makeHardware(backend).waitForStableTopology(
+            aggregate,
+            deadline: .now() + .seconds(1),
+            isCancelled: { false }
+        )
+
+        XCTAssertEqual(snapshot.outputFormats.map(\.sampleRate), [48_000])
+        XCTAssertEqual(
+            backend.dataReadCount(for: kAudioStreamPropertyVirtualFormat),
+            6
+        )
+    }
+
+    @available(macOS 14.2, *)
+    func testStableTopologyErrorResetsConsecutiveObservationBaseline() throws {
+        let backend = FakeAudioHALBackend()
+        let aggregate = AudioAggregateResource(objectID: 706, uid: "aggregate")
+        configureAggregateStreams(
+            backend,
+            aggregateID: aggregate.objectID,
+            input: [(51, fixtureFormat(channelCount: 2))],
+            output: [(52, fixtureFormat(channelCount: 2))]
+        )
+        backend.setScalarReadSequence(
+            [
+                (fixtureASBD(sampleRate: 48_000), noErr),
+                (fixtureASBD(sampleRate: 48_000), OSStatus(-777)),
+                (fixtureASBD(sampleRate: 48_000), noErr),
+                (fixtureASBD(sampleRate: 48_000), noErr),
+            ],
+            objectID: 52,
+            address: .init(selector: kAudioStreamPropertyVirtualFormat)
+        )
+
+        let snapshot = try makeHardware(backend).waitForStableTopology(
+            aggregate,
+            deadline: .now() + .seconds(1),
+            isCancelled: { false }
+        )
+
+        XCTAssertEqual(snapshot.outputFormats.map(\.sampleRate), [48_000])
+        XCTAssertEqual(
+            backend.dataReadCount(for: kAudioStreamPropertyVirtualFormat),
+            8
+        )
     }
 
     @available(macOS 14.2, *)
@@ -1346,25 +1343,6 @@ private func configureDestroyIdentity(
         objectID: id,
         address: AudioHALPropertyAddress(selector: uidSelector)
     )
-}
-
-private final class TestMonotonicClock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var instant: TimeInterval = 0
-
-    var elapsed: TimeInterval {
-        lock.withLock { instant }
-    }
-
-    func now() -> TimeInterval {
-        lock.withLock { instant }
-    }
-
-    func sleep(_ interval: TimeInterval) {
-        lock.withLock {
-            instant += interval
-        }
-    }
 }
 
 private final class OrphanDeletionCalls: @unchecked Sendable {

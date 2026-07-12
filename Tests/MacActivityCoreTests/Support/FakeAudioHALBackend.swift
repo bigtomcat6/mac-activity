@@ -88,6 +88,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     }
 
     private var properties: [PropertyKey: Property] = [:]
+    private var sequencedProperties: [PropertyKey: [Property]] = [:]
     private var queuedSizes: [SizeResult] = []
     private var queuedReads: [ReadResult] = []
     private var queuedAddListenerStatuses: [OSStatus] = []
@@ -347,6 +348,17 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         )
     }
 
+    func setScalarReadSequence<T>(
+        _ values: [(value: T, status: OSStatus)],
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) {
+        precondition(values.isEmpty == false)
+        sequencedProperties[PropertyKey(objectID: objectID, address: address)] = values.map {
+            Property(payload: .bytes(bytes(of: $0.value)), readStatus: $0.status)
+        }
+    }
+
     func setOwnerTopology(
         objectID: AudioObjectID,
         ownerID: AudioObjectID,
@@ -439,7 +451,12 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
             return result.status
         }
 
-        guard let property = properties[PropertyKey(objectID: objectID, address: address)] else {
+        let key = PropertyKey(objectID: objectID, address: address)
+        if let property = sequencedProperties[key]?.first {
+            byteCount = property.payload.byteCount
+            return noErr
+        }
+        guard let property = properties[key] else {
             return kAudioHardwareUnknownPropertyError
         }
         byteCount = property.payload.byteCount
@@ -468,7 +485,17 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
             return result.status
         }
 
-        guard let property = properties[PropertyKey(objectID: objectID, address: address)] else {
+        let key = PropertyKey(objectID: objectID, address: address)
+        let property: Property
+        if var sequence = sequencedProperties[key], let first = sequence.first {
+            property = first
+            if sequence.count > 1 {
+                sequence.removeFirst()
+                sequencedProperties[key] = sequence
+            }
+        } else if let installed = properties[key] {
+            property = installed
+        } else {
             return kAudioHardwareUnknownPropertyError
         }
         guard property.readStatus == noErr else {
