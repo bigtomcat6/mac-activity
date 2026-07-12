@@ -29,6 +29,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let callbackCountBeforeObservation: Int32?
     let callbackCountAfterObservation: Int32?
     let sustainedCallbacks: Bool
+    let teardown: NativeTeardownObservation?
     let microphoneTCCObservation: String
     let rawFailures: [NativeRawFailure]
     let sessionError: String?
@@ -38,6 +39,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
 enum NativeValidationError: Error {
     case session(ProcessTapSessionSnapshot)
     case cleanup
+    case teardownUnproven(String)
 }
 
 func requireNativeOptIn() throws -> NativeValidationEnvironment {
@@ -165,6 +167,9 @@ func runNativeValidation(
         try write(record, to: environment.outputURL)
         return record
     } catch {
+        if case .teardownUnproven = error as? NativeValidationError {
+            throw error
+        }
         let record = makeRecord(
             environment: environment,
             fingerprint: fingerprint,
@@ -182,6 +187,7 @@ private func runNativeSession(
     hardware: NativeRecordingAudioTapHardware,
     engine: ProcessTapVolumeEngine
 ) async throws {
+    var sessionError: Error?
     do {
         let running = await engine.apply(plan: plan, gain: ProcessGainState())
         guard running.state == .running else {
@@ -190,29 +196,37 @@ private func runNativeSession(
         try hardware.sampleCallbackCountBeforeObservation()
         try await Task.sleep(for: .seconds(environment.observationSeconds))
         try hardware.sampleCallbackCountAfterObservation()
-        let stopped = await engine.stop(
-            processObjectID: plan.processObjectID,
-            generation: plan.generation
-        )
-        let retainedFailures = await engine.cleanupOrphans()
-        hardware.record(retainedFailures, seam: "retainedCleanup")
-        guard stopped.state == .idle,
-              retainedFailures.isEmpty,
-              hardware.rawFailures.isEmpty
-        else {
-            throw NativeValidationError.cleanup
-        }
     } catch {
-        let stopped = await engine.stop(
-            processObjectID: plan.processObjectID,
-            generation: plan.generation
+        sessionError = error
+    }
+
+    let stopped = await engine.stop(
+        processObjectID: plan.processObjectID,
+        generation: plan.generation
+    )
+    if stopped.state != .idle {
+        hardware.recordSessionFailure(stopped)
+        sessionError = sessionError ?? NativeValidationError.cleanup
+    }
+    do {
+        _ = try await waitForNativeTeardownRelease(
+            maxAttempts: 200,
+            sleep: { try await Task.sleep(for: .milliseconds(10)) },
+            advance: {
+                let failures = await engine.cleanupOrphans()
+                hardware.record(failures, seam: "retainedCleanup")
+                return failures
+            },
+            observe: hardware.observeTeardown
         )
-        if stopped.state != .idle {
-            hardware.recordSessionFailure(stopped)
-        }
-        let retainedFailures = await engine.cleanupOrphans()
-        hardware.record(retainedFailures, seam: "retainedCleanup")
-        throw error
+    } catch {
+        throw NativeValidationError.teardownUnproven(String(describing: error))
+    }
+    guard hardware.snapshot().rawFailures.isEmpty else {
+        throw NativeValidationError.cleanup
+    }
+    if let sessionError {
+        throw sessionError
     }
 }
 
@@ -222,23 +236,25 @@ private func makeRecord(
     hardware: NativeRecordingAudioTapHardware,
     sessionError: String?
 ) -> NativeAudioValidationRecord {
-    let before = hardware.callbackCountBeforeObservation
-    let after = hardware.callbackCountAfterObservation
+    let snapshot = hardware.snapshot()
+    let before = snapshot.callbackCountBeforeObservation
+    let after = snapshot.callbackCountAfterObservation
     return NativeAudioValidationRecord(
         processObjectID: environment.processObjectID,
         targetUIDs: environment.targetUIDs,
         exactFingerprint: fingerprint,
-        tapResources: hardware.taps,
-        tapFormats: hardware.tapFormats,
-        aggregateResource: hardware.aggregate,
-        ioProcResource: hardware.ioProc,
-        topology: hardware.topology,
-        verifiedInputStreamUsage: hardware.verifiedInputStreamUsage,
+        tapResources: snapshot.taps,
+        tapFormats: snapshot.tapFormats,
+        aggregateResource: snapshot.aggregate,
+        ioProcResource: snapshot.ioProc,
+        topology: snapshot.topology,
+        verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
         callbackCountBeforeObservation: before,
         callbackCountAfterObservation: after,
         sustainedCallbacks: before != nil && after != nil && before != after,
+        teardown: snapshot.teardown,
         microphoneTCCObservation: environment.microphoneTCCObservation,
-        rawFailures: hardware.rawFailures,
+        rawFailures: snapshot.rawFailures,
         sessionError: sessionError,
         eligibleForPolicyPromotion: false
     )
@@ -256,8 +272,21 @@ final class NativeAudioTopologyTests: XCTestCase {
     func testNativeAudioTopology() async throws {
         let environment = try requireNativeOptIn()
         let record = try await runNativeValidation(environment)
+        let topology = try XCTUnwrap(record.topology)
         XCTAssertTrue(record.sustainedCallbacks)
         XCTAssertTrue(record.rawFailures.isEmpty)
+        XCTAssertTrue(topology.hasExactlyOneInput)
+        XCTAssertTrue(topology.fullSubdeviceOrderMatchesExpected)
+        XCTAssertTrue(topology.activeSubdeviceMembershipMatchesExpected)
+        XCTAssertTrue(topology.mainSubdeviceMatchesExpected)
+        XCTAssertTrue(topology.isStackedMatchesExpected)
+        XCTAssertTrue(topology.subdevices.allSatisfy {
+            $0.diagnosticOnlyObjectID != nil
+        })
+        XCTAssertTrue(topology.subdevices.allSatisfy(\.driftMatchesExpected))
+        XCTAssertEqual(topology.tapUUIDs, [topology.subTap.tapUUID])
+        XCTAssertTrue(topology.subTap.driftMatchesExpected)
+        XCTAssertTrue(try XCTUnwrap(record.teardown).isReleased)
         XCTAssertFalse(record.eligibleForPolicyPromotion)
     }
 }

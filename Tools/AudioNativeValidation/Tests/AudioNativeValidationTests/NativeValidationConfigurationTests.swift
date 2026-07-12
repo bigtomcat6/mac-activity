@@ -119,6 +119,33 @@ final class NativeValidationConfigurationTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: destination, encoding: .utf8), "original")
     }
 
+    func testAtomicWriterDoesNotFollowIntermediateParentSwappedAfterValidation() throws {
+        let ancestor = scratchURL.appendingPathComponent("ancestor", isDirectory: true)
+        let parent = ancestor.appendingPathComponent("parent", isDirectory: true)
+        try FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+        let output = try NativeValidationOutputPath.validate(
+            parent.appendingPathComponent("result.json").path,
+            restrictedRoots: []
+        )
+        try FileManager.default.removeItem(at: ancestor)
+        let replacementParent = scratchURL
+            .appendingPathComponent("replacement", isDirectory: true)
+            .appendingPathComponent("parent", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: replacementParent,
+            withIntermediateDirectories: true
+        )
+        try FileManager.default.createSymbolicLink(
+            at: ancestor,
+            withDestinationURL: replacementParent.deletingLastPathComponent()
+        )
+
+        XCTAssertThrowsError(try NativeAtomicOutputWriter.write(Data("unsafe".utf8), to: output))
+        XCTAssertFalse(FileManager.default.fileExists(
+            atPath: replacementParent.appendingPathComponent("result.json").path
+        ))
+    }
+
     func testAtomicWriterReplacesRegularFileAtValidatedPath() throws {
         let outputURL = scratchURL.appendingPathComponent("result.json")
         try Data("old".utf8).write(to: outputURL)

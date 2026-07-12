@@ -66,6 +66,12 @@
 
   ],
   "sustainedCallbacks" : true,
+  "teardown" : {
+    "aggregateIdentityAbsent" : true,
+    "attempts" : 2,
+    "callbackContextReleased" : true,
+    "tapIdentitiesAbsent" : true
+  },
   "tapFormats" : [
     {
       "diagnosticOnlyObjectID" : 8001,
@@ -113,23 +119,43 @@
     "diagnosticOnlyOutputStreamIDs" : [
       9202
     ],
-    "drift" : [
-      {
-        "diagnosticOnlyObjectID" : 9301,
-        "enabled" : 0,
-        "kind" : "subdevice",
-        "quality" : 0
-      },
-      {
-        "diagnosticOnlyObjectID" : 9101,
-        "enabled" : 0,
-        "kind" : "subtap",
-        "quality" : 0
-      }
+    "activeSubdeviceMembershipMatchesExpected" : true,
+    "activeSubdeviceUIDs" : [
+      "ExampleDeviceUID"
     ],
+    "actualIsStacked" : false,
+    "actualMainSubdeviceUID" : "ExampleDeviceUID",
+    "expectedFullSubdeviceUIDs" : [
+      "ExampleDeviceUID"
+    ],
+    "expectedIsStacked" : false,
+    "expectedMainSubdeviceUID" : "ExampleDeviceUID",
+    "fullSubdeviceOrderMatchesExpected" : true,
     "fullSubdeviceUIDs" : [
       "ExampleDeviceUID"
     ],
+    "isStackedMatchesExpected" : true,
+    "mainSubdeviceMatchesExpected" : true,
+    "subdevices" : [
+      {
+        "diagnosticOnlyObjectID" : 9301,
+        "driftMatchesExpected" : true,
+        "expectedEnabled" : 0,
+        "observedEnabled" : 0,
+        "observedQuality" : 0,
+        "uid" : "ExampleDeviceUID"
+      }
+    ],
+    "subTap" : {
+      "diagnosticOnlyObjectID" : 9101,
+      "driftMatchesExpected" : true,
+      "expectedEnabled" : 0,
+      "observedEnabled" : 0,
+      "observedQuality" : 0,
+      "sourceDeviceUID" : "ExampleDeviceUID",
+      "sourceStreamIndex" : 0,
+      "tapUUID" : "4D414341-0000-4000-8000-000000000001"
+    },
     "hasExactlyOneInput" : true,
     "inputFormats" : [
       {

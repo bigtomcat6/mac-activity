@@ -88,8 +88,7 @@ enum NativeAtomicOutputWriter {
     static func write(_ data: Data, to output: NativeValidationOutputPath) throws {
         let parent = output.url.deletingLastPathComponent()
         let targetName = output.url.lastPathComponent
-        let directory = open(parent.path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
-        guard directory >= 0 else { throw NativeValidationOutputError.system(errno) }
+        let directory = try openDirectoryWithoutFollowingSymlinks(parent)
         defer { close(directory) }
 
         var targetInfo = stat()
@@ -135,5 +134,25 @@ enum NativeAtomicOutputWriter {
             throw NativeValidationOutputError.system(errno)
         }
         shouldRemoveTemporary = false
+    }
+
+    private static func openDirectoryWithoutFollowingSymlinks(_ url: URL) throws -> Int32 {
+        var directory = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
+        guard directory >= 0 else { throw NativeValidationOutputError.system(errno) }
+        for component in url.standardizedFileURL.pathComponents.dropFirst() {
+            let next = openat(
+                directory,
+                component,
+                O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW
+            )
+            if next < 0 {
+                let status = errno
+                close(directory)
+                throw NativeValidationOutputError.system(status)
+            }
+            close(directory)
+            directory = next
+        }
+        return directory
     }
 }
