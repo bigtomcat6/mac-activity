@@ -242,6 +242,15 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     @available(*, deprecated, message: "Use updateGain(_:for:)")
     @MainActor public func setMuted(_ isMuted: Bool, processIdentifier: pid_t) {}
+
+    static func callbackProgressIsReady(
+        now: DispatchTime,
+        deadline: DispatchTime,
+        countBeforeObservation: Int32,
+        currentCount: Int32
+    ) -> Bool {
+        now < deadline && currentCount != countBeforeObservation
+    }
 }
 
 private extension ProcessTapVolumeEngine {
@@ -599,18 +608,23 @@ private extension ProcessTapVolumeEngine {
             try ensureCurrent(token)
             let now = DispatchTime.now()
             let currentCount = context.callbackCount
+            guard now < deadline else {
+                throw ProcessTapPreparationAbort(.aggregateNotReady)
+            }
             if let baseline = countBeforeObservation,
                let intervalEnd = observationDeadline,
                now >= intervalEnd {
-                if currentCount != baseline { return }
+                if Self.callbackProgressIsReady(
+                    now: now,
+                    deadline: deadline,
+                    countBeforeObservation: baseline,
+                    currentCount: currentCount
+                ) { return }
                 countBeforeObservation = currentCount
                 observationDeadline = now + Self.callbackObservationInterval
             } else if countBeforeObservation == nil, currentCount != initialCount {
                 countBeforeObservation = currentCount
                 observationDeadline = now + Self.callbackObservationInterval
-            }
-            guard now < deadline else {
-                throw ProcessTapPreparationAbort(.aggregateNotReady)
             }
             usleep(1_000)
         }

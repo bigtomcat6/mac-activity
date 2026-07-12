@@ -47,6 +47,64 @@ final class AudioHALClientTests: XCTestCase {
             }
         }
     }
+
+    func testIOProcUsageDecodesIndependentTwoFlagSDKBufferAndRejectsCorruption() throws {
+        let streamCount = 2
+        let expectedByteCount = MemoryLayout<AudioHardwareIOProcStreamUsage>.size
+            + MemoryLayout<UInt32>.stride
+        let flagOffset = try XCTUnwrap(
+            MemoryLayout<AudioHardwareIOProcStreamUsage>.offset(
+                of: \AudioHardwareIOProcStreamUsage.mStreamIsOn
+            )
+        )
+        XCTAssertEqual(
+            flagOffset,
+            MemoryLayout<UnsafeMutableRawPointer>.size + MemoryLayout<UInt32>.size
+        )
+        XCTAssertEqual(
+            AudioIOProcStreamUsage.byteCount(streamCount: streamCount),
+            expectedByteCount
+        )
+
+        let storage = UnsafeMutableRawPointer.allocate(
+            byteCount: expectedByteCount,
+            alignment: MemoryLayout<AudioHardwareIOProcStreamUsage>.alignment
+        )
+        let header = storage.bindMemory(
+            to: AudioHardwareIOProcStreamUsage.self,
+            capacity: 1
+        )
+        header.initialize(to: AudioHardwareIOProcStreamUsage(
+            mIOProc: unsafeBitCast(testIOProcID, to: UnsafeMutableRawPointer.self),
+            mNumberStreams: UInt32(streamCount),
+            mStreamIsOn: (1)
+        ))
+        storage.advanced(by: flagOffset + MemoryLayout<UInt32>.stride)
+            .storeBytes(of: UInt32(0), as: UInt32.self)
+        defer {
+            header.deinitialize(count: 1)
+            storage.deallocate()
+        }
+
+        let bytes = UnsafeRawBufferPointer(start: storage, count: expectedByteCount)
+        XCTAssertEqual(
+            try AudioIOProcStreamUsage.decode(
+                bytes,
+                expectedIOProcID: testIOProcID,
+                expectedStreamCount: streamCount
+            ),
+            [1, 0]
+        )
+
+        header.pointee.mNumberStreams = 3
+        XCTAssertThrowsError(try AudioIOProcStreamUsage.decode(
+            bytes,
+            expectedIOProcID: testIOProcID,
+            expectedStreamCount: streamCount
+        )) { error in
+            XCTAssertEqual(error as? AudioIOProcStreamUsageError, .streamCountMismatch)
+        }
+    }
     func testReadArrayUsesReturnedByteCountAfterShrink() throws {
         let backend = FakeAudioHALBackend()
         backend.enqueueArrayRead(announced: [UInt32(11), 22, 33], returned: [11, 22])

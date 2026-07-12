@@ -5,6 +5,22 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapVolumeEngineTests: XCTestCase {
+    func testCallbackProgressAtGlobalDeadlineIsNeverAccepted() {
+        let deadline = DispatchTime(uptimeNanoseconds: 1_000_000)
+        XCTAssertFalse(ProcessTapVolumeEngine.callbackProgressIsReady(
+            now: deadline,
+            deadline: deadline,
+            countBeforeObservation: 1,
+            currentCount: 2
+        ))
+        XCTAssertTrue(ProcessTapVolumeEngine.callbackProgressIsReady(
+            now: DispatchTime(uptimeNanoseconds: 999_000),
+            deadline: deadline,
+            countBeforeObservation: 1,
+            currentCount: 2
+        ))
+    }
+
     func testPreparationOrderKeepsOriginalAudioUntilOutputIsReady() async throws {
         let fixture = EngineFixture()
 
@@ -190,18 +206,9 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 ]
             ),
             Scenario(
-                point: .readAggregateLayout,
-                sourceCount: 1,
-                expectedCalls: callsThroughAggregate + [
-                    .waitForAggregateReadiness,
-                    .destroyAggregate,
-                    .destroyTap(sourceIndex: 0),
-                ]
-            ),
-            Scenario(
                 point: .createIOProc,
                 sourceCount: 1,
-                expectedCalls: callsThroughLayout + [
+                expectedCalls: callsThroughStableTopology + [
                     .createIOProc,
                     .destroyAggregate,
                     .destroyTap(sourceIndex: 0),
@@ -210,7 +217,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             Scenario(
                 point: .startDevice,
                 sourceCount: 1,
-                expectedCalls: callsThroughLayout + [
+                expectedCalls: callsThroughStableTopology + [
                     .createIOProc,
                     .configureInputStreamUsage([1]),
                     .startDevice,
@@ -223,7 +230,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             Scenario(
                 point: .configureInputStreamUsage,
                 sourceCount: 1,
-                expectedCalls: callsThroughLayout + [
+                expectedCalls: callsThroughStableTopology + [
                     .createIOProc,
                     .configureInputStreamUsage([1]),
                     .stopDevice,
@@ -1476,7 +1483,7 @@ private let callsThroughAggregate = callsThroughTapFormat + [
     FakeAudioTapHardware.Call.createAggregate(tapAutoStart: false),
 ]
 
-private let callsThroughLayout = callsThroughAggregate + [
+private let callsThroughStableTopology = callsThroughAggregate + [
     FakeAudioTapHardware.Call.waitForAggregateReadiness,
 ]
 

@@ -10,7 +10,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case readTapFormat(sourceIndex: Int)
         case createAggregate(tapAutoStart: Bool)
         case waitForAggregateReadiness
-        case readAggregateLayout
         case createIOProc
         case configureInputStreamUsage([UInt32])
         case startDevice
@@ -30,7 +29,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case readTapFormat(Int)
         case createAggregate
         case waitForAggregateReadiness
-        case readAggregateLayout
         case createIOProc
         case configureInputStreamUsage
         case startDevice
@@ -81,7 +79,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var singleCallbackOnly = false
     var forcedTapObjectID: AudioObjectID?
     var forcedAggregateObjectID: AudioObjectID?
-    var aggregateLayoutOverride: AudioAggregateLayout?
     var aggregateTopologyError: AudioAggregateTopologyError?
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
@@ -257,11 +254,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             operation: .getData,
             objectID: aggregate.objectID
         )
-        try throwIfNeeded(
-            at: .readAggregateLayout,
-            operation: .getData,
-            objectID: aggregate.objectID
-        )
         if let aggregateTopologyError { throw aggregateTopologyError }
         let shouldBlock = locked { () -> Bool in
             readinessInvocationCount += 1
@@ -276,58 +268,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             usleep(1_000)
         }
         throw AudioTapHardwareError.aggregateNotReady(lastStatus: nil)
-    }
-
-    func readAggregateLayout(
-        _ aggregate: AudioAggregateResource,
-        plan: AudioRoutePlan,
-        taps: [AudioTapResource]
-    ) throws -> AudioAggregateLayout {
-        record(.readAggregateLayout)
-        try throwIfNeeded(
-            at: .readAggregateLayout,
-            operation: .getData,
-            objectID: aggregate.objectID
-        )
-        if let aggregateTopologyError {
-            throw aggregateTopologyError
-        }
-        if let aggregateLayoutOverride {
-            return aggregateLayoutOverride
-        }
-
-        let inputFormats = taps.map { tap in
-            locked {
-                let index = tapSourceIndices[tap.objectID] ?? Int(tap.source.streamIndex)
-                return tapFormatOverrides[index]
-                    ?? tapFormats[tap.objectID]
-                    ?? tap.source.expectedFormat
-            }
-        }
-        var channelMaps: [ProcessTapChannelMap] = []
-        for (bufferIndex, format) in inputFormats.enumerated() {
-            let interleavedChannelCount = format.interleaving == .interleaved
-                ? format.channelCount
-                : 1
-            for channelIndex in 0..<interleavedChannelCount {
-                let address = ProcessTapChannelAddress(
-                    bufferIndex: bufferIndex,
-                    channelIndex: channelIndex,
-                    interleavedChannelCount: interleavedChannelCount
-                )
-                channelMaps.append(ProcessTapChannelMap(
-                    input: address,
-                    output: address,
-                    mixCoefficient: 1
-                ))
-            }
-        }
-        return AudioAggregateLayout(
-            inputFormats: inputFormats,
-            outputFormats: inputFormats,
-            channelMaps: channelMaps,
-            inputStreamUsage: [1]
-        )
     }
 
     func createIOProc(

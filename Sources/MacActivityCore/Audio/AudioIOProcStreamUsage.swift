@@ -25,19 +25,25 @@ enum AudioIOProcStreamUsage {
             byteCount: count,
             alignment: MemoryLayout<AudioHardwareIOProcStreamUsage>.alignment
         )
-        defer { storage.deallocate() }
-        storage.initializeMemory(as: UInt8.self, repeating: 0, count: count)
-        let usage = storage.assumingMemoryBound(to: AudioHardwareIOProcStreamUsage.self)
-        usage.pointee.mIOProc = ioProcPointer(ioProcID)
-        usage.pointee.mNumberStreams = UInt32(flags.count)
+        let usage = storage.bindMemory(
+            to: AudioHardwareIOProcStreamUsage.self,
+            capacity: 1
+        )
+        usage.initialize(to: AudioHardwareIOProcStreamUsage(
+            mIOProc: ioProcPointer(ioProcID),
+            mNumberStreams: UInt32(flags.count),
+            mStreamIsOn: (flags[0])
+        ))
+        defer {
+            usage.deinitialize(count: 1)
+            storage.deallocate()
+        }
         let flagOffset = MemoryLayout<AudioHardwareIOProcStreamUsage>
             .offset(of: \AudioHardwareIOProcStreamUsage.mStreamIsOn)!
-        for (index, flag) in flags.enumerated() {
-            storage.storeBytes(
-                of: flag,
-                toByteOffset: flagOffset + index * MemoryLayout<UInt32>.stride,
-                as: UInt32.self
-            )
+        for (index, flag) in flags.enumerated().dropFirst() {
+            storage.advanced(
+                by: flagOffset + index * MemoryLayout<UInt32>.stride
+            ).storeBytes(of: flag, as: UInt32.self)
         }
         return try body(UnsafeMutableRawBufferPointer(start: storage, count: count))
     }
