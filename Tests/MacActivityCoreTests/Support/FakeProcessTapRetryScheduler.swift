@@ -34,6 +34,10 @@ final class FakeProcessTapRetryScheduler: ProcessTapRetryScheduling, @unchecked 
         locked { delays }
     }
 
+    var capturedActionCount: Int {
+        locked { capturedActions.count }
+    }
+
     func schedule(
         after delay: DispatchTimeInterval,
         _ action: @escaping @Sendable () -> Void
@@ -68,6 +72,11 @@ final class FakeProcessTapRetryScheduler: ProcessTapRetryScheduling, @unchecked 
         }
         action?()
         action?()
+    }
+
+    func fireCapturedAction(at index: Int) {
+        let action = locked { capturedActions[index] }
+        action()
     }
 
     @discardableResult

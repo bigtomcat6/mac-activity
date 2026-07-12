@@ -100,6 +100,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var runtimeRejections: ProcessTapRuntimeRejectionCache
     private var nextRetryScheduleID: UInt64 = 0
     private var pendingRetryScheduleID: UInt64?
+    private var pendingRetryDelay: DispatchTimeInterval?
     private var pendingRetryCancellation: (any ProcessTapRetryCancellation)?
     private var isRetryPassRunning = false
     private var concurrentRetryPasses = 0
@@ -230,7 +231,10 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             }
             sessions.removeAll()
             for session in activeSessions {
-                _ = teardown(session.acquisitionID, using: hardware)
+                _ = teardownRecordingProgress(
+                    session.acquisitionID,
+                    using: hardware
+                )
             }
             scheduleRetryIfNeeded()
         }
@@ -248,7 +252,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             let cleanup = cleanupOwnedObjects(using: hardware)
             orphanCleanupPending = cleanup.shouldRetry
             if cleanup.didProgress {
-                retryBackoff.recordProgress()
+                recordRetryProgress()
             }
             scheduleRetryIfNeeded()
             return cleanup.failures + bundleFailures()
@@ -365,7 +369,10 @@ private extension ProcessTapVolumeEngine {
                 error: nil
             )
             _ = publish(rebuilding, token: token)
-            _ = teardown(current.acquisitionID, using: hardware)
+            _ = teardownRecordingProgress(
+                current.acquisitionID,
+                using: hardware
+            )
             guard generations.isCurrent(token) else {
                 return snapshot(
                     processObjectID: plan.processObjectID,
@@ -571,7 +578,7 @@ private extension ProcessTapVolumeEngine {
                 runtimeRejections.insert(plan.topologyFingerprint)
             }
             bundles[acquisitionID]?.resources.context?.setOutputGateOpen(false)
-            _ = teardown(acquisitionID, using: hardware)
+            _ = teardownRecordingProgress(acquisitionID, using: hardware)
             let preparationError = generations.isCurrent(token)
                 ? map(error)
                 : .routeSuperseded
@@ -645,7 +652,10 @@ private extension ProcessTapVolumeEngine {
         )
         _ = publish(stopping, token: token)
         sessions.removeValue(forKey: processObjectID)
-        let failures = teardown(session.acquisitionID, using: hardware)
+        let failures = teardownRecordingProgress(
+            session.acquisitionID,
+            using: hardware
+        ).failures
         guard generations.isCurrent(token) else {
             return snapshot(
                 processObjectID: processObjectID,
@@ -872,6 +882,19 @@ private extension ProcessTapVolumeEngine {
         return []
     }
 
+    func teardownRecordingProgress(
+        _ acquisitionID: UUID,
+        using hardware: any AudioTapHardware
+    ) -> (failures: [AudioTeardownFailure], didProgress: Bool) {
+        let before = bundleProgress(for: acquisitionID)
+        let failures = teardown(acquisitionID, using: hardware)
+        let didProgress = before != bundleProgress(for: acquisitionID)
+        if didProgress {
+            recordRetryProgress()
+        }
+        return (failures, didProgress)
+    }
+
     func restoreMutedTaps(
         in acquisitionID: UUID,
         using hardware: any AudioTapHardware
@@ -956,16 +979,21 @@ private extension ProcessTapVolumeEngine {
             .sorted { $0.uuidString < $1.uuidString }
         var didProgress = false
         for acquisitionID in acquisitionIDs {
-            let before = bundleProgress(for: acquisitionID)
-            _ = teardown(acquisitionID, using: hardware)
-            didProgress = didProgress
-                || before != bundleProgress(for: acquisitionID)
-        }
-        if didProgress {
-            retryBackoff.recordProgress()
+            didProgress = teardownRecordingProgress(
+                acquisitionID,
+                using: hardware
+            ).didProgress || didProgress
         }
         scheduleRetryIfNeeded()
         return didProgress
+    }
+
+    func recordRetryProgress() {
+        guard pendingRetryDelay != .milliseconds(50) else { return }
+        retryBackoff.recordProgress()
+        guard pendingRetryScheduleID != nil else { return }
+        cancelPendingRetry()
+        scheduleRetryIfNeeded()
     }
 
     func scheduleRetryIfNeeded() {
@@ -987,6 +1015,7 @@ private extension ProcessTapVolumeEngine {
         let scheduleID = nextRetryScheduleID
         pendingRetryScheduleID = scheduleID
         let delay = retryBackoff.nextDelay()
+        pendingRetryDelay = delay
         pendingRetryCancellation = retryScheduler.schedule(
             after: delay
         ) { [weak self] in
@@ -1000,11 +1029,13 @@ private extension ProcessTapVolumeEngine {
         pendingRetryCancellation?.cancel()
         pendingRetryCancellation = nil
         pendingRetryScheduleID = nil
+        pendingRetryDelay = nil
     }
 
     func retryPassOnQueue(ifCurrent scheduleID: UInt64) {
         guard pendingRetryScheduleID == scheduleID else { return }
         pendingRetryScheduleID = nil
+        pendingRetryDelay = nil
         pendingRetryCancellation = nil
         guard isRetryPassRunning == false else { return }
 
@@ -1015,19 +1046,17 @@ private extension ProcessTapVolumeEngine {
             maximumConcurrentRetryPasses,
             concurrentRetryPasses
         )
-        var didProgress = false
         if availability.supportsProcessControls,
            #available(macOS 14.2, *),
            let hardware {
-            didProgress = advanceRetainedBundles(using: hardware)
+            advanceRetainedBundles(using: hardware)
             if orphanCleanupPending {
                 let cleanup = cleanupOwnedObjects(using: hardware)
                 orphanCleanupPending = cleanup.shouldRetry
-                didProgress = didProgress || cleanup.didProgress
+                if cleanup.didProgress {
+                    recordRetryProgress()
+                }
             }
-        }
-        if didProgress {
-            retryBackoff.recordProgress()
         }
         concurrentRetryPasses -= 1
         isRetryPassRunning = false

@@ -1690,6 +1690,73 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
     }
 
+    func testDirectBundleProgressReplacesLongPendingRetryWithFiftyMilliseconds() async {
+        let fixture = EngineFixture()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        await advanceRetryBackoffToOneSecond(fixture)
+        let staleActionIndex = fixture.scheduler.capturedActionCount - 1
+        let passCountBeforeProgress = await fixture.engine.retryPassCountForTesting()
+        fixture.hardware.setPersistentStatus(nil, at: .destroyIOProc)
+        fixture.hardware.deferAggregateDisappearance = true
+
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(fixture.scheduler.scheduledDelays.last, .milliseconds(50))
+        XCTAssertEqual(
+            fixture.scheduler.capturedActionCount,
+            staleActionIndex + 2
+        )
+        guard fixture.scheduler.scheduledDelays.last == .milliseconds(50),
+              fixture.scheduler.capturedActionCount == staleActionIndex + 2
+        else { return }
+        fixture.scheduler.fireCapturedAction(at: staleActionIndex)
+        await fixture.engine.waitUntilIdleForTesting()
+        let passCountAfterStaleFire = await fixture.engine.retryPassCountForTesting()
+        XCTAssertEqual(passCountAfterStaleFire, passCountBeforeProgress)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+    }
+
+    @available(macOS 14.2, *)
+    func testOrphanDeletionProgressReplacesLongPendingRetryWithFiftyMilliseconds() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedTap(id: 902)]
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(902)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+        await advanceRetryBackoffToOneSecond(fixture)
+        let staleActionIndex = fixture.scheduler.capturedActionCount - 1
+        let passCountBeforeProgress = await fixture.engine.retryPassCountForTesting()
+        fixture.hardware.setPersistentStatus(nil, at: .destroyOwnedObject(902))
+
+        _ = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(fixture.scheduler.scheduledDelays.last, .milliseconds(50))
+        XCTAssertEqual(
+            fixture.scheduler.capturedActionCount,
+            staleActionIndex + 2
+        )
+        guard fixture.scheduler.scheduledDelays.last == .milliseconds(50),
+              fixture.scheduler.capturedActionCount == staleActionIndex + 2
+        else { return }
+        fixture.scheduler.fireCapturedAction(at: staleActionIndex)
+        await fixture.engine.waitUntilIdleForTesting()
+        let passCountAfterStaleFire = await fixture.engine.retryPassCountForTesting()
+        XCTAssertEqual(passCountAfterStaleFire, passCountBeforeProgress)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+    }
+
     func testAggregateDisappearanceAdvancesWithoutAnotherUserCommand() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(
@@ -1899,6 +1966,18 @@ private let callsThroughTapFormat: [FakeAudioTapHardware.Call] = [
     .createTap(sourceIndex: 0, initiallyMuted: false),
     .readTapFormat(sourceIndex: 0),
 ]
+
+private func advanceRetryBackoffToOneSecond(_ fixture: EngineFixture) async {
+    for _ in 0..<10 {
+        if fixture.scheduler.scheduledDelays.last == .milliseconds(1_000) {
+            break
+        }
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+    }
+    XCTAssertEqual(fixture.scheduler.scheduledDelays.last, .milliseconds(1_000))
+    XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+}
 
 @available(macOS 14.2, *)
 private func ownedAggregate(id: AudioObjectID) -> AudioOwnedObject {
