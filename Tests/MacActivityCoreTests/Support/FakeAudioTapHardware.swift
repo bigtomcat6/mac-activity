@@ -63,7 +63,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var tapMuteStates: [UUID: AudioTapMuteState] = [:]
     private var liveAggregateIdentities: [AudioObjectID: String] = [:]
     private var liveIOProcParents: [UInt: AudioAggregateResource] = [:]
-    private var startedIOProcKeys: Set<UInt> = []
     private var contexts: [AudioObjectID: WeakContext] = [:]
     private var contextOrder: [AudioObjectID] = []
     private var createdIOProcKeysStorage: [UInt] = []
@@ -76,7 +75,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var nextAggregateID: AudioObjectID = 2_000
     private var createdProcessObjectIDsStorage: [AudioObjectID] = []
     private var createdTapResourcesStorage: [AudioTapResource] = []
-    private var createdAggregateResourcesStorage: [AudioAggregateResource] = []
     private var latestPlan: AudioRoutePlan?
     private var latestTaps: [AudioTapResource] = []
 
@@ -101,10 +99,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     var createdTapResources: [AudioTapResource] {
         locked { createdTapResourcesStorage }
-    }
-
-    var createdAggregateResources: [AudioAggregateResource] {
-        locked { createdAggregateResourcesStorage }
     }
 
     var liveOwnedObjects: [AudioOwnedObject] {
@@ -280,7 +274,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                 uid: plan.aggregateUID
             )
             liveAggregateIdentities[objectID] = resource.uid
-            createdAggregateResourcesStorage.append(resource)
             return resource
         }
     }
@@ -377,7 +370,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             operation: .startDevice,
             objectID: ioProc.aggregateDeviceID
         )
-        locked { startedIOProcKeys.insert(Self.ioProcKey(ioProc.ioProcID)) }
         let shouldBlock = locked { () -> Bool in
             startInvocationCount += 1
             return firstCallbackInitiallyBlocked && startInvocationCount == 1
@@ -437,14 +429,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         guard ioProcIdentityMatches(ioProc) else {
             return kAudioHardwareBadObjectError
         }
-        let status = takeStatus(
+        return takeStatus(
             at: .stopDevice,
             ioProcKey: Self.ioProcKey(ioProc.ioProcID)
         )
-        if status == noErr {
-            locked { startedIOProcKeys.remove(Self.ioProcKey(ioProc.ioProcID)) }
-        }
-        return status
     }
 
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus {
@@ -460,7 +448,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             locked {
                 let key = Self.ioProcKey(ioProc.ioProcID)
                 liveIOProcParents.removeValue(forKey: key)
-                startedIOProcKeys.remove(key)
             }
         }
         return status

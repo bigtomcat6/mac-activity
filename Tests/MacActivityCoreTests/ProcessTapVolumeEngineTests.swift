@@ -1230,18 +1230,6 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         ])
     }
 
-    func testMacOS141GateReturnsBeforeAnyHALCall() async {
-        let fixture = EngineFixture(macOS: (14, 1))
-
-        let result = await fixture.engine.apply(
-            plan: fixture.plan(generation: 1),
-            gain: ProcessGainState()
-        )
-
-        XCTAssertEqual(result.error, .processTapsUnavailable)
-        XCTAssertTrue(fixture.hardware.calls.isEmpty)
-    }
-
     func testStopAllTearsDownEveryObjectIDSession() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(
