@@ -102,11 +102,18 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var confirmedDevices: [String: AudioOutputDeviceSnapshot] = [:]
     private var confirmedProcessValues: [AudioObjectID: AudioProcessControlValues] = [:]
     private var generations: [AudioObjectID: UInt64] = [:]
-    private var deviceTasks: [String: Task<Void, Never>] = [:]
+    private var deviceVolumeTasks: [String: Task<Void, Never>] = [:]
+    private var deviceMuteTasks: [String: Task<Void, Never>] = [:]
     private var processTasks: [AudioObjectID: Task<Void, Never>] = [:]
+    private var trackedTasks: [UInt64: Task<Void, Never>] = [:]
+    private var nextTrackedTaskID: UInt64 = 0
     private var monitorTask: Task<Void, Never>?
     private var engineSnapshotTask: Task<Void, Never>?
     private var latestSnapshotOrders: [AudioObjectID: ProcessTapSnapshotOrder] = [:]
+    private var reconciliationOrdinal: UInt64 = 0
+    private var reconciliationWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
+    private var engineSnapshotOrdinal: UInt64 = 0
+    private var engineSnapshotWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
     private var hasStarted = false
 
     init(
@@ -133,21 +140,42 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         self.delay = delay
     }
 
+    deinit {
+        deviceVolumeTasks.values.forEach { $0.cancel() }
+        deviceMuteTasks.values.forEach { $0.cancel() }
+        processTasks.values.forEach { $0.cancel() }
+        trackedTasks.values.forEach { $0.cancel() }
+        monitorTask?.cancel()
+        engineSnapshotTask?.cancel()
+    }
+
     func start() async {
         guard hasStarted == false else { return }
         hasStarted = true
         _ = await engine.cleanupOrphans()
-        try? monitor.start()
-        startConsumers()
         refreshDevicesAndRouteDescriptors()
+        do {
+            try monitor.start()
+        } catch {
+            hasStarted = false
+            return
+        }
         if supportsProcessControls {
             refreshProcesses()
         }
-        try? monitor.updateObservedObjects(
-            deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-            processObjectIDs: Set(snapshot.processes.map(\.id))
-        )
-        await restorePersistedNonDefaultProfiles()
+        do {
+            try monitor.updateObservedObjects(
+                deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
+                processObjectIDs: Set(snapshot.processes.map(\.id))
+            )
+        } catch {
+            snapshot.processes = []
+            monitor.stop()
+            hasStarted = false
+            return
+        }
+        startConsumers()
+        await restoreConfirmedAndPersistedRules()
     }
 
     func retryDevice(_ deviceUID: String) {
@@ -168,23 +196,26 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             row.device = Self.device(row.device, volume: .value(requested, isWritable: true))
             row.error = nil
         }
-        deviceTasks[deviceUID]?.cancel()
-        deviceTasks[deviceUID] = Task { @MainActor [weak self] in
+        deviceVolumeTasks[deviceUID]?.cancel()
+        deviceVolumeTasks[deviceUID] = trackedTask { @MainActor [weak self] in
             guard let self else { return }
             guard Task.isCancelled == false else { return }
             await delay(.milliseconds(75))
             guard Task.isCancelled == false else { return }
             do {
                 let value = try deviceProvider.writeVolume(requested, forUID: deviceUID)
-                let updated = Self.device(confirmed, volume: .value(value, isWritable: true))
+                let current = confirmedDevices[deviceUID] ?? confirmed
+                let updated = Self.device(current, volume: .value(value, isWritable: true))
                 confirmedDevices[deviceUID] = updated
                 updateDevice(deviceUID) { row in
                     row.device = updated
                     row.error = nil
                 }
             } catch {
+                let current = confirmedDevices[deviceUID] ?? confirmed
+                let rolledBack = Self.device(current, volume: confirmed.volume)
                 updateDevice(deviceUID) { row in
-                    row.device = confirmed
+                    row.device = rolledBack
                     row.error = .deviceWrite
                 }
             }
@@ -197,20 +228,24 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             row.device = Self.device(row.device, mute: .value(isMuted, isWritable: true))
             row.error = nil
         }
-        deviceTasks[deviceUID]?.cancel()
-        deviceTasks[deviceUID] = Task { @MainActor [weak self] in
+        deviceMuteTasks[deviceUID]?.cancel()
+        deviceMuteTasks[deviceUID] = trackedTask { @MainActor [weak self] in
             guard let self else { return }
+            guard Task.isCancelled == false else { return }
             do {
                 let value = try deviceProvider.writeMute(isMuted, forUID: deviceUID)
-                let updated = Self.device(confirmed, mute: .value(value, isWritable: true))
+                let current = confirmedDevices[deviceUID] ?? confirmed
+                let updated = Self.device(current, mute: .value(value, isWritable: true))
                 confirmedDevices[deviceUID] = updated
                 updateDevice(deviceUID) { row in
                     row.device = updated
                     row.error = nil
                 }
             } catch {
+                let current = confirmedDevices[deviceUID] ?? confirmed
+                let rolledBack = Self.device(current, mute: confirmed.mute)
                 updateDevice(deviceUID) { row in
-                    row.device = confirmed
+                    row.device = rolledBack
                     row.error = .deviceWrite
                 }
             }
@@ -240,22 +275,48 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func shutdown() async {
-        deviceTasks.values.forEach { $0.cancel() }
+        deviceVolumeTasks.values.forEach { $0.cancel() }
+        deviceMuteTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
+        let workTasks = Array(trackedTasks.values)
+        workTasks.forEach { $0.cancel() }
         monitorTask?.cancel()
         engineSnapshotTask?.cancel()
         monitor.stop()
+        for task in workTasks { await task.value }
+        await monitorTask?.value
+        await engineSnapshotTask?.value
         await engine.stopAll()
     }
 
     func testingWaitUntilIdle() async {
-        while deviceTasks.isEmpty == false || processTasks.isEmpty == false {
-            let tasks = Array(deviceTasks.values) + Array(processTasks.values)
+        while trackedTasks.isEmpty == false {
+            let tasks = Array(trackedTasks.values)
             for task in tasks { await task.value }
-            deviceTasks.removeAll()
-            processTasks.removeAll()
         }
-        for _ in 0..<12 { await Task.yield() }
+    }
+
+    func testingWaitForDeviceMute(_ deviceUID: String) async {
+        await deviceMuteTasks[deviceUID]?.value
+    }
+
+    func testingWaitForProcessTask(_ processObjectID: AudioObjectID) async {
+        await processTasks[processObjectID]?.value
+    }
+
+    var testingReconciliationMarker: UInt64 { reconciliationOrdinal }
+    var testingEngineSnapshotMarker: UInt64 { engineSnapshotOrdinal }
+
+    func testingWaitForReconciliation(after marker: UInt64) async {
+        let target = marker &+ 1
+        guard reconciliationOrdinal < target else { return }
+        await withCheckedContinuation { reconciliationWaiters.append((target, $0)) }
+    }
+
+    func testingWaitForEngineSnapshot(after marker: UInt64) async {
+        let target = marker &+ 1
+        guard engineSnapshotOrdinal < target else { return }
+        await withCheckedContinuation { engineSnapshotWaiters.append((target, $0)) }
     }
 }
 
@@ -268,53 +329,70 @@ private extension AudioControlCoordinator {
         }) ?? []
     }
 
-    func refreshProcesses() {
+    func refreshProcesses(resetSessions: Bool = false) {
+        let previous = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.id, $0) })
         snapshot.processes = processProvider.audibleOutputProcesses().map { process in
-            let values = confirmedProcessValues[process.processObjectID] ?? .default
-            confirmedProcessValues[process.processObjectID] = values
-            return AudioProcessControlSnapshot(
-                process: process,
-                volume: values.volume,
-                isMuted: values.isMuted,
-                route: values.route,
-                pendingValues: nil,
-                routeOptions: routeDevices.map {
-                    AudioRouteDeviceOption(
-                        uid: $0.uid,
-                        name: $0.name,
-                        isAvailable: $0.isAlive,
-                        isSelected: process.outputDeviceIDs.contains($0.objectID)
-                    )
-                },
-                session: ProcessTapSessionSnapshot(
-                    processObjectID: process.processObjectID,
-                    generation: 0,
-                    state: .idle,
-                    error: nil
-                ),
-                error: nil
+            makeProcessSnapshot(
+                process,
+                preserving: previous[process.processObjectID],
+                resetSession: resetSessions
             )
         }
     }
 
     func startConsumers() {
-        monitorTask = Task { @MainActor [weak self, changes = monitor.changes] in
-            for await changes in changes {
-                guard Task.isCancelled == false, let self else { return }
-                await handle(changes)
+        if monitorTask == nil {
+            monitorTask = Task { @MainActor [weak self, changes = monitor.changes] in
+                for await changes in changes {
+                    guard Task.isCancelled == false, let self else { return }
+                    await handle(changes)
+                    acknowledgeReconciliation()
+                }
             }
         }
-        engineSnapshotTask = Task { @MainActor [weak self, snapshots = engine.sessionSnapshots] in
-            for await snapshot in snapshots {
-                guard Task.isCancelled == false, let self else { return }
-                _ = accept(snapshot)
+        if engineSnapshotTask == nil {
+            engineSnapshotTask = Task { @MainActor [weak self, snapshots = engine.sessionSnapshots] in
+                for await snapshot in snapshots {
+                    guard Task.isCancelled == false, let self else { return }
+                    _ = accept(snapshot)
+                    acknowledgeEngineSnapshot()
+                }
             }
         }
     }
 
-    func restorePersistedNonDefaultProfiles() async {
+    func restoreConfirmedAndPersistedRules() async {
         guard supportsProcessControls else { return }
-        for row in snapshot.processes {
+        let confirmedIDs = Set<AudioObjectID>(snapshot.processes.compactMap { row in
+            guard confirmedProcessValues[row.id]?.isDefault == false else { return nil }
+            return row.id
+        })
+        for id in confirmedIDs {
+            guard let values = confirmedProcessValues[id] else { continue }
+            apply(values, to: id)
+            if let task = processTasks[id] { await task.value }
+        }
+        let persistedIDs = Set(snapshot.processes.map(\.id)).subtracting(confirmedIDs)
+        await restorePersistedNonDefaultProfiles(processIDs: persistedIDs)
+    }
+
+    func acknowledgeReconciliation() {
+        reconciliationOrdinal &+= 1
+        let ready = reconciliationWaiters.filter { reconciliationOrdinal >= $0.0 }
+        reconciliationWaiters.removeAll { reconciliationOrdinal >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func acknowledgeEngineSnapshot() {
+        engineSnapshotOrdinal &+= 1
+        let ready = engineSnapshotWaiters.filter { engineSnapshotOrdinal >= $0.0 }
+        engineSnapshotWaiters.removeAll { engineSnapshotOrdinal >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func restorePersistedNonDefaultProfiles(processIDs: Set<AudioObjectID>? = nil) async {
+        guard supportsProcessControls else { return }
+        for row in snapshot.processes where processIDs?.contains(row.id) ?? true {
             guard let bundleIdentifier = row.process.bundleIdentifier,
                   let profile = preferences.state.audioProcessProfiles[bundleIdentifier],
                   profile.isDefault == false else { continue }
@@ -387,16 +465,9 @@ private extension AudioControlCoordinator {
         generations[processObjectID] = generation
         processTasks[processObjectID]?.cancel()
         if values.isDefault {
-            processTasks[processObjectID] = Task { @MainActor [weak self] in
+            processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
                 guard let self else { return }
-                if let bundleIdentifier = row.process.bundleIdentifier {
-                    do {
-                        try preferences.setAudioProcessProfile(nil, for: bundleIdentifier)
-                    } catch {
-                        fail(values, processObjectID: processObjectID, error: .persistenceFailed)
-                        return
-                    }
-                }
+                guard isCurrent(processObjectID, generation: generation) else { return }
                 let confirmed = confirmedProcessValues[processObjectID] ?? .default
                 let needsStop = confirmed.isDefault == false || row.session.state != .idle
                 var stopped = row.session
@@ -405,10 +476,30 @@ private extension AudioControlCoordinator {
                         processObjectID: processObjectID,
                         generation: generation
                     )
-                    guard accept(stopped) || latestSnapshotOrders[processObjectID] == stopped.order else {
+                    guard isCurrent(processObjectID, generation: generation) else { return }
+                    guard acceptResult(stopped), stopped.state == .idle else {
+                        fail(
+                            values,
+                            processObjectID: processObjectID,
+                            error: Self.userError(stopped.error)
+                        )
                         return
                     }
                 }
+                guard isCurrent(processObjectID, generation: generation) else { return }
+                if let bundleIdentifier = row.process.bundleIdentifier {
+                    do {
+                        try preferences.setAudioProcessProfile(nil, for: bundleIdentifier)
+                    } catch {
+                        guard let rollbackGeneration = await rollbackEngine(
+                            processObjectID: processObjectID,
+                            failedGeneration: generation
+                        ), isCurrent(processObjectID, generation: rollbackGeneration) else { return }
+                        fail(values, processObjectID: processObjectID, error: .persistenceFailed)
+                        return
+                    }
+                }
+                guard isCurrent(processObjectID, generation: generation) else { return }
                 confirmedProcessValues[processObjectID] = .default
                 updateProcess(processObjectID) { row in
                     row.volume = 1
@@ -426,15 +517,25 @@ private extension AudioControlCoordinator {
                 routeDevices.contains { $0.uid == target && $0.isAlive } == false
             }
             if unavailable.count == targets.count {
-                processTasks[processObjectID] = Task { @MainActor [weak self] in
+                processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
                     guard let self else { return }
+                    guard isCurrent(processObjectID, generation: generation) else { return }
                     if row.session.state != .idle {
                         let stopped = await engine.stop(
                             processObjectID: processObjectID,
                             generation: generation
                         )
-                        _ = accept(stopped)
+                        guard isCurrent(processObjectID, generation: generation) else { return }
+                        guard acceptResult(stopped), stopped.state == .idle else {
+                            fail(
+                                values,
+                                processObjectID: processObjectID,
+                                error: Self.userError(stopped.error)
+                            )
+                            return
+                        }
                     }
+                    guard isCurrent(processObjectID, generation: generation) else { return }
                     let isConfirmed = confirmedProcessValues[processObjectID] == values
                     updateProcess(processObjectID) { row in
                         if isConfirmed {
@@ -451,12 +552,14 @@ private extension AudioControlCoordinator {
                 return
             }
         }
-        processTasks[processObjectID] = Task { @MainActor [weak self] in
+        processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
             guard let self else { return }
+            guard isCurrent(processObjectID, generation: generation) else { return }
             let plan: AudioRoutePlan
             do {
                 plan = try makePlan(values, for: row.process, generation: generation)
             } catch {
+                guard isCurrent(processObjectID, generation: generation) else { return }
                 fail(values, processObjectID: processObjectID, error: .operationFailed(.unsupportedFormat))
                 return
             }
@@ -464,10 +567,8 @@ private extension AudioControlCoordinator {
                 plan: plan,
                 gain: .init(volume: values.volume, isMuted: values.isMuted)
             )
-            guard generations[processObjectID] == generation else { return }
-            guard accept(result) || latestSnapshotOrders[processObjectID] == result.order else {
-                return
-            }
+            guard isCurrent(processObjectID, generation: generation) else { return }
+            guard acceptResult(result) else { return }
             guard result.state == .running else {
                 fail(values, processObjectID: processObjectID, error: Self.userError(result.error))
                 return
@@ -484,14 +585,15 @@ private extension AudioControlCoordinator {
                         for: bundleIdentifier
                     )
                 } catch {
-                    await rollbackEngine(
+                    guard let rollbackGeneration = await rollbackEngine(
                         processObjectID: processObjectID,
                         failedGeneration: generation
-                    )
+                    ), isCurrent(processObjectID, generation: rollbackGeneration) else { return }
                     fail(values, processObjectID: processObjectID, error: .persistenceFailed)
                     return
                 }
             }
+            guard isCurrent(processObjectID, generation: generation) else { return }
             confirmedProcessValues[processObjectID] = values
             updateProcess(processObjectID) { row in
                 row.volume = values.volume
@@ -540,6 +642,10 @@ private extension AudioControlCoordinator {
     }
 
     func accept(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
+        if let currentGeneration = generations[engineSnapshot.processObjectID],
+           engineSnapshot.generation < currentGeneration {
+            return false
+        }
         if let latest = latestSnapshotOrders[engineSnapshot.processObjectID],
            engineSnapshot.order <= latest {
             return false
@@ -556,36 +662,63 @@ private extension AudioControlCoordinator {
         return true
     }
 
+    func acceptResult(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
+        if accept(engineSnapshot) { return true }
+        return snapshot.processes.first(where: { $0.id == engineSnapshot.processObjectID })?.session
+            == engineSnapshot
+    }
+
+    func isCurrent(_ processObjectID: AudioObjectID, generation: UInt64) -> Bool {
+        Task.isCancelled == false && generations[processObjectID] == generation
+    }
+
+    func trackedTask(
+        _ operation: @escaping @MainActor @Sendable () async -> Void
+    ) -> Task<Void, Never> {
+        nextTrackedTaskID &+= 1
+        let id = nextTrackedTaskID
+        let task = Task { @MainActor [weak self] in
+            await operation()
+            self?.trackedTasks.removeValue(forKey: id)
+        }
+        trackedTasks[id] = task
+        return task
+    }
+
     func rollbackEngine(
         processObjectID: AudioObjectID,
         failedGeneration: UInt64
-    ) async {
+    ) async -> UInt64? {
+        guard isCurrent(processObjectID, generation: failedGeneration) else { return nil }
         let previous = confirmedProcessValues[processObjectID] ?? .default
-        if previous.isDefault {
+        var rollbackGeneration = failedGeneration
+        if previous.isDefault == false,
+           let row = snapshot.processes.first(where: { $0.id == processObjectID }),
+           let plan = try? makePlan(
+               previous,
+               for: row.process,
+               generation: failedGeneration &+ 1
+           ) {
             let rollbackGeneration = failedGeneration &+ 1
             generations[processObjectID] = rollbackGeneration
-            let stopped = await engine.stop(
-                processObjectID: processObjectID,
-                generation: rollbackGeneration
-            )
-            _ = accept(stopped)
-        } else {
-            guard let row = snapshot.processes.first(where: { $0.id == processObjectID }) else {
-                return
-            }
-            let rollbackGeneration = failedGeneration &+ 1
-            generations[processObjectID] = rollbackGeneration
-            guard let plan = try? makePlan(
-                previous,
-                for: row.process,
-                generation: rollbackGeneration
-            ) else { return }
             let restored = await engine.apply(
                 plan: plan,
                 gain: .init(volume: previous.volume, isMuted: previous.isMuted)
             )
-            _ = accept(restored)
+            guard isCurrent(processObjectID, generation: rollbackGeneration) else { return nil }
+            if acceptResult(restored), restored.state == .running {
+                return rollbackGeneration
+            }
         }
+        rollbackGeneration = (generations[processObjectID] ?? rollbackGeneration) &+ 1
+        generations[processObjectID] = rollbackGeneration
+        let stopped = await engine.stop(
+            processObjectID: processObjectID,
+            generation: rollbackGeneration
+        )
+        guard isCurrent(processObjectID, generation: rollbackGeneration),
+              acceptResult(stopped), stopped.state == .idle else { return nil }
+        return rollbackGeneration
     }
 
     func makePlan(
@@ -619,10 +752,16 @@ private extension AudioControlCoordinator {
         if changes.contains(.serviceRestarted) {
             await engine.stopAll()
             refreshDevicesAndRouteDescriptors()
-            refreshProcesses()
+            if supportsProcessControls {
+                refreshProcesses(resetSessions: true)
+            } else {
+                snapshot.processes = []
+            }
             _ = await engine.cleanupOrphans()
-            await restorePersistedNonDefaultProfiles()
-            updateMonitorObjects()
+            if supportsProcessControls {
+                await restoreConfirmedAndPersistedRules()
+            }
+            await updateMonitorObjects()
             return
         }
 
@@ -636,22 +775,23 @@ private extension AudioControlCoordinator {
             let previous = snapshot.processes
             let current = processProvider.audibleOutputProcesses()
             for old in previous where current.contains(where: { $0.id == old.id }) == false {
-                let replacementHasSamePID = current.contains {
-                    $0.processIdentifier == old.process.processIdentifier && $0.id != old.id
-                }
-                if replacementHasSamePID || old.session.state != .idle {
-                    let generation = (generations[old.id] ?? 0) &+ 1
-                    generations[old.id] = generation
-                    let stopped = await engine.stop(
-                        processObjectID: old.id,
-                        generation: generation
-                    )
-                    _ = accept(stopped)
-                }
+                let generation = (generations[old.id] ?? 0) &+ 1
+                generations[old.id] = generation
+                let stopped = await engine.stop(
+                    processObjectID: old.id,
+                    generation: generation
+                )
+                guard isCurrent(old.id, generation: generation) else { continue }
+                _ = acceptResult(stopped)
                 confirmedProcessValues.removeValue(forKey: old.id)
                 latestSnapshotOrders.removeValue(forKey: old.id)
             }
-            snapshot.processes = current.map(makeProcessSnapshot)
+            let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+            let newIDs = Set(current.map(\.processObjectID)).subtracting(previousByID.keys)
+            snapshot.processes = current.map {
+                makeProcessSnapshot($0, preserving: previousByID[$0.processObjectID])
+            }
+            await restorePersistedNonDefaultProfiles(processIDs: newIDs)
             let changedProcessIDs = Set(changes.compactMap { change -> AudioObjectID? in
                 guard case .process(let id, _) = change else { return nil }
                 return id
@@ -698,41 +838,51 @@ private extension AudioControlCoordinator {
         for deviceID in changedSampleRateDeviceIDs {
             await rebuildSessions(using: deviceID)
         }
-        updateMonitorObjects()
+        await updateMonitorObjects()
     }
 
-    func makeProcessSnapshot(_ process: AudioProcessEntry) -> AudioProcessControlSnapshot {
+    func makeProcessSnapshot(
+        _ process: AudioProcessEntry,
+        preserving previous: AudioProcessControlSnapshot? = nil,
+        resetSession: Bool = false
+    ) -> AudioProcessControlSnapshot {
         let values = confirmedProcessValues[process.processObjectID] ?? .default
         confirmedProcessValues[process.processObjectID] = values
+        let selectedUIDs: [String]
+        switch previous?.route ?? values.route {
+        case .followOriginal:
+            selectedUIDs = process.outputDeviceIDs.compactMap { id in
+                routeDevices.first(where: { $0.objectID == id })?.uid
+            }
+        case .explicit(let targetDeviceUIDs):
+            selectedUIDs = targetDeviceUIDs
+        }
         return AudioProcessControlSnapshot(
             process: process,
-            volume: values.volume,
-            isMuted: values.isMuted,
-            route: values.route,
-            pendingValues: nil,
-            routeOptions: routeDevices.map {
-                AudioRouteDeviceOption(
-                    uid: $0.uid,
-                    name: $0.name,
-                    isAvailable: $0.isAlive,
-                    isSelected: process.outputDeviceIDs.contains($0.objectID)
-                )
-            },
-            session: ProcessTapSessionSnapshot(
-                processObjectID: process.processObjectID,
-                generation: 0,
-                state: .idle,
-                error: nil
-            ),
-            error: nil
+            volume: previous?.volume ?? values.volume,
+            isMuted: previous?.isMuted ?? values.isMuted,
+            route: previous?.route ?? values.route,
+            pendingValues: previous?.pendingValues,
+            routeOptions: makeRouteOptions(selectedUIDs: selectedUIDs),
+            session: resetSession ? Self.idleSession(for: process.processObjectID) :
+                (previous?.session ?? Self.idleSession(for: process.processObjectID)),
+            error: previous?.error
         )
     }
 
-    func updateMonitorObjects() {
-        try? monitor.updateObservedObjects(
-            deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-            processObjectIDs: Set(snapshot.processes.map(\.id))
-        )
+    func updateMonitorObjects() async {
+        do {
+            try monitor.updateObservedObjects(
+                deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
+                processObjectIDs: Set(snapshot.processes.map(\.id))
+            )
+        } catch {
+            processTasks.values.forEach { $0.cancel() }
+            snapshot.processes = []
+            monitor.stop()
+            await engine.stopAll()
+            hasStarted = false
+        }
     }
 
     func refreshRouteOptions() {
@@ -746,15 +896,32 @@ private extension AudioControlCoordinator {
             case .explicit(let targetDeviceUIDs):
                 selected = targetDeviceUIDs
             }
-            snapshot.processes[index].routeOptions = routeDevices.map {
-                AudioRouteDeviceOption(
-                    uid: $0.uid,
-                    name: $0.name,
-                    isAvailable: $0.isAlive,
-                    isSelected: selected.contains($0.uid)
-                )
-            }
+            snapshot.processes[index].routeOptions = makeRouteOptions(selectedUIDs: selected)
         }
+    }
+
+    func makeRouteOptions(selectedUIDs: [String]) -> [AudioRouteDeviceOption] {
+        let available = routeDevices.map {
+            AudioRouteDeviceOption(
+                uid: $0.uid,
+                name: $0.name,
+                isAvailable: $0.isAlive,
+                isSelected: selectedUIDs.contains($0.uid)
+            )
+        }
+        let knownUIDs = Set(routeDevices.map(\.uid))
+        return available + selectedUIDs.filter { knownUIDs.contains($0) == false }.map {
+            AudioRouteDeviceOption(uid: $0, name: $0, isAvailable: false, isSelected: true)
+        }
+    }
+
+    static func idleSession(for processObjectID: AudioObjectID) -> ProcessTapSessionSnapshot {
+        ProcessTapSessionSnapshot(
+            processObjectID: processObjectID,
+            generation: 0,
+            state: .idle,
+            error: nil
+        )
     }
 
     func reconcileExplicitTargets() async {
@@ -779,7 +946,15 @@ private extension AudioControlCoordinator {
                     processObjectID: row.id,
                     generation: generation
                 )
-                _ = accept(stopped)
+                guard isCurrent(row.id, generation: generation) else { continue }
+                guard acceptResult(stopped), stopped.state == .idle else {
+                    fail(
+                        values,
+                        processObjectID: row.id,
+                        error: Self.userError(stopped.error)
+                    )
+                    continue
+                }
                 updateProcess(row.id) { row in
                     row.volume = values.volume
                     row.isMuted = values.isMuted

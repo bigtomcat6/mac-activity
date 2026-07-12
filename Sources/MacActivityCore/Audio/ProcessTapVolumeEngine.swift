@@ -222,6 +222,10 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         self.onSessionSnapshot = onSessionSnapshot
     }
 
+    deinit {
+        sessionSnapshotContinuation.finish()
+    }
+
     public func apply(
         plan: AudioRoutePlan,
         gain: ProcessGainState

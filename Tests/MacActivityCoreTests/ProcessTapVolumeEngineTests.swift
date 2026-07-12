@@ -5,6 +5,23 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapVolumeEngineTests: XCTestCase {
+    func testSessionSnapshotStreamFinishesWhenEngineDeinitializes() async {
+        var engine: ProcessTapVolumeEngine? = makeInjectedEngine(
+            hardware: FakeAudioTapHardware()
+        )
+        let snapshots = engine!.sessionSnapshots
+        let finished = expectation(description: "snapshot stream finished")
+        let consumer = Task {
+            for await _ in snapshots {}
+            finished.fulfill()
+        }
+
+        engine = nil
+
+        await fulfillment(of: [finished], timeout: 0.05)
+        consumer.cancel()
+    }
+
     func testOneCommandEmitsStrictlyIncreasingOrdinals() async {
         let recorder = SnapshotRecorder()
         let fixture = EngineFixture(onSessionSnapshot: recorder.record)
