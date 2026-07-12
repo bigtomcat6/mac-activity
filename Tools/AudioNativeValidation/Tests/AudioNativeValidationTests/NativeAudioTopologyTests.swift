@@ -6,7 +6,7 @@ import XCTest
 struct NativeValidationEnvironment {
     let processObjectID: AudioObjectID
     let targetUIDs: [String]
-    let outputPath: String
+    let outputURL: URL
     let microphoneTCCObservation: String
     let observationSeconds: Double
 }
@@ -45,23 +45,43 @@ func requireNativeOptIn() throws -> NativeValidationEnvironment {
     guard environment["MACACTIVITY_AUDIO_NATIVE_VALIDATION"] == "1" else {
         throw XCTSkip("Set MACACTIVITY_AUDIO_NATIVE_VALIDATION=1 explicitly")
     }
-    let version = ProcessInfo.processInfo.operatingSystemVersion
+    return try makeNativeValidationEnvironment(
+        environment: environment,
+        operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion
+    )
+}
+
+func makeNativeValidationEnvironment(
+    environment: [String: String],
+    operatingSystemVersion version: OperatingSystemVersion,
+    restrictedRoots: [URL] = NativeValidationOutputPath.restrictedRoots,
+    makeProcessObjectID: (String) -> AudioObjectID? = { AudioObjectID($0) }
+) throws -> NativeValidationEnvironment {
     guard version.majorVersion > 14
             || (version.majorVersion == 14 && version.minorVersion >= 2)
     else {
         throw NativeValidationConfigurationError.invalid("macOS 14.2 or later is required")
     }
     guard let rawProcessID = environment["MACACTIVITY_AUDIO_PROCESS_OBJECT_ID"],
-          let processObjectID = AudioObjectID(rawProcessID),
-          processObjectID != kAudioObjectUnknown,
           let rawTargetUIDs = environment["MACACTIVITY_AUDIO_TARGET_UIDS"],
-          let outputPath = environment["MACACTIVITY_AUDIO_VALIDATION_OUTPUT"],
-          outputPath.isEmpty == false,
-          let microphoneTCCObservation = environment["MACACTIVITY_AUDIO_MIC_TCC_OBSERVATION"],
-          microphoneTCCObservation.isEmpty == false
+          let rawOutputPath = environment["MACACTIVITY_AUDIO_VALIDATION_OUTPUT"],
+          let rawMicrophoneTCCObservation = environment[
+              "MACACTIVITY_AUDIO_MIC_TCC_OBSERVATION"
+          ]
     else {
         throw NativeValidationConfigurationError.missing(
             "process ID, target UIDs, output path, and microphone TCC observation are required"
+        )
+    }
+    let outputPath = try NativeValidationOutputPath.validate(
+        rawOutputPath,
+        restrictedRoots: restrictedRoots
+    )
+    let microphoneTCCObservation = rawMicrophoneTCCObservation
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard microphoneTCCObservation.isEmpty == false else {
+        throw NativeValidationConfigurationError.invalid(
+            "microphone TCC observation must not be blank"
         )
     }
     let targetUIDs = rawTargetUIDs
@@ -76,10 +96,15 @@ func requireNativeOptIn() throws -> NativeValidationEnvironment {
     guard observationSeconds > 0, observationSeconds <= 60 else {
         throw NativeValidationConfigurationError.invalid("validation seconds must be in (0, 60]")
     }
+    guard let processObjectID = makeProcessObjectID(rawProcessID),
+          processObjectID != kAudioObjectUnknown
+    else {
+        throw NativeValidationConfigurationError.invalid("process object ID is invalid")
+    }
     return NativeValidationEnvironment(
         processObjectID: processObjectID,
         targetUIDs: targetUIDs,
-        outputPath: outputPath,
+        outputURL: outputPath.url,
         microphoneTCCObservation: microphoneTCCObservation,
         observationSeconds: observationSeconds
     )
@@ -137,7 +162,7 @@ func runNativeValidation(
             hardware: hardware,
             sessionError: nil
         )
-        try write(record, to: environment.outputPath)
+        try write(record, to: environment.outputURL)
         return record
     } catch {
         let record = makeRecord(
@@ -146,7 +171,7 @@ func runNativeValidation(
             hardware: hardware,
             sessionError: String(describing: error)
         )
-        try write(record, to: environment.outputPath)
+        try write(record, to: environment.outputURL)
         throw error
     }
 }
@@ -219,10 +244,11 @@ private func makeRecord(
     )
 }
 
-private func write(_ record: NativeAudioValidationRecord, to path: String) throws {
+private func write(_ record: NativeAudioValidationRecord, to outputURL: URL) throws {
     let encoder = JSONEncoder()
     encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-    try encoder.encode(record).write(to: URL(fileURLWithPath: path))
+    let output = try NativeValidationOutputPath.validate(outputURL.path)
+    try NativeAtomicOutputWriter.write(encoder.encode(record), to: output)
 }
 
 final class NativeAudioTopologyTests: XCTestCase {
