@@ -2,6 +2,146 @@ import SwiftUI
 import CoreAudio
 import MacActivityCore
 
+struct AudioAccessibilityContract: Equatable {
+    let identifier: String
+    let label: String?
+    let value: String?
+    let isEnabled: Bool
+
+    init(
+        identifier: String,
+        label: String? = nil,
+        value: String? = nil,
+        isEnabled: Bool = true
+    ) {
+        self.identifier = identifier
+        self.label = label
+        self.value = value
+        self.isEnabled = isEnabled
+    }
+}
+
+private func audioTargetLabel(_ localized: String, target: String) -> String {
+    localized.contains(target) ? localized : "\(target), \(localized)"
+}
+
+private struct AudioAccessibilityModifier: ViewModifier {
+    let contract: AudioAccessibilityContract
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if let label = contract.label, let value = contract.value {
+            content
+                .accessibilityIdentifier(contract.identifier)
+                .accessibilityLabel(label)
+                .accessibilityValue(value)
+                .disabled(!contract.isEnabled)
+        } else if let label = contract.label {
+            content
+                .accessibilityIdentifier(contract.identifier)
+                .accessibilityLabel(label)
+                .disabled(!contract.isEnabled)
+        } else if let value = contract.value {
+            content
+                .accessibilityIdentifier(contract.identifier)
+                .accessibilityValue(value)
+                .disabled(!contract.isEnabled)
+        } else {
+            content
+                .accessibilityIdentifier(contract.identifier)
+                .disabled(!contract.isEnabled)
+        }
+    }
+}
+
+extension View {
+    func audioAccessibility(_ contract: AudioAccessibilityContract) -> some View {
+        modifier(AudioAccessibilityModifier(contract: contract))
+    }
+}
+
+@MainActor
+enum AudioDashboardControlBindings {
+    static func deviceVolume(
+        model: AudioDashboardModel,
+        deviceUID: String,
+        fallback: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: {
+                guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
+                      case .value(let value, _) = row.device.volume else { return fallback }
+                return value
+            },
+            set: { value in
+                guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
+                      row.device.volume.isWritable else { return }
+                model.setDeviceVolume(value, for: deviceUID)
+            }
+        )
+    }
+
+    static func processVolume(
+        model: AudioDashboardModel,
+        processObjectID: AudioObjectID,
+        fallback: Double
+    ) -> Binding<Double> {
+        Binding(
+            get: {
+                model.snapshot.processes.first(where: { $0.id == processObjectID })?.volume
+                    ?? fallback
+            },
+            set: { value in
+                guard model.snapshot.processes.contains(where: { $0.id == processObjectID }) else {
+                    return
+                }
+                model.setProcessVolume(value, for: processObjectID)
+            }
+        )
+    }
+
+    static func routeTarget(
+        model: AudioDashboardModel,
+        processObjectID: AudioObjectID,
+        deviceUID: String
+    ) -> Binding<Bool> {
+        Binding(
+            get: {
+                guard let row = model.snapshot.processes.first(where: { $0.id == processObjectID }),
+                      case .explicit(let uids) = row.route else { return false }
+                return uids.contains(deviceUID)
+            },
+            set: { selected in
+                guard let row = model.snapshot.processes.first(where: { $0.id == processObjectID }),
+                      let uids = AudioDashboardRouteSelection.updating(
+                        route: row.route,
+                        options: row.routeOptions,
+                        uid: deviceUID,
+                        selected: selected
+                      ) else { return }
+                model.setProcessRoute(
+                    .explicit(targetDeviceUIDs: uids), for: processObjectID
+                )
+            }
+        )
+    }
+
+    static func toggleDeviceMute(model: AudioDashboardModel, deviceUID: String) {
+        guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
+              case .value(let current, isWritable: true) = row.device.mute else { return }
+        model.setDeviceMuted(!current, for: deviceUID)
+    }
+
+    static func toggleProcessMute(
+        model: AudioDashboardModel,
+        processObjectID: AudioObjectID
+    ) {
+        guard let row = model.snapshot.processes.first(where: { $0.id == processObjectID })
+        else { return }
+        model.setProcessMuted(!row.isMuted, for: processObjectID)
+    }
+}
+
 struct AudioDashboardView: View {
     @ObservedObject var model: AudioDashboardModel
 
@@ -13,7 +153,7 @@ struct AudioDashboardView: View {
         LazyVStack(alignment: .leading, spacing: 14) {
             AudioDashboardSection(
                 title: AppLocalization.string(.audioDevicesTitle),
-                accessibilityIdentifier: "audio.devices.section"
+                accessibility: presentation.devicesAccessibility
             ) {
                 ForEach(presentation.devices) { device in
                     AudioDeviceControlRow(presentation: device, model: model)
@@ -23,12 +163,12 @@ struct AudioDashboardView: View {
             if let processSection = presentation.processSection {
                 AudioDashboardSection(
                     title: AppLocalization.string(.audioProcessesTitle),
-                    accessibilityIdentifier: "audio.processes.section"
+                    accessibility: processSection.accessibility
                 ) {
                     if processSection.processes.isEmpty {
                         Text(AppLocalization.string(.audioProcessesEmpty))
                             .foregroundStyle(.secondary)
-                            .accessibilityIdentifier("audio.processes.empty")
+                            .audioAccessibility(processSection.emptyAccessibility)
                     } else {
                         ForEach(processSection.processes) { process in
                             AudioProcessControlRow(presentation: process, model: model)
@@ -42,16 +182,16 @@ struct AudioDashboardView: View {
 
 private struct AudioDashboardSection<Content: View>: View {
     let title: String
-    let accessibilityIdentifier: String
+    let accessibility: AudioAccessibilityContract
     let content: Content
 
     init(
         title: String,
-        accessibilityIdentifier: String,
+        accessibility: AudioAccessibilityContract,
         @ViewBuilder content: () -> Content
     ) {
         self.title = title
-        self.accessibilityIdentifier = accessibilityIdentifier
+        self.accessibility = accessibility
         self.content = content()
     }
 
@@ -63,7 +203,7 @@ private struct AudioDashboardSection<Content: View>: View {
             content
         }
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier(accessibilityIdentifier)
+        .audioAccessibility(accessibility)
     }
 }
 
@@ -86,20 +226,21 @@ private struct AudioDeviceControlRow: View {
                 muteControl
             }
 
-            if presentation.showsRetry {
+            if let retryAccessibility = presentation.retryAccessibility {
                 recoveryStatus
+                    .audioAccessibility(retryAccessibility)
             }
 
-            if presentation.showsWriteFailure {
+            if let writeFailureAccessibility = presentation.writeFailureAccessibility {
                 Text(AppLocalization.string(.audioDeviceWriteFailed))
                     .font(.caption2)
                     .foregroundStyle(.red)
-                    .accessibilityIdentifier("audio.device.\(snapshot.id).writeFailed")
+                    .audioAccessibility(writeFailureAccessibility)
             }
         }
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("audio.device.\(snapshot.id)")
+        .audioAccessibility(presentation.rowAccessibility)
     }
 
     @ViewBuilder
@@ -107,38 +248,31 @@ private struct AudioDeviceControlRow: View {
         switch presentation.volume {
         case .slider(let value):
             Slider(
-                value: Binding(
-                    get: { value },
-                    set: { model.setDeviceVolume($0, for: snapshot.id) }
+                value: AudioDashboardControlBindings.deviceVolume(
+                    model: model, deviceUID: snapshot.id, fallback: value
                 ),
                 in: 0...1
             )
-            .accessibilityLabel(volumeAccessibility(value))
-            .accessibilityIdentifier("audio.device.\(snapshot.id).volume.slider")
+            .audioAccessibility(presentation.volumeAccessibility)
 
         case .readOnly(let value):
             Text(value, format: .percent.precision(.fractionLength(0)))
                 .foregroundStyle(.secondary)
-                .accessibilityLabel(volumeAccessibility(value))
-                .accessibilityIdentifier("audio.device.\(snapshot.id).volume.readOnly")
+                .audioAccessibility(presentation.volumeAccessibility)
 
         case .unsupported:
             Text(AppLocalization.string(.audioUnsupportedDeviceVolume))
                 .font(.caption2)
                 .foregroundStyle(.secondary)
-                .accessibilityIdentifier("audio.device.\(snapshot.id).volume.unsupported")
+                .audioAccessibility(presentation.volumeAccessibility)
 
         case .unavailable:
-            statusText(
-                AppLocalization.string(.audioDeviceUnavailable),
-                identifier: "audio.device.\(snapshot.id).volume.unavailable"
-            )
+            statusText(AppLocalization.string(.audioDeviceUnavailable))
+                .audioAccessibility(presentation.volumeAccessibility)
 
         case .failed:
-            statusText(
-                AppLocalization.string(.audioDeviceReadFailed),
-                identifier: "audio.device.\(snapshot.id).volume.failed"
-            )
+            statusText(AppLocalization.string(.audioDeviceReadFailed))
+                .audioAccessibility(presentation.volumeAccessibility)
         }
     }
 
@@ -147,37 +281,35 @@ private struct AudioDeviceControlRow: View {
         switch presentation.mute {
         case .button(let isMuted):
             Button {
-                model.setDeviceMuted(!isMuted, for: snapshot.id)
+                AudioDashboardControlBindings.toggleDeviceMute(
+                    model: model, deviceUID: snapshot.id
+                )
             } label: {
                 Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                     .frame(width: 20)
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(AppLocalization.string(
-                isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
-                snapshot.device.name
-            ))
-            .accessibilityIdentifier("audio.device.\(snapshot.id).mute")
+            .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
             Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                 .foregroundStyle(.secondary)
-                .accessibilityLabel(snapshot.device.name)
-                .accessibilityValue(isMuted ? "Muted" : "Not muted")
-                .accessibilityIdentifier("audio.device.\(snapshot.id).mute.readOnly")
+                .audioAccessibility(presentation.muteAccessibility)
 
         case .unsupported:
             EmptyView()
 
-        case .unavailable:
-            Image(systemName: "exclamationmark.triangle")
-                .accessibilityLabel(AppLocalization.string(.audioDeviceUnavailable))
-                .accessibilityIdentifier("audio.device.\(snapshot.id).mute.unavailable")
+        case .unavailable(let text):
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .audioAccessibility(presentation.muteAccessibility)
 
-        case .failed:
-            Image(systemName: "exclamationmark.triangle")
-                .accessibilityLabel(AppLocalization.string(.audioDeviceReadFailed))
-                .accessibilityIdentifier("audio.device.\(snapshot.id).mute.failed")
+        case .failed(let text):
+            Text(text)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .audioAccessibility(presentation.muteAccessibility)
         }
     }
 
@@ -187,23 +319,13 @@ private struct AudioDeviceControlRow: View {
                 model.retryDevice(snapshot.id)
             }
             .buttonStyle(.link)
-            .accessibilityIdentifier("audio.device.\(snapshot.id).retry")
         }
     }
 
-    private func volumeAccessibility(_ value: Double) -> String {
-        AppLocalization.string(
-            .audioVolumeAccessibility,
-            snapshot.device.name,
-            Int((value * 100).rounded())
-        )
-    }
-
-    private func statusText(_ text: String, identifier: String) -> some View {
+    private func statusText(_ text: String) -> some View {
         Text(text)
             .font(.caption2)
             .foregroundStyle(.secondary)
-            .accessibilityIdentifier(identifier)
     }
 }
 
@@ -224,21 +346,18 @@ private struct AudioProcessControlRow: View {
 
                 Slider(value: volumeBinding, in: 0...1)
                     .frame(maxWidth: 130)
-                    .accessibilityLabel(volumeAccessibility)
-                    .accessibilityIdentifier("audio.process.\(snapshot.id).volume.slider")
+                    .audioAccessibility(presentation.volumeAccessibility)
 
                 Button {
-                    model.setProcessMuted(!snapshot.isMuted, for: snapshot.id)
+                    AudioDashboardControlBindings.toggleProcessMute(
+                        model: model, processObjectID: snapshot.id
+                    )
                 } label: {
                     Image(systemName: snapshot.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
                         .frame(width: 20)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(AppLocalization.string(
-                    snapshot.isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
-                    snapshot.process.name
-                ))
-                .accessibilityIdentifier("audio.process.\(snapshot.id).mute")
+                .audioAccessibility(presentation.muteAccessibility)
 
                 routeMenu
 
@@ -246,26 +365,30 @@ private struct AudioProcessControlRow: View {
                     model.reset(processObjectID: snapshot.id)
                 }
                 .buttonStyle(.link)
-                .accessibilityIdentifier("audio.process.\(snapshot.id).reset")
+                .audioAccessibility(presentation.resetAccessibility)
             }
 
             processStatus
         }
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("audio.process.\(snapshot.id)")
+        .audioAccessibility(presentation.rowAccessibility)
     }
 
     private var volumeBinding: Binding<Double> {
-        Binding(
-            get: { snapshot.volume },
-            set: { model.setProcessVolume($0, for: snapshot.id) }
+        AudioDashboardControlBindings.processVolume(
+            model: model,
+            processObjectID: snapshot.id,
+            fallback: snapshot.volume
         )
     }
 
     private var routeMenu: some View {
         Menu {
             Button {
+                guard model.snapshot.processes.contains(where: { $0.id == snapshot.id }) else {
+                    return
+                }
                 model.setProcessRoute(.followOriginal, for: snapshot.id)
             } label: {
                 routeLabel(
@@ -276,86 +399,68 @@ private struct AudioProcessControlRow: View {
 
             Divider()
             ForEach(snapshot.routeOptions) { option in
+                let contract = presentation.routeTargetAccessibility(option)
                 Toggle(isOn: routeBinding(for: option)) {
-                    Text(option.isAvailable
-                         ? option.name
-                         : AppLocalization.string(.audioRouteDeviceUnavailable, option.name))
+                    Text(contract.label ?? option.name)
                 }
-                .disabled(option.isSelected && selectedRouteUIDs.count == 1)
-                .accessibilityLabel(option.name)
-                .accessibilityValue(option.isSelected ? "Selected" : "Not selected")
-                .accessibilityIdentifier("audio.process.\(snapshot.id).route.\(option.uid)")
+                .audioAccessibility(contract)
             }
         } label: {
             Label(AppLocalization.string(.audioRouteTitle), systemImage: "airplayaudio")
         }
         .help(AppLocalization.string(.audioRouteClearHelp))
-        .accessibilityValue(routeAccessibilityValue)
-        .accessibilityIdentifier("audio.process.\(snapshot.id).route")
+        .audioAccessibility(presentation.routeAccessibility)
     }
 
     private func routeBinding(for option: AudioRouteDeviceOption) -> Binding<Bool> {
-        Binding(
-            get: { option.isSelected },
-            set: { selected in
-                guard let uids = AudioDashboardRouteSelection.updating(
-                    options: snapshot.routeOptions,
-                    uid: option.uid,
-                    selected: selected
-                ) else { return }
-                model.setProcessRoute(.explicit(targetDeviceUIDs: uids), for: snapshot.id)
-            }
-        )
-    }
-
-    private var selectedRouteUIDs: [String] {
-        snapshot.routeOptions.filter(\.isSelected).map(\.uid)
-    }
-
-    private var routeAccessibilityValue: String {
-        switch snapshot.route {
-        case .followOriginal:
-            return AppLocalization.string(.audioRouteFollowOriginal)
-        case .explicit:
-            return AppLocalization.string(.audioRouteSelectedSummary, selectedRouteUIDs.count)
-        }
-    }
-
-    private var volumeAccessibility: String {
-        AppLocalization.string(
-            .audioVolumeAccessibility,
-            snapshot.process.name,
-            Int((snapshot.volume * 100).rounded())
+        AudioDashboardControlBindings.routeTarget(
+            model: model,
+            processObjectID: snapshot.id,
+            deviceUID: option.uid
         )
     }
 
     @ViewBuilder
     private var processStatus: some View {
         switch presentation.status {
-        case .failed(let error):
+        case .failed:
             HStack(spacing: 8) {
-                Text(error.map(errorText) ?? AppLocalization.string(.audioProcessOperationFailed))
+                Text(presentation.statusAccessibility?.label
+                     ?? AppLocalization.string(.audioProcessOperationFailed))
                     .font(.caption2)
                     .foregroundStyle(.red)
-                    .accessibilityIdentifier("audio.process.\(snapshot.id).error")
-                Button(AppLocalization.string(.audioRetry)) {
-                    model.retry(processObjectID: snapshot.id)
+                    .audioAccessibility(presentation.statusAccessibility
+                        ?? AudioAccessibilityContract(
+                            identifier: "audio.process.\(snapshot.id).error"
+                        ))
+                if let retryAccessibility = presentation.retryAccessibility {
+                    Button(AppLocalization.string(.audioRetry)) {
+                        model.retry(processObjectID: snapshot.id)
+                    }
+                    .buttonStyle(.link)
+                    .audioAccessibility(retryAccessibility)
                 }
-                .buttonStyle(.link)
-                .accessibilityIdentifier("audio.process.\(snapshot.id).retry")
             }
         case .preparing:
-                Text(AppLocalization.string(.audioProcessPreparing))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("audio.process.\(snapshot.id).preparing")
-        case .active:
-                Text(AppLocalization.string(.audioProcessActive))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("audio.process.\(snapshot.id).active")
+            processStatusText
+        case .rebuilding:
+            processStatusText
+        case .running:
+            processStatusText
+        case .stopping:
+            processStatusText
         case .idle:
                 EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var processStatusText: some View {
+        if let accessibility = presentation.statusAccessibility {
+            Text(accessibility.label ?? "")
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .audioAccessibility(accessibility)
         }
     }
 
@@ -363,29 +468,23 @@ private struct AudioProcessControlRow: View {
         Label(title, systemImage: selected ? "checkmark" : "circle")
     }
 
-    private func errorText(_ error: AudioControlUserError) -> String {
-        switch error {
-        case .permissionDenied:
-            return AppLocalization.string(.audioProcessPermissionDenied)
-        case .targetUnavailable:
-            return AppLocalization.string(.audioProcessTargetUnavailable)
-        case .deviceRead:
-            return AppLocalization.string(.audioDeviceReadFailed)
-        case .deviceWrite:
-            return AppLocalization.string(.audioDeviceWriteFailed)
-        case .operationFailed, .persistenceFailed:
-            return AppLocalization.string(.audioProcessOperationFailed)
-        }
-    }
 }
 
 enum AudioDashboardRouteSelection {
     static func updating(
+        route: AudioRouteMode,
         options: [AudioRouteDeviceOption],
         uid: String,
         selected: Bool
     ) -> [String]? {
-        var selectedUIDs = options.filter(\.isSelected).map(\.uid)
+        guard options.contains(where: { $0.uid == uid }) else { return nil }
+        var selectedUIDs: [String]
+        switch route {
+        case .followOriginal:
+            selectedUIDs = []
+        case .explicit(let targetDeviceUIDs):
+            selectedUIDs = targetDeviceUIDs
+        }
         if selected {
             guard !selectedUIDs.contains(uid) else { return selectedUIDs }
             selectedUIDs.append(uid)
@@ -399,6 +498,10 @@ enum AudioDashboardRouteSelection {
 struct AudioDashboardPresentation {
     let devices: [AudioDeviceRowPresentation]
     let processSection: AudioProcessSectionPresentation?
+    let devicesAccessibility = AudioAccessibilityContract(
+        identifier: "audio.devices.section",
+        label: AppLocalization.string(.audioDevicesTitle)
+    )
 
     init(snapshot: AudioControlSnapshot, supportsProcessControls: Bool) {
         devices = snapshot.devices.map(AudioDeviceRowPresentation.init)
@@ -407,25 +510,30 @@ struct AudioDashboardPresentation {
             : nil
     }
 
-    var accessibilityIdentifiers: Set<String> {
-        var result: Set<String> = ["audio.devices.section"]
-        devices.forEach { result.formUnion($0.accessibilityIdentifiers) }
-        if let processSection {
-            result.insert("audio.processes.section")
-            result.formUnion(processSection.accessibilityIdentifiers)
-        }
-        return result
+    var accessibilityContracts: [AudioAccessibilityContract] {
+        [devicesAccessibility]
+            + devices.flatMap(\.accessibilityContracts)
+            + (processSection?.accessibilityContracts ?? [])
     }
 }
 
 struct AudioProcessSectionPresentation {
     let processes: [AudioProcessRowPresentation]
+    let accessibility = AudioAccessibilityContract(
+        identifier: "audio.processes.section",
+        label: AppLocalization.string(.audioProcessesTitle)
+    )
 
-    var accessibilityIdentifiers: Set<String> {
-        if processes.isEmpty { return ["audio.processes.empty"] }
-        return processes.reduce(into: Set<String>()) { result, row in
-            result.formUnion(row.accessibilityIdentifiers)
-        }
+    var emptyAccessibility: AudioAccessibilityContract {
+        let text = AppLocalization.string(.audioProcessesEmpty)
+        return AudioAccessibilityContract(
+            identifier: "audio.processes.empty", label: text, value: text
+        )
+    }
+
+    var accessibilityContracts: [AudioAccessibilityContract] {
+        [accessibility] + (processes.isEmpty ? [emptyAccessibility] : [])
+            + processes.flatMap(\.accessibilityContracts)
     }
 }
 
@@ -451,8 +559,8 @@ enum AudioMuteControlPresentation: Equatable {
     case button(Bool)
     case readOnly(Bool)
     case unsupported
-    case unavailable
-    case failed
+    case unavailable(String)
+    case failed(String)
 
     var identifierSuffix: String? {
         switch self {
@@ -463,17 +571,71 @@ enum AudioMuteControlPresentation: Equatable {
         case .failed: return "mute.failed"
         }
     }
+
 }
 
 struct AudioDeviceRowPresentation: Identifiable {
     let snapshot: AudioDeviceControlSnapshot
     let volume: AudioVolumeControlPresentation
     let mute: AudioMuteControlPresentation
-    let showsRetry: Bool
-    let showsWriteFailure: Bool
 
     var id: String { snapshot.id }
     var accessibilityPrefix: String { "audio.device.\(id)" }
+    var rowAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(identifier: accessibilityPrefix, label: snapshot.device.name)
+    }
+    var volumeAccessibility: AudioAccessibilityContract {
+        let identifier = "\(accessibilityPrefix).\(volume.identifierSuffix)"
+        switch volume {
+        case .slider(let value):
+            return AudioAccessibilityContract(
+                identifier: identifier,
+                label: audioTargetLabel(
+                    AppLocalization.string(
+                        .audioVolumeAccessibility, snapshot.device.name,
+                        Int((value * 100).rounded())
+                    ), target: snapshot.device.name
+                ),
+                value: value.formatted(.percent.precision(.fractionLength(0)))
+            )
+        case .readOnly(let value):
+            return AudioAccessibilityContract(
+                identifier: identifier,
+                label: audioTargetLabel(
+                    AppLocalization.string(
+                        .audioVolumeAccessibility, snapshot.device.name,
+                        Int((value * 100).rounded())
+                    ), target: snapshot.device.name
+                ),
+                value: value.formatted(.percent.precision(.fractionLength(0)))
+            )
+        case .unsupported:
+            let text = AppLocalization.string(.audioUnsupportedDeviceVolume)
+            return AudioAccessibilityContract(identifier: identifier, label: text, value: text)
+        case .unavailable:
+            let text = AppLocalization.string(.audioDeviceUnavailable)
+            return AudioAccessibilityContract(identifier: identifier, label: text, value: text)
+        case .failed:
+            let text = AppLocalization.string(.audioDeviceReadFailed)
+            return AudioAccessibilityContract(identifier: identifier, label: text, value: text)
+        }
+    }
+    var retryAccessibility: AudioAccessibilityContract? {
+        guard snapshot.device.volume.needsAudioRetry
+                || snapshot.device.mute.needsAudioRetry
+                || snapshot.error != nil else { return nil }
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).retry",
+            label: AppLocalization.string(.audioRetry)
+        )
+    }
+    var writeFailureAccessibility: AudioAccessibilityContract? {
+        guard snapshot.error == .deviceWrite else { return nil }
+        let text = AppLocalization.string(.audioDeviceWriteFailed)
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).writeFailed", label: text, value: text
+        )
+    }
 
     init(_ snapshot: AudioDeviceControlSnapshot) {
         self.snapshot = snapshot
@@ -488,33 +650,58 @@ struct AudioDeviceRowPresentation: Identifiable {
         case .value(let value, isWritable: true): mute = .button(value)
         case .value(let value, isWritable: false): mute = .readOnly(value)
         case .unsupported: mute = .unsupported
-        case .unavailable: mute = .unavailable
-        case .failed: mute = .failed
+        case .unavailable:
+            mute = .unavailable(
+                "\(snapshot.device.name) \(AppLocalization.string(.audioDeviceUnavailable))"
+            )
+        case .failed:
+            mute = .failed(
+                "\(snapshot.device.name) \(AppLocalization.string(.audioDeviceReadFailed))"
+            )
         }
-        showsRetry = snapshot.device.volume.needsAudioRetry
-            || snapshot.device.mute.needsAudioRetry
-            || snapshot.error != nil
-        showsWriteFailure = snapshot.error == .deviceWrite
     }
 
-    var accessibilityIdentifiers: Set<String> {
-        var result: Set<String> = [
-            accessibilityPrefix,
-            "\(accessibilityPrefix).\(volume.identifierSuffix)"
-        ]
-        if let suffix = mute.identifierSuffix {
-            result.insert("\(accessibilityPrefix).\(suffix)")
+    var muteAccessibility: AudioAccessibilityContract {
+        let identifier = "\(accessibilityPrefix).\(mute.identifierSuffix ?? "mute")"
+        switch mute {
+        case .button(let isMuted):
+            return AudioAccessibilityContract(
+                identifier: identifier,
+                label: audioTargetLabel(
+                    AppLocalization.string(
+                        isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
+                        snapshot.device.name
+                    ), target: snapshot.device.name
+                ),
+                value: AppLocalization.string(isMuted ? .audioMuted : .audioNotMuted)
+            )
+        case .readOnly(let isMuted):
+            return AudioAccessibilityContract(
+                identifier: identifier,
+                label: snapshot.device.name,
+                value: AppLocalization.string(isMuted ? .audioMuted : .audioNotMuted)
+            )
+        case .unsupported:
+            return AudioAccessibilityContract(identifier: identifier)
+        case .unavailable(let text), .failed(let text):
+            return AudioAccessibilityContract(identifier: identifier, label: text, value: text)
         }
-        if showsRetry { result.insert("\(accessibilityPrefix).retry") }
-        if showsWriteFailure { result.insert("\(accessibilityPrefix).writeFailed") }
-        return result
+    }
+
+    var accessibilityContracts: [AudioAccessibilityContract] {
+        [rowAccessibility, volumeAccessibility]
+            + (mute.identifierSuffix == nil ? [] : [muteAccessibility])
+            + (retryAccessibility.map { [$0] } ?? [])
+            + (writeFailureAccessibility.map { [$0] } ?? [])
     }
 }
 
 enum AudioProcessStatusPresentation: Equatable {
     case idle
     case preparing
-    case active
+    case rebuilding
+    case running
+    case stopping
     case failed(AudioControlUserError?)
 }
 
@@ -524,6 +711,71 @@ struct AudioProcessRowPresentation: Identifiable {
 
     var id: AudioObjectID { snapshot.id }
     var accessibilityPrefix: String { "audio.process.\(id)" }
+    var rowAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(identifier: accessibilityPrefix, label: snapshot.process.name)
+    }
+    var volumeAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).volume.slider",
+            label: audioTargetLabel(
+                AppLocalization.string(
+                    .audioVolumeAccessibility, snapshot.process.name,
+                    Int((snapshot.volume * 100).rounded())
+                ), target: snapshot.process.name
+            ),
+            value: snapshot.volume.formatted(.percent.precision(.fractionLength(0)))
+        )
+    }
+    var muteAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).mute",
+            label: audioTargetLabel(
+                AppLocalization.string(
+                    snapshot.isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
+                    snapshot.process.name
+                ), target: snapshot.process.name
+            ),
+            value: AppLocalization.string(snapshot.isMuted ? .audioMuted : .audioNotMuted)
+        )
+    }
+    var routeAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).route",
+            label: AppLocalization.string(.audioRouteTitle),
+            value: routeValue
+        )
+    }
+    var resetAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).reset",
+            label: AppLocalization.string(.audioReset)
+        )
+    }
+    var retryAccessibility: AudioAccessibilityContract? {
+        guard case .failed = status else { return nil }
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).retry",
+            label: AppLocalization.string(.audioRetry)
+        )
+    }
+
+    func routeTargetAccessibility(_ option: AudioRouteDeviceOption) -> AudioAccessibilityContract {
+        let selectedUIDs = snapshot.route.targetDeviceUIDs
+        let title: String
+        if option.isAvailable {
+            title = option.name
+        } else {
+            title = audioTargetLabel(
+                AppLocalization.string(.audioRouteDeviceUnavailable, option.name),
+                target: option.name
+            )
+        }
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).route.\(option.uid)",
+            label: title,
+            isEnabled: !(selectedUIDs.contains(option.uid) && selectedUIDs.count == 1)
+        )
+    }
 
     init(_ snapshot: AudioProcessControlSnapshot) {
         self.snapshot = snapshot
@@ -532,26 +784,66 @@ struct AudioProcessRowPresentation: Identifiable {
         } else {
             switch snapshot.session.state {
             case .idle: status = .idle
-            case .preparing, .rebuilding, .stopping: status = .preparing
-            case .running: status = .active
+            case .preparing: status = .preparing
+            case .rebuilding: status = .rebuilding
+            case .running: status = .running
+            case .stopping: status = .stopping
             case .failed: status = .failed(nil)
             }
         }
     }
 
-    var accessibilityIdentifiers: Set<String> {
-        var result: Set<String> = [
-            accessibilityPrefix,
-            "\(accessibilityPrefix).volume.slider",
-            "\(accessibilityPrefix).mute",
-            "\(accessibilityPrefix).route",
-            "\(accessibilityPrefix).reset"
-        ]
-        snapshot.routeOptions.forEach {
-            result.insert("\(accessibilityPrefix).route.\($0.uid)")
+    var statusAccessibility: AudioAccessibilityContract? {
+        let pair: (String, String)?
+        switch status {
+        case .idle: pair = nil
+        case .preparing: pair = ("preparing", AppLocalization.string(.audioProcessPreparing))
+        case .rebuilding: pair = ("rebuilding", AppLocalization.string(.audioProcessRebuilding))
+        case .running: pair = ("running", AppLocalization.string(.audioProcessActive))
+        case .stopping: pair = ("stopping", AppLocalization.string(.audioProcessStopping))
+        case .failed(let error):
+            pair = ("error", Self.errorText(error))
         }
-        if case .failed = status { result.insert("\(accessibilityPrefix).retry") }
-        return result
+        guard let pair else { return nil }
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).\(pair.0)", label: pair.1, value: pair.1
+        )
+    }
+
+    var accessibilityContracts: [AudioAccessibilityContract] {
+        [rowAccessibility, volumeAccessibility, muteAccessibility, routeAccessibility,
+         resetAccessibility]
+            + snapshot.routeOptions.map(routeTargetAccessibility)
+            + (statusAccessibility.map { [$0] } ?? [])
+            + (retryAccessibility.map { [$0] } ?? [])
+    }
+
+    private var routeValue: String {
+        switch snapshot.route {
+        case .followOriginal:
+            return AppLocalization.string(.audioRouteFollowOriginal)
+        case .explicit(let targetDeviceUIDs):
+            return AppLocalization.string(.audioRouteSelectedSummary, targetDeviceUIDs.count)
+        }
+    }
+
+    private static func errorText(_ error: AudioControlUserError?) -> String {
+        guard let error else { return AppLocalization.string(.audioProcessOperationFailed) }
+        switch error {
+        case .permissionDenied: return AppLocalization.string(.audioProcessPermissionDenied)
+        case .targetUnavailable: return AppLocalization.string(.audioProcessTargetUnavailable)
+        case .deviceRead: return AppLocalization.string(.audioDeviceReadFailed)
+        case .deviceWrite: return AppLocalization.string(.audioDeviceWriteFailed)
+        case .operationFailed, .persistenceFailed:
+            return AppLocalization.string(.audioProcessOperationFailed)
+        }
+    }
+}
+
+private extension AudioRouteMode {
+    var targetDeviceUIDs: [String] {
+        guard case .explicit(let targetDeviceUIDs) = self else { return [] }
+        return targetDeviceUIDs
     }
 }
 

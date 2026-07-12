@@ -20,7 +20,9 @@
 "audio.action.reset" = "Reset";
 "audio.process.empty" = "No apps are currently playing audio.";
 "audio.process.preparing" = "Preparing audio control…";
+"audio.process.rebuilding" = "Rebuilding audio control…";
 "audio.process.active" = "Audio control active";
+"audio.process.stopping" = "Stopping audio control…";
 "audio.process.permissionDenied" = "Audio capture permission is required. Allow Mac Activity in System Settings, then retry.";
 "audio.process.operationFailed" = "Audio control failed.";
 "audio.process.targetUnavailable" = "The selected output is unavailable; original playback is restored.";
@@ -32,6 +34,8 @@
 "audio.accessibility.volume" = "%@ volume, %d percent";
 "audio.accessibility.mute" = "Mute %@";
 "audio.accessibility.unmute" = "Unmute %@";
+"audio.state.muted" = "Muted";
+"audio.state.notMuted" = "Not muted";
 "dashboard.cpuGpu" = "CPU / GPU";
 "dashboard.trend.collecting" = "Collecting trend";
 "dashboard.storage.accessibility" = "Disk and Swap usage";
