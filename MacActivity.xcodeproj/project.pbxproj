@@ -14,6 +14,7 @@
 		0ADC9557218EDD2F7F6667F9 /* AudioIOProcStreamUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */; };
 		0BFDE8B415E395427CB657F0 /* SystemStorageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */; };
 		0C235C5AB692A21728D0BA55 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 41DEBECB80588EDCB2B826B3 /* Localizable.strings */; };
+		0E223705CFB6A0977B1043C4 /* AudioControlCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9CF0561706D80C664D9B0A6 /* AudioControlCoordinatorTests.swift */; };
 		0EE72E0F0ADBDE77B23D912F /* MemoryReleaseServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5910039CDBA471C2F9513628 /* MemoryReleaseServiceTests.swift */; };
 		0F68A650C5AE8A1C0B0CF796 /* AppLocalization.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4DBDE27C632732B8D69B540E /* AppLocalization.swift */; };
 		0F997EFB2933D1DF01944138 /* EnergyImpactProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C57F502EC1B86CD070FE38 /* EnergyImpactProvider.swift */; };
@@ -125,6 +126,7 @@
 		DA4161AA7426E46102112DA9 /* ProcessTapDSPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD64811702A042AB76985D4 /* ProcessTapDSPTests.swift */; };
 		DDE03109BB32E7B770459990 /* MetricProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC85A29241CC6F902A0531F /* MetricProvider.swift */; };
 		DE8E0B03803F9378E7495EC6 /* FakeAudioTapHardware.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D0B3BDDD156D72062607540 /* FakeAudioTapHardware.swift */; };
+		DFC2BBA5FD8590A1EE115FC8 /* AudioControlCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA74494A949B2E36D7F81079 /* AudioControlCoordinator.swift */; };
 		E179E6DCA9F45E748B710AA4 /* PreferencesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */; };
 		E22AB043F51E6D277BD26F51 /* MetricsSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = FFD8679864283C26574C3861 /* MetricsSnapshot.swift */; };
 		E39610E115BDE6B501DEF84F /* PreferencesWindowController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */; };
@@ -303,6 +305,7 @@
 		B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChartLayoutTests.swift; sourceTree = "<group>"; };
 		B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeProcessTapRetryScheduler.swift; sourceTree = "<group>"; };
 		B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryProviderTests.swift; sourceTree = "<group>"; };
+		B9CF0561706D80C664D9B0A6 /* AudioControlCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlCoordinatorTests.swift; sourceTree = "<group>"; };
 		BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioHALBackend.swift; sourceTree = "<group>"; };
 		C0CAFD2C7DC4193280EEDE07 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModel.swift; sourceTree = "<group>"; };
@@ -340,6 +343,7 @@
 		F7B4887EAAB65C8DBBE0314A /* ActiveCleanupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModelTests.swift; sourceTree = "<group>"; };
 		F87B7F0908FC00B4069386C6 /* AudioHALClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioHALClient.swift; sourceTree = "<group>"; };
 		F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStorageProvider.swift; sourceTree = "<group>"; };
+		FA74494A949B2E36D7F81079 /* AudioControlCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlCoordinator.swift; sourceTree = "<group>"; };
 		FFD8679864283C26574C3861 /* MetricsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -411,6 +415,7 @@
 			isa = PBXGroup;
 			children = (
 				C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */,
+				FA74494A949B2E36D7F81079 /* AudioControlCoordinator.swift */,
 				6EE3F62C8712E5DD553C15FA /* AudioDashboardModel.swift */,
 				A853062000D99B74117E656B /* EnergyImpactModel.swift */,
 			);
@@ -645,6 +650,7 @@
 				98B74985CC421B77A15255C4 /* ActiveProcessMemoryLayoutTests.swift */,
 				70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */,
 				16DC22E8B8CB44094748DE32 /* AppSamplingControllerTests.swift */,
+				B9CF0561706D80C664D9B0A6 /* AudioControlCoordinatorTests.swift */,
 				0E5EB0BFFA6A7936E4EAD230 /* AudioDashboardModelTests.swift */,
 				5FC8340436E36F7FCE415A82 /* AudioDashboardViewTests.swift */,
 				64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */,
@@ -851,6 +857,7 @@
 				7B1D24512C0A80195755C3BF /* ActiveProcessMemoryLayoutTests.swift in Sources */,
 				D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */,
 				81525E2FD6BFFE11475B033B /* AppSamplingControllerTests.swift in Sources */,
+				0E223705CFB6A0977B1043C4 /* AudioControlCoordinatorTests.swift in Sources */,
 				203728ECA31C7E130830CBD3 /* AudioDashboardModelTests.swift in Sources */,
 				F417E88391363283C92E2B86 /* AudioDashboardViewTests.swift in Sources */,
 				86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */,
@@ -979,6 +986,7 @@
 				0F68A650C5AE8A1C0B0CF796 /* AppLocalization.swift in Sources */,
 				52D7E895840661880DEE4A20 /* AppLocalizationController.swift in Sources */,
 				E4C592E2353DB9DA5DA6F4B0 /* AppPresentationCoordinator.swift in Sources */,
+				DFC2BBA5FD8590A1EE115FC8 /* AudioControlCoordinator.swift in Sources */,
 				942C0019C9F31F025BD8F880 /* AudioDashboardModel.swift in Sources */,
 				8507593B5300A3D1651FF296 /* AudioDashboardView.swift in Sources */,
 				B2FCD7583F98E66D0FB507E4 /* DashboardPopoverController.swift in Sources */,

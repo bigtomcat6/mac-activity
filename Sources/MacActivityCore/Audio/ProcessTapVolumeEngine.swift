@@ -106,6 +106,8 @@ public struct AudioTeardownFailure: Equatable, Sendable {
 }
 
 public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
+    var sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot> { get }
+
     func apply(
         plan: AudioRoutePlan,
         gain: ProcessGainState
@@ -126,6 +128,8 @@ public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
 }
 
 public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    public let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
+
     private static let preparationTimeout: DispatchTimeInterval = .seconds(2)
     private static let callbackObservationInterval: DispatchTimeInterval = .milliseconds(10)
 
@@ -135,6 +139,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private let retryLedgerLimit: Int
     private let retryScheduler: any ProcessTapRetryScheduling
     private let onSessionSnapshot: @Sendable (ProcessTapSessionSnapshot) -> Void
+    private let sessionSnapshotContinuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
     private let generations = ProcessTapGenerationRegistry()
 
     // Queue confined.
@@ -202,6 +207,9 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         retryScheduler: (any ProcessTapRetryScheduling)?,
         onSessionSnapshot: @escaping @Sendable (ProcessTapSessionSnapshot) -> Void
     ) {
+        let snapshotStream = AsyncStream<ProcessTapSessionSnapshot>.makeStream()
+        sessionSnapshots = snapshotStream.stream
+        sessionSnapshotContinuation = snapshotStream.continuation
         hardware = optionalHardware
         self.availability = availability
         self.queue = queue
@@ -1499,6 +1507,7 @@ private extension ProcessTapVolumeEngine {
             token: token
         )
         onSessionSnapshot(snapshot)
+        sessionSnapshotContinuation.yield(snapshot)
         return snapshot
     }
 
