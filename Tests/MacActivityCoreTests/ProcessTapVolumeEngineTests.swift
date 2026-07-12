@@ -5,6 +5,55 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapVolumeEngineTests: XCTestCase {
+    func testOneCommandEmitsStrictlyIncreasingOrdinals() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(onSessionSnapshot: recorder.record)
+
+        let terminal = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        let values = recorder.snapshots
+
+        XCTAssertFalse(values.isEmpty)
+        XCTAssertTrue(values.allSatisfy {
+            $0.commandSequence == terminal.commandSequence
+        })
+        XCTAssertEqual(
+            values.map(\.emissionOrdinal),
+            Array(0..<UInt64(values.count))
+        )
+        XCTAssertEqual(values.last, terminal)
+    }
+
+    func testNewCommandGetsHigherSequenceEvenWithSameGeneration() async {
+        let fixture = EngineFixture()
+
+        let first = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        let second = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertGreaterThan(second.commandSequence, first.commandSequence)
+    }
+
+    func testSnapshotOrderIsLexicographic() {
+        XCTAssertLessThan(
+            ProcessTapSnapshotOrder(
+                commandSequence: 1,
+                emissionOrdinal: 9
+            ),
+            ProcessTapSnapshotOrder(
+                commandSequence: 2,
+                emissionOrdinal: 0
+            )
+        )
+    }
+
     func testCallbackProgressAtGlobalDeadlineIsNeverAccepted() {
         let deadline = DispatchTime(uptimeNanoseconds: 1_000_000)
         XCTAssertFalse(ProcessTapVolumeEngine.callbackProgressIsReady(

@@ -22,22 +22,51 @@ public enum ProcessTapEngineError: Error, Equatable, Sendable {
     case operationFailed(operation: AudioHALOperation, status: OSStatus)
 }
 
+public struct ProcessTapSnapshotOrder: Equatable, Comparable, Sendable {
+    public let commandSequence: UInt64
+    public let emissionOrdinal: UInt64
+
+    public init(commandSequence: UInt64, emissionOrdinal: UInt64) {
+        self.commandSequence = commandSequence
+        self.emissionOrdinal = emissionOrdinal
+    }
+
+    public static func < (lhs: Self, rhs: Self) -> Bool {
+        lhs.commandSequence == rhs.commandSequence
+            ? lhs.emissionOrdinal < rhs.emissionOrdinal
+            : lhs.commandSequence < rhs.commandSequence
+    }
+}
+
 public struct ProcessTapSessionSnapshot: Equatable, Sendable {
     public let processObjectID: AudioObjectID
     public let generation: UInt64
     public let state: ProcessTapSessionState
     public let error: ProcessTapEngineError?
+    public let commandSequence: UInt64
+    public let emissionOrdinal: UInt64
+
+    public var order: ProcessTapSnapshotOrder {
+        ProcessTapSnapshotOrder(
+            commandSequence: commandSequence,
+            emissionOrdinal: emissionOrdinal
+        )
+    }
 
     public init(
         processObjectID: AudioObjectID,
         generation: UInt64,
         state: ProcessTapSessionState,
-        error: ProcessTapEngineError?
+        error: ProcessTapEngineError?,
+        commandSequence: UInt64,
+        emissionOrdinal: UInt64
     ) {
         self.processObjectID = processObjectID
         self.generation = generation
         self.state = state
         self.error = error
+        self.commandSequence = commandSequence
+        self.emissionOrdinal = emissionOrdinal
     }
 }
 
@@ -383,7 +412,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
         guard availability.supportsProcessControls,
@@ -429,7 +459,8 @@ private extension ProcessTapVolumeEngine {
                     processObjectID: plan.processObjectID,
                     generation: plan.generation,
                     state: .failed,
-                    error: .routeSuperseded
+                    error: .routeSuperseded,
+                    token: token
                 )
             }
             if didUpdateActiveSession {
@@ -437,14 +468,16 @@ private extension ProcessTapVolumeEngine {
                     processObjectID: plan.processObjectID,
                     generation: plan.generation,
                     state: .running,
-                    error: nil
+                    error: nil,
+                    token: token
                 )
                 guard publish(running, token: token) else {
                     return snapshot(
                         processObjectID: plan.processObjectID,
                         generation: plan.generation,
                         state: .failed,
-                        error: .routeSuperseded
+                        error: .routeSuperseded,
+                        token: token
                     )
                 }
                 return running
@@ -466,7 +499,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
 
@@ -475,7 +509,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 state: .rebuilding,
-                error: nil
+                error: nil,
+                token: token
             )
             _ = publish(rebuilding, token: token)
             _ = teardownRecordingProgress(
@@ -487,7 +522,8 @@ private extension ProcessTapVolumeEngine {
                     processObjectID: plan.processObjectID,
                     generation: plan.generation,
                     state: .failed,
-                    error: .routeSuperseded
+                    error: .routeSuperseded,
+                    token: token
                 )
             }
             if bundles[current.acquisitionID] != nil {
@@ -525,7 +561,8 @@ private extension ProcessTapVolumeEngine {
             processObjectID: plan.processObjectID,
             generation: plan.generation,
             state: .preparing,
-            error: nil
+            error: nil,
+            token: token
         )
         _ = publish(preparing, token: token)
         return prepare(
@@ -670,7 +707,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 state: .running,
-                error: nil
+                error: nil,
+                token: token
             )
             let installed = generations.performIfCurrent(token) { [self] in
                 transitionBundle(acquisitionID, to: .active)
@@ -710,7 +748,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
         guard availability.supportsProcessControls,
@@ -731,7 +770,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
         guard let session = sessions[processObjectID] else {
@@ -739,7 +779,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .idle,
-                error: nil
+                error: nil,
+                token: token
             )
             _ = publish(idle, token: token)
             return idle
@@ -749,7 +790,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
 
@@ -757,7 +799,8 @@ private extension ProcessTapVolumeEngine {
             processObjectID: processObjectID,
             generation: generation,
             state: .stopping,
-            error: nil
+            error: nil,
+            token: token
         )
         _ = publish(stopping, token: token)
         sessions.removeValue(forKey: processObjectID)
@@ -770,7 +813,8 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: .routeSuperseded
+                error: .routeSuperseded,
+                token: token
             )
         }
 
@@ -780,14 +824,16 @@ private extension ProcessTapVolumeEngine {
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: map(operation: failure.operation, status: failure.status)
+                error: map(operation: failure.operation, status: failure.status),
+                token: token
             )
         } else {
             result = snapshot(
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .idle,
-                error: nil
+                error: nil,
+                token: token
             )
         }
         _ = publish(result, token: token)
@@ -1346,7 +1392,8 @@ private extension ProcessTapVolumeEngine {
             processObjectID: processObjectID,
             generation: generation,
             state: .failed,
-            error: error
+            error: error,
+            token: token
         )
         _ = publish(failed, token: token)
         return failed
@@ -1365,9 +1412,10 @@ private extension ProcessTapVolumeEngine {
         processObjectID: AudioObjectID,
         generation: UInt64,
         state: ProcessTapSessionState,
-        error: ProcessTapEngineError?
+        error: ProcessTapEngineError?,
+        token: ProcessTapGenerationRegistry.Token
     ) -> ProcessTapSessionSnapshot {
-        ProcessTapSessionSnapshot(
+        token.commandContext.snapshot(
             processObjectID: processObjectID,
             generation: generation,
             state: state,
@@ -1603,12 +1651,51 @@ private struct AudioOwnedObjectInstanceIdentity: Hashable {
     let uid: String
 }
 
+private final class ProcessTapCommandContext: @unchecked Sendable {
+    let commandSequence: UInt64
+    private var nextEmissionOrdinal: UInt64 = 0
+
+    init(commandSequence: UInt64) {
+        self.commandSequence = commandSequence
+    }
+
+    func snapshot(
+        processObjectID: AudioObjectID,
+        generation: UInt64,
+        state: ProcessTapSessionState,
+        error: ProcessTapEngineError?
+    ) -> ProcessTapSessionSnapshot {
+        precondition(
+            nextEmissionOrdinal < UInt64.max,
+            "Process tap snapshot ordinal exhausted"
+        )
+        let snapshot = ProcessTapSessionSnapshot(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: state,
+            error: error,
+            commandSequence: commandSequence,
+            emissionOrdinal: nextEmissionOrdinal
+        )
+        nextEmissionOrdinal += 1
+        return snapshot
+    }
+}
+
 private final class ProcessTapGenerationRegistry: @unchecked Sendable {
     struct Token: Equatable, Sendable {
         let processObjectID: AudioObjectID
         let generation: UInt64
         let sequence: UInt64
         let allEpoch: UInt64
+        let commandContext: ProcessTapCommandContext
+
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            lhs.processObjectID == rhs.processObjectID
+                && lhs.generation == rhs.generation
+                && lhs.sequence == rhs.sequence
+                && lhs.allEpoch == rhs.allEpoch
+        }
     }
 
     private struct Record {
@@ -1627,12 +1714,19 @@ private final class ProcessTapGenerationRegistry: @unchecked Sendable {
     ) -> Token {
         lock.lock()
         defer { lock.unlock() }
-        nextSequence &+= 1
+        precondition(
+            nextSequence < UInt64.max,
+            "Process tap command sequence exhausted"
+        )
+        nextSequence += 1
         let token = Token(
             processObjectID: processObjectID,
             generation: generation,
             sequence: nextSequence,
-            allEpoch: allEpoch
+            allEpoch: allEpoch,
+            commandContext: ProcessTapCommandContext(
+                commandSequence: nextSequence
+            )
         )
         if let current = records[processObjectID],
            generation < current.token.generation {
