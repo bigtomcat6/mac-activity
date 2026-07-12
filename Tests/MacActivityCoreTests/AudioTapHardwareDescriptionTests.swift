@@ -662,6 +662,40 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testStableTopologyIncompleteObservationResetsConsecutiveBaseline() throws {
+        let backend = FakeAudioHALBackend()
+        let aggregate = AudioAggregateResource(objectID: 707, uid: "aggregate")
+        configureAggregateStreams(
+            backend,
+            aggregateID: aggregate.objectID,
+            input: [(61, fixtureFormat(channelCount: 2))],
+            output: [(62, fixtureFormat(channelCount: 2))]
+        )
+        backend.setScalarReadSequence(
+            [
+                (UInt32(1), noErr),
+                (UInt32(0), noErr),
+                (UInt32(1), noErr),
+                (UInt32(1), noErr),
+            ],
+            objectID: aggregate.objectID,
+            address: .init(selector: kAudioDevicePropertyDeviceIsAlive)
+        )
+
+        let snapshot = try makeHardware(backend).waitForStableTopology(
+            aggregate,
+            deadline: .now() + .seconds(1),
+            isCancelled: { false }
+        )
+
+        XCTAssertTrue(snapshot.isAlive)
+        XCTAssertEqual(
+            backend.dataReadCount(for: kAudioDevicePropertyDeviceIsAlive),
+            4
+        )
+    }
+
+    @available(macOS 14.2, *)
     func testInstanceIOProcRegistersOneContextAndCallbackContractIsExact() throws {
         let backend = FakeAudioHALBackend()
         backend.nextIOProcID = hardwareBoundaryIOProcID
