@@ -1625,6 +1625,274 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 
         XCTAssertEqual(snapshot.error, .processTapsUnavailable)
     }
+
+    func testOnlyOneRetryPassCanBeScheduled() async {
+        let fixture = EngineFixture()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+    }
+
+    func testStaleTimerDoubleFireCannotRunConcurrentRetryPasses() async {
+        let fixture = EngineFixture()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+
+        fixture.scheduler.fireCapturedActionTwice()
+        await fixture.engine.waitUntilIdleForTesting()
+        let maximumConcurrentPasses = await fixture.engine
+            .maximumConcurrentRetryPassesForTesting()
+        let retryPassCount = await fixture.engine.retryPassCountForTesting()
+
+        XCTAssertEqual(maximumConcurrentPasses, 1)
+        XCTAssertEqual(retryPassCount, 1)
+    }
+
+    func testRetryBackoffResetsWhenBundleTeardownMakesProgress() async {
+        let fixture = EngineFixture()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        fixture.hardware.setPersistentStatus(nil, at: .destroyIOProc)
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertEqual(
+            fixture.scheduler.scheduledDelays,
+            [.milliseconds(50), .milliseconds(100), .milliseconds(50)]
+        )
+    }
+
+    func testAggregateDisappearanceAdvancesWithoutAnotherUserCommand() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        XCTAssertFalse(
+            fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0))
+        )
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(
+            fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0))
+        )
+        XCTAssertEqual(fixture.scheduler.pendingCount, 0)
+    }
+
+    func testOrphanFailureSchedulesRetryWithoutAnySessionBundle() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedDiscoveryFailures = [AudioTeardownFailure(
+            processObjectID: nil,
+            operation: .getData,
+            objectID: 1,
+            status: kAudioHardwareUnspecifiedError
+        )]
+
+        _ = await fixture.engine.cleanupOrphans()
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+    }
+
+    @available(macOS 14.2, *)
+    func testScanDerivedOrphanRetryContinuesUntilVerifiedObjectDisappears() async {
+        let fixture = EngineFixture()
+        fixture.hardware.ownedObjectValues = [ownedTap(id: 901)]
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(901)
+        )
+        _ = await fixture.engine.cleanupOrphans()
+        fixture.hardware.setPersistentStatus(nil, at: .destroyOwnedObject(901))
+
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        fixture.hardware.confirmOwnedObjectDisappearance(ownedTap(id: 901))
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertEqual(fixture.scheduler.pendingCount, 0)
+        XCTAssertEqual(
+            fixture.hardware.calls.filter {
+                $0 == .destroyOwnedObject(object: ownedTap(id: 901))
+            }.count,
+            2
+        )
+    }
+
+    func testRuntimeTopologyFailureRejectsSameFingerprintBeforeHAL() async {
+        let fixture = EngineFixture()
+        fixture.hardware.aggregateTopologyError = .unsupportedTopology
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.aggregateTopologyError = nil
+        fixture.hardware.clearCalls()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 9,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .unsupportedFormat)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 0)
+    }
+
+    func testEveryDeterministicRuntimeCompatibilityFailureIsCached() async {
+        let streamUsageFailures: [AudioIOProcStreamUsageError] = [
+            .propertyMissing,
+            .propertyNotSettable,
+            .writeFailed(-1),
+            .byteCountMismatch,
+            .ioProcMismatch,
+            .streamCountMismatch,
+            .flagsMismatch,
+        ]
+
+        for failure in streamUsageFailures {
+            let fixture = EngineFixture()
+            let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+            fixture.hardware.streamUsageError = failure
+            _ = await fixture.engine.apply(
+                plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+                gain: ProcessGainState()
+            )
+            fixture.hardware.streamUsageError = nil
+            fixture.hardware.clearCalls()
+
+            let rejected = await fixture.engine.apply(
+                plan: fixture.plan(
+                    processObjectID: 88,
+                    generation: 2,
+                    fingerprint: fingerprint
+                ),
+                gain: ProcessGainState()
+            )
+
+            XCTAssertEqual(rejected.error, .unsupportedFormat, "\(failure)")
+            XCTAssertTrue(fixture.hardware.calls.isEmpty, "\(failure)")
+        }
+    }
+
+    func testReadinessTimeoutIsNotCached() async {
+        let fixture = EngineFixture()
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        fixture.hardware.stableTopologyFailure = .aggregateNotReady(lastStatus: -1)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.stableTopologyFailure = nil
+        fixture.hardware.clearCalls()
+
+        let retried = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 2,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(retried.state, .running)
+        XCTAssertFalse(fixture.hardware.calls.isEmpty)
+    }
+
+    func testTransientStreamUsageReadFailurePreservesStatusAndIsNotCached() async {
+        let fixture = EngineFixture()
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        fixture.hardware.streamUsageError = .readFailed(-321)
+
+        let first = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.streamUsageError = nil
+        fixture.hardware.clearCalls()
+        let retried = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 2,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(
+            first.error,
+            .operationFailed(operation: .getData, status: -321)
+        )
+        XCTAssertEqual(retried.state, .running)
+        XCTAssertFalse(fixture.hardware.calls.isEmpty)
+    }
+
+    func testChangedFingerprintCanProbeAfterRuntimeRejection() async {
+        let fixture = EngineFixture()
+        fixture.hardware.aggregateTopologyError = .unsupportedTopology
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.aggregateTopologyError = nil
+        fixture.hardware.clearCalls()
+        let changedFingerprint = AudioRouteTopologyFingerprint(
+            osBuild: "25A124",
+            sourceDeviceUIDs: ["source-0"],
+            selectedTargetUIDs: ["output"],
+            devices: []
+        )
+
+        let reprobed = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 2,
+                fingerprint: changedFingerprint
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(reprobed.state, .running)
+        XCTAssertFalse(fixture.hardware.calls.isEmpty)
+    }
 }
 
 private let callsThroughTapFormat: [FakeAudioTapHardware.Call] = [
@@ -1663,6 +1931,7 @@ private let callsThroughStableTopology = callsThroughAggregate + [
 private final class EngineFixture: @unchecked Sendable {
     let hardware: FakeAudioTapHardware
     let queue: DispatchQueue
+    let scheduler: FakeProcessTapRetryScheduler
     let engine: ProcessTapVolumeEngine
     let format = ProcessTapAudioFormat(
         sampleRate: 48_000,
@@ -1680,10 +1949,12 @@ private final class EngineFixture: @unchecked Sendable {
         retryLedgerLimit: Int = 32,
         recorder: SnapshotRecorder? = nil,
         hardware: FakeAudioTapHardware = FakeAudioTapHardware(),
+        scheduler: FakeProcessTapRetryScheduler = FakeProcessTapRetryScheduler(),
         queue: DispatchQueue? = nil,
         onSessionSnapshot: (@Sendable (ProcessTapSessionSnapshot) -> Void)? = nil
     ) {
         self.hardware = hardware
+        self.scheduler = scheduler
         let engineQueue = queue ?? DispatchQueue(
             label: "ProcessTapVolumeEngineTests.\(UUID().uuidString)"
         )
@@ -1704,6 +1975,7 @@ private final class EngineFixture: @unchecked Sendable {
             ),
             queue: engineQueue,
             retryLedgerLimit: retryLedgerLimit,
+            retryScheduler: scheduler,
             onSessionSnapshot: snapshotHandler
         )
     }

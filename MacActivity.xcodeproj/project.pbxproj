@@ -10,6 +10,7 @@
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
 		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
 		078F652EDE21CCEB0AC6E491 /* ActiveProcessMemoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */; };
+		0A15C93F27A3E4AD8D6B710D /* FakeProcessTapRetryScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */; };
 		0ADC9557218EDD2F7F6667F9 /* AudioIOProcStreamUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */; };
 		0BFDE8B415E395427CB657F0 /* SystemStorageProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */; };
 		0C235C5AB692A21728D0BA55 /* Localizable.strings in Resources */ = {isa = PBXBuildFile; fileRef = 41DEBECB80588EDCB2B826B3 /* Localizable.strings */; };
@@ -55,6 +56,7 @@
 		551B137A9AD7F434850FD5EB /* DiskCleanupStatusView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */; };
 		567DA7ABD0418DD81EAD1F54 /* AudioRoutePlanner.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34E6D5451C332ED7A711F50B /* AudioRoutePlanner.swift */; };
 		56DC067EC7B638BC6D41FE2E /* AudioAggregateTopologyResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3F7CB2B538BDF57F0B94EC24 /* AudioAggregateTopologyResolverTests.swift */; };
+		5836D1926A122EB104AC60F2 /* ProcessTapRetrySchedulerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 544D433B4AB9592683ADF90F /* ProcessTapRetrySchedulerTests.swift */; };
 		5C508CEA7BAD8358A16637D4 /* ActiveCleanReleaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 145DEBD6281C8023F8F67724 /* ActiveCleanReleaseView.swift */; };
 		5D40CBFA3B3D0D9F90B8F138 /* ProcessTapDSP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B4CC9E01B6EB74B7E39DFF8 /* ProcessTapDSP.swift */; };
 		61985D0288B1AB38FE15C6B3 /* MemoryReleaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1245314B585B575A9D44A916 /* MemoryReleaseService.swift */; };
@@ -129,6 +131,7 @@
 		E4C592E2353DB9DA5DA6F4B0 /* AppPresentationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */; };
 		E5E250878A2404CCA236DA4C /* AudioAggregateTopologyResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = E2E54E53FD145EE2DACD72F6 /* AudioAggregateTopologyResolver.swift */; };
 		E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */; };
+		E729B27242D7FE7473D30570 /* ProcessTapRetryScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A4A0695C3612C49CAA13DA /* ProcessTapRetryScheduler.swift */; };
 		E91EFBA8386879614B88F7EB /* PreferencesViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7935E5143511FB753D77DD5F /* PreferencesViewTests.swift */; };
 		EDC980EF30033CA70792C40E /* EnergyImpactProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBBF160184071B2E1059B58 /* EnergyImpactProviderTests.swift */; };
 		F008634868B46A29FBED4069 /* AudioControlModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A085010AE18BDEC0E3BB55 /* AudioControlModels.swift */; };
@@ -196,6 +199,7 @@
 		018FE6516B13F8FCE943C7CB /* MetricProviderSampleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricProviderSampleTests.swift; sourceTree = "<group>"; };
 		035BE605FC14FC367F605725 /* AudioRouteTopology.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRouteTopology.swift; sourceTree = "<group>"; };
 		051A8D20F98149046273836B /* StatusItemController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusItemController.swift; sourceTree = "<group>"; };
+		06A4A0695C3612C49CAA13DA /* ProcessTapRetryScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTapRetryScheduler.swift; sourceTree = "<group>"; };
 		0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPopoverControllerTests.swift; sourceTree = "<group>"; };
 		0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSchedulerTests.swift; sourceTree = "<group>"; };
@@ -249,6 +253,7 @@
 		4EF027197E6AF8A8728B83E8 /* AudioHALClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioHALClientTests.swift; sourceTree = "<group>"; };
 		4FBBF160184071B2E1059B58 /* EnergyImpactProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactProviderTests.swift; sourceTree = "<group>"; };
 		524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		544D433B4AB9592683ADF90F /* ProcessTapRetrySchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTapRetrySchedulerTests.swift; sourceTree = "<group>"; };
 		54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarSummaryLayoutTests.swift; sourceTree = "<group>"; };
 		55B02C737DA82873951C86D0 /* AppLocalizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalizationController.swift; sourceTree = "<group>"; };
 		5773E6B2EBA7BBAABE1570DF /* DashboardTrendLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendLocalizationTests.swift; sourceTree = "<group>"; };
@@ -296,6 +301,7 @@
 		ACFADB8DB7FD273E04239957 /* AudioSystemMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemMonitorTests.swift; sourceTree = "<group>"; };
 		B541AF54F89E04066F33AD8E /* TrashCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TrashCleanupService.swift; sourceTree = "<group>"; };
 		B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChartLayoutTests.swift; sourceTree = "<group>"; };
+		B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeProcessTapRetryScheduler.swift; sourceTree = "<group>"; };
 		B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryProviderTests.swift; sourceTree = "<group>"; };
 		BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioHALBackend.swift; sourceTree = "<group>"; };
 		C0CAFD2C7DC4193280EEDE07 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -480,6 +486,7 @@
 				8A4643019F12953DA4A2FBD2 /* AudioSystemMonitor.swift */,
 				E623687BEBC14372C97ABDDF /* AudioTapHardware.swift */,
 				5B4CC9E01B6EB74B7E39DFF8 /* ProcessTapDSP.swift */,
+				06A4A0695C3612C49CAA13DA /* ProcessTapRetryScheduler.swift */,
 				751602B497EFBC73C88631CA /* ProcessTapVolumeEngine.swift */,
 			);
 			path = Audio;
@@ -617,6 +624,7 @@
 				C815ADC2D07A903BFAD4C90B /* PreferencesControllerTests.swift */,
 				797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */,
 				4CD64811702A042AB76985D4 /* ProcessTapDSPTests.swift */,
+				544D433B4AB9592683ADF90F /* ProcessTapRetrySchedulerTests.swift */,
 				21E4322AB6B59C2521EDE0BB /* ProcessTapVolumeEngineTests.swift */,
 				20D958280B26529B7B39C116 /* SMCSensorReaderTests.swift */,
 				A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */,
@@ -668,6 +676,7 @@
 				7AAFA8AD36E5C20E3BAE74EF /* AudioBufferListTestStorage.swift */,
 				BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */,
 				3D0B3BDDD156D72062607540 /* FakeAudioTapHardware.swift */,
+				B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */,
 			);
 			path = Support;
 			sourceTree = "<group>";
@@ -881,6 +890,7 @@
 				EDC980EF30033CA70792C40E /* EnergyImpactProviderTests.swift in Sources */,
 				74DCCA48AC3A91932C22556A /* FakeAudioHALBackend.swift in Sources */,
 				DE8E0B03803F9378E7495EC6 /* FakeAudioTapHardware.swift in Sources */,
+				0A15C93F27A3E4AD8D6B710D /* FakeProcessTapRetryScheduler.swift in Sources */,
 				9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */,
 				0EE72E0F0ADBDE77B23D912F /* MemoryReleaseServiceTests.swift in Sources */,
 				BD3C6B2AEFF6E988ED8E6694 /* MetricProviderSampleTests.swift in Sources */,
@@ -891,6 +901,7 @@
 				6FE9479DD0E4F0DD7F88D79C /* PreferencesControllerTests.swift in Sources */,
 				D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */,
 				DA4161AA7426E46102112DA9 /* ProcessTapDSPTests.swift in Sources */,
+				5836D1926A122EB104AC60F2 /* ProcessTapRetrySchedulerTests.swift in Sources */,
 				C881AFF3738010EDBEC7AA4E /* ProcessTapVolumeEngineTests.swift in Sources */,
 				4F1AE1B7F44F2D9407FA4746 /* SMCSensorReaderTests.swift in Sources */,
 				03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */,
@@ -939,6 +950,7 @@
 				3F60AD2BBC32608CE8F87545 /* PreferencesController.swift in Sources */,
 				CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */,
 				5D40CBFA3B3D0D9F90B8F138 /* ProcessTapDSP.swift in Sources */,
+				E729B27242D7FE7473D30570 /* ProcessTapRetryScheduler.swift in Sources */,
 				B008413B7CBE75EA36C9FA65 /* ProcessTapVolumeEngine.swift in Sources */,
 				867FAEE8D9ACD8D9BB154049 /* ReleaseVersion.swift in Sources */,
 				6D54144EB0A0E5918A23CFEF /* StatusSummaryModel.swift in Sources */,
