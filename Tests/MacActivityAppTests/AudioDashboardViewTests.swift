@@ -8,6 +8,46 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
+        let source = try audioDashboardViewSource()
+
+        XCTAssertFalse(source.contains("var accessibilityContracts"))
+        let requiredCalls: [(String, Int)] = [
+            ("accessibility: presentation.devicesAccessibility", 1),
+            ("accessibility: processSection.accessibility", 1),
+            (".audioAccessibility(accessibility)", 2),
+            (".audioAccessibility(processSection.emptyAccessibility)", 1),
+            (".audioAccessibility(presentation.volumeAccessibility)", 6),
+            (".audioAccessibility(presentation.muteAccessibility)", 5),
+            (".audioAccessibility(presentation.rowAccessibility)", 2),
+            (".audioAccessibility(presentation.resetAccessibility)", 1),
+            (".audioAccessibility(presentation.routeAccessibility)", 1),
+            (".audioAccessibility(presentation.statusAccessibility", 1),
+            (".audioAccessibility(contract)", 1),
+            (".audioAccessibility(retryAccessibility)", 2),
+            (".audioAccessibility(writeFailureAccessibility)", 1),
+            ("modifier(AudioAccessibilityModifier(contract: contract))", 1),
+        ]
+        for (call, count) in requiredCalls {
+            XCTAssertEqual(source.components(separatedBy: call).count - 1, count, call)
+        }
+    }
+
+    func testSwiftPMHostingAXProbeReturnsExplicitUnavailableEvidence() {
+        let model = AudioDashboardModel(coordinator: AudioViewCoordinatorSpy(snapshot: .fixture()))
+        let controller = NSHostingController(rootView: AudioDashboardView(model: model))
+        controller.view.frame = NSRect(x: 0, y: 0, width: 520, height: 600)
+        controller.view.layoutSubtreeIfNeeded()
+        controller.view.displayIfNeeded()
+
+        guard case .unavailable(let evidence) = hostingAXEvidence(for: controller.view) else {
+            return XCTFail("SwiftPM unexpectedly exposed the audio accessibility contract")
+        }
+        XCTAssertEqual(evidence.typedChildren, 0)
+        XCTAssertEqual(evidence.navigationChildren, 0)
+        XCTAssertTrue(evidence.audioIdentifiers.isEmpty)
+    }
+
     func testRouteMutationUsesExplicitRouteOrderAcrossConsecutiveToggles() throws {
         var route = AudioRouteMode.explicit(targetDeviceUIDs: ["Missing", "USB"])
         let options = [
@@ -125,22 +165,6 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertTrue(unavailableContract.isEnabled)
     }
 
-    func testRemovingAudioAccessibilityModifierEntryFailsSourceMutationGuard() throws {
-        let testURL = URL(fileURLWithPath: #filePath)
-        let root = testURL.deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent()
-        let sourceURL = root.appendingPathComponent(
-            "Sources/MacActivityApp/Views/AudioDashboardView.swift"
-        )
-        let source = try String(contentsOf: sourceURL, encoding: .utf8)
-        let requiredEntry = "modifier(AudioAccessibilityModifier(contract: contract))"
-
-        XCTAssertTrue(source.contains(requiredEntry))
-        let mutated = source.replacingOccurrences(of: requiredEntry, with: "content")
-        XCTAssertFalse(mutated.contains(requiredEntry),
-                       "Removing the real modifier entry must make this contract test RED")
-    }
-
     func testExplicitLowVersionMatrixHidesProcessContractsWithoutApplyingAudio() throws {
         for version in [(13, 0), (14, 0), (14, 1)] {
             let availability = AudioFeatureAvailability(operatingSystemVersion: .init(
@@ -150,11 +174,13 @@ final class AudioDashboardViewTests: XCTestCase {
                 supportsProcessControls: availability.supportsProcessControls,
                 snapshot: .fixture()
             )
-            let identifiers = try render(model: AudioDashboardModel(coordinator: coordinator))
+            let presentation = AudioDashboardPresentation(
+                snapshot: coordinator.snapshot,
+                supportsProcessControls: coordinator.supportsProcessControls
+            )
 
-            XCTAssertTrue(identifiers.contains("audio.devices.section"))
-            XCTAssertFalse(identifiers.contains("audio.processes.section"))
-            XCTAssertFalse(identifiers.contains { $0.hasPrefix("audio.process.") })
+            XCTAssertEqual(presentation.devicesAccessibility.identifier, "audio.devices.section")
+            XCTAssertNil(presentation.processSection)
             XCTAssertEqual(coordinator.intentCount, 0)
         }
     }
@@ -164,22 +190,18 @@ final class AudioDashboardViewTests: XCTestCase {
             supportsProcessControls: true,
             snapshot: AudioControlSnapshot(devices: [.fixture()], processes: [])
         )
-        let identifiers = try render(model: AudioDashboardModel(coordinator: coordinator))
+        let presentation = AudioDashboardPresentation(
+            snapshot: coordinator.snapshot,
+            supportsProcessControls: coordinator.supportsProcessControls
+        )
+        let section = try XCTUnwrap(presentation.processSection)
 
-        XCTAssertTrue(identifiers.contains("audio.processes.section"))
-        XCTAssertTrue(identifiers.contains("audio.processes.empty"))
+        XCTAssertEqual(section.accessibility.identifier, "audio.processes.section")
+        XCTAssertEqual(section.emptyAccessibility.identifier, "audio.processes.empty")
         XCTAssertEqual(coordinator.intentCount, 0)
     }
 
-    func testUnsupportedSystemOmitsEntireProcessFeature() throws {
-        let tree = try render(snapshot: .fixture(), supportsProcessControls: false)
-
-        XCTAssertTrue(tree.contains("audio.devices.section"))
-        XCTAssertFalse(tree.contains("audio.processes.section"))
-        XCTAssertFalse(tree.contains { $0.hasPrefix("audio.process.") })
-    }
-
-    func testUnavailableAndFailedDevicesRemainVisibleWithRetryAndNoSlider() throws {
+    func testUnavailableAndFailedDevicesRemainVisibleWithRetryAndNoSlider() {
         let snapshot = AudioControlSnapshot(
             devices: [
                 .fixture(uid: "missing", volume: .unavailable),
@@ -192,13 +214,14 @@ final class AudioDashboardViewTests: XCTestCase {
             ],
             processes: []
         )
-        let tree = try render(snapshot: snapshot, supportsProcessControls: true)
+        let rows = snapshot.devices.map(AudioDeviceRowPresentation.init)
 
-        XCTAssertTrue(tree.contains("audio.device.missing.volume.unavailable"))
-        XCTAssertTrue(tree.contains("audio.device.missing.retry"))
-        XCTAssertFalse(tree.contains("audio.device.missing.volume.slider"))
-        XCTAssertTrue(tree.contains("audio.device.failed.volume.failed"))
-        XCTAssertTrue(tree.contains("audio.device.failed.retry"))
+        XCTAssertEqual(rows[0].volumeAccessibility.identifier,
+                       "audio.device.missing.volume.unavailable")
+        XCTAssertEqual(rows[0].retryAccessibility?.identifier, "audio.device.missing.retry")
+        XCTAssertEqual(rows[1].volumeAccessibility.identifier,
+                       "audio.device.failed.volume.failed")
+        XCTAssertEqual(rows[1].retryAccessibility?.identifier, "audio.device.failed.retry")
     }
 
     func testExplicitRouteMutationPreservesOrderAndUnavailableSelection() {
@@ -231,26 +254,17 @@ final class AudioDashboardViewTests: XCTestCase {
         )
     }
 
-    func testControlsExposeTargetSpecificAccessibilityContracts() throws {
-        let tree = try render(snapshot: .fixture(), supportsProcessControls: true)
+    func testControlsExposeTargetSpecificAccessibilityContracts() {
+        let device = AudioDeviceRowPresentation(.fixture())
+        let process = AudioProcessRowPresentation(.fixture())
 
-        XCTAssertTrue(tree.contains("audio.device.BuiltInOutput.volume.slider"))
-        XCTAssertTrue(tree.contains("audio.device.BuiltInOutput.mute"))
-        XCTAssertTrue(tree.contains("audio.process.11.volume.slider"))
-        XCTAssertTrue(tree.contains("audio.process.11.mute"))
-        XCTAssertTrue(tree.contains("audio.process.11.route"))
-        XCTAssertTrue(tree.contains("audio.process.11.reset"))
-    }
-
-    func testSupportedEmptyStateRendersProcessSectionWithoutRows() throws {
-        let tree = try render(
-            snapshot: AudioControlSnapshot(devices: [.fixture()], processes: []),
-            supportsProcessControls: true
-        )
-
-        XCTAssertTrue(tree.contains("audio.processes.section"))
-        XCTAssertTrue(tree.contains("audio.processes.empty"))
-        XCTAssertFalse(tree.contains { $0.hasPrefix("audio.process.") })
+        XCTAssertEqual(device.volumeAccessibility.identifier,
+                       "audio.device.BuiltInOutput.volume.slider")
+        XCTAssertEqual(device.muteAccessibility.identifier, "audio.device.BuiltInOutput.mute")
+        XCTAssertEqual(process.volumeAccessibility.identifier, "audio.process.11.volume.slider")
+        XCTAssertEqual(process.muteAccessibility.identifier, "audio.process.11.mute")
+        XCTAssertEqual(process.routeAccessibility.identifier, "audio.process.11.route")
+        XCTAssertEqual(process.resetAccessibility.identifier, "audio.process.11.reset")
     }
 
     func testDevicePresentationDoesNotFabricateUnsupportedOrReadOnlyValues() {
@@ -264,13 +278,11 @@ final class AudioDashboardViewTests: XCTestCase {
         ))
 
         XCTAssertEqual(readOnly.volume, .readOnly(0.42))
-        XCTAssertFalse(readOnly.accessibilityContracts.contains {
-            $0.identifier == "audio.device.readonly.volume.slider"
-        })
+        XCTAssertEqual(readOnly.volumeAccessibility.identifier,
+                       "audio.device.readonly.volume.readOnly")
         XCTAssertEqual(unsupported.volume, .unsupported)
-        XCTAssertFalse(unsupported.accessibilityContracts.contains {
-            $0.identifier == "audio.device.unsupported.volume.slider"
-        })
+        XCTAssertEqual(unsupported.volumeAccessibility.identifier,
+                       "audio.device.unsupported.volume.unsupported")
         XCTAssertNil(unsupported.retryAccessibility)
         XCTAssertEqual(readOnly.volumeAccessibility.value, "42%")
         XCTAssertEqual(unsupported.volumeAccessibility.identifier,
@@ -369,33 +381,56 @@ final class AudioDashboardViewTests: XCTestCase {
         ))
     }
 
-    private func render(
-        snapshot: AudioControlSnapshot,
-        supportsProcessControls: Bool
-    ) throws -> [String] {
-        let model = AudioDashboardModel(coordinator: TestAudioControlCoordinator(
-            supportsProcessControls: supportsProcessControls,
-            snapshot: snapshot
-        ))
-        return try render(model: model)
+    private func audioDashboardViewSource() throws -> String {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let root = testURL.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent(
+                "Sources/MacActivityApp/Views/AudioDashboardView.swift"
+            ),
+            encoding: .utf8
+        )
     }
 
-    private func render(model: AudioDashboardModel) throws -> [String] {
-        let controller = NSHostingController(rootView: AudioDashboardView(model: model))
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 520, height: 600),
-                              styleMask: .borderless, backing: .buffered, defer: false)
-        defer { window.close() }
-        window.contentViewController = controller
-        window.orderFrontRegardless()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.05))
-        controller.view.layoutSubtreeIfNeeded()
-        controller.view.displayIfNeeded()
-        return AudioDashboardPresentation(
-            snapshot: model.snapshot,
-            supportsProcessControls: model.supportsProcessControls
-        ).accessibilityContracts.map(\.identifier)
+    private func hostingAXEvidence(for view: NSView) -> HostingAXEvidence {
+        let typedChildren = view.accessibilityChildren() ?? []
+        let navigationChildren = view.accessibilityChildrenInNavigationOrder() ?? []
+        let legacyChildren = view.accessibilityAttributeValue(.children) as? [Any] ?? []
+        let unignoredElements = NSAccessibility.unignoredChildren(from: [view])
+        let candidates = typedChildren + navigationChildren + legacyChildren
+            + unignoredElements + view.subviews
+        let audioIdentifiers = candidates.compactMap { candidate -> String? in
+            (candidate as? NSAccessibilityProtocol)?.accessibilityIdentifier()
+        }.filter { $0.hasPrefix("audio.") }
+        let counts = HostingAXCounts(
+            typedChildren: typedChildren.count,
+            navigationChildren: navigationChildren.count,
+            legacyChildren: legacyChildren.count,
+            unignoredElements: unignoredElements.count,
+            subviews: view.subviews.count,
+            audioIdentifiers: audioIdentifiers
+        )
+        if audioIdentifiers.isEmpty {
+            return .unavailable(counts)
+        }
+        return .available(counts)
     }
 
+}
+
+private struct HostingAXCounts: Equatable {
+    let typedChildren: Int
+    let navigationChildren: Int
+    let legacyChildren: Int
+    let unignoredElements: Int
+    let subviews: Int
+    let audioIdentifiers: [String]
+}
+
+private enum HostingAXEvidence: Equatable {
+    case available(HostingAXCounts)
+    case unavailable(HostingAXCounts)
 }
 
 private extension AudioControlSnapshot {

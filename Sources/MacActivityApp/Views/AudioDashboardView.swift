@@ -510,11 +510,6 @@ struct AudioDashboardPresentation {
             : nil
     }
 
-    var accessibilityContracts: [AudioAccessibilityContract] {
-        [devicesAccessibility]
-            + devices.flatMap(\.accessibilityContracts)
-            + (processSection?.accessibilityContracts ?? [])
-    }
 }
 
 struct AudioProcessSectionPresentation {
@@ -531,10 +526,6 @@ struct AudioProcessSectionPresentation {
         )
     }
 
-    var accessibilityContracts: [AudioAccessibilityContract] {
-        [accessibility] + (processes.isEmpty ? [emptyAccessibility] : [])
-            + processes.flatMap(\.accessibilityContracts)
-    }
 }
 
 enum AudioVolumeControlPresentation: Equatable {
@@ -688,12 +679,6 @@ struct AudioDeviceRowPresentation: Identifiable {
         }
     }
 
-    var accessibilityContracts: [AudioAccessibilityContract] {
-        [rowAccessibility, volumeAccessibility]
-            + (mute.identifierSuffix == nil ? [] : [muteAccessibility])
-            + (retryAccessibility.map { [$0] } ?? [])
-            + (writeFailureAccessibility.map { [$0] } ?? [])
-    }
 }
 
 enum AudioProcessStatusPresentation: Equatable {
@@ -808,14 +793,6 @@ struct AudioProcessRowPresentation: Identifiable {
         return AudioAccessibilityContract(
             identifier: "\(accessibilityPrefix).\(pair.0)", label: pair.1, value: pair.1
         )
-    }
-
-    var accessibilityContracts: [AudioAccessibilityContract] {
-        [rowAccessibility, volumeAccessibility, muteAccessibility, routeAccessibility,
-         resetAccessibility]
-            + snapshot.routeOptions.map(routeTargetAccessibility)
-            + (statusAccessibility.map { [$0] } ?? [])
-            + (retryAccessibility.map { [$0] } ?? [])
     }
 
     private var routeValue: String {
