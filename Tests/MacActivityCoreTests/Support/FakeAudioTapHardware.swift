@@ -59,6 +59,11 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var enteredBlockedPoints: Set<FailurePoint> = []
     private var tapSourceIndices: [AudioObjectID: Int] = [:]
     private var tapFormats: [AudioObjectID: ProcessTapAudioFormat] = [:]
+    private var liveTapIdentities: [AudioObjectID: UUID] = [:]
+    private var tapMuteStates: [UUID: AudioTapMuteState] = [:]
+    private var liveAggregateIdentities: [AudioObjectID: String] = [:]
+    private var liveIOProcParents: [UInt: AudioAggregateResource] = [:]
+    private var startedIOProcKeys: Set<UInt> = []
     private var contexts: [AudioObjectID: WeakContext] = [:]
     private var contextOrder: [AudioObjectID] = []
     private var createdIOProcKeysStorage: [UInt] = []
@@ -71,6 +76,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var nextAggregateID: AudioObjectID = 2_000
     private var createdProcessObjectIDsStorage: [AudioObjectID] = []
     private var createdTapResourcesStorage: [AudioTapResource] = []
+    private var createdAggregateResourcesStorage: [AudioAggregateResource] = []
     private var latestPlan: AudioRoutePlan?
     private var latestTaps: [AudioTapResource] = []
 
@@ -95,6 +101,38 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     var createdTapResources: [AudioTapResource] {
         locked { createdTapResourcesStorage }
+    }
+
+    var createdAggregateResources: [AudioAggregateResource] {
+        locked { createdAggregateResourcesStorage }
+    }
+
+    var liveOwnedObjects: [AudioOwnedObject] {
+        locked {
+            liveAggregateIdentities.map { objectID, uid in
+                AudioOwnedObject(
+                    id: objectID,
+                    classID: kAudioAggregateDeviceClassID,
+                    uid: uid,
+                    name: nil
+                )
+            } + liveTapIdentities.map { objectID, uuid in
+                AudioOwnedObject(
+                    id: objectID,
+                    classID: kAudioTapClassID,
+                    uid: uuid.uuidString,
+                    name: nil
+                )
+            }
+        }
+    }
+
+    var currentMuteState: AudioTapMuteState? {
+        locked {
+            createdTapResourcesStorage.last.flatMap {
+                tapMuteStates[$0.uuid]
+            }
+        }
     }
 
     var mainThreadCallCount: Int {
@@ -198,6 +236,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                 uuid: CoreAudioTapHardware.reservedTapUUID(entropy: uuid),
                 source: source
             )
+            liveTapIdentities[objectID] = resource.uuid
+            tapMuteStates[resource.uuid] = .unmuted
             createdTapResourcesStorage.append(resource)
             return resource
         }
@@ -235,10 +275,13 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             if forcedAggregateObjectID == nil {
                 nextAggregateID += 1
             }
-            return AudioAggregateResource(
+            let resource = AudioAggregateResource(
                 objectID: objectID,
                 uid: plan.aggregateUID
             )
+            liveAggregateIdentities[objectID] = resource.uid
+            createdAggregateResourcesStorage.append(resource)
+            return resource
         }
     }
 
@@ -275,6 +318,12 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         context: ProcessTapDSPContext
     ) throws -> AudioIOProcResource {
         record(.createIOProc)
+        guard aggregateIdentityMatches(aggregate) else {
+            throw badObjectError(
+                operation: .createIOProc,
+                objectID: aggregate.objectID
+            )
+        }
         try throwIfNeeded(
             at: .createIOProc,
             operation: .createIOProc,
@@ -291,11 +340,15 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             createdIOProcKeysStorage.append(Self.ioProcKey(ioProcID))
             return ioProcID
         }
-        return AudioIOProcResource(
+        let resource = AudioIOProcResource(
             aggregateDeviceID: aggregate.objectID,
             aggregateUID: aggregate.uid,
             ioProcID: ioProcID
         )
+        locked {
+            liveIOProcParents[Self.ioProcKey(ioProcID)] = aggregate
+        }
+        return resource
     }
 
     func configureInputStreamUsage(
@@ -313,11 +366,18 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     func start(_ ioProc: AudioIOProcResource) throws {
         record(.startDevice)
+        guard ioProcIdentityMatches(ioProc) else {
+            throw badObjectError(
+                operation: .startDevice,
+                objectID: ioProc.aggregateDeviceID
+            )
+        }
         try throwIfNeeded(
             at: .startDevice,
             operation: .startDevice,
             objectID: ioProc.aggregateDeviceID
         )
+        locked { startedIOProcKeys.insert(Self.ioProcKey(ioProc.ioProcID)) }
         let shouldBlock = locked { () -> Bool in
             startInvocationCount += 1
             return firstCallbackInitiallyBlocked && startInvocationCount == 1
@@ -339,6 +399,9 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         for tap: AudioTapResource
     ) throws {
         let sourceIndex = sourceIndex(for: tap)
+        guard tapIdentityMatches(tap) else {
+            throw badObjectError(operation: .setData, objectID: tap.objectID)
+        }
         switch state {
         case .unmuted:
             record(.setTapUnmuted(sourceIndex: sourceIndex))
@@ -355,40 +418,74 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                 objectID: tap.objectID
             )
         }
+        locked { tapMuteStates[tap.uuid] = state }
     }
 
     func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
         let sourceIndex = sourceIndex(for: tap)
         record(.setTapUnmuted(sourceIndex: sourceIndex))
-        return takeStatus(at: .setTapUnmuted(sourceIndex))
+        guard tapIdentityMatches(tap) else { return noErr }
+        let status = takeStatus(at: .setTapUnmuted(sourceIndex))
+        if status == noErr {
+            locked { tapMuteStates[tap.uuid] = .unmuted }
+        }
+        return status
     }
 
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
         record(.stopDevice)
-        return takeStatus(
+        guard ioProcIdentityMatches(ioProc) else {
+            return kAudioHardwareBadObjectError
+        }
+        let status = takeStatus(
             at: .stopDevice,
             ioProcKey: Self.ioProcKey(ioProc.ioProcID)
         )
+        if status == noErr {
+            locked { startedIOProcKeys.remove(Self.ioProcKey(ioProc.ioProcID)) }
+        }
+        return status
     }
 
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus {
         record(.destroyIOProc)
-        return takeStatus(
+        guard ioProcIdentityMatches(ioProc) else {
+            return kAudioHardwareBadObjectError
+        }
+        let status = takeStatus(
             at: .destroyIOProc,
             ioProcKey: Self.ioProcKey(ioProc.ioProcID)
         )
+        if status == noErr {
+            locked {
+                let key = Self.ioProcKey(ioProc.ioProcID)
+                liveIOProcParents.removeValue(forKey: key)
+                startedIOProcKeys.remove(key)
+            }
+        }
+        return status
     }
 
     func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus {
         record(.destroyAggregate)
-        return takeStatus(at: .destroyAggregate)
+        guard aggregateIdentityMatches(aggregate) else { return noErr }
+        let status = takeStatus(at: .destroyAggregate)
+        if status == noErr {
+            locked { liveAggregateIdentities.removeValue(forKey: aggregate.objectID) }
+        }
+        return status
     }
 
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         let sourceIndex = sourceIndex(for: tap)
         record(.destroyTap(sourceIndex: sourceIndex))
         waitIfBlocked(at: .destroyTap(sourceIndex))
-        return takeStatus(at: .destroyTap(sourceIndex))
+        guard tapIdentityMatches(tap) else { return noErr }
+        let status = takeStatus(at: .destroyTap(sourceIndex))
+        if status == noErr {
+            locked { liveTapIdentities.removeValue(forKey: tap.objectID) }
+        }
+        return status
     }
 
     func ownedObjects() throws -> AudioOwnedObjectDiscovery {
@@ -400,7 +497,21 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         )
         return locked {
             AudioOwnedObjectDiscovery(
-                objects: ownedObjectValues,
+                objects: ownedObjectValues + liveAggregateIdentities.map {
+                    AudioOwnedObject(
+                        id: $0.key,
+                        classID: kAudioAggregateDeviceClassID,
+                        uid: $0.value,
+                        name: nil
+                    )
+                } + liveTapIdentities.map {
+                    AudioOwnedObject(
+                        id: $0.key,
+                        classID: kAudioTapClassID,
+                        uid: $0.value.uuidString,
+                        name: nil
+                    )
+                },
                 failures: ownedDiscoveryFailures
             )
         }
@@ -413,6 +524,35 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 }
 
 private extension FakeAudioTapHardware {
+    func tapIdentityMatches(_ tap: AudioTapResource) -> Bool {
+        locked { liveTapIdentities[tap.objectID] == tap.uuid }
+    }
+
+    func aggregateIdentityMatches(_ aggregate: AudioAggregateResource) -> Bool {
+        locked { liveAggregateIdentities[aggregate.objectID] == aggregate.uid }
+    }
+
+    func ioProcIdentityMatches(_ ioProc: AudioIOProcResource) -> Bool {
+        let key = Self.ioProcKey(ioProc.ioProcID)
+        return locked {
+            liveAggregateIdentities[ioProc.aggregateDeviceID] == ioProc.aggregateUID
+                && liveIOProcParents[key]?.objectID == ioProc.aggregateDeviceID
+                && liveIOProcParents[key]?.uid == ioProc.aggregateUID
+        }
+    }
+
+    func badObjectError(
+        operation: AudioHALOperation,
+        objectID: AudioObjectID
+    ) -> AudioHALError {
+        AudioHALError(
+            operation: operation,
+            objectID: objectID,
+            address: nil,
+            reason: .status(kAudioHardwareBadObjectError)
+        )
+    }
+
     func topologySnapshot() -> AudioAggregateTopologySnapshot {
         locked {
             if let aggregateTopologySnapshotOverride {

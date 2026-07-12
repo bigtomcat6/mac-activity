@@ -93,7 +93,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     // Queue confined.
     private var sessions: [AudioObjectID: ProcessTapSession] = [:]
-    private var retryLedger: [AudioTeardownRetryKey: AudioTeardownRetryEntry] = [:]
+    private var bundles: [UUID: AudioAcquisitionBundle] = [:]
     private var successfullyDestroyedOwnedIdentities: Set<AudioOwnedObjectInstanceIdentity> = []
     private var lifetimeLease: ProcessTapVolumeEngine?
 
@@ -165,8 +165,11 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             else {
                 return
             }
-            retryOrphans(using: hardware)
-            sessions[processObjectID]?.context.setTargetGain(gain.targetGain)
+            advanceRetainedBundles(using: hardware)
+            guard let session = sessions[processObjectID],
+                  let context = bundles[session.acquisitionID]?.resources.context
+            else { return }
+            context.setTargetGain(gain.targetGain)
         }
     }
 
@@ -195,18 +198,18 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
                   let hardware
             else {
                 sessions.removeAll()
-                retryLedger.removeAll()
+                bundles.removeAll()
                 successfullyDestroyedOwnedIdentities.removeAll()
                 lifetimeLease = nil
                 return
             }
-            retryOrphans(using: hardware)
+            advanceRetainedBundles(using: hardware)
             let activeSessions = sessions.values.sorted {
                 $0.processObjectID < $1.processObjectID
             }
             sessions.removeAll()
             for session in activeSessions {
-                _ = teardown(session.resources, using: hardware)
+                _ = teardown(session.acquisitionID, using: hardware)
             }
         }
     }
@@ -219,9 +222,9 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             else {
                 return []
             }
-            retryOrphans(using: hardware)
+            advanceRetainedBundles(using: hardware)
             let discoveryFailures = cleanupOwnedObjects(using: hardware)
-            return discoveryFailures + retryFailures()
+            return discoveryFailures + bundleFailures()
         }
     }
 
@@ -279,7 +282,7 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        retryOrphans(using: hardware)
+        advanceRetainedBundles(using: hardware)
         guard generations.isCurrent(token) else {
             return snapshot(
                 processObjectID: plan.processObjectID,
@@ -291,7 +294,9 @@ private extension ProcessTapVolumeEngine {
 
         if let current = sessions[plan.processObjectID],
            current.generation == plan.generation {
-            current.context.setTargetGain(gain.targetGain)
+            bundles[current.acquisitionID]?.resources.context?.setTargetGain(
+                gain.targetGain
+            )
             let running = snapshot(
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
@@ -302,15 +307,6 @@ private extension ProcessTapVolumeEngine {
             return running
         }
 
-        guard retryLedger.count < retryLedgerLimit else {
-            return publishFailure(
-                .cleanupBacklogFull,
-                processObjectID: plan.processObjectID,
-                generation: plan.generation,
-                token: token
-            )
-        }
-
         if let current = sessions.removeValue(forKey: plan.processObjectID) {
             let rebuilding = snapshot(
                 processObjectID: plan.processObjectID,
@@ -319,7 +315,7 @@ private extension ProcessTapVolumeEngine {
                 error: nil
             )
             _ = publish(rebuilding, token: token)
-            let failures = teardown(current.resources, using: hardware)
+            _ = teardown(current.acquisitionID, using: hardware)
             guard generations.isCurrent(token) else {
                 return snapshot(
                     processObjectID: plan.processObjectID,
@@ -328,14 +324,35 @@ private extension ProcessTapVolumeEngine {
                     error: .routeSuperseded
                 )
             }
-            if let failure = failures.first {
+            if bundles[current.acquisitionID] != nil {
                 return publishFailure(
-                    map(operation: failure.operation, status: failure.status),
+                    .cleanupBacklogFull,
                     processObjectID: plan.processObjectID,
                     generation: plan.generation,
                     token: token
                 )
             }
+        }
+
+        guard bundles.values.contains(where: {
+            $0.resources.processObjectID == plan.processObjectID
+                && $0.state != .released
+        }) == false else {
+            return publishFailure(
+                .cleanupBacklogFull,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
+        }
+
+        guard nonReleasedBundleCount < retryLedgerLimit else {
+            return publishFailure(
+                .cleanupBacklogFull,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
         }
 
         let preparing = snapshot(
@@ -359,10 +376,19 @@ private extension ProcessTapVolumeEngine {
         token: ProcessTapGenerationRegistry.Token,
         hardware: any AudioTapHardware
     ) -> ProcessTapSessionSnapshot {
-        var resources = ProcessTapSessionResources(
-            processObjectID: plan.processObjectID,
-            generation: plan.generation
+        let acquisitionID = UUID()
+        bundles[acquisitionID] = AudioAcquisitionBundle(
+            acquisitionID: acquisitionID,
+            resources: ProcessTapSessionResources(
+                processObjectID: plan.processObjectID,
+                generation: plan.generation
+            ),
+            state: .preparing,
+            stage: .restoreOriginalAudio,
+            didStartIOProc: false,
+            failures: []
         )
+        checkCapacityInvariant()
 
         do {
             guard plan.tapSources.isEmpty == false else {
@@ -375,11 +401,12 @@ private extension ProcessTapVolumeEngine {
                     source: source,
                     uuid: UUID()
                 )
-                resources.taps.append(tap)
+                bundles[acquisitionID]?.resources.taps.append(tap)
                 try ensureCurrent(token)
             }
 
-            for (index, tap) in resources.taps.enumerated() {
+            let taps = bundles[acquisitionID]?.resources.taps ?? []
+            for (index, tap) in taps.enumerated() {
                 let format = try hardware.readTapFormat(tap)
                 try ensureCurrent(token)
                 guard index < plan.tapSources.count,
@@ -392,10 +419,9 @@ private extension ProcessTapVolumeEngine {
 
             let aggregate = try hardware.createAggregate(
                 plan: plan,
-                taps: resources.taps
+                taps: taps
             )
-            resources.aggregate = aggregate
-            resources.aggregateAcquisitionID = UUID()
+            bundles[acquisitionID]?.resources.aggregate = aggregate
             try ensureCurrent(token)
 
             let topology = try hardware.waitForStableTopology(
@@ -409,7 +435,7 @@ private extension ProcessTapVolumeEngine {
 
             let layout = try AudioAggregateTopologyResolver.resolve(
                 plan: plan,
-                tap: resources.taps[0],
+                tap: taps[0],
                 snapshot: topology
             )
             try ensureCurrent(token)
@@ -433,13 +459,12 @@ private extension ProcessTapVolumeEngine {
                 configuration: configuration,
                 initialGain: gain.targetGain
             )
-            resources.context = context
+            bundles[acquisitionID]?.resources.context = context
             let ioProc = try hardware.createIOProc(
                 aggregate: aggregate,
                 context: context
             )
-            resources.ioProc = ioProc
-            resources.ioProcAcquisitionID = UUID()
+            bundles[acquisitionID]?.resources.ioProc = ioProc
             try ensureCurrent(token)
 
             let verifiedUsage = try hardware.configureInputStreamUsage(
@@ -453,6 +478,7 @@ private extension ProcessTapVolumeEngine {
 
             let callbackCountBeforeStart = context.callbackCount
             try hardware.start(ioProc)
+            bundles[acquisitionID]?.didStartIOProc = true
             try ensureCurrent(token)
             try waitForSustainedCallbacks(
                 context,
@@ -460,9 +486,9 @@ private extension ProcessTapVolumeEngine {
                 token: token
             )
 
-            for tap in resources.taps {
+            for tap in taps {
                 try hardware.setMuteState(.mutedWhenTapped, for: tap)
-                resources.mutedTaps.append(tap)
+                bundles[acquisitionID]?.resources.mutedTaps.append(tap)
                 try ensureCurrent(token)
             }
 
@@ -472,8 +498,7 @@ private extension ProcessTapVolumeEngine {
             let session = ProcessTapSession(
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
-                resources: resources,
-                context: context
+                acquisitionID: acquisitionID
             )
             let running = snapshot(
                 processObjectID: plan.processObjectID,
@@ -482,6 +507,7 @@ private extension ProcessTapVolumeEngine {
                 error: nil
             )
             let installed = generations.performIfCurrent(token) { [self] in
+                transitionBundle(acquisitionID, to: .active)
                 sessions[plan.processObjectID] = session
                 lifetimeLease = self
             }
@@ -491,8 +517,8 @@ private extension ProcessTapVolumeEngine {
             onSessionSnapshot(running)
             return running
         } catch {
-            resources.context?.setOutputGateOpen(false)
-            _ = teardown(resources, using: hardware)
+            bundles[acquisitionID]?.resources.context?.setOutputGateOpen(false)
+            _ = teardown(acquisitionID, using: hardware)
             let preparationError = generations.isCurrent(token)
                 ? map(error)
                 : .routeSuperseded
@@ -530,7 +556,7 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        retryOrphans(using: hardware)
+        advanceRetainedBundles(using: hardware)
         guard generations.isCurrent(token) else {
             return snapshot(
                 processObjectID: processObjectID,
@@ -566,7 +592,7 @@ private extension ProcessTapVolumeEngine {
         )
         _ = publish(stopping, token: token)
         sessions.removeValue(forKey: processObjectID)
-        let failures = teardown(session.resources, using: hardware)
+        let failures = teardown(session.acquisitionID, using: hardware)
         guard generations.isCurrent(token) else {
             return snapshot(
                 processObjectID: processObjectID,
@@ -631,94 +657,134 @@ private extension ProcessTapVolumeEngine {
     }
 
     func teardown(
-        _ resources: ProcessTapSessionResources,
+        _ acquisitionID: UUID,
         using hardware: any AudioTapHardware
     ) -> [AudioTeardownFailure] {
-        defer { refreshLifetimeLease() }
-        resources.context?.setOutputGateOpen(false)
-        var failures: [AudioTeardownFailure] = []
+        guard bundles[acquisitionID] != nil else { return [] }
+        bundles[acquisitionID]?.resources.context?.setOutputGateOpen(false)
+        restoreMutedTaps(in: acquisitionID, using: hardware)
 
-        for tap in resources.mutedTaps.reversed() {
-            let status = hardware.restoreOriginalAudio(for: tap)
-            if status != noErr {
-                let failure = AudioTeardownFailure(
-                    processObjectID: resources.processObjectID,
-                    operation: .setData,
-                    objectID: tap.objectID,
-                    status: status
-                )
-                failures.append(failure)
-                addRetry(
-                    failure: failure,
-                    ownership: .tap(tap.uuid),
-                    payload: .setTapUnmuted(tap)
-                )
-            }
-        }
-
-        if let ioProc = resources.ioProc,
-           let context = resources.context {
-            guard let ioProcAcquisitionID = resources.ioProcAcquisitionID else {
-                preconditionFailure("IOProc ownership identity must accompany the resource")
-            }
-            recordTeardownStatus(
-                hardware.stop(ioProc),
-                operation: .stopDevice,
-                objectID: ioProc.aggregateDeviceID,
-                ownership: .ioProc(ioProcAcquisitionID),
-                processObjectID: resources.processObjectID,
-                payload: .stop(ioProc, context),
-                failures: &failures
-            )
-            recordTeardownStatus(
-                hardware.destroyIOProc(ioProc),
-                operation: .destroyIOProc,
-                objectID: ioProc.aggregateDeviceID,
-                ownership: .ioProc(ioProcAcquisitionID),
-                processObjectID: resources.processObjectID,
-                payload: .destroyIOProc(ioProc, context),
-                failures: &failures
-            )
-        }
-
-        if let aggregate = resources.aggregate {
-            guard let aggregateAcquisitionID = resources.aggregateAcquisitionID else {
-                preconditionFailure("aggregate ownership identity must accompany the resource")
-            }
-            let status = hardware.destroyAggregate(aggregate)
-            recordTeardownStatus(
-                status,
-                operation: .destroyAggregate,
-                objectID: aggregate.objectID,
-                ownership: .aggregate(aggregateAcquisitionID),
-                processObjectID: resources.processObjectID,
-                payload: .destroyAggregate(aggregate),
-                failures: &failures
-            )
-            if status == noErr {
-                successfullyDestroyedOwnedIdentities.insert(
-                    AudioOwnedObjectInstanceIdentity(
-                        objectID: aggregate.objectID,
-                        classID: kAudioAggregateDeviceClassID,
-                        uid: aggregate.uid
+        while let stage = bundles[acquisitionID]?.stage {
+            switch stage {
+            case .restoreOriginalAudio:
+                bundles[acquisitionID]?.stage = .stopIOProc
+            case .stopIOProc:
+                if let bundle = bundles[acquisitionID],
+                   bundle.didStartIOProc,
+                   let ioProc = bundle.resources.ioProc {
+                    let status = hardware.stop(ioProc)
+                    recordBundleStatus(
+                        status == kAudioHardwareBadObjectError ? noErr : status,
+                        operation: .stopDevice,
+                        objectID: ioProc.aggregateDeviceID,
+                        acquisitionID: acquisitionID
                     )
-                )
-            }
-        }
-
-        for tap in resources.taps.reversed() {
-            let status = hardware.destroyTap(tap)
-            recordTeardownStatus(
-                status,
-                operation: .destroyTap,
-                objectID: tap.objectID,
-                ownership: .tap(tap.uuid),
-                processObjectID: resources.processObjectID,
-                payload: .destroyTap(tap),
-                failures: &failures
-            )
-            if status == noErr {
-                if #available(macOS 14.2, *) {
+                }
+                bundles[acquisitionID]?.stage = .destroyIOProc
+            case .destroyIOProc:
+                if let ioProc = bundles[acquisitionID]?.resources.ioProc {
+                    let rawStatus = hardware.destroyIOProc(ioProc)
+                    let status = rawStatus == kAudioHardwareBadObjectError
+                        ? noErr
+                        : rawStatus
+                    recordBundleStatus(
+                        status,
+                        operation: .destroyIOProc,
+                        objectID: ioProc.aggregateDeviceID,
+                        acquisitionID: acquisitionID
+                    )
+                    guard status == noErr else {
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    removeBundleFailures(
+                        acquisitionID,
+                        operations: [.stopDevice, .destroyIOProc],
+                        objectID: ioProc.aggregateDeviceID
+                    )
+                }
+                bundles[acquisitionID]?.stage = .destroyAggregate
+            case .destroyAggregate:
+                if let aggregate = bundles[acquisitionID]?.resources.aggregate {
+                    let status = hardware.destroyAggregate(aggregate)
+                    recordBundleStatus(
+                        status,
+                        operation: .destroyAggregate,
+                        objectID: aggregate.objectID,
+                        acquisitionID: acquisitionID
+                    )
+                    guard status == noErr else {
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    successfullyDestroyedOwnedIdentities.insert(
+                        AudioOwnedObjectInstanceIdentity(
+                            objectID: aggregate.objectID,
+                            classID: kAudioAggregateDeviceClassID,
+                            uid: aggregate.uid
+                        )
+                    )
+                }
+                bundles[acquisitionID]?.stage = .waitForAggregateDisappearance
+            case .waitForAggregateDisappearance:
+                if let aggregate = bundles[acquisitionID]?.resources.aggregate {
+                    let discovery: AudioOwnedObjectDiscovery
+                    do {
+                        discovery = try hardware.ownedObjects()
+                    } catch {
+                        let failure = teardownFailure(
+                            from: error,
+                            fallbackOperation: .getData,
+                            objectID: aggregate.objectID,
+                            processObjectID: bundles[acquisitionID]?.resources.processObjectID
+                        )
+                        setBundleFailure(failure, acquisitionID: acquisitionID)
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    if let identityFailure = discovery.failures.first(where: {
+                        $0.objectID == aggregate.objectID
+                    }) {
+                        setBundleFailure(
+                            AudioTeardownFailure(
+                                processObjectID: bundles[acquisitionID]?.resources.processObjectID,
+                                operation: identityFailure.operation,
+                                objectID: identityFailure.objectID,
+                                status: identityFailure.status
+                            ),
+                            acquisitionID: acquisitionID
+                        )
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    removeBundleFailures(
+                        acquisitionID,
+                        operations: [.getData],
+                        objectID: aggregate.objectID
+                    )
+                    let stillExists = discovery.objects.contains {
+                        $0.id == aggregate.objectID
+                            && $0.classID == kAudioAggregateDeviceClassID
+                            && $0.uid == aggregate.uid
+                    }
+                    guard stillExists == false else {
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    bundles[acquisitionID]?.resources.aggregate = nil
+                }
+                bundles[acquisitionID]?.stage = .destroyTaps
+            case .destroyTaps:
+                let taps = bundles[acquisitionID]?.resources.taps ?? []
+                for tap in taps.reversed() {
+                    let status = hardware.destroyTap(tap)
+                    recordBundleStatus(
+                        status,
+                        operation: .destroyTap,
+                        objectID: tap.objectID,
+                        acquisitionID: acquisitionID
+                    )
+                    guard status == noErr else { continue }
                     successfullyDestroyedOwnedIdentities.insert(
                         AudioOwnedObjectInstanceIdentity(
                             objectID: tap.objectID,
@@ -726,139 +792,113 @@ private extension ProcessTapVolumeEngine {
                             uid: tap.uuid.uuidString
                         )
                     )
+                    bundles[acquisitionID]?.resources.taps.removeAll {
+                        $0.objectID == tap.objectID && $0.uuid == tap.uuid
+                    }
+                    bundles[acquisitionID]?.resources.mutedTaps.removeAll {
+                        $0.objectID == tap.objectID && $0.uuid == tap.uuid
+                    }
+                    removeBundleFailures(
+                        acquisitionID,
+                        operations: [.setData, .destroyTap],
+                        objectID: tap.objectID
+                    )
                 }
-                retryLedger.removeValue(forKey: AudioTeardownRetryKey(
-                    operation: .setData,
-                    objectID: tap.objectID,
-                    ownership: .tap(tap.uuid)
-                ))
+                guard bundles[acquisitionID]?.resources.taps.isEmpty == true else {
+                    retainBundle(acquisitionID)
+                    return bundles[acquisitionID]?.failures ?? []
+                }
+                bundles[acquisitionID]?.stage = .released
+            case .released:
+                transitionBundle(acquisitionID, to: .released)
+                bundles.removeValue(forKey: acquisitionID)
+                refreshLifetimeLease()
+                return []
             }
         }
-        return failures
+        return []
     }
 
-    func recordTeardownStatus(
+    func restoreMutedTaps(
+        in acquisitionID: UUID,
+        using hardware: any AudioTapHardware
+    ) {
+        let taps = bundles[acquisitionID]?.resources.mutedTaps ?? []
+        for tap in taps.reversed() {
+            let status = hardware.restoreOriginalAudio(for: tap)
+            recordBundleStatus(
+                status,
+                operation: .setData,
+                objectID: tap.objectID,
+                acquisitionID: acquisitionID
+            )
+            guard status == noErr else { continue }
+            bundles[acquisitionID]?.resources.mutedTaps.removeAll {
+                $0.objectID == tap.objectID && $0.uuid == tap.uuid
+            }
+        }
+    }
+
+    func recordBundleStatus(
         _ status: OSStatus,
         operation: AudioHALOperation,
         objectID: AudioObjectID,
-        ownership: AudioTeardownOwnershipIdentity,
-        processObjectID: AudioObjectID?,
-        payload: AudioTeardownRetryPayload,
-        failures: inout [AudioTeardownFailure]
+        acquisitionID: UUID
     ) {
-        let key = AudioTeardownRetryKey(
-            operation: operation,
-            objectID: objectID,
-            ownership: ownership
-        )
         guard status != noErr else {
-            retryLedger.removeValue(forKey: key)
+            removeBundleFailures(
+                acquisitionID,
+                operations: [operation],
+                objectID: objectID
+            )
             return
         }
-        let failure = AudioTeardownFailure(
-            processObjectID: processObjectID,
-            operation: operation,
-            objectID: objectID,
-            status: status
-        )
-        failures.append(failure)
-        addRetry(
-            failure: failure,
-            ownership: ownership,
-            payload: payload
+        setBundleFailure(
+            AudioTeardownFailure(
+                processObjectID: bundles[acquisitionID]?.resources.processObjectID,
+                operation: operation,
+                objectID: objectID,
+                status: status
+            ),
+            acquisitionID: acquisitionID
         )
     }
 
-    func addRetry(
-        failure: AudioTeardownFailure,
-        ownership: AudioTeardownOwnershipIdentity,
-        payload: AudioTeardownRetryPayload
+    func setBundleFailure(
+        _ failure: AudioTeardownFailure,
+        acquisitionID: UUID
     ) {
-        let key = AudioTeardownRetryKey(
-            operation: failure.operation,
-            objectID: failure.objectID,
-            ownership: ownership
-        )
-        retryLedger[key] = AudioTeardownRetryEntry(
-            key: key,
-            processObjectID: failure.processObjectID,
-            status: failure.status,
-            payload: payload
-        )
+        bundles[acquisitionID]?.failures.removeAll {
+            $0.operation == failure.operation && $0.objectID == failure.objectID
+        }
+        bundles[acquisitionID]?.failures.append(failure)
     }
 
-    func retryOrphans(using hardware: any AudioTapHardware) {
-        defer { refreshLifetimeLease() }
-        let activeObjectIDs = activeOwnedObjectIDs()
-        let entries = retryLedger.values.sorted {
-            if $0.key.priority == $1.key.priority {
-                if $0.key.objectID == $1.key.objectID {
-                    return $0.key.ownership.sortKey < $1.key.ownership.sortKey
-                }
-                return $0.key.objectID < $1.key.objectID
-            }
-            return $0.key.priority < $1.key.priority
+    func removeBundleFailures(
+        _ acquisitionID: UUID,
+        operations: Set<AudioHALOperation>,
+        objectID: AudioObjectID
+    ) {
+        bundles[acquisitionID]?.failures.removeAll {
+            operations.contains($0.operation) && $0.objectID == objectID
         }
-        for entry in entries {
-            if activeObjectIDs.contains(entry.key.objectID) {
-                retryLedger.removeValue(forKey: entry.key)
-                continue
-            }
-            if case .destroyOwned = entry.payload {
-                continue
-            }
-            let retryStatus: OSStatus
-            switch entry.payload {
-            case .setTapUnmuted(let tap):
-                retryStatus = hardware.restoreOriginalAudio(for: tap)
-            case .stop(let ioProc, _):
-                retryStatus = hardware.stop(ioProc)
-            case .destroyIOProc(let ioProc, _):
-                retryStatus = hardware.destroyIOProc(ioProc)
-            case .destroyAggregate(let aggregate):
-                retryStatus = hardware.destroyAggregate(aggregate)
-            case .destroyTap(let tap):
-                retryStatus = hardware.destroyTap(tap)
-            case .destroyOwned(let object):
-                retryStatus = hardware.destroyOwnedObject(object)
-            }
+    }
 
-            if retryStatus == noErr {
-                retryLedger.removeValue(forKey: entry.key)
-                if #available(macOS 14.2, *) {
-                    switch entry.payload {
-                    case .destroyAggregate(let aggregate):
-                        successfullyDestroyedOwnedIdentities.insert(
-                            AudioOwnedObjectInstanceIdentity(
-                                objectID: aggregate.objectID,
-                                classID: kAudioAggregateDeviceClassID,
-                                uid: aggregate.uid
-                            )
-                        )
-                    case .destroyTap(let tap):
-                        successfullyDestroyedOwnedIdentities.insert(
-                            AudioOwnedObjectInstanceIdentity(
-                                objectID: tap.objectID,
-                                classID: kAudioTapClassID,
-                                uid: tap.uuid.uuidString
-                            )
-                        )
-                    default:
-                        break
-                    }
-                }
-                if entry.key.operation == .destroyTap {
-                    retryLedger.removeValue(forKey: AudioTeardownRetryKey(
-                        operation: .setData,
-                        objectID: entry.key.objectID,
-                        ownership: entry.key.ownership
-                    ))
-                }
-            } else {
-                var updated = entry
-                updated.status = retryStatus
-                retryLedger[entry.key] = updated
-            }
+    func retainBundle(_ acquisitionID: UUID) {
+        guard let state = bundles[acquisitionID]?.state,
+              state != .retainedBundle
+        else { return }
+        transitionBundle(acquisitionID, to: .retainedBundle)
+        refreshLifetimeLease()
+    }
+
+    func advanceRetainedBundles(using hardware: any AudioTapHardware) {
+        let acquisitionIDs = bundles.values
+            .filter { $0.state == .retainedBundle }
+            .map(\.acquisitionID)
+            .sorted { $0.uuidString < $1.uuidString }
+        for acquisitionID in acquisitionIDs {
+            _ = teardown(acquisitionID, using: hardware)
         }
     }
 
@@ -883,112 +923,69 @@ private extension ProcessTapVolumeEngine {
         successfullyDestroyedOwnedIdentities.formIntersection(enumeratedIdentities)
 
         let activeObjectIDs = activeOwnedObjectIDs()
-        let currentOwnedRetryKeys = Set(ownedObjects.map { object in
-            AudioTeardownRetryKey(
-                operation: Self.destroyOperation(for: object),
-                objectID: object.id,
-                ownership: Self.ownedIdentity(object)
-            )
-        })
-        for key in Array(retryLedger.keys) {
-            guard case .owned = key.ownership,
-                  currentOwnedRetryKeys.contains(key) == false
-                    || activeObjectIDs.contains(key.objectID)
-            else {
-                continue
-            }
-            retryLedger.removeValue(forKey: key)
-        }
-
         let candidates = ownedObjects
             .filter { activeObjectIDs.contains($0.id) == false }
             .filter {
                 return successfullyDestroyedOwnedIdentities.contains(
                     Self.ownedInstanceIdentity($0)
                 ) == false
-                    && normalDestroyRetryRepresents($0) == false
+                    && bundleRepresents($0) == false
             }
             .sorted(by: Self.ownedObjectComesBefore)
 
+        var failures = discovery.failures
         for object in candidates {
-            let ownership = Self.ownedIdentity(object)
             let operation = Self.destroyOperation(for: object)
-            let retryKey = AudioTeardownRetryKey(
-                operation: operation,
-                objectID: object.id,
-                ownership: ownership
-            )
             let status = hardware.destroyOwnedObject(object)
             if status == noErr {
-                retryLedger.removeValue(forKey: retryKey)
                 successfullyDestroyedOwnedIdentities.insert(
                     Self.ownedInstanceIdentity(object)
                 )
                 continue
             }
 
-            let failure = AudioTeardownFailure(
+            failures.append(AudioTeardownFailure(
                 processObjectID: nil,
                 operation: operation,
                 objectID: object.id,
                 status: status
-            )
-            if var retry = retryLedger[retryKey] {
-                retry.status = status
-                retryLedger[retryKey] = retry
-            } else {
-                addRetry(
-                    failure: failure,
-                    ownership: ownership,
-                    payload: .destroyOwned(object)
-                )
-            }
+            ))
         }
-        return discovery.failures
+        return failures
     }
 
     @available(macOS 14.2, *)
-    func normalDestroyRetryRepresents(_ object: AudioOwnedObject) -> Bool {
-        retryLedger.values.contains { entry in
-            switch entry.payload {
-            case .destroyAggregate(let aggregate):
-                object.classID == kAudioAggregateDeviceClassID
-                    && object.id == aggregate.objectID
-                    && object.uid == aggregate.uid
-            case .destroyTap(let tap):
+    func bundleRepresents(_ object: AudioOwnedObject) -> Bool {
+        bundles.values.contains { bundle in
+            if let aggregate = bundle.resources.aggregate,
+               object.classID == kAudioAggregateDeviceClassID,
+               object.id == aggregate.objectID,
+               object.uid == aggregate.uid {
+                return true
+            }
+            return bundle.resources.taps.contains { tap in
                 object.classID == kAudioTapClassID
                     && object.id == tap.objectID
                     && object.uid == tap.uuid.uuidString
-            default:
-                false
             }
         }
     }
 
-    func retryFailures() -> [AudioTeardownFailure] {
-        retryLedger.values.sorted {
-            if $0.key.operation.rawValue == $1.key.operation.rawValue {
-                if $0.key.objectID == $1.key.objectID {
-                    return $0.key.ownership.sortKey < $1.key.ownership.sortKey
+    func bundleFailures() -> [AudioTeardownFailure] {
+        bundles.values
+            .sorted { $0.acquisitionID.uuidString < $1.acquisitionID.uuidString }
+            .flatMap { bundle in
+                bundle.failures.sorted {
+                    if $0.operation.rawValue == $1.operation.rawValue {
+                        return $0.objectID < $1.objectID
+                    }
+                    return $0.operation.rawValue < $1.operation.rawValue
                 }
-                return $0.key.objectID < $1.key.objectID
             }
-            return $0.key.operation.rawValue < $1.key.operation.rawValue
-        }.map { entry in
-            AudioTeardownFailure(
-                processObjectID: entry.processObjectID,
-                operation: entry.key.operation,
-                objectID: entry.key.objectID,
-                status: entry.status
-            )
-        }
     }
 
     func refreshLifetimeLease() {
-        let ledgerRetainsDSPContext = retryLedger.values.contains {
-            $0.payload.retainsDSPContext
-        }
-        if sessions.isEmpty && ledgerRetainsDSPContext == false {
+        if bundles.isEmpty {
             lifetimeLease = nil
         } else {
             lifetimeLease = self
@@ -996,10 +993,42 @@ private extension ProcessTapVolumeEngine {
     }
 
     func activeOwnedObjectIDs() -> Set<AudioObjectID> {
-        Set(sessions.values.flatMap { session in
-            session.resources.taps.map(\.objectID)
-                + [session.resources.aggregate?.objectID].compactMap { $0 }
+        Set(bundles.values.flatMap { bundle in
+            bundle.resources.taps.map(\.objectID)
+                + [bundle.resources.aggregate?.objectID].compactMap { $0 }
         })
+    }
+
+    var nonReleasedBundleCount: Int {
+        bundles.values.filter { $0.state != .released }.count
+    }
+
+    func transitionBundle(
+        _ acquisitionID: UUID,
+        to newState: AudioAcquisitionBundle.State
+    ) {
+        guard let oldState = bundles[acquisitionID]?.state else { return }
+        let isLegal = switch (oldState, newState) {
+        case (.preparing, .active),
+             (.preparing, .retainedBundle),
+             (.preparing, .released),
+             (.active, .retainedBundle),
+             (.active, .released),
+             (.retainedBundle, .released):
+            true
+        default:
+            oldState == newState
+        }
+        precondition(isLegal, "Illegal audio acquisition state transition")
+        bundles[acquisitionID]?.state = newState
+        checkCapacityInvariant()
+    }
+
+    func checkCapacityInvariant() {
+        precondition(
+            nonReleasedBundleCount <= retryLedgerLimit,
+            "Audio acquisition capacity exceeded"
+        )
     }
 
     func ensureCurrent(
@@ -1131,13 +1160,6 @@ private extension ProcessTapVolumeEngine {
     }
 
     @available(macOS 14.2, *)
-    static func ownedIdentity(
-        _ object: AudioOwnedObject
-    ) -> AudioTeardownOwnershipIdentity {
-        .owned(classID: object.classID, uid: object.uid)
-    }
-
-    @available(macOS 14.2, *)
     static func ownedInstanceIdentity(
         _ object: AudioOwnedObject
     ) -> AudioOwnedObjectInstanceIdentity {
@@ -1187,8 +1209,7 @@ private extension ProcessTapVolumeEngine {
 private struct ProcessTapSession {
     let processObjectID: AudioObjectID
     let generation: UInt64
-    let resources: ProcessTapSessionResources
-    let context: ProcessTapDSPContext
+    let acquisitionID: UUID
 }
 
 private struct ProcessTapSessionResources {
@@ -1197,10 +1218,34 @@ private struct ProcessTapSessionResources {
     var taps: [AudioTapResource] = []
     var mutedTaps: [AudioTapResource] = []
     var aggregate: AudioAggregateResource?
-    var aggregateAcquisitionID: UUID?
     var ioProc: AudioIOProcResource?
-    var ioProcAcquisitionID: UUID?
     var context: ProcessTapDSPContext?
+}
+
+private struct AudioAcquisitionBundle {
+    enum State {
+        case preparing
+        case active
+        case retainedBundle
+        case released
+    }
+
+    enum Stage {
+        case restoreOriginalAudio
+        case stopIOProc
+        case destroyIOProc
+        case destroyAggregate
+        case waitForAggregateDisappearance
+        case destroyTaps
+        case released
+    }
+
+    let acquisitionID: UUID
+    var resources: ProcessTapSessionResources
+    var state: State
+    var stage: Stage
+    var didStartIOProc: Bool
+    var failures: [AudioTeardownFailure]
 }
 
 private struct ProcessTapPreparationAbort: Swift.Error {
@@ -1211,95 +1256,10 @@ private struct ProcessTapPreparationAbort: Swift.Error {
     }
 }
 
-private struct AudioTeardownRetryKey: Hashable {
-    let operationName: String
-    let objectID: AudioObjectID
-    let ownership: AudioTeardownOwnershipIdentity
-
-    init(
-        operation: AudioHALOperation,
-        objectID: AudioObjectID,
-        ownership: AudioTeardownOwnershipIdentity
-    ) {
-        operationName = operation.rawValue
-        self.objectID = objectID
-        self.ownership = ownership
-    }
-
-    var operation: AudioHALOperation {
-        guard let operation = AudioHALOperation(rawValue: operationName) else {
-            preconditionFailure("Unknown HAL operation in teardown ledger")
-        }
-        return operation
-    }
-
-    var priority: Int {
-        switch operation {
-        case .setData:
-            -1
-        case .stopDevice:
-            0
-        case .destroyIOProc:
-            1
-        case .destroyAggregate:
-            2
-        case .destroyTap:
-            3
-        default:
-            4
-        }
-    }
-}
-
-private enum AudioTeardownOwnershipIdentity: Hashable {
-    case ioProc(UUID)
-    case aggregate(UUID)
-    case tap(UUID)
-    case owned(classID: AudioClassID, uid: String)
-
-    var sortKey: String {
-        switch self {
-        case .ioProc(let id):
-            "0-\(id.uuidString)"
-        case .aggregate(let id):
-            "1-\(id.uuidString)"
-        case .tap(let id):
-            "2-\(id.uuidString)"
-        case .owned(let classID, let uid):
-            "3-\(classID)-\(uid)"
-        }
-    }
-}
-
 private struct AudioOwnedObjectInstanceIdentity: Hashable {
     let objectID: AudioObjectID
     let classID: AudioClassID
     let uid: String
-}
-
-private struct AudioTeardownRetryEntry {
-    let key: AudioTeardownRetryKey
-    let processObjectID: AudioObjectID?
-    var status: OSStatus
-    let payload: AudioTeardownRetryPayload
-}
-
-private enum AudioTeardownRetryPayload {
-    case setTapUnmuted(AudioTapResource)
-    case stop(AudioIOProcResource, ProcessTapDSPContext)
-    case destroyIOProc(AudioIOProcResource, ProcessTapDSPContext)
-    case destroyAggregate(AudioAggregateResource)
-    case destroyTap(AudioTapResource)
-    case destroyOwned(AudioOwnedObject)
-
-    var retainsDSPContext: Bool {
-        switch self {
-        case .stop, .destroyIOProc:
-            true
-        case .setTapUnmuted, .destroyAggregate, .destroyTap, .destroyOwned:
-            false
-        }
-    }
 }
 
 private final class ProcessTapGenerationRegistry: @unchecked Sendable {
