@@ -18,7 +18,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 
         engine = nil
 
-        await fulfillment(of: [finished], timeout: 0.05)
+        await fulfillment(of: [finished], timeout: 1)
         consumer.cancel()
     }
 

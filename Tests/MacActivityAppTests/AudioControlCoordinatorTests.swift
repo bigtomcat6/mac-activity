@@ -230,6 +230,39 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
     }
 
+    func testDisappearingObjectRetiresBeforeStopAndReuseStartsAfterTombstone() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        await fixture.engine.blockApplyReturn(1)
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.engine.waitUntilApplyReturnCount(1)
+        await fixture.engine.blockStops()
+        fixture.processProvider.processes = []
+        let token = fixture.monitor.emit([.processList])
+        await fixture.engine.waitUntilStopCount(1)
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        fixture.coordinator.setProcessVolume(0.8, for: 11)
+        await fixture.engine.resumeApplyReturns()
+        await fixture.engine.resumeStops()
+        await fixture.coordinator.testingWaitForReconciliation(token: token)
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.engine.applyCount, 1)
+        XCTAssertNil(fixture.store.savedPreferences.audioProcessProfiles["com.example.music"])
+
+        fixture.processProvider.processes = [.music(objectID: 11)]
+        await fixture.emit([.processList])
+        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.applyCount, 2)
+        XCTAssertGreaterThan(
+            fixture.engine.plans.last!.generation,
+            fixture.engine.stoppedGenerations.last!
+        )
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.6)
+    }
+
     func testReplacementObjectRestoresSavedBundleProfile() async {
         let profile = AudioProcessProfile(
             bundleIdentifier: "com.example.music",
@@ -285,6 +318,67 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
     }
 
+    func testEngineSnapshotAckWaitsForExactSnapshotOrder() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        let unrelated = ProcessTapSessionSnapshot(
+            processObjectID: 11,
+            generation: 1,
+            state: .preparing,
+            error: nil,
+            commandSequence: 10,
+            emissionOrdinal: 0
+        )
+        let target = ProcessTapSessionSnapshot(
+            processObjectID: 11,
+            generation: 1,
+            state: .running,
+            error: nil,
+            commandSequence: 20,
+            emissionOrdinal: 0
+        )
+        var acknowledged = false
+        let started = expectation(description: "exact snapshot waiter started")
+        let waiter = Task { @MainActor in
+            started.fulfill()
+            await fixture.coordinator.testingWaitForEngineSnapshot(
+                processObjectID: target.processObjectID,
+                order: target.order
+            )
+            acknowledged = true
+        }
+        await fulfillment(of: [started], timeout: 1)
+
+        await fixture.emitEngine(unrelated)
+        XCTAssertFalse(acknowledged)
+        await fixture.emitEngine(target)
+        await waiter.value
+        XCTAssertTrue(acknowledged)
+    }
+
+    func testReconciliationAckWaitsForTargetTokenBehindQueuedEvent() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        _ = fixture.monitor.emit([.defaultOutputDevice])
+        fixture.processProvider.processes = []
+        await fixture.engine.blockStops()
+        let targetToken = fixture.monitor.emit([.processList])
+        await fixture.engine.waitUntilStopCount(1)
+        var acknowledged = false
+        let started = expectation(description: "target token waiter started")
+        let waiter = Task { @MainActor in
+            started.fulfill()
+            await fixture.coordinator.testingWaitForReconciliation(token: targetToken)
+            acknowledged = true
+        }
+        await fulfillment(of: [started], timeout: 1)
+
+        XCTAssertFalse(acknowledged)
+        await fixture.engine.resumeStops()
+        await waiter.value
+        XCTAssertTrue(acknowledged)
+    }
+
     func testHigherOrderSnapshotFromLowerGenerationIsRejected() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
@@ -309,11 +403,14 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         await fixture.engine.blockApplyReturn(1)
-        let marker = fixture.coordinator.testingEngineSnapshotMarker
 
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.engine.waitUntilApplyReturnCount(1)
-        await fixture.coordinator.testingWaitForEngineSnapshot(after: marker)
+        let emitted = fixture.engine.lastProducedSnapshot!
+        await fixture.coordinator.testingWaitForEngineSnapshot(
+            processObjectID: emitted.processObjectID,
+            order: emitted.order
+        )
 
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
         await fixture.engine.resumeApplyReturns()
@@ -329,9 +426,11 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
         let accepted = fixture.coordinator.snapshot.processes[0].session
-        let marker = fixture.coordinator.testingEngineSnapshotMarker
         fixture.engine.deliverDeferredObservers()
-        await fixture.coordinator.testingWaitForEngineSnapshot(after: marker)
+        await fixture.coordinator.testingWaitForEngineSnapshot(
+            processObjectID: accepted.processObjectID,
+            order: accepted.order
+        )
 
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, accepted)
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
@@ -476,6 +575,80 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.plans.last?.selectedTargetUIDs, ["USB"])
     }
 
+    func testSavedMissingRouteImmediatelyBuildsSelectedUnavailableOption() async {
+        let profile = AudioProcessProfile(
+            bundleIdentifier: "com.example.music",
+            volume: 0.5,
+            route: .explicit(targetDeviceUIDs: ["Missing"])
+        )
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            savedProfiles: [profile.bundleIdentifier: profile]
+        )
+
+        await fixture.coordinator.start()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].routeOptions.first(where: {
+                $0.uid == "Missing"
+            }),
+            AudioRouteDeviceOption(
+                uid: "Missing",
+                name: "Missing",
+                isAvailable: false,
+                isSelected: true
+            )
+        )
+    }
+
+    func testUserRouteIntentImmediatelyRebuildsAvailableAndMissingSelections() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB", "Missing"]),
+            for: 11
+        )
+
+        let options = fixture.coordinator.snapshot.processes[0].routeOptions
+        XCTAssertEqual(options.first(where: { $0.uid == "USB" })?.isSelected, true)
+        XCTAssertEqual(
+            options.first(where: { $0.uid == "Missing" }),
+            AudioRouteDeviceOption(
+                uid: "Missing",
+                name: "Missing",
+                isAvailable: false,
+                isSelected: true
+            )
+        )
+        await fixture.coordinator.testingWaitUntilIdle()
+    }
+
+    func testFailedAndResetRouteWritesRebuildConfirmedRouteOptions() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.engine.nextError = .unsupportedFormat
+
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["BuiltIn"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        var row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.route, .explicit(targetDeviceUIDs: ["USB"]))
+        XCTAssertEqual(row.routeOptions.first(where: { $0.uid == "USB" })?.isSelected, true)
+        XCTAssertEqual(row.routeOptions.first(where: { $0.uid == "BuiltIn" })?.isSelected, false)
+
+        fixture.engine.nextError = nil
+        fixture.coordinator.reset(processObjectID: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.route, .followOriginal)
+        XCTAssertEqual(row.routeOptions.first(where: { $0.uid == "BuiltIn" })?.isSelected, true)
+        XCTAssertEqual(row.routeOptions.first(where: { $0.uid == "USB" })?.isSelected, false)
+    }
+
     func testLossOfAllExplicitTargetsStopsTapAndRetainsUnavailableRoute() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
@@ -587,6 +760,72 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.processProvider.callCount, 0)
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.engine.applyCount, 0)
+    }
+
+    func testUnsupportedOrdinaryMonitorChangesNeverEnumerateOrObserveProcesses() async {
+        let fixture = CoordinatorFixture(availability: .unsupported)
+        await fixture.coordinator.start()
+
+        await fixture.emit([
+            .processList,
+            .defaultOutputDevice,
+            .process(11, .outputDevices),
+        ])
+
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+    }
+
+    func testStartUsesCleanupMonitorRefreshObserveRestoreOrder() async {
+        let profile = AudioProcessProfile(
+            bundleIdentifier: "com.example.music",
+            volume: 0.5
+        )
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            savedProfiles: [profile.bundleIdentifier: profile]
+        )
+
+        await fixture.coordinator.start()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(
+            fixture.lifecycle.events.prefix(7),
+            [
+                "engine.cleanup",
+                "monitor.start",
+                "routes.read",
+                "devices.read",
+                "processes.read",
+                "monitor.observe",
+                "engine.apply",
+            ]
+        )
+    }
+
+    func testChangeBufferedWhileStartingMonitorIsReconciled() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.processProvider.scriptedProcesses = [
+            [.music(objectID: 11)],
+            [.music(objectID: 22)],
+        ]
+        fixture.deviceProvider.onRouteRead = {
+            fixture.monitor.emit([.processList])
+        }
+        let reconciled = expectation(description: "startup change reconciled")
+        let cancellable = fixture.coordinator.snapshotPublisher
+            .filter { $0.processes.map(\.id) == [22] }
+            .first()
+            .sink { _ in reconciled.fulfill() }
+
+        await fixture.coordinator.start()
+        await fulfillment(of: [reconciled], timeout: 0.1)
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [22])
+        XCTAssertEqual(fixture.engine.stoppedProcessObjectIDs, [11])
+        withExtendedLifetime(cancellable) {}
     }
 
     func testMissingSelectedRouteRemainsVisibleAsUnavailableOption() async {
@@ -726,6 +965,27 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.mute.value, true)
     }
 
+    func testFailedDeviceWritesRestoreLatestRefreshInsteadOfCapturedProperties() async {
+        let delay = ControlledAudioDelay()
+        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        await fixture.coordinator.start()
+        fixture.deviceProvider.volumeWriteError = FixtureError.writeFailed
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        await delay.waitUntilCallCount(1)
+        fixture.deviceProvider.snapshotVolume = 0.61
+        fixture.coordinator.retryDevice("BuiltIn")
+        await delay.resumeAll()
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.61)
+
+        fixture.deviceProvider.muteWriteError = FixtureError.writeFailed
+        fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
+        fixture.deviceProvider.snapshotMute = true
+        fixture.coordinator.retryDevice("BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.mute.value, true)
+    }
+
     func testRapidMuteAndProcessIntentsSkipCanceledWorkBeforeHAL() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
@@ -785,7 +1045,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         cancellable = nil
         fixture = nil
-        await fulfillment(of: [terminated], timeout: 0.05)
+        await fulfillment(of: [terminated], timeout: 1)
 
         XCTAssertNil(cancellable)
         XCTAssertNil(weakCoordinator)
@@ -818,6 +1078,8 @@ private final class CoordinatorFixture {
         store.savedPreferences.audioProcessProfiles = savedProfiles
         monitor.lifecycle = lifecycle
         engine.lifecycle = lifecycle
+        deviceProvider.lifecycle = lifecycle
+        processProvider.lifecycle = lifecycle
         let preferences = PreferencesController(
             store: store,
             launchService: NoopLaunchAtLoginService()
@@ -837,15 +1099,16 @@ private final class CoordinatorFixture {
     }
 
     func emit(_ changes: Set<AudioSystemChange>) async {
-        let marker = coordinator.testingReconciliationMarker
-        monitor.emit(changes)
-        await coordinator.testingWaitForReconciliation(after: marker)
+        let token = monitor.emit(changes)
+        await coordinator.testingWaitForReconciliation(token: token)
     }
 
     func emitEngine(_ snapshot: ProcessTapSessionSnapshot) async {
-        let marker = coordinator.testingEngineSnapshotMarker
         engine.emit(snapshot)
-        await coordinator.testingWaitForEngineSnapshot(after: marker)
+        await coordinator.testingWaitForEngineSnapshot(
+            processObjectID: snapshot.processObjectID,
+            order: snapshot.order
+        )
     }
 
     private static func validatedPlanner(devices: [AudioRouteDevice]) -> AudioRoutePlanner {
@@ -888,8 +1151,11 @@ private final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteD
     var confirmedMute = false
     var confirmedVolume = 0.5
     var snapshotVolume = 0.5
+    var snapshotMute = false
     private(set) var volumeWrites: [Double] = []
     private(set) var muteWrites: [Bool] = []
+    var lifecycle: LifecycleRecorder?
+    var onRouteRead: (@MainActor () -> Void)?
 
     var routeDescriptors: [AudioRouteDevice] = [
         makeRouteDevice(id: 10, uid: "BuiltIn"),
@@ -897,12 +1163,13 @@ private final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteD
     ]
 
     func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
-        [.init(
+        lifecycle?.events.append("devices.read")
+        return [.init(
             id: "BuiltIn",
             objectID: 10,
             name: "Speakers",
             volume: .value(snapshotVolume, isWritable: true),
-            mute: .value(false, isWritable: true)
+            mute: .value(snapshotMute, isWritable: true)
         )]
     }
 
@@ -920,7 +1187,11 @@ private final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteD
         if let muteWriteError { throw muteWriteError }
         return confirmedMute
     }
-    func routeDevices() throws -> [AudioRouteDevice] { routeDescriptors }
+    func routeDevices() throws -> [AudioRouteDevice] {
+        lifecycle?.events.append("routes.read")
+        onRouteRead?()
+        return routeDescriptors
+    }
 
     func setAlive(_ isAlive: Bool, uid: String) {
         routeDescriptors = routeDescriptors.map { device in
@@ -980,9 +1251,15 @@ private final class ProcessProviderFake: AudioProcessProviding {
     private(set) var callCount = 0
     var bundleIdentifier: String? = "com.example.music"
     var processes: [AudioProcessEntry]?
+    var scriptedProcesses: [[AudioProcessEntry]] = []
+    var lifecycle: LifecycleRecorder?
 
     func audibleOutputProcesses() -> [AudioProcessEntry] {
         callCount += 1
+        lifecycle?.events.append("processes.read")
+        if scriptedProcesses.isEmpty == false {
+            return scriptedProcesses.removeFirst()
+        }
         return processes ?? [.init(
             processObjectID: 11,
             processIdentifier: 101,
@@ -1019,6 +1296,9 @@ private final class MonitorFake: AudioSystemMonitoring, @unchecked Sendable {
     private(set) var observedProcessObjectIDs: Set<AudioObjectID> = []
     var startError: Error?
     var observationError: Error?
+    var changesOnNextObservation: Set<AudioSystemChange>?
+    private var isStarted = false
+    private var nextEmissionToken: UInt64 = 0
 
     init() {
         let stream = AsyncStream<Set<AudioSystemChange>>.makeStream()
@@ -1028,18 +1308,34 @@ private final class MonitorFake: AudioSystemMonitoring, @unchecked Sendable {
 
     func start() throws {
         startCount += 1
+        lifecycle?.events.append("monitor.start")
         if let startError { throw startError }
+        isStarted = true
     }
     func updateObservedObjects(
         deviceIDs: Set<AudioDeviceID>,
         processObjectIDs: Set<AudioObjectID>
     ) throws {
+        lifecycle?.events.append("monitor.observe")
         if let observationError { throw observationError }
         observedDeviceIDs = deviceIDs
         observedProcessObjectIDs = processObjectIDs
+        if let changesOnNextObservation {
+            self.changesOnNextObservation = nil
+            _ = emit(changesOnNextObservation)
+        }
     }
-    func stop() { lifecycle?.events.append("monitor.stop") }
-    func emit(_ changes: Set<AudioSystemChange>) { continuation.yield(changes) }
+    func stop() {
+        isStarted = false
+        lifecycle?.events.append("monitor.stop")
+    }
+    @discardableResult
+    func emit(_ changes: Set<AudioSystemChange>) -> UInt64 {
+        guard isStarted else { return 0 }
+        nextEmissionToken &+= 1
+        continuation.yield(changes)
+        return nextEmissionToken
+    }
 }
 
 private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable {
@@ -1051,6 +1347,8 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     private(set) var plans: [AudioRoutePlan] = []
     private(set) var gains: [ProcessGainState] = []
     private(set) var stoppedProcessObjectIDs: [AudioObjectID] = []
+    private(set) var stoppedGenerations: [UInt64] = []
+    private(set) var lastProducedSnapshot: ProcessTapSessionSnapshot?
     var nextError: ProcessTapEngineError?
     var scriptedApplyResults: [(ProcessTapSessionState, ProcessTapEngineError?)] = []
     var scriptedStopResults: [(ProcessTapSessionState, ProcessTapEngineError?)] = []
@@ -1069,6 +1367,7 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     }
 
     func apply(plan: AudioRoutePlan, gain: ProcessGainState) async -> ProcessTapSessionSnapshot {
+        lifecycle?.events.append("engine.apply")
         applyCount += 1
         authorizationAttemptCount += 1
         plans.append(plan)
@@ -1086,6 +1385,7 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
             commandSequence: nextCommandSequence,
             emissionOrdinal: 1
         )
+        lastProducedSnapshot = snapshot
         if deferredObserverCalls.contains(applyCount) {
             deferredObservers.append(snapshot)
         } else {
@@ -1097,6 +1397,7 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     func updateGain(_ gain: ProcessGainState, for processObjectID: AudioObjectID) async {}
     func stop(processObjectID: AudioObjectID, generation: UInt64) async -> ProcessTapSessionSnapshot {
         stoppedProcessObjectIDs.append(processObjectID)
+        stoppedGenerations.append(generation)
         await stopGate.enter()
         let scripted = scriptedStopResults.isEmpty
             ? (ProcessTapSessionState.idle, nil)
@@ -1116,6 +1417,7 @@ private final class EngineFake: ProcessTapVolumeControlling, @unchecked Sendable
     func stopAll() async { lifecycle?.events.append("engine.stopAll") }
     func cleanupOrphans() async -> [AudioTeardownFailure] {
         cleanupCount += 1
+        lifecycle?.events.append("engine.cleanup")
         return []
     }
     func emit(_ snapshot: ProcessTapSessionSnapshot) { continuation.yield(snapshot) }
