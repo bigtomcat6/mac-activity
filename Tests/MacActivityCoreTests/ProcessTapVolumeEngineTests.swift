@@ -54,6 +54,53 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
     }
 
+    func testDiscardedPublishConsumesNoOrdinalAndDoesNotMutate() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(onSessionSnapshot: recorder.record)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        recorder.clear()
+        fixture.hardware.clearCalls()
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 2
+        )
+
+        let stale = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(stale.error, .routeSuperseded)
+        XCTAssertEqual(stale.emissionOrdinal, 0)
+        XCTAssertTrue(recorder.snapshots.isEmpty)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+
+        let stopped = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 2
+        )
+        XCTAssertEqual(stopped.state, .idle)
+    }
+
+    func testLegacySnapshotInitializerUsesDeterministicOrder() {
+        let snapshot = ProcessTapSessionSnapshot(
+            processObjectID: 77,
+            generation: 3,
+            state: .failed,
+            error: .routeSuperseded
+        )
+
+        XCTAssertEqual(snapshot.commandSequence, 0)
+        XCTAssertEqual(snapshot.emissionOrdinal, 0)
+        XCTAssertEqual(
+            snapshot.order,
+            ProcessTapSnapshotOrder(commandSequence: 0, emissionOrdinal: 0)
+        )
+    }
+
     func testCallbackProgressAtGlobalDeadlineIsNeverAccepted() {
         let deadline = DispatchTime(uptimeNanoseconds: 1_000_000)
         XCTAssertFalse(ProcessTapVolumeEngine.callbackProgressIsReady(

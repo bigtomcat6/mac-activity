@@ -68,6 +68,22 @@ public struct ProcessTapSessionSnapshot: Equatable, Sendable {
         self.commandSequence = commandSequence
         self.emissionOrdinal = emissionOrdinal
     }
+
+    public init(
+        processObjectID: AudioObjectID,
+        generation: UInt64,
+        state: ProcessTapSessionState,
+        error: ProcessTapEngineError?
+    ) {
+        self.init(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: state,
+            error: error,
+            commandSequence: 0,
+            emissionOrdinal: 0
+        )
+    }
 }
 
 public struct AudioTeardownFailure: Equatable, Sendable {
@@ -141,6 +157,10 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var lifetimeLease: ProcessTapVolumeEngine?
     #if DEBUG
     private var activeSessionMutationSupersessionForTesting: (
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    )?
+    private var snapshotPublishSupersessionForTesting: (
         processObjectID: AudioObjectID,
         generation: UInt64
     )?
@@ -398,6 +418,18 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             )
         }
     }
+
+    func supersedeNextSnapshotPublishForTesting(
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) async {
+        await enqueue { [self] in
+            snapshotPublishSupersessionForTesting = (
+                processObjectID,
+                generation
+            )
+        }
+    }
     #endif
 }
 
@@ -464,14 +496,13 @@ private extension ProcessTapVolumeEngine {
                 )
             }
             if didUpdateActiveSession {
-                let running = snapshot(
+                guard let running = publishSnapshot(
                     processObjectID: plan.processObjectID,
                     generation: plan.generation,
                     state: .running,
                     error: nil,
                     token: token
-                )
-                guard publish(running, token: token) else {
+                ) else {
                     return snapshot(
                         processObjectID: plan.processObjectID,
                         generation: plan.generation,
@@ -504,15 +535,23 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        if let current = sessions.removeValue(forKey: plan.processObjectID) {
-            let rebuilding = snapshot(
+        if let current = sessions[plan.processObjectID] {
+            guard publishSnapshot(
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 state: .rebuilding,
                 error: nil,
                 token: token
-            )
-            _ = publish(rebuilding, token: token)
+            ) != nil else {
+                return snapshot(
+                    processObjectID: plan.processObjectID,
+                    generation: plan.generation,
+                    state: .failed,
+                    error: .routeSuperseded,
+                    token: token
+                )
+            }
+            sessions.removeValue(forKey: plan.processObjectID)
             _ = teardownRecordingProgress(
                 current.acquisitionID,
                 using: hardware
@@ -557,14 +596,21 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        let preparing = snapshot(
+        guard publishSnapshot(
             processObjectID: plan.processObjectID,
             generation: plan.generation,
             state: .preparing,
             error: nil,
             token: token
-        )
-        _ = publish(preparing, token: token)
+        ) != nil else {
+            return snapshot(
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                state: .failed,
+                error: .routeSuperseded,
+                token: token
+            )
+        }
         return prepare(
             plan: plan,
             gain: gain,
@@ -703,13 +749,6 @@ private extension ProcessTapVolumeEngine {
                 generation: plan.generation,
                 acquisitionID: acquisitionID
             )
-            let running = snapshot(
-                processObjectID: plan.processObjectID,
-                generation: plan.generation,
-                state: .running,
-                error: nil,
-                token: token
-            )
             let installed = generations.performIfCurrent(token) { [self] in
                 transitionBundle(acquisitionID, to: .active)
                 sessions[plan.processObjectID] = session
@@ -718,6 +757,13 @@ private extension ProcessTapVolumeEngine {
             guard installed else {
                 throw ProcessTapPreparationAbort(.routeSuperseded)
             }
+            let running = snapshot(
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                state: .running,
+                error: nil,
+                token: token
+            )
             onSessionSnapshot(running)
             return running
         } catch {
@@ -775,14 +821,21 @@ private extension ProcessTapVolumeEngine {
             )
         }
         guard let session = sessions[processObjectID] else {
-            let idle = snapshot(
+            guard let idle = publishSnapshot(
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .idle,
                 error: nil,
                 token: token
-            )
-            _ = publish(idle, token: token)
+            ) else {
+                return snapshot(
+                    processObjectID: processObjectID,
+                    generation: generation,
+                    state: .failed,
+                    error: .routeSuperseded,
+                    token: token
+                )
+            }
             return idle
         }
         guard session.generation <= generation else {
@@ -795,14 +848,21 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        let stopping = snapshot(
+        guard publishSnapshot(
             processObjectID: processObjectID,
             generation: generation,
             state: .stopping,
             error: nil,
             token: token
-        )
-        _ = publish(stopping, token: token)
+        ) != nil else {
+            return snapshot(
+                processObjectID: processObjectID,
+                generation: generation,
+                state: .failed,
+                error: .routeSuperseded,
+                token: token
+            )
+        }
         sessions.removeValue(forKey: processObjectID)
         let failures = teardownRecordingProgress(
             session.acquisitionID,
@@ -818,25 +878,33 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
-        let result: ProcessTapSessionSnapshot
+        let resultState: ProcessTapSessionState
+        let resultError: ProcessTapEngineError?
         if let failure = failures.first {
-            result = snapshot(
+            resultState = .failed
+            resultError = map(
+                operation: failure.operation,
+                status: failure.status
+            )
+        } else {
+            resultState = .idle
+            resultError = nil
+        }
+        guard let result = publishSnapshot(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: resultState,
+            error: resultError,
+            token: token
+        ) else {
+            return snapshot(
                 processObjectID: processObjectID,
                 generation: generation,
                 state: .failed,
-                error: map(operation: failure.operation, status: failure.status),
-                token: token
-            )
-        } else {
-            result = snapshot(
-                processObjectID: processObjectID,
-                generation: generation,
-                state: .idle,
-                error: nil,
+                error: .routeSuperseded,
                 token: token
             )
         }
-        _ = publish(result, token: token)
         return result
     }
 
@@ -1388,24 +1456,50 @@ private extension ProcessTapVolumeEngine {
         generation: UInt64,
         token: ProcessTapGenerationRegistry.Token
     ) -> ProcessTapSessionSnapshot {
-        let failed = snapshot(
+        guard let failed = publishSnapshot(
             processObjectID: processObjectID,
             generation: generation,
             state: .failed,
             error: error,
             token: token
-        )
-        _ = publish(failed, token: token)
+        ) else {
+            return snapshot(
+                processObjectID: processObjectID,
+                generation: generation,
+                state: .failed,
+                error: .routeSuperseded,
+                token: token
+            )
+        }
         return failed
     }
 
-    func publish(
-        _ snapshot: ProcessTapSessionSnapshot,
+    func publishSnapshot(
+        processObjectID: AudioObjectID,
+        generation: UInt64,
+        state: ProcessTapSessionState,
+        error: ProcessTapEngineError?,
         token: ProcessTapGenerationRegistry.Token
-    ) -> Bool {
-        guard generations.isCurrent(token) else { return false }
+    ) -> ProcessTapSessionSnapshot? {
+        #if DEBUG
+        if let supersession = snapshotPublishSupersessionForTesting {
+            snapshotPublishSupersessionForTesting = nil
+            _ = generations.register(
+                processObjectID: supersession.processObjectID,
+                generation: supersession.generation
+            )
+        }
+        #endif
+        guard generations.isCurrent(token) else { return nil }
+        let snapshot = snapshot(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: state,
+            error: error,
+            token: token
+        )
         onSessionSnapshot(snapshot)
-        return true
+        return snapshot
     }
 
     func snapshot(
