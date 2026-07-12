@@ -327,6 +327,21 @@ private extension ProcessTapVolumeEngine {
             )
         }
 
+        if let current = sessions[plan.processObjectID],
+           current.generation == plan.generation {
+            bundles[current.acquisitionID]?.resources.context?.setTargetGain(
+                gain.targetGain
+            )
+            let running = snapshot(
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                state: .running,
+                error: nil
+            )
+            _ = publish(running, token: token)
+            return running
+        }
+
         guard runtimeRejections.contains(plan.topologyFingerprint) == false else {
             return publishFailure(
                 .unsupportedFormat,
@@ -344,21 +359,6 @@ private extension ProcessTapVolumeEngine {
                 state: .failed,
                 error: .routeSuperseded
             )
-        }
-
-        if let current = sessions[plan.processObjectID],
-           current.generation == plan.generation {
-            bundles[current.acquisitionID]?.resources.context?.setTargetGain(
-                gain.targetGain
-            )
-            let running = snapshot(
-                processObjectID: plan.processObjectID,
-                generation: plan.generation,
-                state: .running,
-                error: nil
-            )
-            _ = publish(running, token: token)
-            return running
         }
 
         if let current = sessions.removeValue(forKey: plan.processObjectID) {

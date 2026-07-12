@@ -1844,6 +1844,47 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertEqual(fixture.scheduler.pendingCount, 0)
     }
 
+    func testRuntimeRejectionDoesNotBlockSameGenerationActiveSessionUpdate() async throws {
+        let fixture = EngineFixture()
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        let first = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState(volume: 0.6)
+        )
+        let context = try XCTUnwrap(fixture.hardware.lastContext)
+        XCTAssertEqual(first.state, .running)
+
+        fixture.hardware.aggregateTopologyError = .unsupportedTopology
+        let rejected = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 1,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(rejected.error, .unsupportedFormat)
+
+        fixture.hardware.aggregateTopologyError = nil
+        fixture.hardware.clearCalls()
+        let updated = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState(volume: 0.2)
+        )
+
+        XCTAssertEqual(updated.state, .running)
+        XCTAssertNil(updated.error)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        let frameCount = 1_440
+        let storage = AudioBufferListTestStorage.interleavedStereo(
+            input: Array(repeating: 1, count: frameCount * 2),
+            outputFrameCount: frameCount
+        )
+        storage.process(with: context)
+        let lastSample = try XCTUnwrap(storage.outputSamples.last)
+        XCTAssertEqual(lastSample, 0.2, accuracy: 0.000_001)
+    }
+
     func testEveryDeterministicRuntimeCompatibilityFailureIsCached() async {
         let streamUsageFailures: [AudioIOProcStreamUsageError] = [
             .propertyMissing,
