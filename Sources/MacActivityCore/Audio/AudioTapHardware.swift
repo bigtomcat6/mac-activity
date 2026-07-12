@@ -277,17 +277,11 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         guard hal.hasProperty(objectID: ioProc.aggregateDeviceID, address: address) else {
             throw AudioIOProcStreamUsageError.propertyMissing
         }
-        do {
-            guard try hal.isPropertySettable(
-                objectID: ioProc.aggregateDeviceID,
-                address: address
-            ) else {
-                throw AudioIOProcStreamUsageError.propertyNotSettable
-            }
-        } catch let error as AudioIOProcStreamUsageError {
-            throw error
-        } catch {
-            throw AudioIOProcStreamUsageError.writeFailed(rawStatus(from: error) ?? -1)
+        guard try hal.isPropertySettable(
+            objectID: ioProc.aggregateDeviceID,
+            address: address
+        ) else {
+            throw AudioIOProcStreamUsageError.propertyNotSettable
         }
         do {
             try hal.writeIOProcStreamUsage(

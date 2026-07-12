@@ -87,6 +87,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var aggregateTopologyError: AudioAggregateTopologyError?
     var stableTopologyFailure: AudioTapHardwareError?
     var streamUsageError: AudioIOProcStreamUsageError?
+    var streamUsageHALError: AudioHALError?
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
     var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
@@ -373,6 +374,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         for ioProc: AudioIOProcResource
     ) throws -> [UInt32] {
         record(.configureInputStreamUsage(usage))
+        if let streamUsageHALError { throw streamUsageHALError }
         if let streamUsageError { throw streamUsageError }
         try throwIfNeeded(
             at: .configureInputStreamUsage,

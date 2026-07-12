@@ -1605,10 +1605,6 @@ private extension ProcessTapVolumeEngine {
         )
     }
 
-    func status(from error: Swift.Error) -> OSStatus {
-        (error as? AudioHALError)?.status ?? kAudioHardwareUnspecifiedError
-    }
-
     static func isSupportedTapFormat(_ format: ProcessTapAudioFormat) -> Bool {
         let supportedFlags = kAudioFormatFlagIsFloat
             | kAudioFormatFlagIsPacked

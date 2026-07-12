@@ -92,6 +92,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     private var queuedSizes: [SizeResult] = []
     private var queuedReads: [ReadResult] = []
     private var queuedAddListenerStatuses: [OSStatus] = []
+    private var queuedIsSettableStatuses: [OSStatus] = []
     private var activeListenerCalls: [ObjectIdentifier: ListenerCall] = [:]
     private let mutableStateLock = NSLock()
     private var mutableState = MutableState()
@@ -226,6 +227,10 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     func enqueueAddListenerStatuses(_ statuses: [OSStatus]) {
         queuedAddListenerStatuses.append(contentsOf: statuses)
+    }
+
+    func enqueueIsSettableStatuses(_ statuses: [OSStatus]) {
+        queuedIsSettableStatuses.append(contentsOf: statuses)
     }
 
     func addedAddresses(for objectID: AudioObjectID) -> [AudioHALPropertyAddress] {
@@ -575,6 +580,9 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         address: AudioHALPropertyAddress,
         isSettable: inout DarwinBoolean
     ) -> OSStatus {
+        if queuedIsSettableStatuses.isEmpty == false {
+            return queuedIsSettableStatuses.removeFirst()
+        }
         guard let property = properties[PropertyKey(objectID: objectID, address: address)] else {
             return kAudioHardwareUnknownPropertyError
         }

@@ -2206,6 +2206,39 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertFalse(fixture.hardware.calls.isEmpty)
     }
 
+    func testTransientStreamUsageSettableQueryFailurePreservesStatusAndIsNotCached() async {
+        let fixture = EngineFixture()
+        let fingerprint = fixture.plan(generation: 1).topologyFingerprint
+        fixture.hardware.streamUsageHALError = AudioHALError(
+            operation: .isSettable,
+            objectID: 20_000,
+            address: nil,
+            reason: .status(-321)
+        )
+
+        let first = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, fingerprint: fingerprint),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.streamUsageHALError = nil
+        fixture.hardware.clearCalls()
+        let retried = await fixture.engine.apply(
+            plan: fixture.plan(
+                processObjectID: 88,
+                generation: 2,
+                fingerprint: fingerprint
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(
+            first.error,
+            .operationFailed(operation: .isSettable, status: -321)
+        )
+        XCTAssertEqual(retried.state, .running)
+        XCTAssertFalse(fixture.hardware.calls.isEmpty)
+    }
+
     func testChangedFingerprintCanProbeAfterRuntimeRejection() async {
         let fixture = EngineFixture()
         fixture.hardware.aggregateTopologyError = .unsupportedTopology

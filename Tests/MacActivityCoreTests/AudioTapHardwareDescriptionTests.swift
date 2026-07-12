@@ -40,6 +40,44 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testConfigureInputStreamUsagePreservesTransientSettableQueryStatus() {
+        let backend = FakeAudioHALBackend()
+        let ioProc = AudioIOProcResource(
+            aggregateDeviceID: 700,
+            aggregateUID: "aggregate",
+            ioProcID: hardwareBoundaryIOProcID
+        )
+        let address = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyIOProcStreamUsage,
+            scope: kAudioObjectPropertyScopeInput
+        )
+        backend.setRawBytes(
+            AudioIOProcStreamUsage.withEncoded(ioProcID: ioProc.ioProcID, flags: [0]) {
+                Array($0)
+            },
+            objectID: ioProc.aggregateDeviceID,
+            address: address,
+            isSettable: true
+        )
+        backend.enqueueIsSettableStatuses([-321])
+
+        XCTAssertThrowsError(
+            try makeHardware(backend).configureInputStreamUsage([1], for: ioProc)
+        ) { error in
+            XCTAssertEqual(
+                error as? AudioHALError,
+                AudioHALError(
+                    operation: .isSettable,
+                    objectID: ioProc.aggregateDeviceID,
+                    address: address,
+                    reason: .status(-321)
+                )
+            )
+        }
+        XCTAssertTrue(backend.writeSelectors.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testIdentityCheckedMutationsDoNotTouchReplacementObjects() {
         let backend = FakeAudioHALBackend()
         let tap = fixtureTap(objectID: 71)
