@@ -2,36 +2,6 @@ import AudioToolbox
 import CoreAudio
 import Foundation
 
-public enum AudioControlAvailability: Equatable, Sendable {
-    case writable
-    case unsupported
-}
-
-public struct AudioOutputDeviceVolume: Identifiable, Equatable, Sendable {
-    public let id: String
-    public let name: String
-    public let volume: Double
-    public let isMuted: Bool
-    public let volumeAvailability: AudioControlAvailability
-    public let muteAvailability: AudioControlAvailability
-
-    public init(
-        id: String,
-        name: String,
-        volume: Double,
-        isMuted: Bool,
-        volumeAvailability: AudioControlAvailability,
-        muteAvailability: AudioControlAvailability
-    ) {
-        self.id = id
-        self.name = name
-        self.volume = volume
-        self.isMuted = isMuted
-        self.volumeAvailability = volumeAvailability
-        self.muteAvailability = muteAvailability
-    }
-}
-
 @MainActor
 public protocol AudioDeviceControlProviding: AnyObject {
     func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot]
@@ -41,16 +11,8 @@ public protocol AudioDeviceControlProviding: AnyObject {
 }
 
 @MainActor
-public protocol AudioDeviceVolumeProviding: AnyObject {
-    func outputDevices() -> [AudioOutputDeviceVolume]
-    func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool
-    func setMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) -> Bool
-}
-
-@MainActor
 public final class AudioDeviceVolumeService:
     AudioDeviceControlProviding,
-    AudioDeviceVolumeProviding,
     AudioRouteDeviceProviding {
     private static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
 
@@ -110,39 +72,10 @@ public final class AudioDeviceVolumeService:
         return confirmed != 0
     }
 
-    public func outputDevices() -> [AudioOutputDeviceVolume] {
-        (try? outputDeviceSnapshots().map(Self.legacyDevice)) ?? []
-    }
-
-    public func setVolume(_ volume: Double, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        (try? writeVolume(volume, forUID: id)) != nil
-    }
-
-    public func setMuted(_ isMuted: Bool, for id: AudioOutputDeviceVolume.ID) -> Bool {
-        (try? writeMute(isMuted, forUID: id)) != nil
-    }
-
     public nonisolated static func clampedVolume(_ value: Double) -> Double {
         min(1, max(0, value))
     }
 
-    public nonisolated static func makeDevice(
-        id: String,
-        name: String,
-        volume: Double?,
-        isMuted: Bool?,
-        canSetVolume: Bool,
-        canSetMute: Bool
-    ) -> AudioOutputDeviceVolume {
-        AudioOutputDeviceVolume(
-            id: id,
-            name: name,
-            volume: clampedVolume(volume ?? 1.0),
-            isMuted: isMuted ?? false,
-            volumeAvailability: canSetVolume ? .writable : .unsupported,
-            muteAvailability: canSetMute ? .writable : .unsupported
-        )
-    }
 }
 
 private extension AudioDeviceVolumeService {
@@ -255,19 +188,6 @@ private extension AudioDeviceVolumeService {
 
     static func doubleValue(_ value: Float32) -> Double {
         Double(String(value)) ?? Double(value)
-    }
-
-    static func legacyDevice(
-        from snapshot: AudioOutputDeviceSnapshot
-    ) -> AudioOutputDeviceVolume {
-        makeDevice(
-            id: snapshot.id,
-            name: snapshot.name,
-            volume: snapshot.volume.value,
-            isMuted: snapshot.mute.value,
-            canSetVolume: snapshot.volume.isWritable,
-            canSetMute: snapshot.mute.isWritable
-        )
     }
 
     func outputDeviceIDs() throws -> [AudioDeviceID] {

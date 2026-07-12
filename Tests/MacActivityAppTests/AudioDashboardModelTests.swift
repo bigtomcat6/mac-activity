@@ -46,19 +46,6 @@ final class AudioDashboardModelTests: XCTestCase {
         ])
     }
 
-    func testCompatibilityPIDSettersResolveAndForwardProcessObjectID() {
-        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
-        let model = AudioDashboardModel(coordinator: coordinator)
-
-        model.setProcessVolume(0.35, for: pid_t(101))
-        model.setProcessMuted(true, for: pid_t(101))
-
-        XCTAssertEqual(coordinator.intents, [
-            .processVolume(0.35, 11),
-            .processMuted(true, 11)
-        ])
-    }
-
     func testUnsupportedCoordinatorKeepsDeviceControlsButHidesProcessControls() {
         let coordinator = AudioControlCoordinatorSpy(
             supportsProcessControls: false,
@@ -66,9 +53,9 @@ final class AudioDashboardModelTests: XCTestCase {
         )
         let model = AudioDashboardModel(coordinator: coordinator)
 
-        XCTAssertEqual(model.devices.count, 1)
-        XCTAssertEqual(model.processes.count, 1)
-        XCTAssertFalse(model.showsProcessControls)
+        XCTAssertEqual(model.snapshot.devices.count, 1)
+        XCTAssertEqual(model.snapshot.processes.count, 1)
+        XCTAssertFalse(model.supportsProcessControls)
     }
 
     func testModelDeallocationDoesNotShutdownCoordinator() {

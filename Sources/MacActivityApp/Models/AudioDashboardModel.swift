@@ -50,42 +50,6 @@ final class AudioDashboardModel: ObservableObject {
         coordinator.reset(processObjectID: processObjectID)
     }
 
-    // Removed in Task 11 after AudioDashboardView consumes `snapshot` directly.
-    var devices: [AudioOutputDeviceVolume] {
-        snapshot.devices.compactMap { row in
-            guard case .value(let volume, let canSetVolume) = row.device.volume,
-                  case .value(let isMuted, let canSetMute) = row.device.mute else {
-                return nil
-            }
-            return AudioOutputDeviceVolume(
-                id: row.id,
-                name: row.device.name,
-                volume: volume,
-                isMuted: isMuted,
-                volumeAvailability: canSetVolume ? .writable : .unsupported,
-                muteAvailability: canSetMute ? .writable : .unsupported
-            )
-        }
-    }
-
-    var processes: [AudioProcessEntry] { snapshot.processes.map(\.process) }
-    var showsProcessControls: Bool { supportsProcessControls && processes.isEmpty == false }
-    func refresh() {}
-
-    func setProcessVolume(_ value: Double, for processIdentifier: pid_t) {
-        guard let process = snapshot.processes.first(where: {
-            $0.process.processIdentifier == processIdentifier
-        }) else { return }
-        setProcessVolume(value, for: process.id)
-    }
-
-    func setProcessMuted(_ value: Bool, for processIdentifier: pid_t) {
-        guard let process = snapshot.processes.first(where: {
-            $0.process.processIdentifier == processIdentifier
-        }) else { return }
-        setProcessMuted(value, for: process.id)
-    }
-
     #if DEBUG
     var testingCoordinator: AnyObject { coordinator }
     #endif
