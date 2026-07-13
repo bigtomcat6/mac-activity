@@ -6,9 +6,20 @@ let package = Package(
     platforms: [.macOS(.v14)],
     dependencies: [.package(name: "MacActivity", path: "../..")],
     targets: [
+        .target(
+            name: "AudioNativePreflightKit",
+            dependencies: [.product(name: "MacActivityCore", package: "MacActivity")]
+        ),
+        .executableTarget(
+            name: "AudioNativePreflight",
+            dependencies: ["AudioNativePreflightKit"]
+        ),
         .testTarget(
             name: "AudioNativeValidationTests",
-            dependencies: [.product(name: "MacActivityCore", package: "MacActivity")]
+            dependencies: [
+                "AudioNativePreflightKit",
+                .product(name: "MacActivityCore", package: "MacActivity"),
+            ]
         ),
     ]
 )
