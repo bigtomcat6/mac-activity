@@ -133,27 +133,32 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testInfoPlistLocalizationKeysMatchEnglish() throws {
-        let expectedKeys = Set([
+    func testGermanAudioCapturePermissionUsesCaptureTerminology() throws {
+        let german = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "de"))
+        let permissionCopy = AppLocalization.string(.audioProcessPermissionDenied, bundle: german)
+
+        XCTAssertEqual(
+            permissionCopy,
+            "Die Berechtigung zur Audioerfassung ist erforderlich. Erlaube Mac Activity in den Systemeinstellungen und versuche es erneut."
+        )
+        XCTAssertFalse(permissionCopy.contains("Audioaufnahme"))
+    }
+
+    func testInfoPlistLocalizationKeysMatchRequiredSet() throws {
+        let requiredKeys = Set([
             "CFBundleDisplayName",
-            "CFBundleName",
             "NSHumanReadableCopyright",
             "NSAudioCaptureUsageDescription",
         ])
         let english = try infoPlistStrings(forLanguageIdentifier: "en")
-        let englishKeys = Set(english.keys).intersection(expectedKeys)
-
-        XCTAssertTrue(expectedKeys.isSuperset(of: englishKeys))
-        XCTAssertTrue(englishKeys.contains("CFBundleDisplayName"))
-        XCTAssertTrue(englishKeys.contains("NSHumanReadableCopyright"))
-        XCTAssertTrue(englishKeys.contains("NSAudioCaptureUsageDescription"))
+        XCTAssertEqual(Set(english.keys), requiredKeys)
 
         for language in AppLocalization.availableLanguageIdentifiers() where language != "en" {
             let localized = try infoPlistStrings(forLanguageIdentifier: language)
             XCTAssertEqual(
-                Set(localized.keys).intersection(expectedKeys),
-                englishKeys,
-                "InfoPlist.strings keys for \(language) must match English"
+                Set(localized.keys),
+                requiredKeys,
+                "InfoPlist.strings keys for \(language) must match the required localized keys"
             )
         }
     }

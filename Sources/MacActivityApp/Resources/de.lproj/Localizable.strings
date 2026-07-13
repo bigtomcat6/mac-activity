@@ -23,7 +23,7 @@
 "audio.process.rebuilding" = "Audiosteuerung wird neu aufgebaut …";
 "audio.process.active" = "Audiosteuerung aktiv";
 "audio.process.stopping" = "Audiosteuerung wird beendet …";
-"audio.process.permissionDenied" = "Die Berechtigung zur Audioaufnahme ist erforderlich. Erlaube Mac Activity in den Systemeinstellungen und versuche es erneut.";
+"audio.process.permissionDenied" = "Die Berechtigung zur Audioerfassung ist erforderlich. Erlaube Mac Activity in den Systemeinstellungen und versuche es erneut.";
 "audio.process.operationFailed" = "Audiosteuerung fehlgeschlagen.";
 "audio.process.targetUnavailable" = "Der ausgewählte Ausgang ist nicht verfügbar; die ursprüngliche Wiedergabe wurde wiederhergestellt.";
 "audio.route.title" = "Ausgabeweg";
