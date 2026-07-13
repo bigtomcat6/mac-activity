@@ -530,6 +530,11 @@ struct RecordingEngineApplyKey: Hashable {
     let generation: UInt64
 }
 
+struct RecordingEngineGainCall: Equatable {
+    let processObjectID: AudioObjectID
+    let gain: ProcessGainState
+}
+
 final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked Sendable {
     let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
     private let continuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
@@ -539,6 +544,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private(set) var stopAllCount = 0
     private(set) var plans: [AudioRoutePlan] = []
     private(set) var gains: [ProcessGainState] = []
+    private(set) var gainUpdateCalls: [RecordingEngineGainCall] = []
     private(set) var stoppedProcessObjectIDs: [AudioObjectID] = []
     private(set) var stoppedGenerations: [UInt64] = []
     private(set) var stopCalls: [RecordingEngineStopCall] = []
@@ -556,6 +562,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private let cleanupGate = ControlledCallGate()
     private let applyGate = ControlledIndexedCallGate()
     private let applyReturnGate = ControlledIndexedCallGate()
+    private let gainUpdateGate = ControlledIndexedCallGate()
     private var deferredObserverCalls: Set<Int> = []
     private var deferredObservers: [ProcessTapSessionSnapshot] = []
 
@@ -597,7 +604,11 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         await applyReturnGate.enter()
         return snapshot
     }
-    func updateGain(_ gain: ProcessGainState, for processObjectID: AudioObjectID) async {}
+    func updateGain(_ gain: ProcessGainState, for processObjectID: AudioObjectID) async {
+        gainUpdateCalls.append(.init(processObjectID: processObjectID, gain: gain))
+        lifecycle?.events.append("engine.updateGain")
+        await gainUpdateGate.enter()
+    }
     func stop(processObjectID: AudioObjectID, generation: UInt64) async -> ProcessTapSessionSnapshot {
         stoppedProcessObjectIDs.append(processObjectID)
         stoppedGenerations.append(generation)
@@ -644,6 +655,11 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func resumeApplyReturns() async { await applyReturnGate.resumeAll() }
     func waitUntilApplyReturnCount(_ count: Int) async {
         await applyReturnGate.waitUntilEntered(count)
+    }
+    func blockGainUpdateCall(_ call: Int) async { await gainUpdateGate.block(call) }
+    func resumeGainUpdates() async { await gainUpdateGate.resumeAll() }
+    func waitUntilGainUpdateCount(_ count: Int) async {
+        await gainUpdateGate.waitUntilEntered(count)
     }
     func deferApplyObserver(_ call: Int) { deferredObserverCalls.insert(call) }
     func deliverDeferredObservers() {

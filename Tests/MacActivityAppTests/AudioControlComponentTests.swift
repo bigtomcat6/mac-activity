@@ -331,6 +331,34 @@ final class AudioControlComponentTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
+    func testRunningRuleSliderBurstKeepsSessionIdentityAndUsesGainOnly() async {
+        let fixture = AudioControlComponentFixture()
+        await fixture.start()
+        fixture.coordinator.setProcessVolume(0.4, for: fixture.player.processObjectID)
+        await fixture.finishPendingCommands()
+        let session = fixture.coordinator.snapshot.processes[0].session
+        await fixture.engine.blockGainUpdateCall(1)
+
+        fixture.coordinator.setProcessVolume(0.5, for: fixture.player.processObjectID)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        fixture.coordinator.setProcessVolume(0.6, for: fixture.player.processObjectID)
+        await fixture.engine.resumeGainUpdates()
+        await fixture.finishPendingCommands()
+
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.5, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: false)),
+        ])
+        XCTAssertEqual(fixture.engine.stopCalls, [])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, session)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.6)
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
+            fixture.profile(volume: 0.6)
+        )
+    }
+
     func testPartialStartFailureLeavesOriginalRouteAndProfileConfirmed() async {
         let nativeError = ProcessTapEngineError.operationFailed(
             operation: .startDevice,

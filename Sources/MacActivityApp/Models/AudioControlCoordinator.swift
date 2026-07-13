@@ -119,6 +119,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var confirmedDevices: [String: AudioOutputDeviceSnapshot] = [:]
     private var confirmedProcessValues: [AudioObjectID: AudioProcessControlValues] = [:]
     private var generations: [AudioObjectID: UInt64] = [:]
+    private var gainIntentOrdinals: [AudioObjectID: UInt64] = [:]
+    private var gainTasks: [AudioObjectID: Task<Void, Never>] = [:]
     private var retiringProcessObjectIDs: Set<AudioObjectID> = []
     private var deviceVolumeTasks: [String: Task<Void, Never>] = [:]
     private var deviceMuteTasks: [String: Task<Void, Never>] = [:]
@@ -310,7 +312,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     func retry(processObjectID: AudioObjectID) {
         guard let row = snapshot.processes.first(where: { $0.id == processObjectID }),
               let values = row.pendingValues else { return }
-        apply(values, to: processObjectID)
+        applyUserIntent(values, to: processObjectID)
     }
 
     func reset(processObjectID: AudioObjectID) {
@@ -569,18 +571,120 @@ private extension AudioControlCoordinator {
             row.pendingValues = values
             row.error = nil
         }
-        apply(values, to: processObjectID)
+        applyUserIntent(values, to: processObjectID)
+    }
+
+    func applyUserIntent(
+        _ values: AudioProcessControlValues,
+        to processObjectID: AudioObjectID
+    ) {
+        guard let row = snapshot.processes.first(where: { $0.id == processObjectID }),
+              let confirmed = confirmedProcessValues[processObjectID],
+              confirmed.isDefault == false,
+              values.isDefault == false,
+              values.route == confirmed.route,
+              row.session.state == .running,
+              row.session.generation == generations[processObjectID] else {
+            apply(values, to: processObjectID)
+            return
+        }
+        updateGain(
+            values,
+            replacing: confirmed,
+            row: row,
+            processObjectID: processObjectID,
+            generation: row.session.generation
+        )
+    }
+
+    func updateGain(
+        _ values: AudioProcessControlValues,
+        replacing confirmed: AudioProcessControlValues,
+        row: AudioProcessControlSnapshot,
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) {
+        let ordinal = (gainIntentOrdinals[processObjectID] ?? 0) &+ 1
+        gainIntentOrdinals[processObjectID] = ordinal
+        let previousGainTask = gainTasks[processObjectID]
+        previousGainTask?.cancel()
+        processTasks[processObjectID]?.cancel()
+        let task = trackedTask { @MainActor [weak self] in
+            await previousGainTask?.value
+            guard let self,
+                  isCurrentGainIntent(
+                      processObjectID,
+                      ordinal: ordinal,
+                      generation: generation
+                  ) else { return }
+            await engine.updateGain(
+                .init(volume: values.volume, isMuted: values.isMuted),
+                for: processObjectID
+            )
+            guard isCurrentGainIntent(
+                processObjectID,
+                ordinal: ordinal,
+                generation: generation
+            ) else { return }
+            if let bundleIdentifier = row.process.bundleIdentifier {
+                do {
+                    try preferences.setAudioProcessProfile(
+                        .init(
+                            bundleIdentifier: bundleIdentifier,
+                            volume: values.volume,
+                            isMuted: values.isMuted,
+                            route: values.route
+                        ),
+                        for: bundleIdentifier
+                    )
+                } catch {
+                    guard isCurrentGainIntent(
+                        processObjectID,
+                        ordinal: ordinal,
+                        generation: generation
+                    ) else { return }
+                    await engine.updateGain(
+                        .init(volume: confirmed.volume, isMuted: confirmed.isMuted),
+                        for: processObjectID
+                    )
+                    guard isCurrentGainIntent(
+                        processObjectID,
+                        ordinal: ordinal,
+                        generation: generation
+                    ) else { return }
+                    fail(values, processObjectID: processObjectID, error: .persistenceFailed)
+                    return
+                }
+            }
+            guard isCurrentGainIntent(
+                processObjectID,
+                ordinal: ordinal,
+                generation: generation
+            ) else { return }
+            confirmedProcessValues[processObjectID] = values
+            updateProcess(processObjectID) { row in
+                row.volume = values.volume
+                row.isMuted = values.isMuted
+                row.route = values.route
+                row.pendingValues = nil
+                row.error = nil
+            }
+        }
+        gainTasks[processObjectID] = task
+        processTasks[processObjectID] = task
     }
 
     func apply(_ values: AudioProcessControlValues, to processObjectID: AudioObjectID) {
         guard supportsProcessControls,
               retiringProcessObjectIDs.contains(processObjectID) == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }) else { return }
+        let previousGainTask = invalidateGainIntent(processObjectID)
         let generation = (generations[processObjectID] ?? 0) &+ 1
         generations[processObjectID] = generation
         processTasks[processObjectID]?.cancel()
         if values.isDefault {
             processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
+                await previousGainTask?.value
                 guard let self else { return }
                 guard isCurrent(processObjectID, generation: generation) else { return }
                 let confirmed = confirmedProcessValues[processObjectID] ?? .default
@@ -637,6 +741,7 @@ private extension AudioControlCoordinator {
             }
             if unavailable.count == targets.count {
                 processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
+                    await previousGainTask?.value
                     guard let self else { return }
                     guard isCurrent(processObjectID, generation: generation) else { return }
                     if row.session.state != .idle {
@@ -672,6 +777,7 @@ private extension AudioControlCoordinator {
             }
         }
         processTasks[processObjectID] = trackedTask { @MainActor [weak self] in
+            await previousGainTask?.value
             guard let self else { return }
             guard isCurrent(processObjectID, generation: generation) else { return }
             let plan: AudioRoutePlan
@@ -797,6 +903,24 @@ private extension AudioControlCoordinator {
 
     func isCurrent(_ processObjectID: AudioObjectID, generation: UInt64) -> Bool {
         Task.isCancelled == false && generations[processObjectID] == generation
+    }
+
+    func isCurrentGainIntent(
+        _ processObjectID: AudioObjectID,
+        ordinal: UInt64,
+        generation: UInt64
+    ) -> Bool {
+        Task.isCancelled == false
+            && gainIntentOrdinals[processObjectID] == ordinal
+            && generations[processObjectID] == generation
+            && retiringProcessObjectIDs.contains(processObjectID) == false
+    }
+
+    func invalidateGainIntent(_ processObjectID: AudioObjectID) -> Task<Void, Never>? {
+        gainIntentOrdinals[processObjectID] = (gainIntentOrdinals[processObjectID] ?? 0) &+ 1
+        let task = gainTasks.removeValue(forKey: processObjectID)
+        task?.cancel()
+        return task
     }
 
     func trackedTask(
@@ -977,8 +1101,10 @@ private extension AudioControlCoordinator {
         snapshot.processControlsAreVisible = current.isEmpty == false
         for old in previous where current.contains(where: { $0.id == old.id }) == false {
             retiringProcessObjectIDs.insert(old.id)
+            let previousGainTask = invalidateGainIntent(old.id)
             processTasks.removeValue(forKey: old.id)?.cancel()
             snapshot.processes.removeAll { $0.id == old.id }
+            await previousGainTask?.value
             let generation = (generations[old.id] ?? 0) &+ 1
             generations[old.id] = generation
             let stopped = await engine.stop(
@@ -988,6 +1114,7 @@ private extension AudioControlCoordinator {
             _ = accept(stopped)
             processTasks.removeValue(forKey: old.id)?.cancel()
             confirmedProcessValues.removeValue(forKey: old.id)
+            gainIntentOrdinals.removeValue(forKey: old.id)
             latestSnapshotOrders.removeValue(forKey: old.id)
             retiringProcessObjectIDs.remove(old.id)
         }
@@ -1173,6 +1300,9 @@ private extension AudioControlCoordinator {
                 continue
             }
             if missing.count == targets.count {
+                let previousGainTask = invalidateGainIntent(row.id)
+                processTasks[row.id]?.cancel()
+                await previousGainTask?.value
                 let generation = (generations[row.id] ?? 0) &+ 1
                 generations[row.id] = generation
                 let stopped = await engine.stop(

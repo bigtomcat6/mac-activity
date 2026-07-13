@@ -556,10 +556,135 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.coordinator.setProcessVolume(0.6, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
 
-        XCTAssertEqual(fixture.engine.gains.map(\.volume), [0.4, 0.6, 0.4])
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.4, isMuted: false)),
+        ])
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.6)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .persistenceFailed)
+    }
+
+    func testRunningSessionVolumeAndMuteUseGainUpdatesWithoutRebuild() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        let session = fixture.coordinator.snapshot.processes[0].session
+        let cleanupCount = fixture.engine.cleanupCount
+
+        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.coordinator.setProcessMuted(true, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: true)),
+        ])
+        XCTAssertEqual(fixture.engine.stopCalls, [])
+        XCTAssertEqual(fixture.engine.cleanupCount, cleanupCount)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, session)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.6)
+        XCTAssertTrue(fixture.coordinator.snapshot.processes[0].isMuted)
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"],
+            AudioProcessProfile(
+                bundleIdentifier: "com.example.music",
+                volume: 0.6,
+                isMuted: true
+            )
+        )
+    }
+
+    func testRunningSessionSliderBurstCoalescesWithoutGenerationChange() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        let session = fixture.coordinator.snapshot.processes[0].session
+        await fixture.engine.blockGainUpdateCall(1)
+
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        fixture.coordinator.setProcessVolume(0.7, for: 11)
+        await fixture.engine.resumeGainUpdates()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.5, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.7, isMuted: false)),
+        ])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, session)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.7)
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.7
+        )
+    }
+
+    func testRouteChangeWaitsForCanceledGainThenRebuildsNextGeneration() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.engine.blockGainUpdateCall(1)
+
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: 11
+        )
+
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        await fixture.engine.resumeGainUpdates()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.5, isMuted: false)),
+        ])
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 2])
+        XCTAssertEqual(fixture.engine.plans.last?.selectedTargetUIDs, ["USB"])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.generation, 2)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.5)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].route,
+            .explicit(targetDeviceUIDs: ["USB"])
+        )
+    }
+
+    func testOlderFailedGainRollbackFinishesBeforeNewerSuccess() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.store.saveFailuresRemaining = 1
+        await fixture.engine.blockGainUpdateCall(2)
+
+        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(2)
+        fixture.coordinator.setProcessVolume(0.7, for: 11)
+        await fixture.engine.resumeGainUpdates()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+        XCTAssertEqual(fixture.engine.gainUpdateCalls, [
+            .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.4, isMuted: false)),
+            .init(processObjectID: 11, gain: .init(volume: 0.7, isMuted: false)),
+        ])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.7)
+        XCTAssertNil(fixture.coordinator.snapshot.processes[0].pendingValues)
+        XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.7
+        )
     }
 
     func testSamePIDNewObjectStopsOldSessionAndPublishesNewIdentity() async {
@@ -855,13 +980,19 @@ final class AudioControlCoordinatorTests: XCTestCase {
             (.failed, .unsupportedFormat),
         ]
 
-        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: 11
+        )
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.engine.stoppedProcessObjectIDs.last, 11)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .idle)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.6)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].pendingValues?.route,
+            .explicit(targetDeviceUIDs: ["USB"])
+        )
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .persistenceFailed)
     }
 
@@ -873,14 +1004,23 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.store.saveFailuresRemaining = 1
         await fixture.engine.blockApplyCall(3)
 
-        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: 11
+        )
         await fixture.engine.waitUntilApplyCount(3)
-        fixture.coordinator.setProcessVolume(0.7, for: 11)
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["BuiltIn"]),
+            for: 11
+        )
         await fixture.coordinator.testingWaitForProcessTask(11)
         await fixture.engine.resumeApplies()
         await fixture.coordinator.testingWaitUntilIdle()
 
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.7)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].route,
+            .explicit(targetDeviceUIDs: ["BuiltIn"])
+        )
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].pendingValues)
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
