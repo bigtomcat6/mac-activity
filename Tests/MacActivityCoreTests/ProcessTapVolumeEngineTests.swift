@@ -458,7 +458,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
             ),
             queue: DispatchQueue(
                 label: "ProcessTapVolumeEngineTests.process-taps-unavailable"
@@ -1726,7 +1727,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 1,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
             )
         )
         let plan = EngineFixture().plan(generation: 1)
@@ -1737,6 +1739,32 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(snapshot.error, .processTapsUnavailable)
+    }
+
+    func testConservativeProductionPolicyRejectsMacOS142BeforeHardwareWork() async {
+        let hardware = FakeAudioTapHardware()
+        let engine = ProcessTapVolumeEngine(
+            hardware: hardware,
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                ),
+                nativeValidationPolicy: .conservative
+            ),
+            queue: DispatchQueue(
+                label: "ProcessTapVolumeEngineTests.conservative-policy"
+            )
+        )
+
+        let snapshot = await engine.apply(
+            plan: EngineFixture().plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.error, .processTapsUnavailable)
+        XCTAssertTrue(hardware.calls.isEmpty)
     }
 
     func testOnlyOneRetryPassCanBeScheduled() async {
@@ -2374,7 +2402,8 @@ private final class EngineFixture: @unchecked Sendable {
                     majorVersion: macOS.major,
                     minorVersion: macOS.minor,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
             ),
             queue: engineQueue,
             retryLedgerLimit: retryLedgerLimit,
@@ -2519,7 +2548,8 @@ private func makeInjectedEngine(
                 majorVersion: 14,
                 minorVersion: 2,
                 patchVersion: 0
-            )
+            ),
+            nativeValidationPolicy: .allowingAllForTesting
         ),
         queue: DispatchQueue(
             label: "ProcessTapVolumeEngineTests.lease.\(UUID().uuidString)"

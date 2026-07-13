@@ -23,6 +23,24 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.processProvider.callCount, 0)
         XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+    }
+
+    func testNativeValidationRequiredRemainsDistinctWithoutApplyingEnginePlan() async {
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: AudioRoutePlanner(policy: .conservative)
+        )
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessMuted(true, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        guard case .routePlanning(.nativeValidationRequired) =
+            fixture.coordinator.snapshot.processes[0].error else {
+            return XCTFail("Expected the native validation gate to remain user-visible")
+        }
+        XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 
     func testSupportedStartupCleansOrphansAndStartsMonitoring() async {
@@ -760,6 +778,18 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.processProvider.callCount, 0)
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+    }
+
+    func testUnsupportedShutdownDoesNotStartProcessEngineTeardown() async {
+        let fixture = CoordinatorFixture(availability: .unsupported)
+        await fixture.coordinator.start()
+
+        await fixture.coordinator.shutdown()
+
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
     }
 
     func testUnsupportedOrdinaryMonitorChangesNeverEnumerateOrObserveProcesses() async {

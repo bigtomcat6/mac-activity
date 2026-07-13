@@ -3,6 +3,24 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioSystemMonitorTests: XCTestCase {
+    func testConservativeProductionPolicyOmitsProcessListenersOnMacOS142() throws {
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .conservative
+        )
+
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+
+        XCTAssertFalse(fixture.backend.addedListeners.contains {
+            $0.address == .processList || $0.objectID == 100
+        })
+        XCTAssertEqual(fixture.backend.addCount(for: 10), 2)
+    }
+
     func testRestartRecoveryBackoffSequenceIsExponentiallyCapped() {
         var backoff = AudioRestartRecoveryBackoff(
             initialDelayMilliseconds: 250,
@@ -29,8 +47,14 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testBaseListenerAvailabilityMatrix() throws {
-        let macOS141 = MonitorFixture(macOS: (14, 1))
-        let macOS142 = MonitorFixture(macOS: (14, 2))
+        let macOS141 = MonitorFixture(
+            macOS: (14, 1),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
+        let macOS142 = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
 
         XCTAssertEqual(try macOS141.startAndCountRegistrations(), 3)
         XCTAssertEqual(try macOS142.startAndCountRegistrations(), 4)
@@ -42,7 +66,10 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testObservedObjectDiffRemovesAndAddsExactPairs() throws {
-        let fixture = MonitorFixture(macOS: (14, 2))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
         try fixture.monitor.start()
         try fixture.monitor.updateObservedObjects(
             deviceIDs: [10, 20],
@@ -70,7 +97,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testBurstIsEmittedAsOneTypedSet() async throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10)
+        )
         try fixture.monitor.start()
         let event = Task { try await fixture.nextChangeSet() }
 
@@ -86,7 +117,10 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testStartAndUnchangedObservedSetsAreIdempotent() throws {
-        let fixture = MonitorFixture(macOS: (14, 2))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
 
         try fixture.monitor.start()
         try fixture.monitor.start()
@@ -106,7 +140,10 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testUnsupportedProcessObjectsNeverRegister() throws {
-        let fixture = MonitorFixture(macOS: (14, 1))
+        let fixture = MonitorFixture(
+            macOS: (14, 1),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
         try fixture.monitor.start()
 
         try fixture.monitor.updateObservedObjects(
@@ -118,7 +155,10 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testStopRemovesEachExactTupleOnce() throws {
-        let fixture = MonitorFixture(macOS: (14, 2))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
         try fixture.monitor.start()
         try fixture.monitor.updateObservedObjects(
             deviceIDs: [10],
@@ -136,7 +176,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testStopSuppressesPendingEmission() throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(100))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(100)
+        )
         try fixture.monitor.start()
         let emission = expectation(description: "No change set is emitted after stop")
         emission.isInverted = true
@@ -155,7 +199,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testServiceRestartRebuildsRememberedRegistrationsBeforeEmission() async throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10)
+        )
         try fixture.monitor.start()
         try fixture.monitor.updateObservedObjects(
             deviceIDs: [10],
@@ -188,7 +236,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testDuplicateStaleServiceRestartCallbackDoesNotLeakReplacementGeneration() async throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10)
+        )
         try fixture.monitor.start()
         try fixture.monitor.updateObservedObjects(
             deviceIDs: [10],
@@ -219,7 +271,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testServiceRestartRetriesTransientRegistrationFailureBeforeEmission() async throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10)
+        )
         try fixture.monitor.start()
         try fixture.monitor.updateObservedObjects(
             deviceIDs: [10],
@@ -254,7 +310,11 @@ final class AudioSystemMonitorTests: XCTestCase {
     }
 
     func testStopCancelsPendingServiceRestartRecovery() throws {
-        let fixture = MonitorFixture(macOS: (14, 2), delay: .milliseconds(10))
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10)
+        )
         try fixture.monitor.start()
         let initialRegistrationCount = fixture.backend.addedListeners.count
         fixture.backend.enqueueAddListenerStatuses([
@@ -279,6 +339,7 @@ private final class MonitorFixture: @unchecked Sendable {
 
     init(
         macOS: (major: Int, minor: Int),
+        nativeValidationPolicy: AudioRouteNativeValidationPolicy,
         delay: DispatchTimeInterval = .milliseconds(50),
         restartRecoveryBackoff: AudioRestartRecoveryBackoff = .init(
             initialDelayMilliseconds: 5,
@@ -292,7 +353,8 @@ private final class MonitorFixture: @unchecked Sendable {
                     majorVersion: macOS.major,
                     minorVersion: macOS.minor,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: nativeValidationPolicy
             ),
             queue: DispatchQueue(label: "AudioSystemMonitorTests.monitor"),
             coalescingDelay: delay,

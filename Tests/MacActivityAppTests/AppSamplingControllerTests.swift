@@ -98,9 +98,7 @@ final class AppSamplingControllerTests: XCTestCase {
             launchService: NoopLaunchAtLoginService()
         )
         let coordinator = AudioControlCoordinator(
-            availability: .init(
-                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0)
-            ),
+            availability: .supported,
             deviceProvider: audioServices,
             processProvider: audioServices,
             routeDeviceProvider: audioServices,

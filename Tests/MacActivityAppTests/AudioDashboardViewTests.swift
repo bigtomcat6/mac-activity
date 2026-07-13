@@ -167,9 +167,12 @@ final class AudioDashboardViewTests: XCTestCase {
 
     func testExplicitLowVersionMatrixHidesProcessContractsWithoutApplyingAudio() throws {
         for version in [(13, 0), (14, 0), (14, 1)] {
-            let availability = AudioFeatureAvailability(operatingSystemVersion: .init(
-                majorVersion: version.0, minorVersion: version.1, patchVersion: 0
-            ))
+            let availability = AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: version.0, minorVersion: version.1, patchVersion: 0
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
+            )
             let coordinator = AudioViewCoordinatorSpy(
                 supportsProcessControls: availability.supportsProcessControls,
                 snapshot: .fixture()
@@ -183,6 +186,24 @@ final class AudioDashboardViewTests: XCTestCase {
             XCTAssertNil(presentation.processSection)
             XCTAssertEqual(coordinator.intentCount, 0)
         }
+    }
+
+    func testProductionConservativePolicyHidesProcessSectionOnMacOS142() {
+        let availability = AudioFeatureAvailability(
+            operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            ),
+            nativeValidationPolicy: .conservative
+        )
+        let presentation = AudioDashboardPresentation(
+            snapshot: .fixture(),
+            supportsProcessControls: availability.supportsProcessControls
+        )
+
+        XCTAssertNil(presentation.processSection)
+        XCTAssertEqual(presentation.devices.count, 1)
     }
 
     func testSupportedEmptyStateCreatesNoApplyIntent() throws {

@@ -16,6 +16,14 @@ public struct AudioRouteNativeValidationPolicy: Sendable {
         permitsEveryFingerprintForTesting || validatedFingerprints.contains(fingerprint)
     }
 
+    public var hasValidatedFingerprints: Bool {
+        validatedFingerprints.isEmpty == false
+    }
+
+    var enablesProcessControls: Bool {
+        hasValidatedFingerprints || permitsEveryFingerprintForTesting
+    }
+
     #if DEBUG
     static let allowingAllForTesting = Self(
         validatedFingerprints: [],

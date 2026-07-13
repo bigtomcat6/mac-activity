@@ -7,6 +7,7 @@ enum AudioControlUserError: Equatable, Sendable {
     case deviceWrite
     case permissionDenied
     case targetUnavailable([String])
+    case routePlanning(AudioRoutePlanningError)
     case operationFailed(ProcessTapEngineError)
     case persistenceFailed
 }
@@ -162,12 +163,14 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     func start() async {
         guard hasStarted == false, didBeginShutdown == false else { return }
         hasStarted = true
-        _ = await engine.cleanupOrphans()
-        guard Task.isCancelled == false, didBeginShutdown == false else {
-            if didBeginShutdown == false {
-                hasStarted = false
+        if supportsProcessControls {
+            _ = await engine.cleanupOrphans()
+            guard Task.isCancelled == false, didBeginShutdown == false else {
+                if didBeginShutdown == false {
+                    hasStarted = false
+                }
+                return
             }
-            return
         }
         do {
             try monitor.start()
@@ -306,7 +309,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         for task in workTasks { await task.value }
         await monitorTask?.value
         await engineSnapshotTask?.value
-        await engine.stopAll()
+        if supportsProcessControls {
+            await engine.stopAll()
+        }
         hasStarted = false
         didFinishShutdown = true
         let waiters = shutdownWaiters
@@ -381,7 +386,7 @@ private extension AudioControlCoordinator {
                 }
             }
         }
-        if engineSnapshotTask == nil {
+        if supportsProcessControls, engineSnapshotTask == nil {
             engineSnapshotTask = Task { @MainActor [weak self, snapshots = engine.sessionSnapshots] in
                 for await snapshot in snapshots {
                     guard Task.isCancelled == false, let self else { return }
@@ -607,6 +612,10 @@ private extension AudioControlCoordinator {
             let plan: AudioRoutePlan
             do {
                 plan = try makePlan(values, for: row.process, generation: generation)
+            } catch let error as AudioRoutePlanningError {
+                guard isCurrent(processObjectID, generation: generation) else { return }
+                fail(values, processObjectID: processObjectID, error: .routePlanning(error))
+                return
             } catch {
                 guard isCurrent(processObjectID, generation: generation) else { return }
                 fail(values, processObjectID: processObjectID, error: .operationFailed(.unsupportedFormat))
@@ -803,14 +812,18 @@ private extension AudioControlCoordinator {
 
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
-            await engine.stopAll()
+            if supportsProcessControls {
+                await engine.stopAll()
+            }
             refreshDevicesAndRouteDescriptors()
             if supportsProcessControls {
                 refreshProcesses(resetSessions: true)
             } else {
                 snapshot.processes = []
             }
-            _ = await engine.cleanupOrphans()
+            if supportsProcessControls {
+                _ = await engine.cleanupOrphans()
+            }
             if supportsProcessControls {
                 await restoreConfirmedAndPersistedRules()
             }

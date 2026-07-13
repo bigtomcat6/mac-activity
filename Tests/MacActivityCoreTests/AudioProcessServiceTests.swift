@@ -57,7 +57,8 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 1,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
             ),
             processSnapshotReader: {
                 didReadSnapshots = true
@@ -81,6 +82,32 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testConservativeProductionPolicySkipsProcessEnumerationOnMacOS142() {
+        var didReadSnapshots = false
+        let service = AudioProcessService(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                ),
+                nativeValidationPolicy: .conservative
+            ),
+            processSnapshotReader: {
+                didReadSnapshots = true
+                return []
+            },
+            appSnapshotReader: {
+                XCTFail("App snapshots must stay untouched while process controls are hidden")
+                return []
+            }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses(), [])
+        XCTAssertFalse(didReadSnapshots)
+    }
+
+    @MainActor
     func testAudibleOutputProcessesUsesInjectedSnapshotsWhenAvailabilitySupported() {
         let service = AudioProcessService(
             availability: AudioFeatureAvailability(
@@ -88,7 +115,8 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                )
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
             ),
             processSnapshotReader: {
                 [

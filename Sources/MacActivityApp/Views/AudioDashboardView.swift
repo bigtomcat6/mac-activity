@@ -811,7 +811,7 @@ struct AudioProcessRowPresentation: Identifiable {
         case .targetUnavailable: return AppLocalization.string(.audioProcessTargetUnavailable)
         case .deviceRead: return AppLocalization.string(.audioDeviceReadFailed)
         case .deviceWrite: return AppLocalization.string(.audioDeviceWriteFailed)
-        case .operationFailed, .persistenceFailed:
+        case .routePlanning, .operationFailed, .persistenceFailed:
             return AppLocalization.string(.audioProcessOperationFailed)
         }
     }

@@ -2,19 +2,27 @@ import Foundation
 
 public struct AudioFeatureAvailability: Equatable, Sendable {
     public let operatingSystemVersion: OperatingSystemVersion
+    private let nativeRoutingIsValidated: Bool
 
-    public init(operatingSystemVersion: OperatingSystemVersion) {
+    public init(
+        operatingSystemVersion: OperatingSystemVersion,
+        nativeValidationPolicy: AudioRouteNativeValidationPolicy
+    ) {
         self.operatingSystemVersion = operatingSystemVersion
+        self.nativeRoutingIsValidated = nativeValidationPolicy.enablesProcessControls
     }
 
     public static let current = AudioFeatureAvailability(
-        operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion
+        operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
+        nativeValidationPolicy: .conservative
     )
 
     public var supportsProcessControls: Bool {
-        operatingSystemVersion.majorVersion > 14
+        nativeRoutingIsValidated && (
+            operatingSystemVersion.majorVersion > 14
             || (operatingSystemVersion.majorVersion == 14
                 && operatingSystemVersion.minorVersion >= 2)
+        )
     }
 
     public static func == (
@@ -24,5 +32,6 @@ public struct AudioFeatureAvailability: Equatable, Sendable {
         lhs.operatingSystemVersion.majorVersion == rhs.operatingSystemVersion.majorVersion
             && lhs.operatingSystemVersion.minorVersion == rhs.operatingSystemVersion.minorVersion
             && lhs.operatingSystemVersion.patchVersion == rhs.operatingSystemVersion.patchVersion
+            && lhs.nativeRoutingIsValidated == rhs.nativeRoutingIsValidated
     }
 }

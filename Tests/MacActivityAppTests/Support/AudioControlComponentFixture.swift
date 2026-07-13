@@ -22,6 +22,7 @@ final class CoordinatorFixture {
         bundleIdentifier: String? = "com.example.music",
         savedProfiles: [String: AudioProcessProfile] = [:],
         engine: EngineFake = EngineFake(),
+        planner: AudioRoutePlanner? = nil,
         delay: @escaping AudioControlDelay = { _ in }
     ) {
         self.engine = engine
@@ -35,7 +36,7 @@ final class CoordinatorFixture {
             store: store,
             launchService: NoopLaunchAtLoginService()
         )
-        let planner = Self.validatedPlanner(devices: deviceProvider.routeDescriptors)
+        let planner = planner ?? Self.validatedPlanner(devices: deviceProvider.routeDescriptors)
         coordinator = AudioControlCoordinator(
             availability: availability,
             deviceProvider: deviceProvider,
@@ -286,11 +287,22 @@ final class AudioControlComponentFixture {
 }
 
 extension AudioFeatureAvailability {
+    private static let testValidatedPolicy = AudioRouteNativeValidationPolicy(
+        validatedFingerprints: [AudioRouteTopologyFingerprint(
+            osBuild: "test",
+            sourceDeviceUIDs: ["source"],
+            selectedTargetUIDs: ["target"],
+            devices: []
+        )]
+    )
+
     static let unsupported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0)
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0),
+        nativeValidationPolicy: testValidatedPolicy
     )
     static let supported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0)
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
+        nativeValidationPolicy: testValidatedPolicy
     )
 }
 
