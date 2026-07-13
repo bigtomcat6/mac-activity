@@ -114,7 +114,7 @@ final class AppSamplingControllerTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 
-    func testTerminationCancelsAndAwaitsOwnedStartupBeforeRealLifecycleShutdown() async {
+    func testTerminationCancelsAndAwaitsOwnedStartupBeforeRealLifecycleShutdown() async throws {
         let audioEngine = AppTerminationAudioEngine()
         let audioMonitor = AppTerminationAudioMonitor()
         let audioServices = AppTerminationAudioServices()
@@ -122,12 +122,22 @@ final class AppSamplingControllerTests: XCTestCase {
             store: AppDelegatePreferencesStore(),
             launchService: NoopLaunchAtLoginService()
         )
+        let preflight = AudioRoutePlanner()
+        let fingerprint = try preflight.topologyFingerprint(for: AudioRouteRequest(
+            processObjectID: 11,
+            generation: 1,
+            sourceDeviceUIDs: [audioServices.routeDevice.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: [audioServices.routeDevice]
+        ))
         let coordinator = AudioControlCoordinator(
             availability: .supported,
             deviceProvider: audioServices,
             processProvider: audioServices,
             routeDeviceProvider: audioServices,
             monitor: audioMonitor,
+            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [fingerprint])),
             engine: audioEngine,
             preferences: preferences
         )
@@ -158,7 +168,7 @@ final class AppSamplingControllerTests: XCTestCase {
         await audioEngine.releaseCleanup()
         await audioEngine.waitUntilStopAllCount(1)
         await metricsProvider.waitUntilCanceled()
-        XCTAssertEqual(audioMonitor.startCount, 0)
+        XCTAssertEqual(audioMonitor.startCount, 1)
         XCTAssertEqual(replies.values, [])
 
         await metricsProvider.release()
@@ -290,14 +300,26 @@ private final class AppTerminationAudioServices:
     AudioProcessProviding,
     AudioRouteDeviceProviding
 {
-    func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] { [] }
+    let routeDevice = DeviceProviderFake.makeRouteDevice(id: 10, uid: "BuiltIn")
+
+    func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
+        [AudioOutputDeviceSnapshot(
+            id: routeDevice.uid,
+            objectID: routeDevice.objectID,
+            name: routeDevice.name,
+            volume: .value(0.5, isWritable: true),
+            mute: .value(false, isWritable: true)
+        )]
+    }
     func outputDeviceSnapshot(forUID uid: String) throws -> AudioOutputDeviceSnapshot {
         fatalError("No device should be requested")
     }
     func writeVolume(_ volume: Double, forUID uid: String) throws -> Double { volume }
     func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool { isMuted }
-    func audibleOutputProcesses() -> [AudioProcessEntry] { [] }
-    func routeDevices() throws -> [AudioRouteDevice] { [] }
+    func audibleOutputProcesses() -> [AudioProcessEntry] {
+        [.music(objectID: 11, outputDeviceIDs: [routeDevice.objectID])]
+    }
+    func routeDevices() throws -> [AudioRouteDevice] { [routeDevice] }
 }
 
 private final class AppTerminationAudioMonitor: AudioSystemMonitoring, @unchecked Sendable {

@@ -320,6 +320,7 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     private(set) var muteWrites: [Bool] = []
     var lifecycle: LifecycleRecorder?
     var onRouteRead: (@MainActor () -> Void)?
+    var routeReadError: Error?
     var outputSnapshots: [AudioOutputDeviceSnapshot]?
 
     var routeDescriptors: [AudioRouteDevice] = [
@@ -356,6 +357,7 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     func routeDevices() throws -> [AudioRouteDevice] {
         lifecycle?.events.append("routes.read")
         onRouteRead?()
+        if let routeReadError { throw routeReadError }
         return routeDescriptors
     }
 

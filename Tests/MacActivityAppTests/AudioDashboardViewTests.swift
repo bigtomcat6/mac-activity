@@ -70,6 +70,36 @@ final class AudioDashboardViewTests: XCTestCase {
         )
     }
 
+    func testDisabledRouteOptionRejectsHelperAndProgrammaticBindingSelection() {
+        let option = AudioRouteDeviceOption(
+            uid: "USB",
+            name: "USB",
+            isAvailable: false,
+            isSelected: false,
+            isEnabled: false
+        )
+        XCTAssertNil(AudioDashboardRouteSelection.updating(
+            route: .followOriginal,
+            options: [option],
+            uid: option.uid,
+            selected: true
+        ))
+
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.processes[0].route = .followOriginal
+        snapshot.processes[0].routeOptions = [option]
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        AudioDashboardControlBindings.routeTarget(
+            model: model,
+            processObjectID: 11,
+            deviceUID: option.uid
+        ).wrappedValue = true
+
+        XCTAssertTrue(coordinator.routes.isEmpty)
+    }
+
     func testNativeControlBindingsUseLatestStableTargetsAndExactRouteActions() {
         let coordinator = AudioViewCoordinatorSpy(snapshot: .fixture())
         let model = AudioDashboardModel(coordinator: coordinator)
@@ -206,23 +236,20 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(presentation.devices.count, 1)
     }
 
-    func testSupportedEmptyStateCreatesNoApplyIntent() throws {
+    func testUnprovenEmptyStateHidesProcessSectionAndCreatesNoApplyIntent() {
         let coordinator = AudioViewCoordinatorSpy(
             supportsProcessControls: true,
             snapshot: AudioControlSnapshot(
                 devices: [.fixture()],
                 processes: [],
-                processControlsAreVisible: true
+                processControlsAreVisible: false
             )
         )
         let presentation = AudioDashboardPresentation(
             snapshot: coordinator.snapshot,
             supportsProcessControls: coordinator.supportsProcessControls
         )
-        let section = try XCTUnwrap(presentation.processSection)
-
-        XCTAssertEqual(section.accessibility.identifier, "audio.processes.section")
-        XCTAssertEqual(section.emptyAccessibility.identifier, "audio.processes.empty")
+        XCTAssertNil(presentation.processSection)
         XCTAssertEqual(coordinator.intentCount, 0)
     }
 

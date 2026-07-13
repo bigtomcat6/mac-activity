@@ -477,7 +477,7 @@ enum AudioDashboardRouteSelection {
         uid: String,
         selected: Bool
     ) -> [String]? {
-        guard options.contains(where: { $0.uid == uid }) else { return nil }
+        guard options.contains(where: { $0.uid == uid && $0.isEnabled }) else { return nil }
         var selectedUIDs: [String]
         switch route {
         case .followOriginal:

@@ -142,6 +142,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var didBeginShutdown = false
     private var didFinishShutdown = false
     private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
+    private var processRuntimeWasStarted = false
 
     static func planningUserError(
         _ error: AudioRoutePlanningError
@@ -185,15 +186,6 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     func start() async {
         guard hasStarted == false, didBeginShutdown == false else { return }
         hasStarted = true
-        if supportsProcessControls {
-            _ = await engine.cleanupOrphans()
-            guard Task.isCancelled == false, didBeginShutdown == false else {
-                if didBeginShutdown == false {
-                    hasStarted = false
-                }
-                return
-            }
-        }
         do {
             try monitor.start()
         } catch {
@@ -217,6 +209,13 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             snapshot.processControlsAreVisible = false
             monitor.stop()
             hasStarted = false
+            return
+        }
+        guard await prepareProcessRuntimeIfNeeded() else {
+            if didBeginShutdown == false {
+                monitor.stop()
+                hasStarted = false
+            }
             return
         }
         startConsumers()
@@ -335,7 +334,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         for task in workTasks { await task.value }
         await monitorTask?.value
         await engineSnapshotTask?.value
-        if supportsProcessControls {
+        if processRuntimeWasStarted {
             await engine.stopAll()
         }
         hasStarted = false
@@ -396,7 +395,7 @@ private extension AudioControlCoordinator {
         let previous = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.id, $0) })
         let audible = processProvider.audibleOutputProcesses()
         let validated = validatedProcesses(audible, previous: previous)
-        snapshot.processControlsAreVisible = audible.isEmpty || validated.isEmpty == false
+        snapshot.processControlsAreVisible = validated.isEmpty == false
         snapshot.processes = validated.map { process in
             makeProcessSnapshot(
                 process,
@@ -414,6 +413,11 @@ private extension AudioControlCoordinator {
             return route
         }
         if let previous { return previous.route }
+        if let bundleIdentifier = process.bundleIdentifier,
+           let profile = preferences.state.audioProcessProfiles[bundleIdentifier],
+           profile.isDefault == false {
+            return profile.route
+        }
         return .followOriginal
     }
 
@@ -442,7 +446,7 @@ private extension AudioControlCoordinator {
                 }
             }
         }
-        if supportsProcessControls, engineSnapshotTask == nil {
+        if processRuntimeWasStarted, engineSnapshotTask == nil {
             engineSnapshotTask = Task { @MainActor [weak self, snapshots = engine.sessionSnapshots] in
                 for await snapshot in snapshots {
                     guard Task.isCancelled == false, let self else { return }
@@ -502,7 +506,6 @@ private extension AudioControlCoordinator {
                 route: profile.route
             )
             let routeOptions = makeRouteOptions(for: values.route, process: row.process)
-            confirmedProcessValues[row.id] = values
             updateProcess(row.id) { row in
                 row.volume = values.volume
                 row.isMuted = values.isMuted
@@ -898,9 +901,10 @@ private extension AudioControlCoordinator {
 
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
-            if supportsProcessControls {
+            if processRuntimeWasStarted {
                 await engine.stopAll()
             }
+            processRuntimeWasStarted = false
             if supportsProcessControls {
                 refreshRouteDescriptors()
             }
@@ -910,9 +914,8 @@ private extension AudioControlCoordinator {
             } else {
                 snapshot.processes = []
             }
-            if supportsProcessControls {
-                _ = await engine.cleanupOrphans()
-            }
+            guard await prepareProcessRuntimeIfNeeded() else { return }
+            startConsumers()
             if supportsProcessControls {
                 await restoreConfirmedAndPersistedRules()
             }
@@ -965,7 +968,7 @@ private extension AudioControlCoordinator {
         let audible = processProvider.audibleOutputProcesses()
         let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
         let current = validatedProcesses(audible, previous: previousByID)
-        snapshot.processControlsAreVisible = audible.isEmpty || current.isEmpty == false
+        snapshot.processControlsAreVisible = current.isEmpty == false
         for old in previous where current.contains(where: { $0.id == old.id }) == false {
             retiringProcessObjectIDs.insert(old.id)
             processTasks.removeValue(forKey: old.id)?.cancel()
@@ -986,7 +989,13 @@ private extension AudioControlCoordinator {
         snapshot.processes = current.map {
             makeProcessSnapshot($0, preserving: previousByID[$0.processObjectID])
         }
-        await restorePersistedNonDefaultProfiles(processIDs: newIDs)
+        guard await prepareProcessRuntimeIfNeeded() else { return }
+        startConsumers()
+        let reenabledTargetIDs = Set(snapshot.processes.compactMap { row -> AudioObjectID? in
+            guard case .targetUnavailable = row.error else { return nil }
+            return row.id
+        })
+        await restorePersistedNonDefaultProfiles(processIDs: newIDs.union(reenabledTargetIDs))
         let changedProcessIDs = Set(changes.compactMap { change -> AudioObjectID? in
             guard case .process(let id, _) = change else { return nil }
             return id
@@ -1048,6 +1057,15 @@ private extension AudioControlCoordinator {
         }
     }
 
+    func prepareProcessRuntimeIfNeeded() async -> Bool {
+        guard snapshot.processControlsAreVisible else { return true }
+        guard processRuntimeWasStarted == false else { return true }
+        processRuntimeWasStarted = true
+        _ = await engine.cleanupOrphans()
+        guard Task.isCancelled == false, didBeginShutdown == false else { return false }
+        return true
+    }
+
     func makeRouteOptions(
         for route: AudioRouteMode,
         process: AudioProcessEntry
@@ -1063,12 +1081,12 @@ private extension AudioControlCoordinator {
         }
         let available = routeDevices.compactMap { device -> AudioRouteDeviceOption? in
             let isSelected = selectedUIDs.contains(device.uid)
-            let isEnabled = routeChoiceIsEnabled(
-                device.uid,
-                isSelected: isSelected,
-                route: route,
-                process: process
-            )
+            let isEnabled = (device.isAlive || isSelected) && routeChoiceIsEnabled(
+                    device.uid,
+                    isSelected: isSelected,
+                    route: route,
+                    process: process
+                )
             guard isSelected || isEnabled else { return nil }
             return AudioRouteDeviceOption(
                 uid: device.uid,
