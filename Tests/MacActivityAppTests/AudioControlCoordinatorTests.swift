@@ -94,6 +94,44 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 
+    func testNoAudibleReconciliationClearsStaleLeaseErrorWithoutRuntimeWork() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [.unavailable(.leaseUnavailable)]
+        let profile = AudioProcessProfile(
+            bundleIdentifier: "com.example.music",
+            volume: 0.5
+        )
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            savedProfiles: [profile.bundleIdentifier: profile],
+            engine: engine
+        )
+        await fixture.coordinator.start()
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processRuntimeError,
+            .operationFailed(.leaseUnavailable)
+        )
+
+        fixture.processProvider.processes = []
+        await fixture.emit([.processList])
+
+        XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
+        XCTAssertNil(AudioDashboardPresentation(
+            snapshot: fixture.coordinator.snapshot,
+            supportsProcessControls: fixture.coordinator.supportsProcessControls
+        ).processSection)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.engine.stopCalls, [])
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.store.saveCount, 0)
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
+        XCTAssertEqual(fixture.coordinator.snapshot.devices.map(\.id), ["BuiltIn"])
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.monitor.stopCount, 0)
+    }
+
     func testProcessReconciliationRetriesLeaseAndRestoresRows() async {
         let engine = EngineFake()
         engine.scriptedPreparationResults = [

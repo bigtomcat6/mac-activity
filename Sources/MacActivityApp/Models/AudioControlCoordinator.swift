@@ -1229,7 +1229,10 @@ private extension AudioControlCoordinator {
     }
 
     func prepareProcessRuntimeIfNeeded() async -> Bool {
-        guard snapshot.processControlsAreVisible else { return true }
+        guard snapshot.processControlsAreVisible else {
+            snapshot.processRuntimeError = nil
+            return true
+        }
         guard processRuntimeWasStarted == false else { return true }
         processRuntimePreparationWasAttempted = true
         let preparation = await engine.prepareRuntime()
