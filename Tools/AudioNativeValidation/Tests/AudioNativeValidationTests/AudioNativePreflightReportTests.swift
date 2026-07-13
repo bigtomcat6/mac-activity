@@ -80,6 +80,48 @@ final class AudioNativePreflightReportTests: XCTestCase {
         }
     }
 
+    func testHALDiscoveryErrorsDescribeTheExactProperty() {
+        XCTAssertEqual(
+            AudioNativePreflightHALDiscoveryError
+                .missingRequiredProperty("FullSubDeviceList")
+                .localizedDescription,
+            "Required HAL property 'FullSubDeviceList' is unavailable"
+        )
+        XCTAssertEqual(
+            AudioNativePreflightHALDiscoveryError
+                .malformedRequiredProperty("Composition.Stacked")
+                .localizedDescription,
+            "Required HAL property 'Composition.Stacked' returned malformed data"
+        )
+    }
+
+    func testAggregateOutputBeforeMacOS14_2ReportsEmptyTapListWithoutHALRead() throws {
+        enum UnexpectedRead: Error { case attempted }
+        var readCount = 0
+
+        let tapUUIDs = try AudioNativePreflightHALDiscovery.aggregateTapUUIDs(
+            isAvailableOnPlatform: false,
+            read: {
+                readCount += 1
+                throw UnexpectedRead.attempted
+            }
+        )
+
+        XCTAssertEqual(tapUUIDs, [])
+        XCTAssertEqual(readCount, 0)
+    }
+
+    func testAggregateTapListReadFailurePropagatesWhenAvailableOnPlatform() {
+        enum ReadFailure: Error { case failed }
+
+        XCTAssertThrowsError(try AudioNativePreflightHALDiscovery.aggregateTapUUIDs(
+            isAvailableOnPlatform: true,
+            read: { throw ReadFailure.failed }
+        )) { error in
+            XCTAssertTrue(error is ReadFailure)
+        }
+    }
+
     func testRouteMappingRejectsControlSnapshotFromDifferentDeviceGeneration() {
         let format = ProcessTapAudioFormat(
             sampleRate: 48_000,

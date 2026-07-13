@@ -1,16 +1,34 @@
 import CoreAudio
+import Foundation
 
 struct AudioNativePreflightOutputDevice: Equatable, Sendable {
     let deviceID: AudioDeviceID
     let outputStreamIDs: [AudioStreamID]
 }
 
-enum AudioNativePreflightHALDiscoveryError: Error, Equatable, Sendable {
+enum AudioNativePreflightHALDiscoveryError: LocalizedError, Equatable, Sendable {
     case missingRequiredProperty(String)
     case malformedRequiredProperty(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .missingRequiredProperty(let name):
+            return "Required HAL property '\(name)' is unavailable"
+        case .malformedRequiredProperty(let name):
+            return "Required HAL property '\(name)' returned malformed data"
+        }
+    }
 }
 
 enum AudioNativePreflightHALDiscovery {
+    static func aggregateTapUUIDs(
+        isAvailableOnPlatform: Bool,
+        read: () throws -> [String]
+    ) rethrows -> [String] {
+        guard isAvailableOnPlatform else { return [] }
+        return try read()
+    }
+
     static func outputDevices(
         deviceIDs: [AudioDeviceID],
         outputStreams: (AudioDeviceID) throws -> [AudioStreamID]

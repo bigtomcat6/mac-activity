@@ -296,17 +296,23 @@ private extension AudioNativePreflightCollector {
 
         let tapUUIDs: [String]
         if #available(macOS 14.2, *) {
-            let tapArray: CFArray = try requiredObject(
-                CFArray.self,
-                name: "TapList",
-                client: client,
-                objectID: deviceID,
-                address: aggregateTapListAddress
+            tapUUIDs = try AudioNativePreflightHALDiscovery.aggregateTapUUIDs(
+                isAvailableOnPlatform: true,
+                read: {
+                    let tapArray: CFArray = try requiredObject(
+                        CFArray.self,
+                        name: "TapList",
+                        client: client,
+                        objectID: deviceID,
+                        address: aggregateTapListAddress
+                    )
+                    return try stringValues(tapArray, name: "TapList")
+                }
             )
-            tapUUIDs = try stringValues(tapArray, name: "TapList")
         } else {
-            throw AudioNativePreflightHALDiscoveryError.missingRequiredProperty(
-                "TapList requires macOS 14.2 or newer"
+            tapUUIDs = AudioNativePreflightHALDiscovery.aggregateTapUUIDs(
+                isAvailableOnPlatform: false,
+                read: { [] }
             )
         }
 
