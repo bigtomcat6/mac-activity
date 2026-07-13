@@ -38,6 +38,7 @@ final class AudioNativePreflightSourceSafetyTests: XCTestCase {
             "AudioDeviceStart",
             "AudioDeviceStop",
             "AudioObjectSetPropertyData",
+            "try?",
         ]
 
         for sourceURL in sourceURLs {

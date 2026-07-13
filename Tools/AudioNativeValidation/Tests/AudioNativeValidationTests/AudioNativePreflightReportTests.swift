@@ -5,6 +5,81 @@ import MacActivityCore
 import XCTest
 
 final class AudioNativePreflightReportTests: XCTestCase {
+    func testStrictOutputDeviceDiscoveryPropagatesStreamReadFailure() {
+        enum ReadFailure: Error { case failed }
+
+        XCTAssertThrowsError(try AudioNativePreflightHALDiscovery.outputDevices(
+            deviceIDs: [101, 202],
+            outputStreams: { deviceID in
+                if deviceID == 202 { throw ReadFailure.failed }
+                return [801]
+            }
+        )) { error in
+            XCTAssertTrue(error is ReadFailure)
+        }
+    }
+
+    func testStrictOutputDeviceDiscoveryOmitsOnlyConfirmedEmptyStreamLists() throws {
+        let devices = AudioNativePreflightHALDiscovery.outputDevices(
+            deviceIDs: [101, 202],
+            outputStreams: { deviceID in deviceID == 101 ? [] : [802, 803] }
+        )
+
+        XCTAssertEqual(devices.map(\.deviceID), [202])
+        XCTAssertEqual(devices.map(\.outputStreamIDs), [[802, 803]])
+    }
+
+    func testOptionalMetadataPropagatesReadFailureWhenPropertyExists() {
+        enum ReadFailure: Error { case failed }
+
+        XCTAssertThrowsError(try AudioNativePreflightHALDiscovery.optionalProperty(
+            isPresent: true,
+            read: { () throws -> UInt32 in throw ReadFailure.failed }
+        )) { error in
+            XCTAssertTrue(error is ReadFailure)
+        }
+    }
+
+    func testOptionalMetadataDoesNotReadAbsentProperty() throws {
+        var didRead = false
+
+        let value: UInt32? = AudioNativePreflightHALDiscovery.optionalProperty(
+            isPresent: false,
+            read: {
+                didRead = true
+                return 42
+            }
+        )
+
+        XCTAssertNil(value)
+        XCTAssertFalse(didRead)
+    }
+
+    func testRequiredAggregateMetadataRejectsAbsentProperty() {
+        XCTAssertThrowsError(try AudioNativePreflightHALDiscovery.requiredProperty(
+            isPresent: false,
+            name: "FullSubDeviceList",
+            read: { ["leaf-a"] }
+        )) { error in
+            XCTAssertEqual(
+                error as? AudioNativePreflightHALDiscoveryError,
+                .missingRequiredProperty("FullSubDeviceList")
+            )
+        }
+    }
+
+    func testRequiredAggregateMetadataPropagatesReadFailure() {
+        enum ReadFailure: Error { case failed }
+
+        XCTAssertThrowsError(try AudioNativePreflightHALDiscovery.requiredProperty(
+            isPresent: true,
+            name: "TapList",
+            read: { () throws -> [String] in throw ReadFailure.failed }
+        )) { error in
+            XCTAssertTrue(error is ReadFailure)
+        }
+    }
+
     func testRouteMappingRejectsControlSnapshotFromDifferentDeviceGeneration() {
         let format = ProcessTapAudioFormat(
             sampleRate: 48_000,
