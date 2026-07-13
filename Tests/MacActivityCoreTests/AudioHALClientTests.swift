@@ -175,9 +175,9 @@ final class AudioHALClientTests: XCTestCase {
             "Music"
         )
         let after = AudioHALRetainedTransferDiagnostics.snapshot()
-        XCTAssertEqual(after.acquisitions - before.acquisitions, 1)
-        XCTAssertEqual(after.releases - before.releases, 1)
-        XCTAssertEqual(after.outstanding, before.outstanding)
+        XCTAssertEqual(after.receipts - before.receipts, 1)
+        XCTAssertEqual(after.consumptions - before.consumptions, 1)
+        XCTAssertTrue(after.isBalanced(since: before))
     }
 
     func testAggregateCreateCoversSuccessAndStatusFailureMetadata() throws {
@@ -383,9 +383,9 @@ final class AudioHALClientTests: XCTestCase {
             XCTAssertTrue(CFEqual(returned, successValue))
         }
         let afterSuccess = AudioHALRetainedTransferDiagnostics.snapshot()
-        XCTAssertEqual(afterSuccess.acquisitions - beforeSuccess.acquisitions, 1)
-        XCTAssertEqual(afterSuccess.releases - beforeSuccess.releases, 1)
-        XCTAssertEqual(afterSuccess.outstanding, beforeSuccess.outstanding)
+        XCTAssertEqual(afterSuccess.receipts - beforeSuccess.receipts, 1)
+        XCTAssertEqual(afterSuccess.consumptions - beforeSuccess.consumptions, 1)
+        XCTAssertTrue(afterSuccess.isBalanced(since: beforeSuccess))
 
         let malformedBackend = FakeAudioHALBackend()
         let malformedValue = CFStringCreateMutable(kCFAllocatorDefault, 0)!
@@ -409,9 +409,9 @@ final class AudioHALClientTests: XCTestCase {
             )
         }
         let afterMalformed = AudioHALRetainedTransferDiagnostics.snapshot()
-        XCTAssertEqual(afterMalformed.acquisitions - beforeMalformed.acquisitions, 1)
-        XCTAssertEqual(afterMalformed.releases - beforeMalformed.releases, 1)
-        XCTAssertEqual(afterMalformed.outstanding, beforeMalformed.outstanding)
+        XCTAssertEqual(afterMalformed.receipts - beforeMalformed.receipts, 1)
+        XCTAssertEqual(afterMalformed.consumptions - beforeMalformed.consumptions, 1)
+        XCTAssertTrue(afterMalformed.isBalanced(since: beforeMalformed))
     }
 
     func testRetainedTransferDiagnosticsBalanceStatusError() {
@@ -434,9 +434,24 @@ final class AudioHALClientTests: XCTestCase {
         }
 
         let after = AudioHALRetainedTransferDiagnostics.snapshot()
-        XCTAssertEqual(after.acquisitions - before.acquisitions, 1)
-        XCTAssertEqual(after.releases - before.releases, 1)
-        XCTAssertEqual(after.outstanding, before.outstanding)
+        XCTAssertEqual(after.receipts - before.receipts, 1)
+        XCTAssertEqual(after.consumptions - before.consumptions, 1)
+        XCTAssertTrue(after.isBalanced(since: before))
+    }
+
+    func testUnconsumedRetainedTransferIsObservableAndUnbalanced() {
+        let before = AudioHALRetainedTransferDiagnostics.snapshot()
+
+        AudioHALRetainedTransferDiagnostics.recordReceiptForTesting()
+        let unconsumed = AudioHALRetainedTransferDiagnostics.snapshot()
+        XCTAssertEqual(
+            unconsumed.outstandingUnconsumedTransfers,
+            before.outstandingUnconsumedTransfers + 1
+        )
+        XCTAssertFalse(unconsumed.isBalanced(since: before))
+
+        AudioHALRetainedTransferDiagnostics.recordConsumptionForTesting()
+        XCTAssertTrue(AudioHALRetainedTransferDiagnostics.snapshot().isBalanced(since: before))
     }
 
     func testCFObjectWritePassesUnretainedReferenceAndPreservesAddressAndStatus() throws {

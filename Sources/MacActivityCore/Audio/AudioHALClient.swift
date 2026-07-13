@@ -3,10 +3,15 @@ import Foundation
 
 #if DEBUG
 struct AudioHALRetainedTransferSnapshot: Equatable, Sendable {
-    let acquisitions: Int
-    let releases: Int
+    let receipts: Int
+    let consumptions: Int
 
-    var outstanding: Int { acquisitions - releases }
+    var outstandingUnconsumedTransfers: Int { receipts - consumptions }
+
+    func isBalanced(since baseline: Self) -> Bool {
+        receipts - baseline.receipts == consumptions - baseline.consumptions
+            && outstandingUnconsumedTransfers == baseline.outstandingUnconsumedTransfers
+    }
 }
 
 enum AudioHALRetainedTransferDiagnostics {
@@ -16,23 +21,26 @@ enum AudioHALRetainedTransferDiagnostics {
         counter.snapshot()
     }
 
-    fileprivate static func acquired() { counter.acquired() }
-    fileprivate static func released() { counter.released() }
+    fileprivate static func recordReceipt() { counter.recordReceipt() }
+    fileprivate static func recordConsumption() { counter.recordConsumption() }
+
+    static func recordReceiptForTesting() { counter.recordReceipt() }
+    static func recordConsumptionForTesting() { counter.recordConsumption() }
 
     private final class Counter: @unchecked Sendable {
         private let lock = NSLock()
-        private var acquisitions = 0
-        private var releases = 0
+        private var receipts = 0
+        private var consumptions = 0
 
-        func acquired() {
+        func recordReceipt() {
             lock.lock()
-            acquisitions += 1
+            receipts += 1
             lock.unlock()
         }
 
-        func released() {
+        func recordConsumption() {
             lock.lock()
-            releases += 1
+            consumptions += 1
             lock.unlock()
         }
 
@@ -40,8 +48,8 @@ enum AudioHALRetainedTransferDiagnostics {
             lock.lock()
             defer { lock.unlock() }
             return AudioHALRetainedTransferSnapshot(
-                acquisitions: acquisitions,
-                releases: releases
+                receipts: receipts,
+                consumptions: consumptions
             )
         }
     }
@@ -369,6 +377,9 @@ public final class AudioHALClient: @unchecked Sendable {
                 data: pointer
             )
         }
+        #if DEBUG
+        if value != nil { AudioHALRetainedTransferDiagnostics.recordReceipt() }
+        #endif
         let retainedValue = consumeRetainedTransfer(value)
         try check(status, operation: .getData, objectID: objectID, address: address)
 
@@ -417,6 +428,9 @@ public final class AudioHALClient: @unchecked Sendable {
                 data: pointer
             )
         }
+        #if DEBUG
+        if value != nil { AudioHALRetainedTransferDiagnostics.recordReceipt() }
+        #endif
         let retainedValue = consumeRetainedTransfer(value)
 
         try check(status, operation: .getData, objectID: objectID, address: address)
@@ -854,12 +868,9 @@ public final class AudioHALClient: @unchecked Sendable {
 
 private func consumeRetainedTransfer<T: AnyObject>(_ value: Unmanaged<T>?) -> T? {
     guard let value else { return nil }
-    #if DEBUG
-    AudioHALRetainedTransferDiagnostics.acquired()
-    #endif
     let retainedValue = value.takeRetainedValue()
     #if DEBUG
-    AudioHALRetainedTransferDiagnostics.released()
+    AudioHALRetainedTransferDiagnostics.recordConsumption()
     #endif
     return retainedValue
 }
