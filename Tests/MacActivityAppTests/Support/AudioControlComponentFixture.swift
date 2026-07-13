@@ -646,12 +646,16 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         stopAllCount += 1
         lifecycle?.events.append("engine.stopAll")
     }
+    func prepareRuntime() async -> ProcessTapRuntimePreparation {
+        .ready(cleanupFailures: [])
+    }
     func cleanupOrphans() async -> [AudioTeardownFailure] {
         cleanupCount += 1
         lifecycle?.events.append("engine.cleanup")
         await cleanupGate.enter()
         return scriptedCleanupResults.isEmpty ? [] : scriptedCleanupResults.removeFirst()
     }
+    func shutdown() async { await stopAll() }
     var lastAppliedPlan: AudioRoutePlan? { plans.last }
     var lastStopObjectID: AudioObjectID? { stopCalls.last?.processObjectID }
     func emit(_ snapshot: ProcessTapSessionSnapshot) { continuation.yield(snapshot) }

@@ -14,6 +14,8 @@ public enum ProcessTapSessionState: Equatable, Sendable {
 
 public enum ProcessTapEngineError: Error, Equatable, Sendable {
     case processTapsUnavailable
+    case leaseUnavailable
+    case leaseFailed
     case permissionDenied(OSStatus)
     case unsupportedFormat
     case routeSuperseded
@@ -105,6 +107,11 @@ public struct AudioTeardownFailure: Equatable, Sendable {
     }
 }
 
+public enum ProcessTapRuntimePreparation: Equatable, Sendable {
+    case ready(cleanupFailures: [AudioTeardownFailure])
+    case unavailable(ProcessTapEngineError)
+}
+
 public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
     var sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot> { get }
 
@@ -124,7 +131,9 @@ public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
     ) async -> ProcessTapSessionSnapshot
 
     func stopAll() async
+    func prepareRuntime() async -> ProcessTapRuntimePreparation
     func cleanupOrphans() async -> [AudioTeardownFailure]
+    func shutdown() async
 }
 
 public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @unchecked Sendable {
@@ -135,6 +144,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     private let hardware: (any AudioTapHardware)?
     private let availability: AudioFeatureAvailability
+    private let ownershipLeaseAcquirer: any AudioProcessOwnershipLeaseAcquiring
     private let queue: DispatchQueue
     private let retryLedgerLimit: Int
     private let retryScheduler: any ProcessTapRetryScheduling
@@ -159,9 +169,11 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var maximumConcurrentRetryPasses = 0
     #endif
     private var orphanCleanupPending = false
-    private var lifetimeLease: ProcessTapVolumeEngine?
+    private var ownershipLease: (any AudioProcessOwnershipLease)?
+    private var cleanupRetention: ProcessTapVolumeEngine?
+    private var isDraining = false
     #if DEBUG
-    private var activeSessionMutationSupersessionForTesting: (
+    private var activeMutationSupersessionForTesting: (
         processObjectID: AudioObjectID,
         generation: UInt64
     )?
@@ -174,12 +186,15 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     public convenience init(availability: AudioFeatureAvailability = .current) {
         self.init(
             hardware: CoreAudioTapHardware(hal: .system),
+            leaseAcquirer: DarwinAudioProcessOwnershipLeaseAcquirer(),
             availability: availability
         )
     }
 
     convenience init(
         hardware: any AudioTapHardware,
+        leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
+            DarwinAudioProcessOwnershipLeaseAcquirer(),
         availability: AudioFeatureAvailability = .current,
         queue: DispatchQueue = DispatchQueue(
             label: "com.how.macactivity.audio.process-tap",
@@ -191,6 +206,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     ) {
         self.init(
             optionalHardware: hardware,
+            leaseAcquirer: leaseAcquirer,
             availability: availability,
             queue: queue,
             retryLedgerLimit: retryLedgerLimit,
@@ -201,6 +217,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     private init(
         optionalHardware: (any AudioTapHardware)?,
+        leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring,
         availability: AudioFeatureAvailability,
         queue: DispatchQueue,
         retryLedgerLimit: Int,
@@ -211,6 +228,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         sessionSnapshots = snapshotStream.stream
         sessionSnapshotContinuation = snapshotStream.continuation
         hardware = optionalHardware
+        ownershipLeaseAcquirer = leaseAcquirer
         self.availability = availability
         self.queue = queue
         self.retryLedgerLimit = max(1, retryLedgerLimit)
@@ -291,40 +309,45 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
                 successfullyDestroyedOwnedIdentities.removeAll()
                 orphanCleanupPending = false
                 cancelPendingRetry()
-                lifetimeLease = nil
+                cleanupRetention = nil
                 return
             }
-            advanceRetainedBundles(using: hardware)
-            let activeSessions = sessions.values.sorted {
-                $0.processObjectID < $1.processObjectID
-            }
-            sessions.removeAll()
-            for session in activeSessions {
-                _ = teardownRecordingProgress(
-                    session.acquisitionID,
-                    using: hardware
-                )
-            }
-            scheduleRetryIfNeeded()
+            stopAllOnQueue(using: hardware)
         }
     }
 
+    public func prepareRuntime() async -> ProcessTapRuntimePreparation {
+        await enqueue { [self] in prepareRuntimeOnQueue() }
+    }
+
     public func cleanupOrphans() async -> [AudioTeardownFailure] {
+        switch await prepareRuntime() {
+        case .ready(let cleanupFailures):
+            cleanupFailures
+        case .unavailable:
+            []
+        }
+    }
+
+    public func shutdown() async {
+        generations.cancelAll()
         await enqueue { [self] in
+            isDraining = true
             guard availability.supportsProcessControls,
                   #available(macOS 14.2, *),
                   let hardware
             else {
-                return []
+                sessions.removeAll()
+                bundles.removeAll()
+                successfullyDestroyedOwnedIdentities.removeAll()
+                orphanCleanupPending = false
+                cancelPendingRetry()
+                cleanupRetention = nil
+                releaseOwnershipIfTerminal()
+                return
             }
-            advanceRetainedBundles(using: hardware)
-            let cleanup = cleanupOwnedObjects(using: hardware)
-            orphanCleanupPending = cleanup.shouldRetry
-            if cleanup.didProgress {
-                recordRetryProgress()
-            }
-            scheduleRetryIfNeeded()
-            return cleanup.failures + bundleFailures()
+            stopAllOnQueue(using: hardware)
+            releaseOwnershipIfTerminal()
         }
     }
 
@@ -406,7 +429,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         generation: UInt64
     ) async {
         await enqueue { [self] in
-            activeSessionMutationSupersessionForTesting = (
+            activeMutationSupersessionForTesting = (
                 processObjectID,
                 generation
             )
@@ -428,6 +451,53 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 }
 
 private extension ProcessTapVolumeEngine {
+    func prepareRuntimeOnQueue() -> ProcessTapRuntimePreparation {
+        guard availability.supportsProcessControls,
+              #available(macOS 14.2, *),
+              let hardware else {
+            return .unavailable(.processTapsUnavailable)
+        }
+        if let leaseError = acquireOwnershipIfNeeded() {
+            return .unavailable(leaseError)
+        }
+        advanceRetainedBundles(using: hardware)
+        let cleanup = cleanupOwnedObjects(using: hardware)
+        orphanCleanupPending = cleanup.shouldRetry
+        if cleanup.didProgress {
+            recordRetryProgress()
+        }
+        scheduleRetryIfNeeded()
+        return .ready(cleanupFailures: cleanup.failures + bundleFailures())
+    }
+
+    func acquireOwnershipIfNeeded() -> ProcessTapEngineError? {
+        guard isDraining == false else { return .leaseUnavailable }
+        guard ownershipLease == nil else { return nil }
+        do {
+            ownershipLease = try ownershipLeaseAcquirer.acquire()
+            return nil
+        } catch AudioProcessOwnershipLeaseError.busy {
+            return .leaseUnavailable
+        } catch {
+            return .leaseFailed
+        }
+    }
+
+    func stopAllOnQueue(using hardware: any AudioTapHardware) {
+        advanceRetainedBundles(using: hardware)
+        let activeSessions = sessions.values.sorted {
+            $0.processObjectID < $1.processObjectID
+        }
+        sessions.removeAll()
+        for session in activeSessions {
+            _ = teardownRecordingProgress(
+                session.acquisitionID,
+                using: hardware
+            )
+        }
+        scheduleRetryIfNeeded()
+    }
+
     func applyOnQueue(
         plan: AudioRoutePlan,
         gain: ProcessGainState,
@@ -453,11 +523,19 @@ private extension ProcessTapVolumeEngine {
                 token: token
             )
         }
+        if let leaseError = acquireOwnershipIfNeeded() {
+            return publishFailure(
+                leaseError,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
+        }
 
         if sessions[plan.processObjectID]?.generation == plan.generation {
             #if DEBUG
-            if let supersession = activeSessionMutationSupersessionForTesting {
-                activeSessionMutationSupersessionForTesting = nil
+            if let supersession = activeMutationSupersessionForTesting {
+                activeMutationSupersessionForTesting = nil
                 _ = generations.register(
                     processObjectID: supersession.processObjectID,
                     generation: supersession.generation
@@ -746,7 +824,7 @@ private extension ProcessTapVolumeEngine {
             let installed = generations.performIfCurrent(token) { [self] in
                 transitionBundle(acquisitionID, to: .active)
                 sessions[plan.processObjectID] = session
-                lifetimeLease = self
+                cleanupRetention = self
             }
             guard installed else {
                 throw ProcessTapPreparationAbort(.routeSuperseded)
@@ -1092,7 +1170,7 @@ private extension ProcessTapVolumeEngine {
             case .released:
                 transitionBundle(acquisitionID, to: .released)
                 bundles.removeValue(forKey: acquisitionID)
-                refreshLifetimeLease()
+                refreshCleanupRetention()
                 return []
             }
         }
@@ -1220,10 +1298,11 @@ private extension ProcessTapVolumeEngine {
         guard hasRetainedBundle || orphanCleanupPending else {
             retryBackoff.recordProgress()
             cancelPendingRetry()
-            refreshLifetimeLease()
+            refreshCleanupRetention()
+            releaseOwnershipIfTerminal()
             return
         }
-        refreshLifetimeLease()
+        refreshCleanupRetention()
         guard pendingRetryScheduleID == nil, isRetryPassRunning == false else {
             return
         }
@@ -1255,7 +1334,7 @@ private extension ProcessTapVolumeEngine {
         pendingRetryScheduleID = nil
         pendingRetryDelay = nil
         pendingRetryCancellation = nil
-        guard isRetryPassRunning == false else { return }
+        guard isRetryPassRunning == false, ownershipLease != nil else { return }
 
         isRetryPassRunning = true
         #if DEBUG
@@ -1389,12 +1468,22 @@ private extension ProcessTapVolumeEngine {
             }
     }
 
-    func refreshLifetimeLease() {
+    func refreshCleanupRetention() {
         if bundles.isEmpty == false || orphanCleanupPending {
-            lifetimeLease = self
+            cleanupRetention = self
         } else {
-            lifetimeLease = nil
+            cleanupRetention = nil
         }
+    }
+
+    func releaseOwnershipIfTerminal() {
+        guard isDraining,
+              sessions.isEmpty,
+              bundles.isEmpty,
+              orphanCleanupPending == false,
+              pendingRetryScheduleID == nil,
+              isRetryPassRunning == false else { return }
+        ownershipLease = nil
     }
 
     func activeOwnedObjectIDs() -> Set<AudioObjectID> {

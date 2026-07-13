@@ -300,8 +300,7 @@ private final class AppDelegatePreferencesStore: PreferencesStoring, @unchecked 
 private final class AppTerminationAudioServices:
     AudioDeviceControlProviding,
     AudioProcessProviding,
-    AudioRouteDeviceProviding
-{
+    AudioRouteDeviceProviding {
     let routeDevice = DeviceProviderFake.makeRouteDevice(id: 10, uid: "BuiltIn")
 
     func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
@@ -362,10 +361,14 @@ private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unc
         fatalError("No process should be stopped")
     }
     func stopAll() async { await state.recordStopAll() }
+    func prepareRuntime() async -> ProcessTapRuntimePreparation {
+        .ready(cleanupFailures: [])
+    }
     func cleanupOrphans() async -> [AudioTeardownFailure] {
         await state.enterCleanup()
         return []
     }
+    func shutdown() async { await stopAll() }
 
     func blockCleanup() async { await state.blockCleanup() }
     func releaseCleanup() async { await state.releaseCleanup() }

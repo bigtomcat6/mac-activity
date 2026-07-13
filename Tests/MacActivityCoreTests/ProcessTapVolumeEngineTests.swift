@@ -5,6 +5,224 @@ import XCTest
 @testable import MacActivityCore
 
 final class ProcessTapVolumeEngineTests: XCTestCase {
+    func testContendingEngineDirectApplyFailsBeforeAnyHardwareCall() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let ownerHardware = FakeAudioTapHardware()
+        let contenderHardware = FakeAudioTapHardware()
+        let owner = makeInjectedEngine(
+            hardware: ownerHardware,
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        let plan = EngineFixture().plan(generation: 1)
+        _ = await owner.apply(plan: plan, gain: ProcessGainState())
+        contenderHardware.clearCalls()
+
+        let result = await contender.apply(plan: plan, gain: ProcessGainState())
+
+        XCTAssertEqual(result.error, .leaseUnavailable)
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+    }
+
+    func testContendingEnginePrepareAndCleanupNeverEnumerateHardware() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let owner = makeInjectedEngine(
+            hardware: FakeAudioTapHardware(),
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        _ = await owner.prepareRuntime()
+
+        let preparation = await contender.prepareRuntime()
+        let cleanup = await contender.cleanupOrphans()
+
+        XCTAssertEqual(preparation, .unavailable(.leaseUnavailable))
+        XCTAssertTrue(cleanup.isEmpty)
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+    }
+
+    func testNonBusyLeaseFailureMapsToLeaseFailedBeforeHardware() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        broker.failNextAcquire(with: .system(operation: .openLockFile, code: EIO))
+        let hardware = FakeAudioTapHardware()
+        let engine = makeInjectedEngine(
+            hardware: hardware,
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+
+        let result = await engine.apply(
+            plan: EngineFixture().plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .leaseFailed)
+        XCTAssertTrue(hardware.calls.isEmpty)
+    }
+
+    func testShutdownReleasesOwnerBeforeSuccessorCleanup() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let owner = makeInjectedEngine(
+            hardware: FakeAudioTapHardware(),
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let successorHardware = FakeAudioTapHardware()
+        let successor = makeInjectedEngine(
+            hardware: successorHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        _ = await owner.apply(
+            plan: EngineFixture().plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        await owner.shutdown()
+        XCTAssertNil(broker.currentOwner)
+        let preparation = await successor.prepareRuntime()
+        XCTAssertEqual(preparation, .ready(cleanupFailures: []))
+        XCTAssertEqual(successorHardware.calls, [.ownedObjects])
+    }
+
+    func testShutdownRetainsLeaseUntilBundleDestroyRetryDrains() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let scheduler = FakeProcessTapRetryScheduler()
+        let ownerHardware = FakeAudioTapHardware()
+        let owner = EngineFixture(
+            hardware: ownerHardware,
+            scheduler: scheduler,
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        _ = await owner.engine.apply(
+            plan: owner.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        ownerHardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyIOProc
+        )
+
+        await owner.engine.shutdown()
+        let blocked = await contender.prepareRuntime()
+
+        XCTAssertEqual(broker.currentOwner, "A")
+        XCTAssertEqual(blocked, .unavailable(.leaseUnavailable))
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+        XCTAssertEqual(scheduler.pendingCount, 1)
+
+        ownerHardware.setPersistentStatus(nil, at: .destroyIOProc)
+        scheduler.runNext()
+        await owner.engine.waitUntilIdleForTesting()
+        let succeeded = await contender.prepareRuntime()
+
+        XCTAssertEqual(succeeded, .ready(cleanupFailures: []))
+        XCTAssertEqual(broker.currentOwner, "B")
+    }
+
+    @available(macOS 14.2, *)
+    func testShutdownRetainsLeaseUntilPendingOrphanRetryDrains() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let scheduler = FakeProcessTapRetryScheduler()
+        let ownerHardware = FakeAudioTapHardware()
+        let orphan = ownedAggregate(id: 9_001)
+        ownerHardware.ownedObjectValues = [orphan]
+        ownerHardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyOwnedObject(orphan.id)
+        )
+        let owner = EngineFixture(
+            hardware: ownerHardware,
+            scheduler: scheduler,
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        let initial = await owner.engine.prepareRuntime()
+
+        await owner.engine.shutdown()
+        let blocked = await contender.prepareRuntime()
+
+        guard case .ready(let failures) = initial else {
+            return XCTFail("Expected owner preparation")
+        }
+        XCTAssertEqual(failures.count, 1)
+        XCTAssertEqual(blocked, .unavailable(.leaseUnavailable))
+        XCTAssertEqual(broker.currentOwner, "A")
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+
+        ownerHardware.setPersistentStatus(nil, at: .destroyOwnedObject(orphan.id))
+        ownerHardware.confirmOwnedObjectDisappearance(orphan)
+        scheduler.runNext()
+        await owner.engine.waitUntilIdleForTesting()
+        let succeeded = await contender.prepareRuntime()
+
+        XCTAssertEqual(succeeded, .ready(cleanupFailures: []))
+        XCTAssertEqual(broker.currentOwner, "B")
+    }
+
+    func testStopAllTearsDownButRetainsOwnershipUntilShutdown() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let owner = makeInjectedEngine(
+            hardware: FakeAudioTapHardware(),
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        _ = await owner.apply(
+            plan: EngineFixture().plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        await owner.stopAll()
+        let blocked = await contender.prepareRuntime()
+
+        XCTAssertEqual(broker.currentOwner, "A")
+        XCTAssertEqual(blocked, .unavailable(.leaseUnavailable))
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+
+        await owner.shutdown()
+        let succeeded = await contender.prepareRuntime()
+        XCTAssertEqual(succeeded, .ready(cleanupFailures: []))
+    }
+
+    func testSimulatedCrashSuccessorIsNotReleasedByOldToken() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let oldOwner = makeInjectedEngine(
+            hardware: FakeAudioTapHardware(),
+            leaseAcquirer: broker.acquirer(owner: "A")
+        )
+        let successor = makeInjectedEngine(
+            hardware: FakeAudioTapHardware(),
+            leaseAcquirer: broker.acquirer(owner: "B")
+        )
+        _ = await oldOwner.prepareRuntime()
+        broker.simulateProcessDeath(owner: "A")
+        let succeeded = await successor.prepareRuntime()
+
+        await oldOwner.shutdown()
+
+        XCTAssertEqual(succeeded, .ready(cleanupFailures: []))
+        XCTAssertEqual(broker.currentOwner, "B")
+        XCTAssertEqual(Array(broker.events.suffix(1)), [
+            .acquired(owner: "B", leaseID: 2),
+        ])
+    }
     func testSessionSnapshotStreamFinishesWhenEngineDeinitializes() async {
         var engine: ProcessTapVolumeEngine? = makeInjectedEngine(
             hardware: FakeAudioTapHardware()
@@ -453,6 +671,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         let fixture = EngineFixture()
         let engine = ProcessTapVolumeEngine(
             hardware: hardware,
+            leaseAcquirer: FakeAudioProcessOwnershipLeaseBroker()
+                .acquirer(owner: "process-taps-unavailable"),
             availability: AudioFeatureAvailability(
                 operatingSystemVersion: OperatingSystemVersion(
                     majorVersion: 14,
@@ -1745,6 +1965,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         let hardware = FakeAudioTapHardware()
         let engine = ProcessTapVolumeEngine(
             hardware: hardware,
+            leaseAcquirer: FakeAudioProcessOwnershipLeaseBroker()
+                .acquirer(owner: "conservative-policy"),
             availability: AudioFeatureAvailability(
                 operatingSystemVersion: .init(
                     majorVersion: 14,
@@ -2381,6 +2603,8 @@ private final class EngineFixture: @unchecked Sendable {
         recorder: SnapshotRecorder? = nil,
         hardware: FakeAudioTapHardware = FakeAudioTapHardware(),
         scheduler: FakeProcessTapRetryScheduler = FakeProcessTapRetryScheduler(),
+        leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
+            FakeAudioProcessOwnershipLeaseBroker().acquirer(owner: UUID().uuidString),
         queue: DispatchQueue? = nil,
         onSessionSnapshot: (@Sendable (ProcessTapSessionSnapshot) -> Void)? = nil
     ) {
@@ -2397,6 +2621,7 @@ private final class EngineFixture: @unchecked Sendable {
         }
         engine = ProcessTapVolumeEngine(
             hardware: hardware,
+            leaseAcquirer: leaseAcquirer,
             availability: AudioFeatureAvailability(
                 operatingSystemVersion: OperatingSystemVersion(
                     majorVersion: macOS.major,
@@ -2539,10 +2764,13 @@ private final class WeakReference<Object: AnyObject>: @unchecked Sendable {
 }
 
 private func makeInjectedEngine(
-    hardware: FakeAudioTapHardware
+    hardware: FakeAudioTapHardware,
+    leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
+        FakeAudioProcessOwnershipLeaseBroker().acquirer(owner: UUID().uuidString)
 ) -> ProcessTapVolumeEngine {
     ProcessTapVolumeEngine(
         hardware: hardware,
+        leaseAcquirer: leaseAcquirer,
         availability: AudioFeatureAvailability(
             operatingSystemVersion: OperatingSystemVersion(
                 majorVersion: 14,
