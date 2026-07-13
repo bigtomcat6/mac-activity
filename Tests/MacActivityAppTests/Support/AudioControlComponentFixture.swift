@@ -552,8 +552,10 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private let continuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
     private(set) var applyCount = 0
     private(set) var cleanupCount = 0
+    private(set) var prepareRuntimeCount = 0
     private(set) var authorizationAttemptCount = 0
     private(set) var stopAllCount = 0
+    private(set) var shutdownCount = 0
     private(set) var plans: [AudioRoutePlan] = []
     private(set) var gains: [ProcessGainState] = []
     private(set) var gainUpdateCalls: [RecordingEngineGainCall] = []
@@ -568,10 +570,13 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     ] = [:]
     var scriptedStopResults: [(ProcessTapSessionState, ProcessTapEngineError?)] = []
     var scriptedCleanupResults: [[AudioTeardownFailure]] = []
+    var scriptedPreparationResults: [ProcessTapRuntimePreparation] = []
     var lifecycle: LifecycleRecorder?
     private var nextCommandSequence: UInt64 = 0
     private let stopGate = ControlledCallGate()
     private let cleanupGate = ControlledCallGate()
+    private let prepareRuntimeGate = ControlledCallGate()
+    private let shutdownGate = ControlledCallGate()
     private let applyGate = ControlledIndexedCallGate()
     private let applyReturnGate = ControlledIndexedCallGate()
     private let gainUpdateGate = ControlledIndexedCallGate()
@@ -647,7 +652,12 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         lifecycle?.events.append("engine.stopAll")
     }
     func prepareRuntime() async -> ProcessTapRuntimePreparation {
-        .ready(cleanupFailures: [])
+        prepareRuntimeCount += 1
+        lifecycle?.events.append("engine.prepareRuntime")
+        await prepareRuntimeGate.enter()
+        return scriptedPreparationResults.isEmpty
+            ? .ready(cleanupFailures: [])
+            : scriptedPreparationResults.removeFirst()
     }
     func cleanupOrphans() async -> [AudioTeardownFailure] {
         cleanupCount += 1
@@ -655,7 +665,11 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         await cleanupGate.enter()
         return scriptedCleanupResults.isEmpty ? [] : scriptedCleanupResults.removeFirst()
     }
-    func shutdown() async { await stopAll() }
+    func shutdown() async {
+        shutdownCount += 1
+        lifecycle?.events.append("engine.shutdown")
+        await shutdownGate.enter()
+    }
     var lastAppliedPlan: AudioRoutePlan? { plans.last }
     var lastStopObjectID: AudioObjectID? { stopCalls.last?.processObjectID }
     func emit(_ snapshot: ProcessTapSessionSnapshot) { continuation.yield(snapshot) }
@@ -665,6 +679,14 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func blockCleanup() async { await cleanupGate.block() }
     func resumeCleanup() async { await cleanupGate.resumeAll() }
     func waitUntilCleanupCount(_ count: Int) async { await cleanupGate.waitUntilEntered(count) }
+    func blockPrepareRuntime() async { await prepareRuntimeGate.block() }
+    func resumePrepareRuntime() async { await prepareRuntimeGate.resumeAll() }
+    func waitUntilPrepareRuntimeCount(_ count: Int) async {
+        await prepareRuntimeGate.waitUntilEntered(count)
+    }
+    func blockShutdown() async { await shutdownGate.block() }
+    func resumeShutdown() async { await shutdownGate.resumeAll() }
+    func waitUntilShutdownCount(_ count: Int) async { await shutdownGate.waitUntilEntered(count) }
     func blockApplyCall(_ call: Int) async { await applyGate.block(call) }
     func resumeApplies() async { await applyGate.resumeAll() }
     func waitUntilApplyCount(_ count: Int) async { await applyGate.waitUntilEntered(count) }

@@ -25,6 +25,8 @@
 "audio.process.stopping" = "Audiosteuerung wird beendet …";
 "audio.process.permissionDenied" = "Die Berechtigung zur Audioerfassung ist erforderlich. Erlaube Mac Activity in den Systemeinstellungen und versuche es erneut.";
 "audio.process.operationFailed" = "Audiosteuerung fehlgeschlagen.";
+"audio.process.ownedByAnotherInstance" = "Eine andere Mac Activity-Instanz steuert das App-Audio.";
+"audio.process.runtimeUnavailable" = "Die App-Audiosteuerung ist nicht verfügbar.";
 "audio.process.targetUnavailable" = "Der ausgewählte Ausgang ist nicht verfügbar; die ursprüngliche Wiedergabe wurde wiederhergestellt.";
 "audio.route.title" = "Ausgabeweg";
 "audio.route.followOriginal" = "Ursprünglicher Ausgabe folgen";

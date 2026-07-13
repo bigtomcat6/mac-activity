@@ -1,8 +1,65 @@
 import CoreAudio
 import Foundation
+@testable import MacActivityCore
 import XCTest
 
 final class NativeValidationConfigurationTests: XCTestCase {
+    func testNativeEngineFinalizerReturnsValueThenShutsDownExactlyOnce() async throws {
+        let events = NativeEngineFinalizerEvents()
+
+        let value = try await withNativeEngineShutdown(
+            shutdown: { await events.record("shutdown") },
+            operation: {
+                await events.record("operation")
+                return 42
+            }
+        )
+
+        let recordedEvents = await events.values()
+        XCTAssertEqual(value, 42)
+        XCTAssertEqual(recordedEvents, ["operation", "shutdown"])
+    }
+
+    func testNativeEngineFinalizerRethrowsAfterShuttingDownExactlyOnce() async {
+        let events = NativeEngineFinalizerEvents()
+
+        do {
+            let _: Int = try await withNativeEngineShutdown(
+                shutdown: { await events.record("shutdown") },
+                operation: {
+                    await events.record("operation")
+                    throw ProcessTapEngineError.leaseUnavailable
+                }
+            )
+            XCTFail("Expected lease failure")
+        } catch {
+            XCTAssertEqual(error as? ProcessTapEngineError, .leaseUnavailable)
+        }
+
+        let recordedEvents = await events.values()
+        XCTAssertEqual(recordedEvents, ["operation", "shutdown"])
+    }
+
+    func testNativeEngineFinalizerShutsDownExactlyOnceOnCancellation() async {
+        let events = NativeEngineFinalizerEvents()
+
+        do {
+            let _: Int = try await withNativeEngineShutdown(
+                shutdown: { await events.record("shutdown") },
+                operation: {
+                    await events.record("operation")
+                    throw CancellationError()
+                }
+            )
+            XCTFail("Expected cancellation")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+
+        let recordedEvents = await events.values()
+        XCTAssertEqual(recordedEvents, ["operation", "shutdown"])
+    }
+
     private var scratchURL: URL!
 
     override func setUpWithError() throws {
@@ -174,5 +231,17 @@ final class NativeValidationConfigurationTests: XCTestCase {
             "MACACTIVITY_AUDIO_MIC_TCC_OBSERVATION": microphoneObservation,
             "MACACTIVITY_AUDIO_VALIDATION_SECONDS": "1",
         ]
+    }
+}
+
+private actor NativeEngineFinalizerEvents {
+    private var events: [String] = []
+
+    func record(_ event: String) {
+        events.append(event)
+    }
+
+    func values() -> [String] {
+        events
     }
 }

@@ -152,23 +152,25 @@ final class AppSamplingControllerTests: XCTestCase {
             releasePageOpener: { _ in },
             terminationReply: { accepted in replies.record(accepted) }
         )
-        await audioEngine.blockCleanup()
+        await audioEngine.blockPrepareRuntime()
         delegate.testingStartOwnedLifecycles(
             audioControlCoordinator: coordinator,
             scheduler: scheduler
         )
-        await audioEngine.waitUntilCleanupEntered()
+        await audioEngine.waitUntilPrepareRuntimeEntered()
         await metricsProvider.waitUntilEntered()
 
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
-        await audioEngine.waitUntilCleanupCanceled()
+        await audioEngine.waitUntilPrepareRuntimeCanceled()
         XCTAssertEqual(replies.values, [])
-        let stopAllCountBeforeCleanupRelease = await audioEngine.stopAllCount()
-        XCTAssertEqual(stopAllCountBeforeCleanupRelease, 0)
+        let shutdownCountBeforePrepareRelease = await audioEngine.shutdownCount()
+        let stopAllCountBeforePrepareRelease = await audioEngine.stopAllCount()
+        XCTAssertEqual(shutdownCountBeforePrepareRelease, 0)
+        XCTAssertEqual(stopAllCountBeforePrepareRelease, 0)
 
-        await audioEngine.releaseCleanup()
-        await audioEngine.waitUntilStopAllCount(1)
+        await audioEngine.releasePrepareRuntime()
+        await audioEngine.waitUntilShutdownCount(1)
         await metricsProvider.waitUntilCanceled()
         XCTAssertEqual(audioMonitor.startCount, 1)
         XCTAssertEqual(replies.values, [])
@@ -362,80 +364,85 @@ private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unc
     }
     func stopAll() async { await state.recordStopAll() }
     func prepareRuntime() async -> ProcessTapRuntimePreparation {
-        .ready(cleanupFailures: [])
+        await state.enterPreparation()
+        return .ready(cleanupFailures: [])
     }
-    func cleanupOrphans() async -> [AudioTeardownFailure] {
-        await state.enterCleanup()
-        return []
-    }
-    func shutdown() async { await stopAll() }
+    func cleanupOrphans() async -> [AudioTeardownFailure] { [] }
+    func shutdown() async { await state.recordShutdown() }
 
-    func blockCleanup() async { await state.blockCleanup() }
-    func releaseCleanup() async { await state.releaseCleanup() }
-    func waitUntilCleanupEntered() async { await state.waitUntilCleanupEntered() }
-    func waitUntilCleanupCanceled() async { await state.waitUntilCleanupCanceled() }
-    func waitUntilStopAllCount(_ count: Int) async { await state.waitUntilStopAllCount(count) }
+    func blockPrepareRuntime() async { await state.blockPreparation() }
+    func releasePrepareRuntime() async { await state.releasePreparation() }
+    func waitUntilPrepareRuntimeEntered() async { await state.waitUntilPreparationEntered() }
+    func waitUntilPrepareRuntimeCanceled() async { await state.waitUntilPreparationCanceled() }
+    func waitUntilShutdownCount(_ count: Int) async { await state.waitUntilShutdownCount(count) }
     func stopAllCount() async -> Int { await state.currentStopAllCount() }
+    func shutdownCount() async -> Int { await state.currentShutdownCount() }
 }
 
 private actor AppTerminationAudioEngineState {
-    private var blocksCleanup = false
-    private var cleanupEntered = false
-    private var cleanupCanceled = false
-    private var cleanupContinuation: CheckedContinuation<Void, Never>?
-    private var cleanupEntryWaiters: [CheckedContinuation<Void, Never>] = []
-    private var cleanupCancellationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var blocksPreparation = false
+    private var preparationEntered = false
+    private var preparationCanceled = false
+    private var preparationContinuation: CheckedContinuation<Void, Never>?
+    private var preparationEntryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var preparationCancellationWaiters: [CheckedContinuation<Void, Never>] = []
     private var stopAllCount = 0
-    private var stopAllWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    private var shutdownCount = 0
+    private var shutdownWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
-    func blockCleanup() { blocksCleanup = true }
+    func blockPreparation() { blocksPreparation = true }
 
-    func enterCleanup() async {
-        cleanupEntered = true
-        cleanupEntryWaiters.forEach { $0.resume() }
-        cleanupEntryWaiters.removeAll()
-        guard blocksCleanup else { return }
+    func enterPreparation() async {
+        preparationEntered = true
+        preparationEntryWaiters.forEach { $0.resume() }
+        preparationEntryWaiters.removeAll()
+        guard blocksPreparation else { return }
         await withTaskCancellationHandler {
-            await withCheckedContinuation { cleanupContinuation = $0 }
+            await withCheckedContinuation { preparationContinuation = $0 }
         } onCancel: {
-            Task { await self.recordCleanupCancellation() }
+            Task { await self.recordPreparationCancellation() }
         }
     }
 
-    func releaseCleanup() {
-        blocksCleanup = false
-        cleanupContinuation?.resume()
-        cleanupContinuation = nil
+    func releasePreparation() {
+        blocksPreparation = false
+        preparationContinuation?.resume()
+        preparationContinuation = nil
     }
 
-    func waitUntilCleanupEntered() async {
-        guard cleanupEntered == false else { return }
-        await withCheckedContinuation { cleanupEntryWaiters.append($0) }
+    func waitUntilPreparationEntered() async {
+        guard preparationEntered == false else { return }
+        await withCheckedContinuation { preparationEntryWaiters.append($0) }
     }
 
-    func waitUntilCleanupCanceled() async {
-        guard cleanupCanceled == false else { return }
-        await withCheckedContinuation { cleanupCancellationWaiters.append($0) }
+    func waitUntilPreparationCanceled() async {
+        guard preparationCanceled == false else { return }
+        await withCheckedContinuation { preparationCancellationWaiters.append($0) }
     }
 
     func recordStopAll() {
         stopAllCount += 1
-        let ready = stopAllWaiters.filter { stopAllCount >= $0.0 }
-        stopAllWaiters.removeAll { stopAllCount >= $0.0 }
+    }
+
+    func recordShutdown() {
+        shutdownCount += 1
+        let ready = shutdownWaiters.filter { shutdownCount >= $0.0 }
+        shutdownWaiters.removeAll { shutdownCount >= $0.0 }
         ready.forEach { $0.1.resume() }
     }
 
-    func waitUntilStopAllCount(_ count: Int) async {
-        guard stopAllCount < count else { return }
-        await withCheckedContinuation { stopAllWaiters.append((count, $0)) }
+    func waitUntilShutdownCount(_ count: Int) async {
+        guard shutdownCount < count else { return }
+        await withCheckedContinuation { shutdownWaiters.append((count, $0)) }
     }
 
     func currentStopAllCount() -> Int { stopAllCount }
+    func currentShutdownCount() -> Int { shutdownCount }
 
-    private func recordCleanupCancellation() {
-        cleanupCanceled = true
-        cleanupCancellationWaiters.forEach { $0.resume() }
-        cleanupCancellationWaiters.removeAll()
+    private func recordPreparationCancellation() {
+        preparationCanceled = true
+        preparationCancellationWaiters.forEach { $0.resume() }
+        preparationCancellationWaiters.removeAll()
     }
 }
 

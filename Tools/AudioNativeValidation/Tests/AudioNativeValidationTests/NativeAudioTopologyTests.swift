@@ -201,6 +201,39 @@ private func runNativeSession(
     hardware: NativeRecordingAudioTapHardware,
     engine: ProcessTapVolumeEngine
 ) async throws {
+    try await withNativeEngineShutdown(
+        shutdown: { await engine.shutdown() },
+        operation: {
+            try await runNativeSessionBody(
+                environment: environment,
+                plan: plan,
+                hardware: hardware,
+                engine: engine
+            )
+        }
+    )
+}
+
+func withNativeEngineShutdown<Value: Sendable>(
+    shutdown: () async -> Void,
+    operation: () async throws -> Value
+) async throws -> Value {
+    do {
+        let value = try await operation()
+        await shutdown()
+        return value
+    } catch {
+        await shutdown()
+        throw error
+    }
+}
+
+private func runNativeSessionBody(
+    environment: NativeValidationEnvironment,
+    plan: AudioRoutePlan,
+    hardware: NativeRecordingAudioTapHardware,
+    engine: ProcessTapVolumeEngine
+) async throws {
     var sessionError: Error?
     do {
         let running = await engine.apply(plan: plan, gain: ProcessGainState())

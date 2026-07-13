@@ -253,6 +253,46 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(coordinator.intentCount, 0)
     }
 
+    func testRuntimeLeaseErrorsShowLocalizedNonActionableProcessSection() throws {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        AppLocalization.setPreferredLanguageIdentifier("en")
+        let cases: [(ProcessTapEngineError, String)] = [
+            (.leaseUnavailable, "Another Mac Activity instance is controlling app audio."),
+            (.leaseFailed, "App audio control is unavailable."),
+        ]
+
+        for (error, expectedText) in cases {
+            let snapshot = AudioControlSnapshot(
+                devices: [.fixture()],
+                processes: [],
+                processControlsAreVisible: false,
+                processRuntimeError: .operationFailed(error)
+            )
+            let presentation = AudioDashboardPresentation(
+                snapshot: snapshot,
+                supportsProcessControls: true
+            )
+
+            let section = try XCTUnwrap(presentation.processSection)
+            XCTAssertTrue(section.processes.isEmpty)
+            XCTAssertEqual(section.runtimeErrorText, expectedText)
+        }
+    }
+
+    func testUnsupportedRuntimeNeverPresentsLeaseError() {
+        let snapshot = AudioControlSnapshot(
+            devices: [.fixture()],
+            processes: [],
+            processControlsAreVisible: false,
+            processRuntimeError: .operationFailed(.leaseUnavailable)
+        )
+
+        XCTAssertNil(AudioDashboardPresentation(
+            snapshot: snapshot,
+            supportsProcessControls: false
+        ).processSection)
+    }
+
     func testUnavailableAndFailedDevicesRemainVisibleWithRetryAndNoSlider() {
         let snapshot = AudioControlSnapshot(
             devices: [

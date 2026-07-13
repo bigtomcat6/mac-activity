@@ -73,6 +73,7 @@ struct AudioControlSnapshot: Equatable, Sendable {
     var devices: [AudioDeviceControlSnapshot]
     var processes: [AudioProcessControlSnapshot]
     var processControlsAreVisible: Bool = false
+    var processRuntimeError: AudioControlUserError?
 
     static let empty = AudioControlSnapshot(devices: [], processes: [])
 }
@@ -146,6 +147,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var didFinishShutdown = false
     private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
     private var processRuntimeWasStarted = false
+    private var processRuntimePreparationWasAttempted = false
 
     static func planningUserError(
         _ error: AudioRoutePlanningError
@@ -202,6 +204,14 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         if supportsProcessControls {
             refreshProcesses()
         }
+        let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
+        guard Task.isCancelled == false, didBeginShutdown == false else {
+            if didBeginShutdown == false {
+                monitor.stop()
+                hasStarted = false
+            }
+            return
+        }
         do {
             try monitor.updateObservedObjects(
                 deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
@@ -214,15 +224,10 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             hasStarted = false
             return
         }
-        guard await prepareProcessRuntimeIfNeeded() else {
-            if didBeginShutdown == false {
-                monitor.stop()
-                hasStarted = false
-            }
-            return
-        }
         startConsumers()
-        await restoreConfirmedAndPersistedRules()
+        if processRuntimeIsReady {
+            await restoreConfirmedAndPersistedRules()
+        }
     }
 
     func retryDevice(_ deviceUID: String) {
@@ -357,8 +362,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         for task in workTasks { await task.value }
         await monitorTask?.value
         await engineSnapshotTask?.value
-        if processRuntimeWasStarted {
-            await engine.stopAll()
+        if processRuntimePreparationWasAttempted {
+            await engine.shutdown()
         }
         hasStarted = false
         didFinishShutdown = true
@@ -1074,10 +1079,12 @@ private extension AudioControlCoordinator {
             } else {
                 snapshot.processes = []
             }
-            guard await prepareProcessRuntimeIfNeeded() else { return }
-            startConsumers()
-            if supportsProcessControls {
-                await restoreConfirmedAndPersistedRules()
+            let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
+            if processRuntimeIsReady {
+                startConsumers()
+                if supportsProcessControls {
+                    await restoreConfirmedAndPersistedRules()
+                }
             }
             await updateMonitorObjects()
             return
@@ -1224,15 +1231,22 @@ private extension AudioControlCoordinator {
     func prepareProcessRuntimeIfNeeded() async -> Bool {
         guard snapshot.processControlsAreVisible else { return true }
         guard processRuntimeWasStarted == false else { return true }
-        processRuntimeWasStarted = true
-        _ = await engine.cleanupOrphans()
+        processRuntimePreparationWasAttempted = true
+        let preparation = await engine.prepareRuntime()
         guard Task.isCancelled == false, didBeginShutdown == false else {
-            if shutdownWasRequested == false {
-                processRuntimeWasStarted = false
-            }
             return false
         }
-        return true
+        switch preparation {
+        case .ready:
+            snapshot.processRuntimeError = nil
+            processRuntimeWasStarted = true
+            return true
+        case .unavailable(let error):
+            snapshot.processes = []
+            snapshot.processControlsAreVisible = false
+            snapshot.processRuntimeError = .operationFailed(error)
+            return false
+        }
     }
 
     func makeRouteOptions(

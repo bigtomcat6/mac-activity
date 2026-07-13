@@ -25,6 +25,8 @@
 "audio.process.stopping" = "Stopping audio control…";
 "audio.process.permissionDenied" = "Audio capture permission is required. Allow Mac Activity in System Settings, then retry.";
 "audio.process.operationFailed" = "Audio control failed.";
+"audio.process.ownedByAnotherInstance" = "Another Mac Activity instance is controlling app audio.";
+"audio.process.runtimeUnavailable" = "App audio control is unavailable.";
 "audio.process.targetUnavailable" = "The selected output is unavailable; original playback is restored.";
 "audio.route.title" = "Output route";
 "audio.route.followOriginal" = "Follow original output";

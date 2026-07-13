@@ -25,6 +25,8 @@
 "audio.process.stopping" = "Arrêt du contrôle audio…";
 "audio.process.permissionDenied" = "L’autorisation de capture audio est requise. Autorisez Mac Activity dans Réglages Système, puis réessayez.";
 "audio.process.operationFailed" = "Échec du contrôle audio.";
+"audio.process.ownedByAnotherInstance" = "Une autre instance de Mac Activity contrôle l’audio des apps.";
+"audio.process.runtimeUnavailable" = "Le contrôle audio des apps est indisponible.";
 "audio.process.targetUnavailable" = "La sortie sélectionnée est indisponible ; la lecture d’origine est rétablie.";
 "audio.route.title" = "Routage de sortie";
 "audio.route.followOriginal" = "Suivre la sortie d’origine";

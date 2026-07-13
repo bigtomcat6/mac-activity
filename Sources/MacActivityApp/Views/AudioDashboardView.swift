@@ -165,7 +165,11 @@ struct AudioDashboardView: View {
                     title: AppLocalization.string(.audioProcessesTitle),
                     accessibility: processSection.accessibility
                 ) {
-                    if processSection.processes.isEmpty {
+                    if let runtimeErrorText = processSection.runtimeErrorText {
+                        Text(runtimeErrorText)
+                            .foregroundStyle(.secondary)
+                            .audioAccessibility(processSection.runtimeErrorAccessibility)
+                    } else if processSection.processes.isEmpty {
                         Text(AppLocalization.string(.audioProcessesEmpty))
                             .foregroundStyle(.secondary)
                             .audioAccessibility(processSection.emptyAccessibility)
@@ -505,8 +509,12 @@ struct AudioDashboardPresentation {
 
     init(snapshot: AudioControlSnapshot, supportsProcessControls: Bool) {
         devices = snapshot.devices.map(AudioDeviceRowPresentation.init)
-        processSection = supportsProcessControls && snapshot.processControlsAreVisible
-            ? AudioProcessSectionPresentation(processes: snapshot.processes.map(AudioProcessRowPresentation.init))
+        processSection = supportsProcessControls
+            && (snapshot.processControlsAreVisible || snapshot.processRuntimeError != nil)
+            ? AudioProcessSectionPresentation(
+                processes: snapshot.processes.map(AudioProcessRowPresentation.init),
+                runtimeError: snapshot.processRuntimeError
+            )
             : nil
     }
 
@@ -514,10 +522,34 @@ struct AudioDashboardPresentation {
 
 struct AudioProcessSectionPresentation {
     let processes: [AudioProcessRowPresentation]
+    let runtimeErrorText: String?
     let accessibility = AudioAccessibilityContract(
         identifier: "audio.processes.section",
         label: AppLocalization.string(.audioProcessesTitle)
     )
+
+    init(
+        processes: [AudioProcessRowPresentation],
+        runtimeError: AudioControlUserError? = nil
+    ) {
+        self.processes = processes
+        runtimeErrorText = switch runtimeError {
+        case .operationFailed(.leaseUnavailable):
+            AppLocalization.string(.audioProcessOwnedByAnotherInstance)
+        case .operationFailed(.leaseFailed):
+            AppLocalization.string(.audioProcessRuntimeUnavailable)
+        default:
+            nil
+        }
+    }
+
+    var runtimeErrorAccessibility: AudioAccessibilityContract {
+        AudioAccessibilityContract(
+            identifier: "audio.processes.runtimeError",
+            label: runtimeErrorText,
+            value: runtimeErrorText
+        )
+    }
 
     var emptyAccessibility: AudioAccessibilityContract {
         let text = AppLocalization.string(.audioProcessesEmpty)

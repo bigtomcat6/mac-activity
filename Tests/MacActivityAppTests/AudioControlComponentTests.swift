@@ -270,7 +270,7 @@ final class AudioControlComponentTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
-    func testHALRestartCleansReobservesAndRestoresConfirmedRule() async {
+    func testHALRestartPreparesReobservesAndRestoresConfirmedRule() async {
         let fixture = AudioControlComponentFixture()
         await fixture.start()
         fixture.coordinator.setProcessVolume(0.5, for: fixture.player.processObjectID)
@@ -281,7 +281,7 @@ final class AudioControlComponentTests: XCTestCase {
         await fixture.finishPendingCommands()
 
         XCTAssertEqual(fixture.engine.stopAllCount, 1)
-        XCTAssertEqual(fixture.engine.cleanupCount, 2)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
         XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 2])
         XCTAssertEqual(fixture.engine.plans.map(\.selectedTargetUIDs), [["BuiltIn"], ["BuiltIn"]])
         XCTAssertEqual(
@@ -291,7 +291,7 @@ final class AudioControlComponentTests: XCTestCase {
                 "routes.read",
                 "devices.read",
                 "processes.read",
-                "engine.cleanup",
+                "engine.prepareRuntime",
                 "engine.apply",
                 "monitor.observe",
             ]
@@ -485,8 +485,9 @@ final class AudioControlComponentTests: XCTestCase {
         await fixture.coordinator.shutdown()
 
         XCTAssertEqual(fixture.monitor.stopCount, 1)
-        XCTAssertEqual(fixture.engine.stopAllCount, 1)
-        XCTAssertEqual(fixture.lifecycle.events.suffix(2), ["monitor.stop", "engine.stopAll"])
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.lifecycle.events.suffix(2), ["monitor.stop", "engine.shutdown"])
         XCTAssertEqual(fixture.engine.applyCount, applyCount)
         XCTAssertEqual(
             fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],

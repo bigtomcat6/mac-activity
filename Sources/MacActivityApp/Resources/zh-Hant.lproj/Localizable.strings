@@ -25,6 +25,8 @@
 "audio.process.stopping" = "正在停止音訊控制…";
 "audio.process.permissionDenied" = "需要音訊擷取權限。請在「系統設定」中允許 Mac Activity，然後重試。";
 "audio.process.operationFailed" = "音訊控制失敗。";
+"audio.process.ownedByAnotherInstance" = "另一個 Mac Activity 實例正在控制 App 音訊。";
+"audio.process.runtimeUnavailable" = "App 音訊控制目前無法使用。";
 "audio.process.targetUnavailable" = "所選輸出無法使用；已還原原始播放。";
 "audio.route.title" = "輸出路由";
 "audio.route.followOriginal" = "跟隨原始輸出";

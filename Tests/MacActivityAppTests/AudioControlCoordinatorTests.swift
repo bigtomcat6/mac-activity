@@ -23,7 +23,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.processProvider.callCount, 0)
         XCTAssertEqual(fixture.engine.applyCount, 0)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
         XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
     }
 
@@ -46,10 +47,123 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         await fixture.coordinator.start()
 
-        XCTAssertEqual(fixture.engine.cleanupCount, 1)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
         XCTAssertEqual(fixture.monitor.startCount, 1)
         XCTAssertEqual(fixture.monitor.observedDeviceIDs, [10])
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+    }
+
+    func testLeaseContentionKeepsDeviceMonitoringAliveWithoutProcessWork() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [.unavailable(.leaseUnavailable)]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+
+        await fixture.coordinator.start()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.devices.map(\.id), ["BuiltIn"])
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.monitor.stopCount, 0)
+        XCTAssertEqual(fixture.monitor.observedDeviceIDs, [10])
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.engine.authorizationAttemptCount, 0)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processRuntimeError,
+            .operationFailed(.leaseUnavailable)
+        )
+    }
+
+    func testLeaseFailureExposesTruthfulGlobalErrorWithoutStoppingMonitor() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [.unavailable(.leaseFailed)]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+
+        await fixture.coordinator.start()
+
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processRuntimeError,
+            .operationFailed(.leaseFailed)
+        )
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertEqual(fixture.monitor.stopCount, 0)
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+    }
+
+    func testProcessReconciliationRetriesLeaseAndRestoresRows() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [
+            .unavailable(.leaseUnavailable),
+            .ready(cleanupFailures: []),
+        ]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+
+        await fixture.emit([.processList])
+
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+        XCTAssertTrue(fixture.coordinator.snapshot.processControlsAreVisible)
+        XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+    }
+
+    func testServiceReconciliationRetriesLeaseAndRestoresRows() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [
+            .unavailable(.leaseUnavailable),
+            .ready(cleanupFailures: []),
+        ]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+
+        await fixture.emit([.serviceRestarted])
+
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+        XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+    }
+
+    func testDeviceReconciliationRetriesLeaseAndRestoresRows() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [
+            .unavailable(.leaseUnavailable),
+            .ready(cleanupFailures: []),
+        ]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+
+        await fixture.emit([.deviceList])
+
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+        XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+    }
+
+    func testProcessMutationsAreNoOpsWhileLeaseIsUnavailable() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [.unavailable(.leaseUnavailable)]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        fixture.coordinator.setProcessMuted(true, for: 11)
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        fixture.coordinator.retry(processObjectID: 11)
+        fixture.coordinator.reset(processObjectID: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.count, 0)
+        XCTAssertEqual(fixture.engine.stopCalls.count, 0)
+        XCTAssertEqual(fixture.store.saveCount, 0)
     }
 
     func testSupportedDefaultBrowsingDoesNotApplyOrAttemptAuthorization() async {
@@ -89,7 +203,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
             snapshot: fixture.coordinator.snapshot,
             supportsProcessControls: fixture.coordinator.supportsProcessControls
         ).processSection)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testPersistedDeniedRouteHidesRowEvenWhenFollowOriginalIsAllowed() async throws {
@@ -119,7 +233,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
         XCTAssertEqual(fixture.engine.applyCount, 0)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testPersistedAllowedRouteRestoresWhenFollowOriginalIsDenied() async throws {
@@ -197,7 +311,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertNil(AudioDashboardPresentation(
             snapshot: fixture.coordinator.snapshot,
@@ -215,7 +329,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         await fixture.emit([.deviceList])
 
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
     }
 
@@ -244,7 +358,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testRouteTopologyProviderFailureKeepsProcessSectionHidden() async throws {
@@ -268,7 +382,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices.map(\.id), ["BuiltIn"])
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testDifferentHardwareFingerprintDoesNotExposeCurrentProcess() async throws {
@@ -308,7 +422,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testExactPolicyShowsOnlyPermittedNextRouteChoice() async throws {
@@ -572,7 +686,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
         let session = fixture.coordinator.snapshot.processes[0].session
-        let cleanupCount = fixture.engine.cleanupCount
+        let prepareRuntimeCount = fixture.engine.prepareRuntimeCount
 
         fixture.coordinator.setProcessVolume(0.6, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
@@ -585,7 +699,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
             .init(processObjectID: 11, gain: .init(volume: 0.6, isMuted: true)),
         ])
         XCTAssertEqual(fixture.engine.stopCalls, [])
-        XCTAssertEqual(fixture.engine.cleanupCount, cleanupCount)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, prepareRuntimeCount)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, session)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.6)
         XCTAssertTrue(fixture.coordinator.snapshot.processes[0].isMuted)
@@ -694,7 +808,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await shutdown.value
 
         XCTAssertEqual(fixture.engine.gainUpdateCalls.count, 1)
-        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
         XCTAssertEqual(fixture.deviceProvider.volumeWrites, [])
         XCTAssertEqual(fixture.deviceProvider.muteWrites, [])
         XCTAssertEqual(
@@ -703,7 +818,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         )
     }
 
-    func testDirectShutdownWaitsForBlockedGainAndNeverPersistsAfterStopAll() async throws {
+    func testDirectShutdownWaitsForBlockedGainAndNeverPersistsAfterEngineShutdown() async throws {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setProcessVolume(0.4, for: 11)
@@ -720,10 +835,11 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await shutdown.value
 
         XCTAssertEqual(fixture.engine.gainUpdateCalls.count, 1)
-        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
         XCTAssertLessThan(
             try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.updateGain")),
-            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.stopAll"))
+            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.shutdown"))
         )
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
         XCTAssertEqual(
@@ -1232,13 +1348,13 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
     }
 
-    func testShutdownStopsMonitorBeforeAwaitedStopAll() async {
+    func testShutdownStopsMonitorBeforeAwaitedEngineShutdown() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
 
         await fixture.coordinator.shutdown()
 
-        XCTAssertEqual(fixture.lifecycle.events.suffix(2), ["monitor.stop", "engine.stopAll"])
+        XCTAssertEqual(fixture.lifecycle.events.suffix(2), ["monitor.stop", "engine.shutdown"])
     }
 
     func testExplicitTargetDisconnectRebuildsWithRemainingTargetsWithoutRewritingSelection() async {
@@ -1438,7 +1554,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.plans.count, applyCount + 1)
     }
 
-    func testServiceRestartStopsRefreshesCleansAndRestores() async {
+    func testServiceRestartStopsRefreshesPreparesAndRestores() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setProcessVolume(0.5, for: 11)
@@ -1448,8 +1564,32 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.emit([.serviceRestarted])
 
         XCTAssertTrue(fixture.lifecycle.events.contains("engine.stopAll"))
-        XCTAssertEqual(fixture.engine.cleanupCount, 2)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(fixture.engine.shutdownCount, 0)
         XCTAssertGreaterThan(fixture.engine.plans.count, initialApplyCount)
+    }
+
+    func testServiceRestartLeaseFailureClearsRowsAndMonitorObjects() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [
+            .ready(cleanupFailures: []),
+            .unavailable(.leaseUnavailable),
+        ]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+
+        await fixture.emit([.serviceRestarted])
+
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processRuntimeError,
+            .operationFailed(.leaseUnavailable)
+        )
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
     }
 
     func testServiceRestartRestoresBundlelessConfirmedRule() async {
@@ -1478,7 +1618,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
         XCTAssertEqual(fixture.lifecycle.events.filter { $0 == "routes.read" }.count, 0)
         XCTAssertEqual(fixture.lifecycle.events.filter { $0 == "devices.read" }.count, 2)
     }
@@ -1490,7 +1630,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.coordinator.shutdown()
 
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
     }
 
     func testUnsupportedOrdinaryMonitorChangesNeverEnumerateOrObserveProcesses() async {
@@ -1520,11 +1660,11 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.emit([.deviceList])
 
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
-        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
         XCTAssertEqual(fixture.processProvider.callCount, 0)
     }
 
-    func testStartUsesCleanupMonitorRefreshObserveRestoreOrder() async {
+    func testStartPreparesRuntimeBeforeMonitorObserveAndRestore() async {
         let profile = AudioProcessProfile(
             bundleIdentifier: "com.example.music",
             volume: 0.5
@@ -1544,14 +1684,14 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 "routes.read",
                 "devices.read",
                 "processes.read",
+                "engine.prepareRuntime",
                 "monitor.observe",
-                "engine.cleanup",
                 "engine.apply",
             ]
         )
     }
 
-    func testCanceledStartFinishingCleanupAfterShutdownDoesNotApplyProcessRule() async {
+    func testCanceledStartFinishingPreparationAfterShutdownDoesNotApplyProcessRule() async {
         let fixture = CoordinatorFixture(
             availability: .supported,
             savedProfiles: [
@@ -1561,36 +1701,37 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 ),
             ]
         )
-        await fixture.engine.blockCleanup()
+        await fixture.engine.blockPrepareRuntime()
         let startTask = Task { @MainActor in
             await fixture.coordinator.start()
         }
-        await fixture.engine.waitUntilCleanupCount(1)
+        await fixture.engine.waitUntilPrepareRuntimeCount(1)
 
         startTask.cancel()
         await fixture.coordinator.shutdown()
-        await fixture.engine.resumeCleanup()
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+        await fixture.engine.resumePrepareRuntime()
         await startTask.value
 
         XCTAssertEqual(fixture.monitor.startCount, 1)
         XCTAssertEqual(fixture.monitor.stopCount, 1)
-        XCTAssertTrue(fixture.lifecycle.events.contains("monitor.observe"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("monitor.observe"))
         XCTAssertTrue(fixture.lifecycle.events.contains("routes.read"))
         XCTAssertTrue(fixture.lifecycle.events.contains("devices.read"))
         XCTAssertTrue(fixture.lifecycle.events.contains("processes.read"))
         XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 
-    func testCanceledPrepareWithoutShutdownRunsCleanupAgainOnRetry() async {
+    func testCanceledPrepareWithoutShutdownRetriesRuntimePreparation() async {
         let fixture = CoordinatorFixture(availability: .supported)
-        await fixture.engine.blockCleanup()
+        await fixture.engine.blockPrepareRuntime()
         let startTask = Task { @MainActor in
             await fixture.coordinator.start()
         }
-        await fixture.engine.waitUntilCleanupCount(1)
+        await fixture.engine.waitUntilPrepareRuntimeCount(1)
 
         startTask.cancel()
-        await fixture.engine.resumeCleanup()
+        await fixture.engine.resumePrepareRuntime()
         await startTask.value
 
         XCTAssertEqual(fixture.monitor.startCount, 1)
@@ -1600,7 +1741,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.coordinator.start()
         await fixture.coordinator.testingWaitUntilIdle()
 
-        XCTAssertEqual(fixture.engine.cleanupCount, 2)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
         XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
     }
 
@@ -1695,7 +1836,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.coordinator.start()
         await fixture.coordinator.testingWaitUntilIdle()
         XCTAssertEqual(fixture.monitor.startCount, 2)
-        XCTAssertEqual(fixture.engine.cleanupCount, 2)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
         XCTAssertEqual(fixture.engine.applyCount, applyCount + 1)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
     }
@@ -1825,10 +1966,12 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let shutdown = Task { @MainActor in await fixture.coordinator.shutdown() }
         await delay.waitUntilCanceled()
 
-        XCTAssertFalse(fixture.lifecycle.events.contains("engine.stopAll"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("engine.shutdown"))
         await delay.release()
         await shutdown.value
-        XCTAssertTrue(fixture.lifecycle.events.contains("engine.stopAll"))
+        XCTAssertTrue(fixture.lifecycle.events.contains("engine.shutdown"))
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
     }
 
     func testCoordinatorDeallocatesAfterPopoverObservationEnds() async {

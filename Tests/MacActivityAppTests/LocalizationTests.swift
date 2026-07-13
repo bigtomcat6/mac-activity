@@ -64,7 +64,9 @@ final class LocalizationTests: XCTestCase {
             .dashboardTabAudio,
             .audioDevicesTitle,
             .audioProcessesTitle,
-            .audioUnsupportedDeviceVolume
+            .audioUnsupportedDeviceVolume,
+            .audioProcessOwnedByAnotherInstance,
+            .audioProcessRuntimeUnavailable,
         ]
 
         for language in AppLanguage.supportedLanguages() {

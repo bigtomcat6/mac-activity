@@ -25,6 +25,8 @@
 "audio.process.stopping" = "オーディオ制御を停止中…";
 "audio.process.permissionDenied" = "オーディオキャプチャの許可が必要です。システム設定でMac Activityを許可してから、再試行してください。";
 "audio.process.operationFailed" = "オーディオ制御に失敗しました。";
+"audio.process.ownedByAnotherInstance" = "別の Mac Activity インスタンスがアプリのオーディオを制御しています。";
+"audio.process.runtimeUnavailable" = "アプリのオーディオ制御を利用できません。";
 "audio.process.targetUnavailable" = "選択した出力を利用できないため、元の再生に戻しました。";
 "audio.route.title" = "出力ルート";
 "audio.route.followOriginal" = "元の出力に従う";

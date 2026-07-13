@@ -35,6 +35,8 @@ enum AppLocalization {
         case audioProcessStopping = "audio.process.stopping"
         case audioProcessPermissionDenied = "audio.process.permissionDenied"
         case audioProcessOperationFailed = "audio.process.operationFailed"
+        case audioProcessOwnedByAnotherInstance = "audio.process.ownedByAnotherInstance"
+        case audioProcessRuntimeUnavailable = "audio.process.runtimeUnavailable"
         case audioProcessTargetUnavailable = "audio.process.targetUnavailable"
         case audioRouteTitle = "audio.route.title"
         case audioRouteFollowOriginal = "audio.route.followOriginal"
