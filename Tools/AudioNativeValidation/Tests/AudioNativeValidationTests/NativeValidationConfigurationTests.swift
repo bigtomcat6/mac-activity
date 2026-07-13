@@ -12,7 +12,7 @@ final class NativeValidationConfigurationTests: XCTestCase {
 
         let runtime = try makeNativeValidationRuntime(
             request: request,
-            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
+            operatingSystemVersion: supportedVersion,
             hardware: hardware,
             leaseAcquirer: NativeRuntimeWiringProbeLeaseAcquirer()
         )
@@ -28,6 +28,20 @@ final class NativeValidationConfigurationTests: XCTestCase {
         XCTAssertEqual(runtime.plan.topologyFingerprint, runtime.fingerprint)
         XCTAssertEqual(hardware.createTapCallCount, 1)
         XCTAssertNotEqual(snapshot.error, .processTapsUnavailable)
+    }
+
+    func testNativeRuntimeDefaultsToCurrentOperatingSystemForLiveConstruction() throws {
+        let current = ProcessInfo.processInfo.operatingSystemVersion
+
+        let runtime = try makeNativeValidationRuntime(
+            request: nativeRuntimeWiringRequest(),
+            hardware: NativeRuntimeWiringProbeHardware(),
+            leaseAcquirer: NativeRuntimeWiringProbeLeaseAcquirer()
+        )
+
+        XCTAssertEqual(runtime.availability.operatingSystemVersion.majorVersion, current.majorVersion)
+        XCTAssertEqual(runtime.availability.operatingSystemVersion.minorVersion, current.minorVersion)
+        XCTAssertEqual(runtime.availability.operatingSystemVersion.patchVersion, current.patchVersion)
     }
 
     func testNativeEngineFinalizerReturnsValueThenShutsDownExactlyOnce() async throws {

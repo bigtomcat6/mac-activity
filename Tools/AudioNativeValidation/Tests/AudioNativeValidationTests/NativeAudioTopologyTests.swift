@@ -22,7 +22,8 @@ struct NativeValidationRuntime {
 
 func makeNativeValidationRuntime(
     request: AudioRouteRequest,
-    operatingSystemVersion: OperatingSystemVersion,
+    operatingSystemVersion: OperatingSystemVersion =
+        ProcessInfo.processInfo.operatingSystemVersion,
     hardware: any AudioTapHardware,
     leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
         DarwinAudioProcessOwnershipLeaseAcquirer()
@@ -186,7 +187,6 @@ func runNativeValidation(
     let hardware = NativeRecordingAudioTapHardware()
     let runtime = try makeNativeValidationRuntime(
         request: request,
-        operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
         hardware: hardware
     )
 
