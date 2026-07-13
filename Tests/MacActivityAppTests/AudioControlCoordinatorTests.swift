@@ -1,8 +1,8 @@
 import CoreAudio
 import Combine
-import MacActivityCore
 import XCTest
 
+@testable import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
@@ -597,6 +597,212 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 isMuted: true
             )
         )
+    }
+
+    func testGainOnlyPreservesRouteOptionsWithoutAnyPlannerQuery() async throws {
+        let devices = DeviceProviderFake().routeDescriptors
+        let fixedBuild = "gain-fast-path-build"
+        let fingerprintPlanner = AudioRoutePlanner(
+            policy: .conservative,
+            osBuildProvider: { fixedBuild }
+        )
+        let modes: [AudioRouteMode] = [
+            .followOriginal,
+            .explicit(targetDeviceUIDs: ["USB"]),
+        ]
+        let fingerprints = try Set(modes.map { mode in
+            try fingerprintPlanner.topologyFingerprint(for: AudioRouteRequest(
+                processObjectID: 11,
+                generation: 1,
+                sourceDeviceUIDs: ["BuiltIn"],
+                systemDefaultOutputDeviceUID: nil,
+                mode: mode,
+                devices: devices
+            ))
+        })
+        let queries = PlannerQueryCounter()
+        let planner = AudioRoutePlanner(
+            policy: .init(validatedFingerprints: fingerprints),
+            osBuildProvider: {
+                queries.record()
+                return fixedBuild
+            }
+        )
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: planner
+        )
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        let routeOptions = fixture.coordinator.snapshot.processes[0].routeOptions
+        let queryCount = queries.count
+
+        fixture.coordinator.setProcessVolume(0.6, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(queries.count, queryCount)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].routeOptions, routeOptions)
+
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: 11
+        )
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertGreaterThan(queries.count, queryCount)
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 2])
+    }
+
+    func testRequestedShutdownRejectsEveryMutationAndRestoresPendingGainUI() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.engine.blockGainUpdateCall(1)
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+
+        fixture.coordinator.requestShutdown()
+        fixture.deviceProvider.snapshotVolume = 0.9
+        fixture.coordinator.retryDevice("BuiltIn")
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
+        fixture.coordinator.setProcessVolume(0.7, for: 11)
+        fixture.coordinator.setProcessMuted(true, for: 11)
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: 11
+        )
+        fixture.coordinator.retry(processObjectID: 11)
+        fixture.coordinator.reset(processObjectID: 11)
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.volume, 0.4)
+        XCTAssertFalse(row.isMuted)
+        XCTAssertEqual(row.route, .followOriginal)
+        XCTAssertNil(row.pendingValues)
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.5)
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.mute.value, false)
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1])
+
+        let shutdown = Task { @MainActor in await fixture.coordinator.shutdown() }
+        await Task.yield()
+
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        await fixture.engine.resumeGainUpdates()
+        await shutdown.value
+
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.count, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(fixture.deviceProvider.volumeWrites, [])
+        XCTAssertEqual(fixture.deviceProvider.muteWrites, [])
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.4
+        )
+    }
+
+    func testDirectShutdownWaitsForBlockedGainAndNeverPersistsAfterStopAll() async throws {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.engine.blockGainUpdateCall(1)
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+
+        let shutdown = Task { @MainActor in await fixture.coordinator.shutdown() }
+        await Task.yield()
+
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        await fixture.engine.resumeGainUpdates()
+        await shutdown.value
+
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.count, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertLessThan(
+            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.updateGain")),
+            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.stopAll"))
+        )
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.4
+        )
+    }
+
+    func testBlockedGainCompletesBeforeExactObjectExitStopWithoutStalePersistence() async throws {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.engine.blockGainUpdateCall(1)
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        fixture.processProvider.processes = []
+        let rowRetired = expectation(description: "old row retired before stop")
+        let cancellable = fixture.coordinator.snapshotPublisher
+            .filter { $0.processes.isEmpty }
+            .first()
+            .sink { _ in rowRetired.fulfill() }
+
+        let reconciliation = Task { @MainActor in
+            await fixture.emit([.processList])
+        }
+        await fulfillment(of: [rowRetired], timeout: 1)
+
+        XCTAssertEqual(fixture.engine.stopCalls, [])
+        await fixture.engine.resumeGainUpdates()
+        await reconciliation.value
+
+        XCTAssertEqual(fixture.engine.stopCalls, [.init(processObjectID: 11, generation: 2)])
+        XCTAssertLessThan(
+            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.updateGain")),
+            try XCTUnwrap(fixture.lifecycle.events.firstIndex(of: "engine.stop"))
+        )
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.4
+        )
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testBlockedGainCompletesBeforeSamePIDReplacementAndNewObjectRestoresProfile() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.engine.blockGainUpdateCall(1)
+        fixture.coordinator.setProcessVolume(0.5, for: 11)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        fixture.processProvider.processes = [.music(objectID: 22)]
+        let rowRetired = expectation(description: "old row retired before replacement stop")
+        let cancellable = fixture.coordinator.snapshotPublisher
+            .filter { $0.processes.isEmpty }
+            .first()
+            .sink { _ in rowRetired.fulfill() }
+
+        let reconciliation = Task { @MainActor in
+            await fixture.emit([.processList])
+        }
+        await fulfillment(of: [rowRetired], timeout: 1)
+
+        XCTAssertEqual(fixture.engine.stopCalls, [])
+        await fixture.engine.resumeGainUpdates()
+        await reconciliation.value
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.stopCalls, [.init(processObjectID: 11, generation: 2)])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [22])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
+        XCTAssertEqual(fixture.engine.plans.map(\.processObjectID), [11, 22])
+        XCTAssertEqual(
+            fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]?.volume,
+            0.4
+        )
+        withExtendedLifetime(cancellable) {}
     }
 
     func testRunningSessionSliderBurstCoalescesWithoutGenerationChange() async {

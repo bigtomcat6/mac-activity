@@ -1,4 +1,5 @@
 import CoreAudio
+import Foundation
 import MacActivityCore
 
 @testable import MacActivityApp
@@ -535,6 +536,17 @@ struct RecordingEngineGainCall: Equatable {
     let gain: ProcessGainState
 }
 
+final class PlannerQueryCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+
+    var count: Int { lock.withLock { value } }
+
+    func record() {
+        lock.withLock { value += 1 }
+    }
+}
+
 final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked Sendable {
     let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
     private let continuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
@@ -610,6 +622,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         await gainUpdateGate.enter()
     }
     func stop(processObjectID: AudioObjectID, generation: UInt64) async -> ProcessTapSessionSnapshot {
+        lifecycle?.events.append("engine.stop")
         stoppedProcessObjectIDs.append(processObjectID)
         stoppedGenerations.append(generation)
         stopCalls.append(.init(processObjectID: processObjectID, generation: generation))

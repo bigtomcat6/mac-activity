@@ -187,7 +187,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func start() async {
-        guard hasStarted == false, didBeginShutdown == false else { return }
+        guard hasStarted == false, acceptsMutations else { return }
         hasStarted = true
         do {
             try monitor.start()
@@ -226,7 +226,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func retryDevice(_ deviceUID: String) {
-        guard let device = try? deviceProvider.outputDeviceSnapshot(forUID: deviceUID) else {
+        guard acceptsMutations,
+              let device = try? deviceProvider.outputDeviceSnapshot(forUID: deviceUID) else {
             return
         }
         confirmedDevices[deviceUID] = device
@@ -237,7 +238,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
-        guard let confirmed = confirmedDevices[deviceUID] else { return }
+        guard acceptsMutations, let confirmed = confirmedDevices[deviceUID] else { return }
         let requested = min(1, max(0, volume.isFinite ? volume : 1))
         updateDevice(deviceUID) { row in
             row.device = Self.device(row.device, volume: .value(requested, isWritable: true))
@@ -269,7 +270,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {
-        guard let confirmed = confirmedDevices[deviceUID] else { return }
+        guard acceptsMutations, let confirmed = confirmedDevices[deviceUID] else { return }
         updateDevice(deviceUID) { row in
             row.device = Self.device(row.device, mute: .value(isMuted, isWritable: true))
             row.error = nil
@@ -310,17 +311,31 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func retry(processObjectID: AudioObjectID) {
-        guard let row = snapshot.processes.first(where: { $0.id == processObjectID }),
+        guard acceptsMutations,
+              let row = snapshot.processes.first(where: { $0.id == processObjectID }),
               let values = row.pendingValues else { return }
         applyUserIntent(values, to: processObjectID)
     }
 
     func reset(processObjectID: AudioObjectID) {
+        guard acceptsMutations else { return }
         apply(.default, to: processObjectID)
     }
 
     func requestShutdown() {
+        guard shutdownWasRequested == false else { return }
         shutdownWasRequested = true
+        for processObjectID in Array(gainTasks.keys) {
+            _ = invalidateGainIntent(processObjectID)
+            guard let confirmed = confirmedProcessValues[processObjectID] else { continue }
+            updateProcess(processObjectID) { row in
+                row.volume = confirmed.volume
+                row.isMuted = confirmed.isMuted
+                row.route = confirmed.route
+                row.pendingValues = nil
+                row.error = nil
+            }
+        }
     }
 
     func shutdown() async {
@@ -388,6 +403,10 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
 }
 
 private extension AudioControlCoordinator {
+    var acceptsMutations: Bool {
+        shutdownWasRequested == false && didBeginShutdown == false
+    }
+
     func refreshRouteDescriptors() {
         routeDevices = (try? routeDeviceProvider.routeDevices()) ?? []
     }
@@ -554,15 +573,19 @@ private extension AudioControlCoordinator {
         _ processObjectID: AudioObjectID,
         mutate: (inout AudioProcessControlValues) -> Void
     ) {
-        guard retiringProcessObjectIDs.contains(processObjectID) == false,
+        guard acceptsMutations,
+              retiringProcessObjectIDs.contains(processObjectID) == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }) else { return }
         var values = row.pendingValues ?? AudioProcessControlValues(
             volume: row.volume,
             isMuted: row.isMuted,
             route: row.route
         )
+        let previousRoute = values.route
         mutate(&values)
-        let routeOptions = makeRouteOptions(for: values.route, process: row.process)
+        let routeOptions = values.route == previousRoute
+            ? row.routeOptions
+            : makeRouteOptions(for: values.route, process: row.process)
         updateProcess(processObjectID) { row in
             row.volume = values.volume
             row.isMuted = values.isMuted
@@ -578,7 +601,8 @@ private extension AudioControlCoordinator {
         _ values: AudioProcessControlValues,
         to processObjectID: AudioObjectID
     ) {
-        guard let row = snapshot.processes.first(where: { $0.id == processObjectID }),
+        guard acceptsMutations,
+              let row = snapshot.processes.first(where: { $0.id == processObjectID }),
               let confirmed = confirmedProcessValues[processObjectID],
               confirmed.isDefault == false,
               values.isDefault == false,
@@ -675,7 +699,8 @@ private extension AudioControlCoordinator {
     }
 
     func apply(_ values: AudioProcessControlValues, to processObjectID: AudioObjectID) {
-        guard supportsProcessControls,
+        guard acceptsMutations,
+              supportsProcessControls,
               retiringProcessObjectIDs.contains(processObjectID) == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }) else { return }
         let previousGainTask = invalidateGainIntent(processObjectID)
@@ -841,9 +866,11 @@ private extension AudioControlCoordinator {
         error: AudioControlUserError
     ) {
         let confirmed = confirmedProcessValues[processObjectID] ?? .default
-        let routeOptions = snapshot.processes
-            .first(where: { $0.id == processObjectID })
-            .map { makeRouteOptions(for: confirmed.route, process: $0.process) }
+        let routeOptions = snapshot.processes.first(where: { $0.id == processObjectID }).map { row in
+            row.route == confirmed.route
+                ? row.routeOptions
+                : makeRouteOptions(for: confirmed.route, process: row.process)
+        }
         updateProcess(processObjectID) { row in
             row.volume = confirmed.volume
             row.isMuted = confirmed.isMuted
@@ -902,7 +929,9 @@ private extension AudioControlCoordinator {
     }
 
     func isCurrent(_ processObjectID: AudioObjectID, generation: UInt64) -> Bool {
-        Task.isCancelled == false && generations[processObjectID] == generation
+        acceptsMutations
+            && Task.isCancelled == false
+            && generations[processObjectID] == generation
     }
 
     func isCurrentGainIntent(
@@ -911,6 +940,7 @@ private extension AudioControlCoordinator {
         generation: UInt64
     ) -> Bool {
         Task.isCancelled == false
+            && acceptsMutations
             && gainIntentOrdinals[processObjectID] == ordinal
             && generations[processObjectID] == generation
             && retiringProcessObjectIDs.contains(processObjectID) == false
