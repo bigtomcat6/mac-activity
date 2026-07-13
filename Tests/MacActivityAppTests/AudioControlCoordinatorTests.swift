@@ -28,6 +28,23 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
     }
 
+    func testConservativePolicyOnCapableOSSkipsAllProcessRuntimeWork() async {
+        let availability = AudioFeatureAvailability(
+            operatingSystemVersion: .init(majorVersion: 15, minorVersion: 0, patchVersion: 0),
+            nativeValidationPolicy: .conservative
+        )
+        let fixture = CoordinatorFixture(availability: availability)
+
+        await fixture.coordinator.start()
+
+        XCTAssertFalse(fixture.coordinator.supportsProcessControls)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
+    }
+
     func testNativeValidationRequiredRemainsDistinctCoordinatorError() {
         let fingerprint = AudioRouteTopologyFingerprint(
             osBuild: "test",
@@ -72,6 +89,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.authorizationAttemptCount, 0)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+        XCTAssertFalse(fixture.lifecycle.events.contains("processes.read"))
         XCTAssertEqual(
             fixture.coordinator.snapshot.processRuntimeError,
             .operationFailed(.leaseUnavailable)
@@ -94,9 +113,12 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 
-    func testNoAudibleReconciliationClearsStaleLeaseErrorWithoutRuntimeWork() async {
+    func testNoAudibleReconciliationAcquiresLeaseThenClearsStaleLeaseError() async {
         let engine = EngineFake()
-        engine.scriptedPreparationResults = [.unavailable(.leaseUnavailable)]
+        engine.scriptedPreparationResults = [
+            .unavailable(.leaseUnavailable),
+            .ready(cleanupFailures: []),
+        ]
         let profile = AudioProcessProfile(
             bundleIdentifier: "com.example.music",
             volume: 0.5
@@ -120,7 +142,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
             snapshot: fixture.coordinator.snapshot,
             supportsProcessControls: fixture.coordinator.supportsProcessControls
         ).processSection)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
         XCTAssertEqual(fixture.engine.cleanupCount, 0)
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.stopCalls, [])
@@ -132,6 +154,28 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.stopCount, 0)
     }
 
+    func testNoAudibleReconciliationKeepsStaleLeaseErrorWhenRetryIsStillBusy() async {
+        let engine = EngineFake()
+        engine.scriptedPreparationResults = [
+            .unavailable(.leaseUnavailable),
+            .unavailable(.leaseUnavailable),
+        ]
+        let fixture = CoordinatorFixture(availability: .supported, engine: engine)
+        await fixture.coordinator.start()
+
+        fixture.processProvider.processes = []
+        await fixture.emit([.processList])
+
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processRuntimeError,
+            .operationFailed(.leaseUnavailable)
+        )
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+    }
+
     func testProcessReconciliationRetriesLeaseAndRestoresRows() async {
         let engine = EngineFake()
         engine.scriptedPreparationResults = [
@@ -141,6 +185,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let fixture = CoordinatorFixture(availability: .supported, engine: engine)
         await fixture.coordinator.start()
 
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+
         await fixture.emit([.processList])
 
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
@@ -148,6 +194,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.coordinator.snapshot.processControlsAreVisible)
         XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
     }
 
     func testServiceReconciliationRetriesLeaseAndRestoresRows() async {
@@ -159,6 +206,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let fixture = CoordinatorFixture(availability: .supported, engine: engine)
         await fixture.coordinator.start()
 
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+
         await fixture.emit([.serviceRestarted])
 
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
@@ -166,6 +215,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
         XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
     }
 
     func testDeviceReconciliationRetriesLeaseAndRestoresRows() async {
@@ -177,12 +227,15 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let fixture = CoordinatorFixture(availability: .supported, engine: engine)
         await fixture.coordinator.start()
 
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
+
         await fixture.emit([.deviceList])
 
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
         XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
         XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
     }
 
     func testProcessMutationsAreNoOpsWhileLeaseIsUnavailable() async {
@@ -241,7 +294,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
             snapshot: fixture.coordinator.snapshot,
             supportsProcessControls: fixture.coordinator.supportsProcessControls
         ).processSection)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
     }
 
     func testPersistedDeniedRouteHidesRowEvenWhenFollowOriginalIsAllowed() async throws {
@@ -271,7 +324,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
         XCTAssertEqual(fixture.engine.applyCount, 0)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
     }
 
     func testPersistedAllowedRouteRestoresWhenFollowOriginalIsDenied() async throws {
@@ -341,7 +394,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 1)
     }
 
-    func testSupportedRuntimeWithNoAudibleProcessesStaysHiddenAndSkipsEngineWork() async {
+    func testSupportedRuntimeWithNoAudibleProcessesPreparesOnceAndStaysHidden() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.processProvider.processes = []
 
@@ -349,7 +402,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertNil(AudioDashboardPresentation(
             snapshot: fixture.coordinator.snapshot,
@@ -359,7 +412,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
     }
 
-    func testSupportedNoAudibleObservationFailureNeverStopsUnstartedRuntime() async {
+    func testSupportedNoAudibleObservationFailureStopsPreparedRuntime() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.processProvider.processes = []
         await fixture.coordinator.start()
@@ -367,8 +420,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         await fixture.emit([.deviceList])
 
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
-        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
     }
 
     func testDifferentOSBuildFingerprintDoesNotExposeCurrentProcess() async throws {
@@ -396,7 +449,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
     }
 
     func testRouteTopologyProviderFailureKeepsProcessSectionHidden() async throws {
@@ -420,7 +473,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices.map(\.id), ["BuiltIn"])
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
     }
 
     func testDifferentHardwareFingerprintDoesNotExposeCurrentProcess() async throws {
@@ -460,7 +513,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
 
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
     }
 
     func testExactPolicyShowsOnlyPermittedNextRouteChoice() async throws {
@@ -1721,8 +1774,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 "monitor.start",
                 "routes.read",
                 "devices.read",
-                "processes.read",
                 "engine.prepareRuntime",
+                "processes.read",
                 "monitor.observe",
                 "engine.apply",
             ]
@@ -1756,7 +1809,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.lifecycle.events.contains("monitor.observe"))
         XCTAssertTrue(fixture.lifecycle.events.contains("routes.read"))
         XCTAssertTrue(fixture.lifecycle.events.contains("devices.read"))
-        XCTAssertTrue(fixture.lifecycle.events.contains("processes.read"))
+        XCTAssertFalse(fixture.lifecycle.events.contains("processes.read"))
         XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 

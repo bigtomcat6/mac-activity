@@ -290,8 +290,8 @@ final class AudioControlComponentTests: XCTestCase {
                 "engine.stopAll",
                 "routes.read",
                 "devices.read",
-                "processes.read",
                 "engine.prepareRuntime",
+                "processes.read",
                 "engine.apply",
                 "monitor.observe",
             ]

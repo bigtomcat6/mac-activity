@@ -201,9 +201,6 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             refreshRouteDescriptors()
         }
         refreshDevices()
-        if supportsProcessControls {
-            refreshProcesses()
-        }
         let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
         guard Task.isCancelled == false, didBeginShutdown == false else {
             if didBeginShutdown == false {
@@ -211,6 +208,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                 hasStarted = false
             }
             return
+        }
+        if processRuntimeIsReady {
+            refreshProcesses()
         }
         do {
             try monitor.updateObservedObjects(
@@ -1074,12 +1074,12 @@ private extension AudioControlCoordinator {
                 refreshRouteDescriptors()
             }
             refreshDevices()
-            if supportsProcessControls {
+            let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
+            if processRuntimeIsReady {
                 refreshProcesses(resetSessions: true)
             } else {
                 snapshot.processes = []
             }
-            let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
             if processRuntimeIsReady {
                 startConsumers()
                 if supportsProcessControls {
@@ -1131,6 +1131,7 @@ private extension AudioControlCoordinator {
     }
 
     func reconcileProcesses(changes: Set<AudioSystemChange>) async {
+        guard await prepareProcessRuntimeIfNeeded() else { return }
         let previous = snapshot.processes
         let audible = processProvider.audibleOutputProcesses()
         let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
@@ -1159,7 +1160,6 @@ private extension AudioControlCoordinator {
         snapshot.processes = current.map {
             makeProcessSnapshot($0, preserving: previousByID[$0.processObjectID])
         }
-        guard await prepareProcessRuntimeIfNeeded() else { return }
         startConsumers()
         let reenabledTargetIDs = Set(snapshot.processes.compactMap { row -> AudioObjectID? in
             guard case .targetUnavailable = row.error else { return nil }
@@ -1229,9 +1229,9 @@ private extension AudioControlCoordinator {
     }
 
     func prepareProcessRuntimeIfNeeded() async -> Bool {
-        guard snapshot.processControlsAreVisible else {
+        guard supportsProcessControls else {
             snapshot.processRuntimeError = nil
-            return true
+            return false
         }
         guard processRuntimeWasStarted == false else { return true }
         processRuntimePreparationWasAttempted = true
