@@ -104,13 +104,17 @@ swift test
 
 ## Documentation
 
-- [Documentation index](/docs/README.md)
-- [User guide](/docs/user-guide.md)
-- [Development guide](/docs/development.md)
-- [Contributing guide](/docs/CONTRIBUTING.md)
-- [Support guide](/docs/SUPPORT.md)
-- [Security policy](/docs/SECURITY.md)
-- [Release guide](/docs/release.md)
+Durable project documentation lives in the workspace project root `../docs`.
+That directory is outside this inner Git repository, so include it separately
+when handing off the inner repository.
+
+- [Documentation index](../docs/README.md)
+- [User guide](../docs/user-guide.md)
+- [Development guide](../docs/development.md)
+- [Contributing guide](../docs/CONTRIBUTING.md)
+- [Support guide](../docs/SUPPORT.md)
+- [Security policy](../docs/SECURITY.md)
+- [Release guide](../docs/release.md)
 
 ## Configuration
 
