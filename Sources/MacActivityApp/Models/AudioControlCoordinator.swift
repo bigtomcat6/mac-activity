@@ -139,6 +139,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     )] = []
     #endif
     private var hasStarted = false
+    private var shutdownWasRequested = false
     private var didBeginShutdown = false
     private var didFinishShutdown = false
     private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
@@ -316,12 +317,17 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         apply(.default, to: processObjectID)
     }
 
+    func requestShutdown() {
+        shutdownWasRequested = true
+    }
+
     func shutdown() async {
         if didFinishShutdown { return }
         if didBeginShutdown {
             await withCheckedContinuation { shutdownWaiters.append($0) }
             return
         }
+        requestShutdown()
         didBeginShutdown = true
         deviceVolumeTasks.values.forEach { $0.cancel() }
         deviceMuteTasks.values.forEach { $0.cancel() }
@@ -1050,8 +1056,9 @@ private extension AudioControlCoordinator {
             snapshot.processes = []
             snapshot.processControlsAreVisible = false
             monitor.stop()
-            if supportsProcessControls {
+            if processRuntimeWasStarted {
                 await engine.stopAll()
+                processRuntimeWasStarted = false
             }
             hasStarted = false
         }
@@ -1062,7 +1069,12 @@ private extension AudioControlCoordinator {
         guard processRuntimeWasStarted == false else { return true }
         processRuntimeWasStarted = true
         _ = await engine.cleanupOrphans()
-        guard Task.isCancelled == false, didBeginShutdown == false else { return false }
+        guard Task.isCancelled == false, didBeginShutdown == false else {
+            if shutdownWasRequested == false {
+                processRuntimeWasStarted = false
+            }
+            return false
+        }
         return true
     }
 

@@ -217,6 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let terminationReply = self.terminationReply
         #endif
         Task { @MainActor [weak self] in
+            audioControlCoordinator?.requestShutdown()
             audioStartupTask?.cancel()
             schedulerStartupTask?.cancel()
             await audioStartupTask?.value

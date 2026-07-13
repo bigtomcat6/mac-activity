@@ -164,6 +164,8 @@ final class AppSamplingControllerTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
         await audioEngine.waitUntilCleanupCanceled()
         XCTAssertEqual(replies.values, [])
+        let stopAllCountBeforeCleanupRelease = await audioEngine.stopAllCount()
+        XCTAssertEqual(stopAllCountBeforeCleanupRelease, 0)
 
         await audioEngine.releaseCleanup()
         await audioEngine.waitUntilStopAllCount(1)
@@ -370,6 +372,7 @@ private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unc
     func waitUntilCleanupEntered() async { await state.waitUntilCleanupEntered() }
     func waitUntilCleanupCanceled() async { await state.waitUntilCleanupCanceled() }
     func waitUntilStopAllCount(_ count: Int) async { await state.waitUntilStopAllCount(count) }
+    func stopAllCount() async -> Int { await state.currentStopAllCount() }
 }
 
 private actor AppTerminationAudioEngineState {
@@ -423,6 +426,8 @@ private actor AppTerminationAudioEngineState {
         guard stopAllCount < count else { return }
         await withCheckedContinuation { stopAllWaiters.append((count, $0)) }
     }
+
+    func currentStopAllCount() -> Int { stopAllCount }
 
     private func recordCleanupCancellation() {
         cleanupCanceled = true

@@ -207,6 +207,18 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
     }
 
+    func testSupportedNoAudibleObservationFailureNeverStopsUnstartedRuntime() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.processProvider.processes = []
+        await fixture.coordinator.start()
+        fixture.monitor.observationError = FixtureError.writeFailed
+
+        await fixture.emit([.deviceList])
+
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+    }
+
     func testDifferentOSBuildFingerprintDoesNotExposeCurrentProcess() async throws {
         let devices = DeviceProviderFake().routeDescriptors
         let current = try AudioRoutePlanner().topologyFingerprint(for: AudioRouteRequest(
@@ -1223,6 +1235,29 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 0)
     }
 
+    func testCanceledPrepareWithoutShutdownRunsCleanupAgainOnRetry() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.engine.blockCleanup()
+        let startTask = Task { @MainActor in
+            await fixture.coordinator.start()
+        }
+        await fixture.engine.waitUntilCleanupCount(1)
+
+        startTask.cancel()
+        await fixture.engine.resumeCleanup()
+        await startTask.value
+
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.monitor.stopCount, 1)
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+
+        await fixture.coordinator.start()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.cleanupCount, 2)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+    }
+
     func testChangeBufferedWhileStartingMonitorIsReconciled() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.processProvider.scriptedProcesses = [
@@ -1314,6 +1349,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.coordinator.start()
         await fixture.coordinator.testingWaitUntilIdle()
         XCTAssertEqual(fixture.monitor.startCount, 2)
+        XCTAssertEqual(fixture.engine.cleanupCount, 2)
         XCTAssertEqual(fixture.engine.applyCount, applyCount + 1)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
     }
