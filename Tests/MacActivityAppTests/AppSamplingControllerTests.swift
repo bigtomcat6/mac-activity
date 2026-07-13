@@ -6,6 +6,31 @@ import MacActivityCore
 
 @MainActor
 final class AppSamplingControllerTests: XCTestCase {
+    func testProductionAudioCompositionInjectsOneSharedPolicyAndAvailability() throws {
+        let sourceURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sources/MacActivityApp/AppDelegate.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+
+        XCTAssertEqual(
+            source.components(separatedBy:
+                "let nativeValidationPolicy = AudioRouteNativeValidationPolicy.conservative"
+            ).count - 1,
+            1
+        )
+        for injection in [
+            "nativeValidationPolicy: nativeValidationPolicy",
+            "processProvider: AudioProcessService(availability: availability)",
+            "monitor: AudioSystemMonitor(availability: availability)",
+            "planner: AudioRoutePlanner(policy: nativeValidationPolicy)",
+            "engine: ProcessTapVolumeEngine(availability: availability)",
+        ] {
+            XCTAssertTrue(source.contains(injection), injection)
+        }
+    }
+
     func testHiddenDashboardDefaultsToBackgroundSampling() {
         let controller = AppSamplingController()
 

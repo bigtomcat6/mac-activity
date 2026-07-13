@@ -24,6 +24,21 @@ struct AudioRouteDeviceOption: Identifiable, Equatable, Sendable {
     let name: String
     let isAvailable: Bool
     let isSelected: Bool
+    let isEnabled: Bool
+
+    init(
+        uid: String,
+        name: String,
+        isAvailable: Bool,
+        isSelected: Bool,
+        isEnabled: Bool = true
+    ) {
+        self.uid = uid
+        self.name = name
+        self.isAvailable = isAvailable
+        self.isSelected = isSelected
+        self.isEnabled = isEnabled
+    }
 }
 
 struct AudioProcessControlValues: Equatable, Sendable {
@@ -57,6 +72,7 @@ struct AudioProcessControlSnapshot: Identifiable, Equatable, Sendable {
 struct AudioControlSnapshot: Equatable, Sendable {
     var devices: [AudioDeviceControlSnapshot]
     var processes: [AudioProcessControlSnapshot]
+    var processControlsAreVisible: Bool = false
 
     static let empty = AudioControlSnapshot(devices: [], processes: [])
 }
@@ -127,6 +143,12 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var didFinishShutdown = false
     private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
 
+    static func planningUserError(
+        _ error: AudioRoutePlanningError
+    ) -> AudioControlUserError {
+        .routePlanning(error)
+    }
+
     init(
         availability: AudioFeatureAvailability = .current,
         deviceProvider: any AudioDeviceControlProviding,
@@ -178,7 +200,10 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             hasStarted = false
             return
         }
-        refreshDevicesAndRouteDescriptors()
+        if supportsProcessControls {
+            refreshRouteDescriptors()
+        }
+        refreshDevices()
         if supportsProcessControls {
             refreshProcesses()
         }
@@ -189,6 +214,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             )
         } catch {
             snapshot.processes = []
+            snapshot.processControlsAreVisible = false
             monitor.stop()
             hasStarted = false
             return
@@ -355,8 +381,11 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
 }
 
 private extension AudioControlCoordinator {
-    func refreshDevicesAndRouteDescriptors() {
+    func refreshRouteDescriptors() {
         routeDevices = (try? routeDeviceProvider.routeDevices()) ?? []
+    }
+
+    func refreshDevices() {
         snapshot.devices = (try? deviceProvider.outputDeviceSnapshots().map {
             confirmedDevices[$0.id] = $0
             return AudioDeviceControlSnapshot(device: $0, error: Self.deviceError(in: $0))
@@ -365,12 +394,39 @@ private extension AudioControlCoordinator {
 
     func refreshProcesses(resetSessions: Bool = false) {
         let previous = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.id, $0) })
-        snapshot.processes = processProvider.audibleOutputProcesses().map { process in
+        let audible = processProvider.audibleOutputProcesses()
+        let validated = validatedProcesses(audible, previous: previous)
+        snapshot.processControlsAreVisible = audible.isEmpty || validated.isEmpty == false
+        snapshot.processes = validated.map { process in
             makeProcessSnapshot(
                 process,
                 preserving: previous[process.processObjectID],
                 resetSession: resetSessions
             )
+        }
+    }
+
+    func processRoute(
+        for process: AudioProcessEntry,
+        previous: AudioProcessControlSnapshot?
+    ) -> AudioRouteMode {
+        if let route = confirmedProcessValues[process.processObjectID]?.route {
+            return route
+        }
+        if let previous { return previous.route }
+        return .followOriginal
+    }
+
+    func validatedProcesses(
+        _ audible: [AudioProcessEntry],
+        previous: [AudioObjectID: AudioProcessControlSnapshot]
+    ) -> [AudioProcessEntry] {
+        audible.filter { process in
+            planner.permits(visibilityRequest(
+                for: process,
+                route: processRoute(for: process, previous: previous[process.processObjectID]),
+                generation: 1
+            ))
         }
     }
 
@@ -614,7 +670,7 @@ private extension AudioControlCoordinator {
                 plan = try makePlan(values, for: row.process, generation: generation)
             } catch let error as AudioRoutePlanningError {
                 guard isCurrent(processObjectID, generation: generation) else { return }
-                fail(values, processObjectID: processObjectID, error: .routePlanning(error))
+                fail(values, processObjectID: processObjectID, error: Self.planningUserError(error))
                 return
             } catch {
                 guard isCurrent(processObjectID, generation: generation) else { return }
@@ -788,11 +844,23 @@ private extension AudioControlCoordinator {
         for process: AudioProcessEntry,
         generation: UInt64
     ) throws -> AudioRoutePlan {
+        try planner.plan(routeRequest(
+            for: process,
+            route: values.route,
+            generation: generation
+        ))
+    }
+
+    func routeRequest(
+        for process: AudioProcessEntry,
+        route: AudioRouteMode,
+        generation: UInt64
+    ) -> AudioRouteRequest {
         let sourceUIDs = process.outputDeviceIDs.compactMap { objectID in
             routeDevices.first(where: { $0.objectID == objectID })?.uid
         }
         let planningMode: AudioRouteMode
-        switch values.route {
+        switch route {
         case .followOriginal:
             planningMode = .followOriginal
         case .explicit(let targets):
@@ -800,14 +868,32 @@ private extension AudioControlCoordinator {
                 routeDevices.contains { $0.uid == target && $0.isAlive }
             })
         }
-        return try planner.plan(.init(
+        return AudioRouteRequest(
             processObjectID: process.processObjectID,
             generation: generation,
             sourceDeviceUIDs: sourceUIDs,
             systemDefaultOutputDeviceUID: nil,
             mode: planningMode,
             devices: routeDevices
-        ))
+        )
+    }
+
+    func visibilityRequest(
+        for process: AudioProcessEntry,
+        route: AudioRouteMode,
+        generation: UInt64
+    ) -> AudioRouteRequest {
+        if case .explicit(let targets) = route,
+           targets.contains(where: { target in
+               routeDevices.contains { $0.uid == target && $0.isAlive }
+           }) == false {
+            return routeRequest(
+                for: process,
+                route: .followOriginal,
+                generation: generation
+            )
+        }
+        return routeRequest(for: process, route: route, generation: generation)
     }
 
     func handle(_ changes: Set<AudioSystemChange>) async {
@@ -815,7 +901,10 @@ private extension AudioControlCoordinator {
             if supportsProcessControls {
                 await engine.stopAll()
             }
-            refreshDevicesAndRouteDescriptors()
+            if supportsProcessControls {
+                refreshRouteDescriptors()
+            }
+            refreshDevices()
             if supportsProcessControls {
                 refreshProcesses(resetSessions: true)
             } else {
@@ -831,61 +920,6 @@ private extension AudioControlCoordinator {
             return
         }
 
-        let refreshesProcesses = supportsProcessControls && (
-            changes.contains(.processList)
-                || changes.contains(.defaultOutputDevice)
-                || changes.contains { change in
-                    if case .process = change { return true }
-                    return false
-                }
-        )
-        if refreshesProcesses {
-            let previous = snapshot.processes
-            let current = processProvider.audibleOutputProcesses()
-            for old in previous where current.contains(where: { $0.id == old.id }) == false {
-                retiringProcessObjectIDs.insert(old.id)
-                processTasks.removeValue(forKey: old.id)?.cancel()
-                snapshot.processes.removeAll { $0.id == old.id }
-                let generation = (generations[old.id] ?? 0) &+ 1
-                generations[old.id] = generation
-                let stopped = await engine.stop(
-                    processObjectID: old.id,
-                    generation: generation
-                )
-                _ = accept(stopped)
-                processTasks.removeValue(forKey: old.id)?.cancel()
-                confirmedProcessValues.removeValue(forKey: old.id)
-                latestSnapshotOrders.removeValue(forKey: old.id)
-                retiringProcessObjectIDs.remove(old.id)
-            }
-            let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
-            let newIDs = Set(current.map(\.processObjectID)).subtracting(previousByID.keys)
-            snapshot.processes = current.map {
-                makeProcessSnapshot($0, preserving: previousByID[$0.processObjectID])
-            }
-            await restorePersistedNonDefaultProfiles(processIDs: newIDs)
-            let changedProcessIDs = Set(changes.compactMap { change -> AudioObjectID? in
-                guard case .process(let id, _) = change else { return nil }
-                return id
-            })
-            for id in changedProcessIDs {
-                guard let values = confirmedProcessValues[id],
-                      values.isDefault == false,
-                      values.route == .followOriginal else { continue }
-                apply(values, to: id)
-                if let task = processTasks[id] { await task.value }
-            }
-            if changes.contains(.defaultOutputDevice) {
-                for row in snapshot.processes {
-                    guard let values = confirmedProcessValues[row.id],
-                          values.isDefault == false,
-                          values.route == .followOriginal else { continue }
-                    apply(values, to: row.id)
-                    if let task = processTasks[row.id] { await task.value }
-                }
-            }
-        }
-
         let refreshesDevices = changes.contains(.deviceList)
             || changes.contains(.defaultOutputDevice)
             || changes.contains { change in
@@ -893,8 +927,21 @@ private extension AudioControlCoordinator {
                 return false
             }
         if refreshesDevices {
-            refreshDevicesAndRouteDescriptors()
-            refreshRouteOptions()
+            if supportsProcessControls {
+                refreshRouteDescriptors()
+            }
+            refreshDevices()
+        }
+        let refreshesProcesses = supportsProcessControls && (
+            refreshesDevices
+                || changes.contains(.processList)
+                || changes.contains { change in
+                    if case .process = change { return true }
+                    return false
+                }
+        )
+        if refreshesProcesses {
+            await reconcileProcesses(changes: changes)
         }
         let hasLivenessChange = changes.contains { change in
             guard case .device(_, .liveness) = change else { return false }
@@ -911,6 +958,55 @@ private extension AudioControlCoordinator {
             await rebuildSessions(using: deviceID)
         }
         await updateMonitorObjects()
+    }
+
+    func reconcileProcesses(changes: Set<AudioSystemChange>) async {
+        let previous = snapshot.processes
+        let audible = processProvider.audibleOutputProcesses()
+        let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
+        let current = validatedProcesses(audible, previous: previousByID)
+        snapshot.processControlsAreVisible = audible.isEmpty || current.isEmpty == false
+        for old in previous where current.contains(where: { $0.id == old.id }) == false {
+            retiringProcessObjectIDs.insert(old.id)
+            processTasks.removeValue(forKey: old.id)?.cancel()
+            snapshot.processes.removeAll { $0.id == old.id }
+            let generation = (generations[old.id] ?? 0) &+ 1
+            generations[old.id] = generation
+            let stopped = await engine.stop(
+                processObjectID: old.id,
+                generation: generation
+            )
+            _ = accept(stopped)
+            processTasks.removeValue(forKey: old.id)?.cancel()
+            confirmedProcessValues.removeValue(forKey: old.id)
+            latestSnapshotOrders.removeValue(forKey: old.id)
+            retiringProcessObjectIDs.remove(old.id)
+        }
+        let newIDs = Set(current.map(\.processObjectID)).subtracting(previousByID.keys)
+        snapshot.processes = current.map {
+            makeProcessSnapshot($0, preserving: previousByID[$0.processObjectID])
+        }
+        await restorePersistedNonDefaultProfiles(processIDs: newIDs)
+        let changedProcessIDs = Set(changes.compactMap { change -> AudioObjectID? in
+            guard case .process(let id, _) = change else { return nil }
+            return id
+        })
+        for id in changedProcessIDs {
+            guard let values = confirmedProcessValues[id],
+                  values.isDefault == false,
+                  values.route == .followOriginal else { continue }
+            apply(values, to: id)
+            if let task = processTasks[id] { await task.value }
+        }
+        if changes.contains(.defaultOutputDevice) {
+            for row in snapshot.processes {
+                guard let values = confirmedProcessValues[row.id],
+                      values.isDefault == false,
+                      values.route == .followOriginal else { continue }
+                apply(values, to: row.id)
+                if let task = processTasks[row.id] { await task.value }
+            }
+        }
     }
 
     func makeProcessSnapshot(
@@ -943,39 +1039,12 @@ private extension AudioControlCoordinator {
         } catch {
             processTasks.values.forEach { $0.cancel() }
             snapshot.processes = []
+            snapshot.processControlsAreVisible = false
             monitor.stop()
-            await engine.stopAll()
-            hasStarted = false
-        }
-    }
-
-    func refreshRouteOptions() {
-        for index in snapshot.processes.indices {
-            let selected: [String]
-            switch snapshot.processes[index].route {
-            case .followOriginal:
-                selected = snapshot.processes[index].process.outputDeviceIDs.compactMap { id in
-                    routeDevices.first(where: { $0.objectID == id })?.uid
-                }
-            case .explicit(let targetDeviceUIDs):
-                selected = targetDeviceUIDs
+            if supportsProcessControls {
+                await engine.stopAll()
             }
-            snapshot.processes[index].routeOptions = makeRouteOptions(selectedUIDs: selected)
-        }
-    }
-
-    func makeRouteOptions(selectedUIDs: [String]) -> [AudioRouteDeviceOption] {
-        let available = routeDevices.map {
-            AudioRouteDeviceOption(
-                uid: $0.uid,
-                name: $0.name,
-                isAvailable: $0.isAlive,
-                isSelected: selectedUIDs.contains($0.uid)
-            )
-        }
-        let knownUIDs = Set(routeDevices.map(\.uid))
-        return available + selectedUIDs.filter { knownUIDs.contains($0) == false }.map {
-            AudioRouteDeviceOption(uid: $0, name: $0, isAvailable: false, isSelected: true)
+            hasStarted = false
         }
     }
 
@@ -992,7 +1061,61 @@ private extension AudioControlCoordinator {
         case .explicit(let targetDeviceUIDs):
             selectedUIDs = targetDeviceUIDs
         }
-        return makeRouteOptions(selectedUIDs: selectedUIDs)
+        let available = routeDevices.compactMap { device -> AudioRouteDeviceOption? in
+            let isSelected = selectedUIDs.contains(device.uid)
+            let isEnabled = routeChoiceIsEnabled(
+                device.uid,
+                isSelected: isSelected,
+                route: route,
+                process: process
+            )
+            guard isSelected || isEnabled else { return nil }
+            return AudioRouteDeviceOption(
+                uid: device.uid,
+                name: device.name,
+                isAvailable: device.isAlive,
+                isSelected: isSelected,
+                isEnabled: isEnabled
+            )
+        }
+        let knownUIDs = Set(routeDevices.map(\.uid))
+        return available + selectedUIDs.filter { knownUIDs.contains($0) == false }.map {
+            AudioRouteDeviceOption(
+                uid: $0,
+                name: $0,
+                isAvailable: false,
+                isSelected: true,
+                isEnabled: routeChoiceIsEnabled(
+                    $0,
+                    isSelected: true,
+                    route: route,
+                    process: process
+                )
+            )
+        }
+    }
+
+    func routeChoiceIsEnabled(
+        _ uid: String,
+        isSelected: Bool,
+        route: AudioRouteMode,
+        process: AudioProcessEntry
+    ) -> Bool {
+        let candidateTargets: [String]
+        switch route {
+        case .followOriginal:
+            candidateTargets = [uid]
+        case .explicit(let targetDeviceUIDs):
+            candidateTargets = isSelected
+                ? targetDeviceUIDs.filter { $0 != uid }
+                : targetDeviceUIDs + [uid]
+        }
+        guard candidateTargets.isEmpty == false else { return false }
+        return planner.permits(routeRequest(
+            for: process,
+            route: .explicit(targetDeviceUIDs: candidateTargets),
+            generation: 1
+        ))
     }
 
     static func idleSession(for processObjectID: AudioObjectID) -> ProcessTapSessionSnapshot {

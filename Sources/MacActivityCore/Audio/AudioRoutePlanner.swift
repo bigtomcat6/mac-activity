@@ -27,6 +27,11 @@ public struct AudioRoutePlanner: Sendable {
         try candidate(for: request).topologyFingerprint
     }
 
+    public func permits(_ request: AudioRouteRequest) -> Bool {
+        guard let fingerprint = try? topologyFingerprint(for: request) else { return false }
+        return policy.permits(fingerprint)
+    }
+
     public func plan(_ request: AudioRouteRequest) throws -> AudioRoutePlan {
         let candidate = try candidate(for: request)
         guard policy.permits(candidate.topologyFingerprint) else {

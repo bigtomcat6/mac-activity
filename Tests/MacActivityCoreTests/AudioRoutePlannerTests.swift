@@ -1179,6 +1179,8 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
         let nearbyRequest = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["HDMI"]))
 
+        XCTAssertTrue(exact.permits(allowedRequest))
+        XCTAssertFalse(exact.permits(nearbyRequest))
         XCTAssertNoThrow(try exact.plan(allowedRequest))
         let nearbyFingerprint = try exact.topologyFingerprint(for: nearbyRequest)
         XCTAssertThrowsError(try exact.plan(nearbyRequest)) { error in

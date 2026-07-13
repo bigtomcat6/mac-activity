@@ -24,23 +24,21 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.processProvider.callCount, 0)
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
     }
 
-    func testNativeValidationRequiredRemainsDistinctWithoutApplyingEnginePlan() async {
-        let fixture = CoordinatorFixture(
-            availability: .supported,
-            planner: AudioRoutePlanner(policy: .conservative)
+    func testNativeValidationRequiredRemainsDistinctCoordinatorError() {
+        let fingerprint = AudioRouteTopologyFingerprint(
+            osBuild: "test",
+            sourceDeviceUIDs: ["source"],
+            selectedTargetUIDs: ["target"],
+            devices: []
         )
-        await fixture.coordinator.start()
 
-        fixture.coordinator.setProcessMuted(true, for: 11)
-        await fixture.coordinator.testingWaitUntilIdle()
-
-        guard case .routePlanning(.nativeValidationRequired) =
-            fixture.coordinator.snapshot.processes[0].error else {
-            return XCTFail("Expected the native validation gate to remain user-visible")
-        }
-        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(
+            AudioControlCoordinator.planningUserError(.nativeValidationRequired(fingerprint)),
+            .routePlanning(.nativeValidationRequired(fingerprint))
+        )
     }
 
     func testSupportedStartupCleansOrphansAndStartsMonitoring() async {
@@ -62,6 +60,121 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.authorizationAttemptCount, 0)
+    }
+
+    func testExactPolicyHidesDeniedCurrentProcessRowsAndSection() async throws {
+        let devices = DeviceProviderFake().routeDescriptors
+        let preflight = AudioRoutePlanner()
+        let allowed = try preflight.topologyFingerprint(for: AudioRouteRequest(
+            processObjectID: 11,
+            generation: 1,
+            sourceDeviceUIDs: ["BuiltIn"],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: devices
+        ))
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [allowed]))
+        )
+        fixture.processProvider.processes = [
+            .music(objectID: 11, outputDeviceIDs: [20]),
+        ]
+
+        await fixture.coordinator.start()
+
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertNil(AudioDashboardPresentation(
+            snapshot: fixture.coordinator.snapshot,
+            supportsProcessControls: fixture.coordinator.supportsProcessControls
+        ).processSection)
+    }
+
+    func testExactPolicyShowsOnlyPermittedNextRouteChoice() async throws {
+        let devices = DeviceProviderFake().routeDescriptors
+        let preflight = AudioRoutePlanner()
+        func fingerprint(_ mode: AudioRouteMode) throws -> AudioRouteTopologyFingerprint {
+            try preflight.topologyFingerprint(for: AudioRouteRequest(
+                processObjectID: 11,
+                generation: 1,
+                sourceDeviceUIDs: ["BuiltIn"],
+                systemDefaultOutputDeviceUID: nil,
+                mode: mode,
+                devices: devices
+            ))
+        }
+        let policy = AudioRouteNativeValidationPolicy(validatedFingerprints: [
+            try fingerprint(.followOriginal),
+            try fingerprint(.explicit(targetDeviceUIDs: ["USB"])),
+        ])
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: AudioRoutePlanner(policy: policy)
+        )
+
+        await fixture.coordinator.start()
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].routeOptions.map(\.uid),
+            ["BuiltIn", "USB"]
+        )
+
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].routeOptions.map(\.uid),
+            ["USB"],
+            "Adding BuiltIn would create an unvalidated nearby fingerprint"
+        )
+        XCTAssertFalse(fixture.coordinator.snapshot.processes[0].routeOptions[0].isEnabled)
+    }
+
+    func testTopologyFingerprintDriftHidesPreviouslyAllowedProcessRow() async throws {
+        let devices = DeviceProviderFake().routeDescriptors
+        let preflight = AudioRoutePlanner()
+        let allowed = try preflight.topologyFingerprint(for: AudioRouteRequest(
+            processObjectID: 11,
+            generation: 1,
+            sourceDeviceUIDs: ["BuiltIn"],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: devices
+        ))
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [allowed]))
+        )
+        await fixture.coordinator.start()
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+
+        fixture.deviceProvider.routeDescriptors = devices.map { device in
+            guard device.uid == "BuiltIn" else { return device }
+            return AudioRouteDevice(
+                objectID: device.objectID,
+                uid: device.uid,
+                name: device.name,
+                isAlive: device.isAlive,
+                isAggregate: device.isAggregate,
+                aggregateSubdeviceUIDs: device.aggregateSubdeviceUIDs,
+                inputStreams: device.inputStreams,
+                outputStreams: device.outputStreams,
+                clockDomain: 999,
+                transportType: device.transportType,
+                modelUID: device.modelUID,
+                driverIdentity: device.driverIdentity,
+                aggregateComposition: device.aggregateComposition
+            )
+        }
+
+        await fixture.emit([.deviceList])
+
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
+        XCTAssertNil(AudioDashboardPresentation(
+            snapshot: fixture.coordinator.snapshot,
+            supportsProcessControls: fixture.coordinator.supportsProcessControls
+        ).processSection)
     }
 
     func testRapidDeviceSliderIntentsCoalesceAndRollbackWithoutProcessEnumeration() async {
@@ -615,7 +728,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 uid: "Missing",
                 name: "Missing",
                 isAvailable: false,
-                isSelected: true
+                isSelected: true,
+                isEnabled: false
             )
         )
     }
@@ -780,6 +894,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 0)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
         XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.lifecycle.events.filter { $0 == "routes.read" }.count, 0)
+        XCTAssertEqual(fixture.lifecycle.events.filter { $0 == "devices.read" }.count, 2)
     }
 
     func testUnsupportedShutdownDoesNotStartProcessEngineTeardown() async {
@@ -795,6 +911,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
     func testUnsupportedOrdinaryMonitorChangesNeverEnumerateOrObserveProcesses() async {
         let fixture = CoordinatorFixture(availability: .unsupported)
         await fixture.coordinator.start()
+        fixture.deviceProvider.snapshotVolume = 0.73
 
         await fixture.emit([
             .processList,
@@ -806,6 +923,20 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
         XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.73)
+        XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
+    }
+
+    func testUnsupportedObservationFailureNeverStartsProcessEngineTeardown() async {
+        let fixture = CoordinatorFixture(availability: .unsupported)
+        await fixture.coordinator.start()
+        fixture.monitor.observationError = FixtureError.writeFailed
+
+        await fixture.emit([.deviceList])
+
+        XCTAssertEqual(fixture.engine.stopAllCount, 0)
+        XCTAssertEqual(fixture.engine.cleanupCount, 0)
+        XCTAssertEqual(fixture.processProvider.callCount, 0)
     }
 
     func testStartUsesCleanupMonitorRefreshObserveRestoreOrder() async {
@@ -902,7 +1033,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
                 uid: "USB",
                 name: "USB",
                 isAvailable: false,
-                isSelected: true
+                isSelected: true,
+                isEnabled: false
             )
         )
     }

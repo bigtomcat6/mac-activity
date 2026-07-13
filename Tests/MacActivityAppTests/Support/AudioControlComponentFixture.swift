@@ -68,8 +68,10 @@ final class CoordinatorFixture {
         let requests: [([String], AudioRouteMode)] = [
             (["BuiltIn"], .followOriginal),
             (["USB"], .followOriginal),
+            (["BuiltIn"], .explicit(targetDeviceUIDs: ["BuiltIn"])),
             (["BuiltIn"], .explicit(targetDeviceUIDs: ["USB"])),
             (["BuiltIn"], .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])),
+            (["BuiltIn"], .explicit(targetDeviceUIDs: ["USB", "BuiltIn"])),
         ]
         let fingerprints = requests.compactMap { sourceUIDs, mode in
             try? fingerprintPlanner.topologyFingerprint(for: .init(

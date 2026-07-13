@@ -505,7 +505,7 @@ struct AudioDashboardPresentation {
 
     init(snapshot: AudioControlSnapshot, supportsProcessControls: Bool) {
         devices = snapshot.devices.map(AudioDeviceRowPresentation.init)
-        processSection = supportsProcessControls
+        processSection = supportsProcessControls && snapshot.processControlsAreVisible
             ? AudioProcessSectionPresentation(processes: snapshot.processes.map(AudioProcessRowPresentation.init))
             : nil
     }
@@ -758,7 +758,8 @@ struct AudioProcessRowPresentation: Identifiable {
         return AudioAccessibilityContract(
             identifier: "\(accessibilityPrefix).route.\(option.uid)",
             label: title,
-            isEnabled: !(selectedUIDs.contains(option.uid) && selectedUIDs.count == 1)
+            isEnabled: option.isEnabled
+                && !(selectedUIDs.contains(option.uid) && selectedUIDs.count == 1)
         )
     }
 

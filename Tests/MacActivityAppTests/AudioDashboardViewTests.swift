@@ -209,7 +209,11 @@ final class AudioDashboardViewTests: XCTestCase {
     func testSupportedEmptyStateCreatesNoApplyIntent() throws {
         let coordinator = AudioViewCoordinatorSpy(
             supportsProcessControls: true,
-            snapshot: AudioControlSnapshot(devices: [.fixture()], processes: [])
+            snapshot: AudioControlSnapshot(
+                devices: [.fixture()],
+                processes: [],
+                processControlsAreVisible: true
+            )
         )
         let presentation = AudioDashboardPresentation(
             snapshot: coordinator.snapshot,
@@ -458,7 +462,8 @@ private extension AudioControlSnapshot {
     static func fixture() -> Self {
         Self(
             devices: [.fixture()],
-            processes: [.fixture()]
+            processes: [.fixture()],
+            processControlsAreVisible: true
         )
     }
 }
