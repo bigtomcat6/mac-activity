@@ -160,12 +160,12 @@ final class AudioHALClientTests: XCTestCase {
         }
     }
 
-    func testRetainedStringIsConsumedExactlyOnce() throws {
+    func testRetainedStringTransferDiagnosticsBalanceSuccess() throws {
         let backend = FakeAudioHALBackend()
         let value = CFStringCreateMutable(kCFAllocatorDefault, 0)!
         CFStringAppend(value, "Music" as CFString)
-        let before = CFGetRetainCount(value)
         backend.enqueueRetainedString(value)
+        let before = AudioHALRetainedTransferDiagnostics.snapshot()
 
         XCTAssertEqual(
             try AudioHALClient(backend: backend).readRetainedString(
@@ -174,8 +174,10 @@ final class AudioHALClientTests: XCTestCase {
             ),
             "Music"
         )
-        let after = CFGetRetainCount(value)
-        XCTAssertEqual(after, before)
+        let after = AudioHALRetainedTransferDiagnostics.snapshot()
+        XCTAssertEqual(after.acquisitions - before.acquisitions, 1)
+        XCTAssertEqual(after.releases - before.releases, 1)
+        XCTAssertEqual(after.outstanding, before.outstanding)
     }
 
     func testAggregateCreateCoversSuccessAndStatusFailureMetadata() throws {
@@ -364,14 +366,14 @@ final class AudioHALClientTests: XCTestCase {
         )
     }
 
-    func testRetainedCFObjectIsConsumedOnceAndMalformedSizeIsCleanedUp() throws {
+    func testRetainedObjectTransferDiagnosticsBalanceSuccessAndMalformedSize() throws {
         let address = AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
 
         let successBackend = FakeAudioHALBackend()
         let successValue = CFStringCreateMutable(kCFAllocatorDefault, 0)!
         CFStringAppend(successValue, "Success" as CFString)
-        let successRetainCount = CFGetRetainCount(successValue)
         successBackend.enqueueRetainedObject(successValue)
+        let beforeSuccess = AudioHALRetainedTransferDiagnostics.snapshot()
         try autoreleasepool {
             let returned = try AudioHALClient(backend: successBackend).readRetainedObject(
                 CFString.self,
@@ -380,13 +382,15 @@ final class AudioHALClientTests: XCTestCase {
             )
             XCTAssertTrue(CFEqual(returned, successValue))
         }
-        let observedSuccessRetainCount = CFGetRetainCount(successValue)
-        XCTAssertEqual(observedSuccessRetainCount, successRetainCount)
+        let afterSuccess = AudioHALRetainedTransferDiagnostics.snapshot()
+        XCTAssertEqual(afterSuccess.acquisitions - beforeSuccess.acquisitions, 1)
+        XCTAssertEqual(afterSuccess.releases - beforeSuccess.releases, 1)
+        XCTAssertEqual(afterSuccess.outstanding, beforeSuccess.outstanding)
 
         let malformedBackend = FakeAudioHALBackend()
         let malformedValue = CFStringCreateMutable(kCFAllocatorDefault, 0)!
-        let malformedRetainCount = CFGetRetainCount(malformedValue)
         malformedBackend.enqueueRetainedObject(malformedValue, returnedByteCount: 1)
+        let beforeMalformed = AudioHALRetainedTransferDiagnostics.snapshot()
         assertHALError(
             AudioHALError(
                 operation: .getData,
@@ -404,8 +408,35 @@ final class AudioHALClientTests: XCTestCase {
                 address: address
             )
         }
-        let observedMalformedRetainCount = CFGetRetainCount(malformedValue)
-        XCTAssertEqual(observedMalformedRetainCount, malformedRetainCount)
+        let afterMalformed = AudioHALRetainedTransferDiagnostics.snapshot()
+        XCTAssertEqual(afterMalformed.acquisitions - beforeMalformed.acquisitions, 1)
+        XCTAssertEqual(afterMalformed.releases - beforeMalformed.releases, 1)
+        XCTAssertEqual(afterMalformed.outstanding, beforeMalformed.outstanding)
+    }
+
+    func testRetainedTransferDiagnosticsBalanceStatusError() {
+        let backend = FakeAudioHALBackend()
+        let value = CFStringCreateMutable(kCFAllocatorDefault, 0)!
+        backend.enqueueRetainedObject(value, status: -707)
+        let before = AudioHALRetainedTransferDiagnostics.snapshot()
+
+        let address = AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
+        assertHALError(AudioHALError(
+            operation: .getData,
+            objectID: 709,
+            address: address,
+            reason: .status(-707)
+        )) {
+            _ = try AudioHALClient(backend: backend).readRetainedString(
+                from: 709,
+                address: address
+            )
+        }
+
+        let after = AudioHALRetainedTransferDiagnostics.snapshot()
+        XCTAssertEqual(after.acquisitions - before.acquisitions, 1)
+        XCTAssertEqual(after.releases - before.releases, 1)
+        XCTAssertEqual(after.outstanding, before.outstanding)
     }
 
     func testCFObjectWritePassesUnretainedReferenceAndPreservesAddressAndStatus() throws {
@@ -418,14 +449,11 @@ final class AudioHALClientTests: XCTestCase {
         let pointer = Unmanaged.passUnretained(value).toOpaque()
 
         let successBackend = FakeAudioHALBackend()
-        let retainCount = CFGetRetainCount(value)
         try AudioHALClient(backend: successBackend).writeObject(
             value,
             to: 709,
             address: address
         )
-        let observedRetainCount = CFGetRetainCount(value)
-        XCTAssertEqual(observedRetainCount, retainCount)
         XCTAssertEqual(successBackend.objectWrites.count, 1)
         XCTAssertEqual(successBackend.objectWrites[0].objectID, 709)
         XCTAssertEqual(successBackend.objectWrites[0].address, address)

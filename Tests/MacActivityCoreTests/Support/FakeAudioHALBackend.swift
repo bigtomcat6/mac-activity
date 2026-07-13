@@ -327,12 +327,13 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     func enqueueRetainedObject<T: AnyObject>(
         _ value: T,
+        status: OSStatus = noErr,
         returnedByteCount: UInt32 = UInt32(MemoryLayout<Unmanaged<T>?>.size)
     ) {
         let retained = Unmanaged.passRetained(value)
         queuedReads.append(
             ReadResult(
-                status: noErr,
+                status: status,
                 returnedByteCount: returnedByteCount,
                 payload: .retainedObject(
                     Unmanaged<AnyObject>.fromOpaque(retained.toOpaque())

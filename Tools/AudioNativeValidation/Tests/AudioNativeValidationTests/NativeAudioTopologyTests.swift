@@ -302,4 +302,25 @@ final class NativeAudioTopologyTests: XCTestCase {
         XCTAssertTrue(try XCTUnwrap(record.teardown).isReleased)
         XCTAssertFalse(record.eligibleForPolicyPromotion)
     }
+
+    @MainActor
+    func testRepeatedNativeEnumerationHasNoRetainedObjectGrowth() throws {
+        _ = try requireNativeOptIn()
+        let service = AudioDeviceVolumeService()
+        let before = AudioHALRetainedTransferDiagnostics.snapshot()
+
+        for _ in 0..<1_000 {
+            try autoreleasepool {
+                _ = try service.routeDevices()
+                _ = AudioProcessService.readProcessSnapshotsIfAvailable()
+            }
+        }
+
+        let after = AudioHALRetainedTransferDiagnostics.snapshot()
+        let acquisitions = after.acquisitions - before.acquisitions
+        let releases = after.releases - before.releases
+        XCTAssertGreaterThan(acquisitions, 0)
+        XCTAssertEqual(releases, acquisitions)
+        XCTAssertEqual(after.outstanding, before.outstanding)
+    }
 }

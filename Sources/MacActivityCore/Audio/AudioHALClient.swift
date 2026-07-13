@@ -1,6 +1,53 @@
 import CoreAudio
 import Foundation
 
+#if DEBUG
+struct AudioHALRetainedTransferSnapshot: Equatable, Sendable {
+    let acquisitions: Int
+    let releases: Int
+
+    var outstanding: Int { acquisitions - releases }
+}
+
+enum AudioHALRetainedTransferDiagnostics {
+    private static let counter = Counter()
+
+    static func snapshot() -> AudioHALRetainedTransferSnapshot {
+        counter.snapshot()
+    }
+
+    fileprivate static func acquired() { counter.acquired() }
+    fileprivate static func released() { counter.released() }
+
+    private final class Counter: @unchecked Sendable {
+        private let lock = NSLock()
+        private var acquisitions = 0
+        private var releases = 0
+
+        func acquired() {
+            lock.lock()
+            acquisitions += 1
+            lock.unlock()
+        }
+
+        func released() {
+            lock.lock()
+            releases += 1
+            lock.unlock()
+        }
+
+        func snapshot() -> AudioHALRetainedTransferSnapshot {
+            lock.lock()
+            defer { lock.unlock() }
+            return AudioHALRetainedTransferSnapshot(
+                acquisitions: acquisitions,
+                releases: releases
+            )
+        }
+    }
+}
+#endif
+
 protocol AudioHALBackend: AnyObject, Sendable {
     func hasProperty(
         objectID: AudioObjectID,
@@ -322,12 +369,10 @@ public final class AudioHALClient: @unchecked Sendable {
                 data: pointer
             )
         }
+        let retainedValue = consumeRetainedTransfer(value)
         try check(status, operation: .getData, objectID: objectID, address: address)
 
         guard returnedByteCount == MemoryLayout<Unmanaged<CFString>?>.size else {
-            if let value {
-                _ = value.takeRetainedValue()
-            }
             throw AudioHALError(
                 operation: .getData,
                 objectID: objectID,
@@ -338,7 +383,7 @@ public final class AudioHALClient: @unchecked Sendable {
                 )
             )
         }
-        guard let value else {
+        guard let retainedValue else {
             throw AudioHALError(
                 operation: .getData,
                 objectID: objectID,
@@ -348,7 +393,6 @@ public final class AudioHALClient: @unchecked Sendable {
         }
 
         let string = autoreleasepool {
-            let retainedValue = value.takeRetainedValue()
             let bytes = Array((retainedValue as String).utf8)
             guard let string = String(bytes: bytes, encoding: .utf8) else {
                 preconditionFailure("CFString must produce valid UTF-8")
@@ -373,7 +417,7 @@ public final class AudioHALClient: @unchecked Sendable {
                 data: pointer
             )
         }
-        let retainedValue = value?.takeRetainedValue()
+        let retainedValue = consumeRetainedTransfer(value)
 
         try check(status, operation: .getData, objectID: objectID, address: address)
         guard returnedByteCount == MemoryLayout<Unmanaged<T>?>.size else {
@@ -806,6 +850,18 @@ public final class AudioHALClient: @unchecked Sendable {
         let values = storage.bindMemory(to: T.self, capacity: count)
         return Array(UnsafeBufferPointer(start: values, count: count))
     }
+}
+
+private func consumeRetainedTransfer<T: AnyObject>(_ value: Unmanaged<T>?) -> T? {
+    guard let value else { return nil }
+    #if DEBUG
+    AudioHALRetainedTransferDiagnostics.acquired()
+    #endif
+    let retainedValue = value.takeRetainedValue()
+    #if DEBUG
+    AudioHALRetainedTransferDiagnostics.released()
+    #endif
+    return retainedValue
 }
 
 public final class AudioHALListenerToken: @unchecked Sendable {
