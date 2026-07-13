@@ -1,9 +1,35 @@
 import CoreAudio
+import Dispatch
 import Foundation
 @testable import MacActivityCore
 import XCTest
 
 final class NativeValidationConfigurationTests: XCTestCase {
+    @MainActor
+    func testExactRuntimePolicyReachesInjectedHardwareInsteadOfAvailabilityRejection() async throws {
+        let hardware = NativeRuntimeWiringProbeHardware()
+        let request = nativeRuntimeWiringRequest()
+
+        let runtime = try makeNativeValidationRuntime(
+            request: request,
+            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
+            hardware: hardware,
+            leaseAcquirer: NativeRuntimeWiringProbeLeaseAcquirer()
+        )
+        let snapshot = await runtime.engine.apply(
+            plan: runtime.plan,
+            gain: ProcessGainState()
+        )
+        await runtime.engine.shutdown()
+
+        XCTAssertTrue(runtime.policy.permits(runtime.fingerprint))
+        XCTAssertTrue(runtime.availability.supportsProcessControls)
+        XCTAssertTrue(runtime.planner.permits(request))
+        XCTAssertEqual(runtime.plan.topologyFingerprint, runtime.fingerprint)
+        XCTAssertEqual(hardware.createTapCallCount, 1)
+        XCTAssertNotEqual(snapshot.error, .processTapsUnavailable)
+    }
+
     func testNativeEngineFinalizerReturnsValueThenShutsDownExactlyOnce() async throws {
         let events = NativeEngineFinalizerEvents()
 
@@ -232,6 +258,45 @@ final class NativeValidationConfigurationTests: XCTestCase {
             "MACACTIVITY_AUDIO_VALIDATION_SECONDS": "1",
         ]
     }
+
+    private func nativeRuntimeWiringRequest() -> AudioRouteRequest {
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let device = AudioRouteDevice(
+            objectID: 100,
+            uid: "probe-output",
+            name: "Probe Output",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 101,
+                streamIndex: 0,
+                format: format
+            )],
+            clockDomain: 1,
+            transportType: kAudioDeviceTransportTypeUSB,
+            modelUID: "probe-model",
+            driverIdentity: AudioRouteDriverIdentity(
+                plugInBundleID: "probe-driver",
+                availableVersion: "1"
+            )
+        )
+        return AudioRouteRequest(
+            processObjectID: 42,
+            generation: 1,
+            sourceDeviceUIDs: [device.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: [device]
+        )
+    }
 }
 
 private actor NativeEngineFinalizerEvents {
@@ -244,4 +309,106 @@ private actor NativeEngineFinalizerEvents {
     func values() -> [String] {
         events
     }
+}
+
+private final class NativeRuntimeWiringProbeLease: AudioProcessOwnershipLease, @unchecked Sendable {}
+
+private struct NativeRuntimeWiringProbeLeaseAcquirer: AudioProcessOwnershipLeaseAcquiring {
+    func acquire() throws -> any AudioProcessOwnershipLease {
+        NativeRuntimeWiringProbeLease()
+    }
+}
+
+private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @unchecked Sendable {
+    private let lock = NSLock()
+    private var createTapCallCountStorage = 0
+
+    var createTapCallCount: Int {
+        lock.withLock { createTapCallCountStorage }
+    }
+
+    func createTap(
+        processObjectID: AudioObjectID,
+        source: AudioTapSource,
+        uuid: UUID
+    ) throws -> AudioTapResource {
+        lock.withLock { createTapCallCountStorage += 1 }
+        throw NativeRuntimeWiringProbeError.reachedHardware
+    }
+
+    func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat {
+        fatalError("unreachable")
+    }
+
+    func createAggregate(
+        plan: AudioRoutePlan,
+        taps: [AudioTapResource]
+    ) throws -> AudioAggregateResource {
+        fatalError("unreachable")
+    }
+
+    func waitForStableTopology(
+        _ aggregate: AudioAggregateResource,
+        deadline: DispatchTime,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> AudioAggregateTopologySnapshot {
+        fatalError("unreachable")
+    }
+
+    func createIOProc(
+        aggregate: AudioAggregateResource,
+        context: ProcessTapDSPContext
+    ) throws -> AudioIOProcResource {
+        fatalError("unreachable")
+    }
+
+    func start(_ ioProc: AudioIOProcResource) throws {
+        fatalError("unreachable")
+    }
+
+    func configureInputStreamUsage(
+        _ usage: [UInt32],
+        for ioProc: AudioIOProcResource
+    ) throws -> [UInt32] {
+        fatalError("unreachable")
+    }
+
+    func setMuteState(
+        _ state: AudioTapMuteState,
+        for tap: AudioTapResource
+    ) throws {
+        fatalError("unreachable")
+    }
+
+    func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyTap(_ tap: AudioTapResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
+        AudioOwnedObjectDiscovery(objects: [], failures: [])
+    }
+
+    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
+        fatalError("unreachable")
+    }
+}
+
+private enum NativeRuntimeWiringProbeError: Error {
+    case reachedHardware
 }

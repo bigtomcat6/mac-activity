@@ -11,6 +11,45 @@ struct NativeValidationEnvironment {
     let observationSeconds: Double
 }
 
+struct NativeValidationRuntime {
+    let fingerprint: AudioRouteTopologyFingerprint
+    let policy: AudioRouteNativeValidationPolicy
+    let availability: AudioFeatureAvailability
+    let planner: AudioRoutePlanner
+    let plan: AudioRoutePlan
+    let engine: ProcessTapVolumeEngine
+}
+
+func makeNativeValidationRuntime(
+    request: AudioRouteRequest,
+    operatingSystemVersion: OperatingSystemVersion,
+    hardware: any AudioTapHardware,
+    leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
+        DarwinAudioProcessOwnershipLeaseAcquirer()
+) throws -> NativeValidationRuntime {
+    let fingerprint = try AudioRoutePlanner().topologyFingerprint(for: request)
+    let policy = AudioRouteNativeValidationPolicy(validatedFingerprints: [fingerprint])
+    let availability = AudioFeatureAvailability(
+        operatingSystemVersion: operatingSystemVersion,
+        nativeValidationPolicy: policy
+    )
+    let planner = AudioRoutePlanner(policy: policy)
+    let plan = try planner.plan(request)
+    let engine = ProcessTapVolumeEngine(
+        hardware: hardware,
+        leaseAcquirer: leaseAcquirer,
+        availability: availability
+    )
+    return NativeValidationRuntime(
+        fingerprint: fingerprint,
+        policy: policy,
+        availability: availability,
+        planner: planner,
+        plan: plan,
+        engine: engine
+    )
+}
+
 enum NativeValidationConfigurationError: Error {
     case missing(String)
     case invalid(String)
@@ -144,23 +183,23 @@ func runNativeValidation(
     _ environment: NativeValidationEnvironment
 ) async throws -> NativeAudioValidationRecord {
     let request = try makeNativeRequest(environment)
-    let fingerprint = try AudioRoutePlanner().topologyFingerprint(for: request)
-    let plan = try AudioRoutePlanner(policy: AudioRouteNativeValidationPolicy(
-        validatedFingerprints: [fingerprint]
-    )).plan(request)
     let hardware = NativeRecordingAudioTapHardware()
-    let engine = ProcessTapVolumeEngine(hardware: hardware)
+    let runtime = try makeNativeValidationRuntime(
+        request: request,
+        operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
+        hardware: hardware
+    )
 
     return try await persistNativeValidationEvidence(
         environment: environment,
-        fingerprint: fingerprint,
+        fingerprint: runtime.fingerprint,
         recordingSnapshot: hardware.snapshot,
         runSession: {
             try await runNativeSession(
                 environment: environment,
-                plan: plan,
+                plan: runtime.plan,
                 hardware: hardware,
-                engine: engine
+                engine: runtime.engine
             )
         }
     )
