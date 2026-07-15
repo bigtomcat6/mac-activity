@@ -512,6 +512,59 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         ])
     }
 
+    func testRestoreReadbackFailureRetainsMutedTapUntilCleanupRetry() async {
+        let fixture = EngineFixture()
+        let running = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+        XCTAssertEqual(running.state, .running)
+
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .readMuteState(0)
+        )
+        fixture.hardware.clearCalls()
+
+        let firstStop = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(firstStop.state, .failed)
+        XCTAssertEqual(
+            firstStop.error,
+            .operationFailed(
+                operation: .setData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertEqual(fixture.hardware.calls, [
+            .setTapUnmuted(sourceIndex: 0),
+        ])
+        XCTAssertEqual(fixture.hardware.currentMuteState, .unmuted)
+        XCTAssertEqual(
+            fixture.hardware.liveOwnedObjects.filter {
+                $0.classID == kAudioTapClassID
+            }.count,
+            1
+        )
+
+        fixture.hardware.clearCalls()
+        let retryFailures = await fixture.engine.cleanupOrphans()
+
+        XCTAssertTrue(retryFailures.isEmpty)
+        XCTAssertEqual(fixture.hardware.currentMuteState, .unmuted)
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(
+            fixture.hardware.calls.first,
+            .setTapUnmuted(sourceIndex: 0)
+        )
+        XCTAssertTrue(
+            fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0))
+        )
+    }
+
     func testNewerGenerationSupersedesPreparationWithoutPublishingStaleState() async {
         let recorder = SnapshotRecorder()
         let fixture = EngineFixture(

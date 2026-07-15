@@ -1023,6 +1023,10 @@ private extension ProcessTapVolumeEngine {
         guard bundles[acquisitionID] != nil else { return [] }
         bundles[acquisitionID]?.resources.context?.setOutputGateOpen(false)
         restoreMutedTaps(in: acquisitionID, using: hardware)
+        guard bundles[acquisitionID]?.resources.mutedTaps.isEmpty == true else {
+            retainBundle(acquisitionID)
+            return bundles[acquisitionID]?.failures ?? []
+        }
 
         while let stage = bundles[acquisitionID]?.stage {
             switch stage {

@@ -470,7 +470,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         if status == noErr {
             locked { tapMuteStates[tap.uuid] = .unmuted }
         }
-        return status
+        guard status == noErr else { return status }
+        return takeStatus(at: .readMuteState(sourceIndex))
     }
 
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
