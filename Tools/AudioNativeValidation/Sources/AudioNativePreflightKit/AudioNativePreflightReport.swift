@@ -70,9 +70,31 @@ public enum AudioNativePreflightPropertyObservation<Value: Equatable & Sendable>
     Equatable,
     Sendable {
     case value(Value, isWritable: Bool)
+    case notObserved
     case unsupported
     case unavailable
     case failed(String)
+}
+
+public struct AudioNativePreflightControlInspectionPolicy: Sendable {
+    public let includeDeviceControls: Bool
+
+    public init(includeDeviceControls: Bool = false) {
+        self.includeDeviceControls = includeDeviceControls
+    }
+
+    public func observations(
+        volume: () -> AudioNativePreflightPropertyObservation<Double>,
+        mute: () -> AudioNativePreflightPropertyObservation<Bool>
+    ) -> (
+        volume: AudioNativePreflightPropertyObservation<Double>,
+        mute: AudioNativePreflightPropertyObservation<Bool>
+    ) {
+        guard includeDeviceControls else {
+            return (.notObserved, .notObserved)
+        }
+        return (volume(), mute())
+    }
 }
 
 public enum AudioNativePreflightObservationError: Error, Equatable, Sendable {
@@ -283,6 +305,7 @@ public struct AudioNativePreflightReport: Encodable, Sendable {
         public func encode(to encoder: Encoder) throws {
             var container = encoder.container(keyedBy: CodingKeys.self)
             try container.encode(status, forKey: .status)
+            guard status != "notObserved" else { return }
             try container.encodeOptional(value, forKey: .value)
             try container.encodeOptional(isWritable, forKey: .isWritable)
             try container.encodeOptional(failure, forKey: .failure)
@@ -396,8 +419,8 @@ private extension AudioNativePreflightReport.Device {
             outputStreams: observation.outputStreams
                 .sorted { ($0.index, $0.diagnosticObjectID) < ($1.index, $1.diagnosticObjectID) }
                 .map(AudioNativePreflightReport.Stream.init),
-            volume: .init(observation.volume),
-            mute: .init(observation.mute)
+            volume: .init(observation: observation.volume),
+            mute: .init(observation: observation.mute)
         )
     }
 }
@@ -412,11 +435,13 @@ private extension AudioNativePreflightReport.Stream {
     }
 }
 
-private extension AudioNativePreflightReport.Property {
-    init(_ observation: AudioNativePreflightPropertyObservation<Value>) {
+extension AudioNativePreflightReport.Property {
+    init(observation: AudioNativePreflightPropertyObservation<Value>) {
         switch observation {
         case .value(let value, let isWritable):
             self.init(status: "value", value: value, isWritable: isWritable, failure: nil)
+        case .notObserved:
+            self.init(status: "notObserved", value: nil, isWritable: nil, failure: nil)
         case .unsupported:
             self.init(status: "unsupported", value: nil, isWritable: nil, failure: nil)
         case .unavailable:

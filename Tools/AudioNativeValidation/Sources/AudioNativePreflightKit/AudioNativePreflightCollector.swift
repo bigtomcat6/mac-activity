@@ -8,8 +8,13 @@ import MacActivityCore
 @MainActor
 public struct AudioNativePreflightCollector {
     private static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
+    private let controlInspectionPolicy: AudioNativePreflightControlInspectionPolicy
 
-    public init() {}
+    public init(includeDeviceControls: Bool = false) {
+        self.controlInspectionPolicy = AudioNativePreflightControlInspectionPolicy(
+            includeDeviceControls: includeDeviceControls
+        )
+    }
 
     public func collect() throws -> AudioNativePreflightReport {
         let processInfo = ProcessInfo.processInfo
@@ -22,7 +27,10 @@ public struct AudioNativePreflightCollector {
         }
 
         let client = AudioHALClient.system
-        let deviceObservations = try Self.deviceObservations(client: client)
+        let deviceObservations = try Self.deviceObservations(
+            client: client,
+            controlInspectionPolicy: controlInspectionPolicy
+        )
 
         let processPolicy = AudioRouteNativeValidationPolicy(
             validatedFingerprints: [Self.impossibleReadOnlyFingerprint]
@@ -132,7 +140,8 @@ private extension AudioNativePreflightCollector {
     }
 
     static func deviceObservations(
-        client: AudioHALClient
+        client: AudioHALClient,
+        controlInspectionPolicy: AudioNativePreflightControlInspectionPolicy
     ) throws -> [AudioNativePreflightDeviceObservation] {
         let deviceIDs = try client.readArray(
             AudioDeviceID.self,
@@ -155,13 +164,18 @@ private extension AudioNativePreflightCollector {
         )
 
         return try outputDevices.compactMap { outputDevice in
-            try deviceObservation(outputDevice, client: client)
+            try deviceObservation(
+                outputDevice,
+                client: client,
+                controlInspectionPolicy: controlInspectionPolicy
+            )
         }
     }
 
     static func deviceObservation(
         _ outputDevice: AudioNativePreflightOutputDevice,
-        client: AudioHALClient
+        client: AudioHALClient,
+        controlInspectionPolicy: AudioNativePreflightControlInspectionPolicy
     ) throws -> AudioNativePreflightDeviceObservation? {
         let deviceID = outputDevice.deviceID
         let uid = try client.readRetainedString(
@@ -196,6 +210,10 @@ private extension AudioNativePreflightCollector {
         let isAggregate = aggregateAddresses.contains {
             client.hasProperty(objectID: deviceID, address: $0)
         }
+        let controlObservations = controlInspectionPolicy.observations(
+            volume: { volumeObservation(deviceID: deviceID, client: client) },
+            mute: { muteObservation(deviceID: deviceID, client: client) }
+        )
 
         return AudioNativePreflightDeviceObservation(
             diagnosticObjectID: deviceID,
@@ -232,8 +250,8 @@ private extension AudioNativePreflightCollector {
                 outputDevice.outputStreamIDs,
                 client: client
             ),
-            volume: volumeObservation(deviceID: deviceID, client: client),
-            mute: muteObservation(deviceID: deviceID, client: client)
+            volume: controlObservations.volume,
+            mute: controlObservations.mute
         )
     }
 
@@ -581,6 +599,32 @@ private extension AudioNativePreflightCollector {
             isRunningOutput: isRunningOutput,
             outputDeviceIDs: outputDeviceIDs
         )
+    }
+}
+
+public struct AudioNativePreflightArguments: Equatable, Sendable {
+    public let includeDeviceControls: Bool
+
+    public static func parse(_ arguments: [String]) throws -> Self {
+        switch arguments {
+        case []:
+            return Self(includeDeviceControls: false)
+        case ["--include-device-controls"]:
+            return Self(includeDeviceControls: true)
+        default:
+            throw AudioNativePreflightArgumentError.unsupportedArguments(arguments)
+        }
+    }
+}
+
+public enum AudioNativePreflightArgumentError: LocalizedError, Equatable, Sendable {
+    case unsupportedArguments([String])
+
+    public var errorDescription: String? {
+        switch self {
+        case .unsupportedArguments(let arguments):
+            return "Unsupported arguments: \(arguments.joined(separator: " "))"
+        }
     }
 }
 

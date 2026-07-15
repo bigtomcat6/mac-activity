@@ -5,6 +5,89 @@ import MacActivityCore
 import XCTest
 
 final class AudioNativePreflightReportTests: XCTestCase {
+    func testControlInspectionPolicySkipsControlClosuresByDefault() {
+        var volumeReadCount = 0
+        var muteReadCount = 0
+
+        let observations = AudioNativePreflightControlInspectionPolicy()
+            .observations(
+                volume: {
+                    volumeReadCount += 1
+                    return .value(0.5, isWritable: true)
+                },
+                mute: {
+                    muteReadCount += 1
+                    return .value(false, isWritable: true)
+                }
+            )
+
+        XCTAssertEqual(volumeReadCount, 0)
+        XCTAssertEqual(muteReadCount, 0)
+        XCTAssertEqual(observations.volume, .notObserved)
+        XCTAssertEqual(observations.mute, .notObserved)
+    }
+
+    func testControlInspectionPolicyReadsEachControlOnceWhenExplicitlyIncluded() {
+        var volumeReadCount = 0
+        var muteReadCount = 0
+
+        let observations = AudioNativePreflightControlInspectionPolicy(
+            includeDeviceControls: true
+        ).observations(
+            volume: {
+                volumeReadCount += 1
+                return .value(0.5, isWritable: true)
+            },
+            mute: {
+                muteReadCount += 1
+                return .value(false, isWritable: true)
+            }
+        )
+
+        XCTAssertEqual(volumeReadCount, 1)
+        XCTAssertEqual(muteReadCount, 1)
+        XCTAssertEqual(observations.volume, .value(0.5, isWritable: true))
+        XCTAssertEqual(observations.mute, .value(false, isWritable: true))
+    }
+
+    func testNotObservedControlJSONContainsOnlyStatus() throws {
+        let property = AudioNativePreflightReport.Property<Double>(
+            observation: .notObserved
+        )
+        let data = try JSONEncoder().encode(property)
+        let object = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertEqual(object["status"] as? String, "notObserved")
+        XCTAssertNil(object["value"])
+        XCTAssertNil(object["isWritable"])
+        XCTAssertNil(object["failure"])
+        XCTAssertEqual(object.count, 1)
+    }
+
+    func testPreflightArgumentsDefaultToControlInspectionDisabled() throws {
+        let options = try AudioNativePreflightArguments.parse([])
+
+        XCTAssertFalse(options.includeDeviceControls)
+    }
+
+    func testPreflightArgumentsAcceptOnlyExplicitControlInspectionOptIn() throws {
+        let options = try AudioNativePreflightArguments.parse([
+            "--include-device-controls",
+        ])
+
+        XCTAssertTrue(options.includeDeviceControls)
+    }
+
+    func testPreflightArgumentsRejectUnknownArgumentsBeforeCollection() {
+        XCTAssertThrowsError(try AudioNativePreflightArguments.parse(["--help"]))
+        XCTAssertThrowsError(try AudioNativePreflightArguments.parse([
+            "--include-device-controls",
+            "--unexpected",
+        ]))
+    }
+
     func testStrictOutputDeviceDiscoveryPropagatesStreamReadFailure() {
         enum ReadFailure: Error { case failed }
 

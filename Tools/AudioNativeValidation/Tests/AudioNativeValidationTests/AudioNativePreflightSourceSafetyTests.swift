@@ -2,6 +2,33 @@ import Foundation
 import XCTest
 
 final class AudioNativePreflightSourceSafetyTests: XCTestCase {
+    func testDefaultExecutablePathDisablesDeviceControlInspection() throws {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let executableSource = try String(
+            contentsOf: packageRoot.appendingPathComponent(
+                "Sources/AudioNativePreflight/main.swift"
+            ),
+            encoding: .utf8
+        )
+        let collectorSource = try String(
+            contentsOf: packageRoot.appendingPathComponent(
+                "Sources/AudioNativePreflightKit/AudioNativePreflightCollector.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(executableSource.contains("AudioNativePreflightArguments.parse("))
+        XCTAssertTrue(executableSource.contains(
+            "includeDeviceControls: arguments.includeDeviceControls"
+        ))
+        XCTAssertTrue(collectorSource.contains(
+            "case []:\n            return Self(includeDeviceControls: false)"
+        ))
+    }
+
     func testExecutableSourcesContainNoLiveOrMutableAudioSeams() throws {
         let packageRoot = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()

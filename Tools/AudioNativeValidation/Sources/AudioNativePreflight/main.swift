@@ -7,7 +7,12 @@ import Foundation
 struct AudioNativePreflight {
     static func main() {
         do {
-            let report = try AudioNativePreflightCollector().collect()
+            let arguments = try AudioNativePreflightArguments.parse(
+                Array(CommandLine.arguments.dropFirst())
+            )
+            let report = try AudioNativePreflightCollector(
+                includeDeviceControls: arguments.includeDeviceControls
+            ).collect()
             FileHandle.standardOutput.write(try AudioNativePreflightJSON.encode(report))
         } catch {
             let message = "AudioNativePreflight: \(error.localizedDescription)\n"
