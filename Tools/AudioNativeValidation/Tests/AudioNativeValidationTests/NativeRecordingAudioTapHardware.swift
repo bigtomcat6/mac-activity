@@ -17,6 +17,26 @@ struct NativeTapFormatObservation: Codable, Equatable, Sendable {
     let format: ProcessTapAudioFormat
 }
 
+enum NativeTapMuteBehavior: String, Codable, Equatable, Sendable {
+    case unmuted
+    case mutedWhenTapped
+
+    init(_ state: AudioTapMuteState) {
+        switch state {
+        case .unmuted:
+            self = .unmuted
+        case .mutedWhenTapped:
+            self = .mutedWhenTapped
+        }
+    }
+}
+
+struct NativeTapMuteBehaviorObservation: Codable, Equatable, Sendable {
+    let diagnosticOnlyObjectID: AudioObjectID
+    let uuid: String
+    let observedState: NativeTapMuteBehavior
+}
+
 struct NativeAggregateResourceObservation: Codable, Equatable, Sendable {
     let diagnosticOnlyObjectID: AudioObjectID
     let uid: String
@@ -109,6 +129,7 @@ struct NativeTeardownObservation: Codable, Equatable, Sendable {
 struct NativeRecordingSnapshot: Sendable {
     let taps: [NativeTapResourceObservation]
     let tapFormats: [NativeTapFormatObservation]
+    let tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation]
     let aggregate: NativeAggregateResourceObservation?
     let ioProc: NativeIOProcResourceObservation?
     let topology: NativeTopologyObservation?
@@ -253,7 +274,7 @@ enum NativeTopologyEvidence {
 }
 
 final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendable {
-    private let delegate = CoreAudioTapHardware(hal: .system)
+    private let delegate: any AudioTapHardware
     private let hal = AudioHALClient.system
     private let teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)?
     private let stateLock = NSLock()
@@ -261,6 +282,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
 
     private var tapsStorage: [NativeTapResourceObservation] = []
     private var tapFormatsStorage: [NativeTapFormatObservation] = []
+    private var tapMuteBehaviorObservationsStorage: [NativeTapMuteBehaviorObservation] = []
     private var aggregateStorage: NativeAggregateResourceObservation?
     private var ioProcStorage: NativeIOProcResourceObservation?
     private var topologyStorage: NativeTopologyObservation?
@@ -274,8 +296,10 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     private var recordedTapStorage: AudioTapResource?
 
     init(
+        delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system),
         teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)? = nil
     ) {
+        self.delegate = delegate
         self.teardownOwnedObjects = teardownOwnedObjects
     }
 
@@ -284,8 +308,9 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         source: AudioTapSource,
         uuid: UUID
     ) throws -> AudioTapResource {
+        let tap: AudioTapResource
         do {
-            let tap = try delegate.createTap(
+            tap = try delegate.createTap(
                 processObjectID: processObjectID,
                 source: source,
                 uuid: uuid
@@ -296,11 +321,12 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                     uuid: tap.uuid.uuidString
                 ))
             }
-            return tap
         } catch {
             record(error, seam: "createTap")
             throw error
         }
+        try recordMuteBehavior(of: tap, seam: "createTap.readMuteState")
+        return tap
     }
 
     func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat {
@@ -315,6 +341,15 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             return format
         } catch {
             record(error, seam: "readTapFormat")
+            throw error
+        }
+    }
+
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
+        do {
+            return try delegate.readMuteState(for: tap)
+        } catch {
+            record(error, seam: "readMuteState")
             throw error
         }
     }
@@ -447,10 +482,18 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             record(error, seam: "setMuteState")
             throw error
         }
+        try recordMuteBehavior(of: tap, seam: "setMuteState.readMuteState")
     }
 
     func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
-        record(delegate.restoreOriginalAudio(for: tap), seam: "restoreOriginalAudio")
+        let status = record(delegate.restoreOriginalAudio(for: tap), seam: "restoreOriginalAudio")
+        guard status == noErr else { return status }
+        do {
+            try recordMuteBehavior(of: tap, seam: "restoreOriginalAudio.readMuteState")
+            return noErr
+        } catch {
+            return rawStatus(error)
+        }
     }
 
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
@@ -538,6 +581,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             NativeRecordingSnapshot(
                 taps: tapsStorage,
                 tapFormats: tapFormatsStorage,
+                tapMuteBehaviorObservations: tapMuteBehaviorObservationsStorage,
                 aggregate: aggregateStorage,
                 ioProc: ioProcStorage,
                 topology: topologyStorage,
@@ -624,6 +668,27 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 throw AudioAggregateTopologyError.unsupportedTopology
             }
             return uid
+        }
+    }
+
+    private func recordMuteBehavior(
+        of tap: AudioTapResource,
+        seam: String
+    ) throws {
+        do {
+            let state = try delegate.readMuteState(for: tap)
+            locked {
+                tapMuteBehaviorObservationsStorage.append(
+                    NativeTapMuteBehaviorObservation(
+                        diagnosticOnlyObjectID: tap.objectID,
+                        uuid: tap.uuid.uuidString,
+                        observedState: NativeTapMuteBehavior(state)
+                    )
+                )
+            }
+        } catch {
+            record(error, seam: seam)
+            throw error
         }
     }
 

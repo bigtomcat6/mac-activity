@@ -475,6 +475,106 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testInstanceMuteStateReadReturnsOnlyObservedTapStateWithoutWriting() throws {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 705)
+        let address = AudioHALPropertyAddress(selector: kAudioTapPropertyDescription)
+        let description = CATapDescription(
+            processes: [91],
+            deviceUID: tap.source.deviceUID,
+            stream: tap.source.streamIndex
+        )
+        description.uuid = tap.uuid
+        description.muteBehavior = .mutedWhenTapped
+        configureDestroyIdentity(
+            backend,
+            id: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: tap.uuid.uuidString
+        )
+        backend.setRetainedObject(description, objectID: tap.objectID, address: address)
+
+        let state = try makeHardware(backend).readMuteState(for: tap)
+
+        XCTAssertEqual(state, .mutedWhenTapped)
+        XCTAssertEqual(
+            backend.readSelectors,
+            [
+                kAudioObjectPropertyClass,
+                kAudioTapPropertyUID,
+                kAudioTapPropertyDescription,
+            ]
+        )
+        XCTAssertTrue(backend.writeSelectors.isEmpty)
+        XCTAssertTrue(backend.objectWrites.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
+    func testInstanceMuteStateReadDoesNotTouchReplacementTap() {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 706)
+        configureDestroyIdentity(
+            backend,
+            id: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: UUID().uuidString
+        )
+
+        XCTAssertThrowsError(try makeHardware(backend).readMuteState(for: tap)) { error in
+            XCTAssertEqual(
+                error as? AudioHALError,
+                AudioHALError(
+                    operation: .getData,
+                    objectID: tap.objectID,
+                    address: nil,
+                    reason: .missingValue
+                )
+            )
+        }
+        XCTAssertEqual(
+            backend.readSelectors,
+            [kAudioObjectPropertyClass, kAudioTapPropertyUID]
+        )
+        XCTAssertTrue(backend.writeSelectors.isEmpty)
+        XCTAssertTrue(backend.objectWrites.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
+    func testInstanceMuteStateReadRejectsUnsupportedObservedMuteBehavior() {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 707)
+        let address = AudioHALPropertyAddress(selector: kAudioTapPropertyDescription)
+        let description = CATapDescription(
+            processes: [91],
+            deviceUID: tap.source.deviceUID,
+            stream: tap.source.streamIndex
+        )
+        description.uuid = tap.uuid
+        description.muteBehavior = .muted
+        configureDestroyIdentity(
+            backend,
+            id: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: tap.uuid.uuidString
+        )
+        backend.setRetainedObject(description, objectID: tap.objectID, address: address)
+
+        XCTAssertThrowsError(try makeHardware(backend).readMuteState(for: tap)) { error in
+            XCTAssertEqual(
+                error as? AudioHALError,
+                AudioHALError(
+                    operation: .getData,
+                    objectID: tap.objectID,
+                    address: address,
+                    reason: .missingValue
+                )
+            )
+        }
+        XCTAssertTrue(backend.writeSelectors.isEmpty)
+        XCTAssertTrue(backend.objectWrites.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testInstanceAggregateCreationUsesTapDictionariesAndReturnedID() throws {
         let backend = FakeAudioHALBackend()
         backend.nextAggregateDeviceID = 703

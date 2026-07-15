@@ -276,6 +276,13 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
+        guard tapIdentityMatches(tap) else {
+            throw badObjectError(operation: .getData, objectID: tap.objectID)
+        }
+        return locked { tapMuteStates[tap.uuid] ?? .unmuted }
+    }
+
     func createAggregate(
         plan: AudioRoutePlan,
         taps: [AudioTapResource]

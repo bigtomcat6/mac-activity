@@ -5,6 +5,100 @@ import XCTest
 
 final class NativeEvidenceTests: XCTestCase {
     @MainActor
+    func testSuccessEvidenceSerializesOrderedPerTapMuteBehaviorObservations() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let tap = fixtureTap()
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeMuteBehaviorProbeHardware(tap: tap)
+        )
+        let expected = [
+            NativeTapMuteBehaviorObservation(
+                diagnosticOnlyObjectID: tap.objectID,
+                uuid: tap.uuid.uuidString,
+                observedState: .unmuted
+            ),
+            NativeTapMuteBehaviorObservation(
+                diagnosticOnlyObjectID: tap.objectID,
+                uuid: tap.uuid.uuidString,
+                observedState: .mutedWhenTapped
+            ),
+            NativeTapMuteBehaviorObservation(
+                diagnosticOnlyObjectID: tap.objectID,
+                uuid: tap.uuid.uuidString,
+                observedState: .unmuted
+            ),
+        ]
+
+        _ = try await persistNativeValidationEvidence(
+            environment: environment(outputURL: outputURL),
+            fingerprint: fingerprint,
+            recordingSnapshot: hardware.snapshot,
+            runSession: {
+                let createdTap = try hardware.createTap(
+                    processObjectID: 42,
+                    source: tap.source,
+                    uuid: tap.uuid
+                )
+                try hardware.setMuteState(.mutedWhenTapped, for: createdTap)
+                XCTAssertEqual(hardware.restoreOriginalAudio(for: createdTap), noErr)
+            }
+        )
+
+        let record = try decodeRecord(at: outputURL)
+        XCTAssertEqual(record.tapMuteBehaviorObservations, expected)
+        XCTAssertFalse(record.eligibleForPolicyPromotion)
+    }
+
+    @MainActor
+    func testMuteReadbackFailureWritesConservativeEvidenceBeforeRethrow() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let status = OSStatus(-32_003)
+        let tap = fixtureTap()
+        let failure = NativeRawFailure(
+            seam: "setMuteState.readMuteState",
+            status: status
+        )
+        let observedInitialState = NativeTapMuteBehaviorObservation(
+            diagnosticOnlyObjectID: tap.objectID,
+            uuid: tap.uuid.uuidString,
+            observedState: .unmuted
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeMuteBehaviorProbeHardware(
+                tap: tap,
+                readFailureOnInvocation: 2,
+                readFailureStatus: status
+            )
+        )
+
+        do {
+            _ = try await persistNativeValidationEvidence(
+                environment: environment(outputURL: outputURL),
+                fingerprint: fingerprint,
+                recordingSnapshot: hardware.snapshot,
+                runSession: {
+                    let createdTap = try hardware.createTap(
+                        processObjectID: 42,
+                        source: tap.source,
+                        uuid: tap.uuid
+                    )
+                    try hardware.setMuteState(.mutedWhenTapped, for: createdTap)
+                }
+            )
+            XCTFail("Expected mute readback failure")
+        } catch let error as AudioHALError {
+            XCTAssertEqual(error.status, status)
+            let record = try decodeRecord(at: outputURL)
+            XCTAssertEqual(record.tapMuteBehaviorObservations, [observedInitialState])
+            XCTAssertEqual(record.rawFailures, [failure])
+            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertTrue(record.sessionError?.contains("-32003") == true)
+        }
+    }
+
+    @MainActor
     func testOwnedObjectScanFailureWritesCurrentConservativeEvidenceBeforeRethrow() async throws {
         let outputURL = try makeOutputURL()
         defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
@@ -339,11 +433,13 @@ final class NativeEvidenceTests: XCTestCase {
 
     private func snapshot(
         teardown: NativeTeardownObservation?,
+        tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation] = [],
         rawFailures: [NativeRawFailure] = []
     ) -> NativeRecordingSnapshot {
         NativeRecordingSnapshot(
             taps: [],
             tapFormats: [],
+            tapMuteBehaviorObservations: tapMuteBehaviorObservations,
             aggregate: nil,
             ioProc: nil,
             topology: nil,
@@ -360,6 +456,139 @@ final class NativeEvidenceTests: XCTestCase {
             NativeAudioValidationRecord.self,
             from: Data(contentsOf: outputURL)
         )
+    }
+
+    private func fixtureTap() -> AudioTapResource {
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        return AudioTapResource(
+            objectID: 700,
+            uuid: UUID(uuidString: "4D414341-0000-4000-8000-000000000700")!,
+            source: AudioTapSource(
+                deviceUID: "source",
+                streamIndex: 0,
+                expectedFormat: format,
+                driftCompensation: .disabled
+            )
+        )
+    }
+}
+
+private final class NativeMuteBehaviorProbeHardware: AudioTapHardware, @unchecked Sendable {
+    private let tap: AudioTapResource
+    private let readFailureOnInvocation: Int?
+    private let readFailureStatus: OSStatus
+    private var state: AudioTapMuteState = .unmuted
+    private var readInvocationCount = 0
+
+    init(
+        tap: AudioTapResource,
+        readFailureOnInvocation: Int? = nil,
+        readFailureStatus: OSStatus = kAudioHardwareUnspecifiedError
+    ) {
+        self.tap = tap
+        self.readFailureOnInvocation = readFailureOnInvocation
+        self.readFailureStatus = readFailureStatus
+    }
+
+    func createTap(
+        processObjectID: AudioObjectID,
+        source: AudioTapSource,
+        uuid: UUID
+    ) throws -> AudioTapResource {
+        tap
+    }
+
+    func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat {
+        fatalError("unreachable")
+    }
+
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
+        readInvocationCount += 1
+        if readInvocationCount == readFailureOnInvocation {
+            throw AudioHALError(
+                operation: .getData,
+                objectID: tap.objectID,
+                address: .init(selector: kAudioTapPropertyDescription),
+                reason: .status(readFailureStatus)
+            )
+        }
+        return state
+    }
+
+    func createAggregate(
+        plan: AudioRoutePlan,
+        taps: [AudioTapResource]
+    ) throws -> AudioAggregateResource {
+        fatalError("unreachable")
+    }
+
+    func waitForStableTopology(
+        _ aggregate: AudioAggregateResource,
+        deadline: DispatchTime,
+        isCancelled: @escaping @Sendable () -> Bool
+    ) throws -> AudioAggregateTopologySnapshot {
+        fatalError("unreachable")
+    }
+
+    func createIOProc(
+        aggregate: AudioAggregateResource,
+        context: ProcessTapDSPContext
+    ) throws -> AudioIOProcResource {
+        fatalError("unreachable")
+    }
+
+    func start(_ ioProc: AudioIOProcResource) throws {
+        fatalError("unreachable")
+    }
+
+    func configureInputStreamUsage(
+        _ usage: [UInt32],
+        for ioProc: AudioIOProcResource
+    ) throws -> [UInt32] {
+        fatalError("unreachable")
+    }
+
+    func setMuteState(
+        _ state: AudioTapMuteState,
+        for tap: AudioTapResource
+    ) throws {
+        self.state = state
+    }
+
+    func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
+        state = .unmuted
+        return noErr
+    }
+
+    func stop(_ ioProc: AudioIOProcResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func destroyTap(_ tap: AudioTapResource) -> OSStatus {
+        fatalError("unreachable")
+    }
+
+    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
+        fatalError("unreachable")
+    }
+
+    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
+        fatalError("unreachable")
     }
 }
 

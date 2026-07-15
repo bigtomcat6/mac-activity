@@ -62,6 +62,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let exactFingerprint: AudioRouteTopologyFingerprint
     let tapResources: [NativeTapResourceObservation]
     let tapFormats: [NativeTapFormatObservation]
+    let tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation]
     let aggregateResource: NativeAggregateResourceObservation?
     let ioProcResource: NativeIOProcResourceObservation?
     let topology: NativeTopologyObservation?
@@ -330,6 +331,7 @@ private func makeRecord(
         exactFingerprint: fingerprint,
         tapResources: snapshot.taps,
         tapFormats: snapshot.tapFormats,
+        tapMuteBehaviorObservations: snapshot.tapMuteBehaviorObservations,
         aggregateResource: snapshot.aggregate,
         ioProcResource: snapshot.ioProc,
         topology: snapshot.topology,
@@ -360,6 +362,15 @@ final class NativeAudioTopologyTests: XCTestCase {
         let topology = try XCTUnwrap(record.topology)
         XCTAssertTrue(record.sustainedCallbacks)
         XCTAssertTrue(record.rawFailures.isEmpty)
+        XCTAssertEqual(record.tapResources.count, 1)
+        let tap = try XCTUnwrap(record.tapResources.first)
+        XCTAssertEqual(
+            record.tapMuteBehaviorObservations.map(\.observedState),
+            [.unmuted, .mutedWhenTapped, .unmuted]
+        )
+        XCTAssertTrue(record.tapMuteBehaviorObservations.allSatisfy {
+            $0.diagnosticOnlyObjectID == tap.diagnosticOnlyObjectID && $0.uuid == tap.uuid
+        })
         XCTAssertTrue(topology.hasExactlyOneInput)
         XCTAssertTrue(topology.fullSubdeviceOrderMatchesExpected)
         XCTAssertTrue(topology.activeSubdeviceMembershipMatchesExpected)

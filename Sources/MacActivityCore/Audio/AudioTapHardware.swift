@@ -201,6 +201,40 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         )
     }
 
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
+        guard try currentIdentityMatches(
+            objectID: tap.objectID,
+            classID: kAudioTapClassID,
+            uid: tap.uuid.uuidString
+        ) else {
+            throw AudioHALError(
+                operation: .getData,
+                objectID: tap.objectID,
+                address: nil,
+                reason: .missingValue
+            )
+        }
+        let address = AudioHALPropertyAddress(selector: kAudioTapPropertyDescription)
+        let description = try hal.readRetainedObject(
+            CATapDescription.self,
+            from: tap.objectID,
+            address: address
+        )
+        switch description.muteBehavior {
+        case .unmuted:
+            return .unmuted
+        case .mutedWhenTapped:
+            return .mutedWhenTapped
+        default:
+            throw AudioHALError(
+                operation: .getData,
+                objectID: tap.objectID,
+                address: address,
+                reason: .missingValue
+            )
+        }
+    }
+
     func createAggregate(
         plan: AudioRoutePlan,
         taps: [AudioTapResource]
@@ -693,6 +727,7 @@ protocol AudioTapHardware: AnyObject, Sendable {
         uuid: UUID
     ) throws -> AudioTapResource
     func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState
     func createAggregate(
         plan: AudioRoutePlan,
         taps: [AudioTapResource]

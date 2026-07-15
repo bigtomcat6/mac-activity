@@ -354,6 +354,10 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
         fatalError("unreachable")
     }
 
+    func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
+        fatalError("unreachable")
+    }
+
     func createAggregate(
         plan: AudioRoutePlan,
         taps: [AudioTapResource]
