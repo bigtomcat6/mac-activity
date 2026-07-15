@@ -723,6 +723,7 @@ private extension ProcessTapVolumeEngine {
                     uuid: UUID()
                 )
                 bundles[acquisitionID]?.resources.taps.append(tap)
+                try verifyMuteState(.unmuted, for: tap, using: hardware)
                 try ensureCurrent(token)
             }
 
@@ -810,6 +811,7 @@ private extension ProcessTapVolumeEngine {
             for tap in taps {
                 try hardware.setMuteState(.mutedWhenTapped, for: tap)
                 bundles[acquisitionID]?.resources.mutedTaps.append(tap)
+                try verifyMuteState(.mutedWhenTapped, for: tap, using: hardware)
                 try ensureCurrent(token)
             }
 
@@ -1634,6 +1636,23 @@ private extension ProcessTapVolumeEngine {
             operation: .getData,
             status: kAudioHardwareUnspecifiedError
         )
+    }
+
+    func verifyMuteState(
+        _ expected: AudioTapMuteState,
+        for tap: AudioTapResource,
+        using hardware: any AudioTapHardware
+    ) throws {
+        guard try hardware.readMuteState(for: tap) == expected else {
+            throw AudioHALError(
+                operation: .getData,
+                objectID: tap.objectID,
+                address: AudioHALPropertyAddress(
+                    selector: kAudioTapPropertyDescription
+                ),
+                reason: .missingValue
+            )
+        }
     }
 
     static func isCacheableRuntimeRejection(_ error: Swift.Error) -> Bool {

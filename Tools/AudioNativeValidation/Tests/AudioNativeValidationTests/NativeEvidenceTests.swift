@@ -40,7 +40,12 @@ final class NativeEvidenceTests: XCTestCase {
                     source: tap.source,
                     uuid: tap.uuid
                 )
+                XCTAssertEqual(try hardware.readMuteState(for: createdTap), .unmuted)
                 try hardware.setMuteState(.mutedWhenTapped, for: createdTap)
+                XCTAssertEqual(
+                    try hardware.readMuteState(for: createdTap),
+                    .mutedWhenTapped
+                )
                 XCTAssertEqual(hardware.restoreOriginalAudio(for: createdTap), noErr)
             }
         )
@@ -57,7 +62,7 @@ final class NativeEvidenceTests: XCTestCase {
         let status = OSStatus(-32_003)
         let tap = fixtureTap()
         let failure = NativeRawFailure(
-            seam: "setMuteState.readMuteState",
+            seam: "readMuteState",
             status: status
         )
         let observedInitialState = NativeTapMuteBehaviorObservation(
@@ -84,7 +89,12 @@ final class NativeEvidenceTests: XCTestCase {
                         source: tap.source,
                         uuid: tap.uuid
                     )
+                    XCTAssertEqual(
+                        try hardware.readMuteState(for: createdTap),
+                        .unmuted
+                    )
                     try hardware.setMuteState(.mutedWhenTapped, for: createdTap)
+                    _ = try hardware.readMuteState(for: createdTap)
                 }
             )
             XCTFail("Expected mute readback failure")
@@ -95,6 +105,64 @@ final class NativeEvidenceTests: XCTestCase {
             XCTAssertEqual(record.rawFailures, [failure])
             XCTAssertFalse(record.eligibleForPolicyPromotion)
             XCTAssertTrue(record.sessionError?.contains("-32003") == true)
+        }
+    }
+
+    @MainActor
+    func testRestoreMuteReadbackFailureWritesConservativeEvidenceAndReturnsFailure() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let status = OSStatus(-32_004)
+        let tap = fixtureTap()
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeMuteBehaviorProbeHardware(
+                tap: tap,
+                readFailureOnInvocation: 3,
+                readFailureStatus: status
+            )
+        )
+
+        do {
+            _ = try await persistNativeValidationEvidence(
+                environment: environment(outputURL: outputURL),
+                fingerprint: fingerprint,
+                recordingSnapshot: hardware.snapshot,
+                runSession: {
+                    let createdTap = try hardware.createTap(
+                        processObjectID: 42,
+                        source: tap.source,
+                        uuid: tap.uuid
+                    )
+                    XCTAssertEqual(
+                        try hardware.readMuteState(for: createdTap),
+                        .unmuted
+                    )
+                    try hardware.setMuteState(.mutedWhenTapped, for: createdTap)
+                    XCTAssertEqual(
+                        try hardware.readMuteState(for: createdTap),
+                        .mutedWhenTapped
+                    )
+                    let restoreStatus = hardware.restoreOriginalAudio(for: createdTap)
+                    guard restoreStatus == noErr else {
+                        throw NativeValidationError.teardownUnproven(
+                            "restore mute readback status \(restoreStatus)"
+                        )
+                    }
+                }
+            )
+            XCTFail("Expected restore mute readback failure")
+        } catch NativeValidationError.teardownUnproven {
+            let record = try decodeRecord(at: outputURL)
+            XCTAssertEqual(
+                record.tapMuteBehaviorObservations.map(\.observedState),
+                [.unmuted, .mutedWhenTapped]
+            )
+            XCTAssertEqual(record.rawFailures, [NativeRawFailure(
+                seam: "readMuteState",
+                status: status
+            )])
+            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertTrue(record.sessionError?.contains("-32004") == true)
         }
     }
 

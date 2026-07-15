@@ -325,7 +325,6 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             record(error, seam: "createTap")
             throw error
         }
-        try recordMuteBehavior(of: tap, seam: "createTap.readMuteState")
         return tap
     }
 
@@ -347,7 +346,17 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
 
     func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
         do {
-            return try delegate.readMuteState(for: tap)
+            let state = try delegate.readMuteState(for: tap)
+            locked {
+                tapMuteBehaviorObservationsStorage.append(
+                    NativeTapMuteBehaviorObservation(
+                        diagnosticOnlyObjectID: tap.objectID,
+                        uuid: tap.uuid.uuidString,
+                        observedState: NativeTapMuteBehavior(state)
+                    )
+                )
+            }
+            return state
         } catch {
             record(error, seam: "readMuteState")
             throw error
@@ -482,14 +491,13 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             record(error, seam: "setMuteState")
             throw error
         }
-        try recordMuteBehavior(of: tap, seam: "setMuteState.readMuteState")
     }
 
     func restoreOriginalAudio(for tap: AudioTapResource) -> OSStatus {
         let status = record(delegate.restoreOriginalAudio(for: tap), seam: "restoreOriginalAudio")
         guard status == noErr else { return status }
         do {
-            try recordMuteBehavior(of: tap, seam: "restoreOriginalAudio.readMuteState")
+            _ = try readMuteState(for: tap)
             return noErr
         } catch {
             return rawStatus(error)
@@ -668,27 +676,6 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 throw AudioAggregateTopologyError.unsupportedTopology
             }
             return uid
-        }
-    }
-
-    private func recordMuteBehavior(
-        of tap: AudioTapResource,
-        seam: String
-    ) throws {
-        do {
-            let state = try delegate.readMuteState(for: tap)
-            locked {
-                tapMuteBehaviorObservationsStorage.append(
-                    NativeTapMuteBehaviorObservation(
-                        diagnosticOnlyObjectID: tap.objectID,
-                        uuid: tap.uuid.uuidString,
-                        observedState: NativeTapMuteBehavior(state)
-                    )
-                )
-            }
-        } catch {
-            record(error, seam: seam)
-            throw error
         }
     }
 

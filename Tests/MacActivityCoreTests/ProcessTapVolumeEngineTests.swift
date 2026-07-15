@@ -435,6 +435,83 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         ])
     }
 
+    func testInitialMuteReadbackFailureAfterTapCreationTearsDownEveryOwnedResource() async {
+        let fixture = EngineFixture()
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .readMuteState(0)
+        )
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+
+        XCTAssertEqual(
+            snapshot.error,
+            .operationFailed(
+                operation: .getData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [
+            .createTap(sourceIndex: 0, initiallyMuted: false),
+            .destroyTap(sourceIndex: 0),
+        ])
+    }
+
+    func testUnexpectedInitialMuteStateAfterTapCreationUsesTypedFailureAndTeardown() async {
+        let fixture = EngineFixture()
+        fixture.hardware.enqueueMuteStateRead(
+            .mutedWhenTapped,
+            forSourceIndex: 0
+        )
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+
+        XCTAssertEqual(
+            snapshot.error,
+            .operationFailed(
+                operation: .getData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testUnexpectedMutedReadbackRetainsTapForRestoreThenTearsItDown() async {
+        let fixture = EngineFixture()
+        fixture.hardware.enqueueMuteStateRead(.unmuted, forSourceIndex: 0)
+        fixture.hardware.enqueueMuteStateRead(.unmuted, forSourceIndex: 0)
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+
+        XCTAssertEqual(
+            snapshot.error,
+            .operationFailed(
+                operation: .getData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(Array(fixture.hardware.calls.suffix(7)), [
+            .setTapMutedWhenTapped(sourceIndex: 0),
+            .setTapUnmuted(sourceIndex: 0),
+            .stopDevice,
+            .destroyIOProc,
+            .destroyAggregate,
+            .ownedObjects,
+            .destroyTap(sourceIndex: 0),
+        ])
+    }
+
     func testNewerGenerationSupersedesPreparationWithoutPublishingStaleState() async {
         let recorder = SnapshotRecorder()
         let fixture = EngineFixture(

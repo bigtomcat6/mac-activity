@@ -26,6 +26,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     enum FailurePoint: Hashable {
         case createTap(Int)
+        case readMuteState(Int)
         case readTapFormat(Int)
         case createAggregate
         case waitForAggregateReadiness
@@ -61,6 +62,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var tapFormats: [AudioObjectID: ProcessTapAudioFormat] = [:]
     private var liveTapIdentities: [AudioObjectID: UUID] = [:]
     private var tapMuteStates: [UUID: AudioTapMuteState] = [:]
+    private var queuedMuteStateReads: [Int: [AudioTapMuteState]] = [:]
     private var liveAggregateIdentities: [AudioObjectID: String] = [:]
     private var liveIOProcParents: [UInt: AudioAggregateResource] = [:]
     private var contexts: [AudioObjectID: WeakContext] = [:]
@@ -179,6 +181,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         locked { queuedStatuses[point, default: []].append(status) }
     }
 
+    func enqueueMuteStateRead(_ state: AudioTapMuteState, forSourceIndex sourceIndex: Int) {
+        locked { queuedMuteStateReads[sourceIndex, default: []].append(state) }
+    }
+
     func setPersistentStatus(_ status: OSStatus?, at point: FailurePoint) {
         locked { persistentStatuses[point] = status }
     }
@@ -279,6 +285,15 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     func readMuteState(for tap: AudioTapResource) throws -> AudioTapMuteState {
         guard tapIdentityMatches(tap) else {
             throw badObjectError(operation: .getData, objectID: tap.objectID)
+        }
+        let sourceIndex = sourceIndex(for: tap)
+        try throwIfNeeded(
+            at: .readMuteState(sourceIndex),
+            operation: .getData,
+            objectID: tap.objectID
+        )
+        if let queuedState = takeQueuedMuteStateRead(forSourceIndex: sourceIndex) {
+            return queuedState
         }
         return locked { tapMuteStates[tap.uuid] ?? .unmuted }
     }
@@ -649,6 +664,19 @@ private extension FakeAudioTapHardware {
             return status
         }
         return takeStatus(at: point)
+    }
+
+    func takeQueuedMuteStateRead(forSourceIndex sourceIndex: Int) -> AudioTapMuteState? {
+        locked {
+            guard var queuedStates = queuedMuteStateReads[sourceIndex],
+                  queuedStates.isEmpty == false
+            else {
+                return nil
+            }
+            let state = queuedStates.removeFirst()
+            queuedMuteStateReads[sourceIndex] = queuedStates
+            return state
+        }
     }
 
     func waitIfBlocked(at point: FailurePoint) {
