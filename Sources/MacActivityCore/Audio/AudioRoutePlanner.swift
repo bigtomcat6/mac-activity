@@ -56,6 +56,7 @@ public struct AudioRoutePlanner: Sendable {
             aggregateUID: Self.aggregateUIDPrefix
                 + "\(sessionID.uuidString).\(request.processObjectID).\(request.generation)",
             topologyFingerprint: candidate.topologyFingerprint,
+            sourceDeviceIDs: candidate.sourceDeviceIDs,
             referencedDeviceIDs: candidate.referencedDeviceIDs
         )
     }
@@ -67,7 +68,9 @@ public struct AudioRoutePlanner: Sendable {
     ) -> Bool {
         guard plan.processObjectID == process.processObjectID,
               plan.processIdentifier == process.processIdentifier,
-              process.isRunningOutput
+              process.isRunningOutput,
+              plan.sourceDeviceIDs
+                == Self.stableUniqueDeviceIDs(process.outputDeviceIDs)
         else {
             return false
         }
@@ -109,6 +112,13 @@ public struct AudioRoutePlanner: Sendable {
             && plan.isStacked == candidate.isStacked
             && plan.topologyFingerprint == candidate.topologyFingerprint
     }
+
+    private static func stableUniqueDeviceIDs(
+        _ deviceIDs: [AudioDeviceID]
+    ) -> [AudioDeviceID] {
+        var seenDeviceIDs: Set<AudioDeviceID> = []
+        return deviceIDs.filter { seenDeviceIDs.insert($0).inserted }
+    }
 }
 
 private extension AudioRoutePlanner {
@@ -119,6 +129,7 @@ private extension AudioRoutePlanner {
         let mainDeviceUID: String
         let isStacked: Bool
         let topologyFingerprint: AudioRouteTopologyFingerprint
+        let sourceDeviceIDs: [AudioDeviceID]
         let referencedDeviceIDs: [AudioDeviceID]
     }
 
@@ -138,6 +149,20 @@ private extension AudioRoutePlanner {
         try validateStreamIdentities(
             participatingUIDs,
             devicesByUID: devicesByUID
+        )
+        let sourceDeviceIDs = Self.stableUniqueDeviceIDs(try sourceUIDs.map { uid in
+            guard let device = devicesByUID[uid] else {
+                throw AudioRoutePlanningError.missingDevice(uid)
+            }
+            return device.objectID
+        })
+        let participatingDeviceIDs = Self.stableUniqueDeviceIDs(
+            try participatingUIDs.map { uid in
+                guard let device = devicesByUID[uid] else {
+                    throw AudioRoutePlanningError.missingDevice(uid)
+                }
+                return device.objectID
+            }
         )
         try validateTargets(flattenedUIDs, devicesByUID: devicesByUID)
 
@@ -193,9 +218,8 @@ private extension AudioRoutePlanner {
             mainDeviceUID: mainDeviceUID,
             isStacked: isStacked,
             topologyFingerprint: fingerprint,
-            referencedDeviceIDs: participatingUIDs.compactMap {
-                devicesByUID[$0]?.objectID
-            }
+            sourceDeviceIDs: sourceDeviceIDs,
+            referencedDeviceIDs: participatingDeviceIDs
         )
     }
 

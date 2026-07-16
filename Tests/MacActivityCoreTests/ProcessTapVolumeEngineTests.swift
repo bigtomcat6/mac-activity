@@ -1972,6 +1972,111 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testSourceObjectIDDriftWithOldIDReuseReturnsRouteStaleBeforeMutableHardware() async throws {
+        let backend = FakeAudioHALBackend()
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let source = AudioRouteDevice(
+            objectID: 10,
+            uid: "source",
+            name: "Source",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_010,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let target = AudioRouteDevice(
+            objectID: 20,
+            uid: "target",
+            name: "Target",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 2_020,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let currentSource = AudioRouteDevice(
+            objectID: 11,
+            uid: source.uid,
+            name: source.name,
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_010,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let reusedSourceID = AudioRouteDevice(
+            objectID: source.objectID,
+            uid: "reused-source-id",
+            name: "Reused Source ID",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_012,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let request = AudioRouteRequest(
+            processObjectID: 77,
+            processIdentifier: 101,
+            generation: 1,
+            sourceDeviceUIDs: [source.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .explicit(targetDeviceUIDs: [target.uid]),
+            devices: [source, target]
+        )
+        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        configureFreshRouteBackend(
+            backend,
+            processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
+            device: source,
+            format: format
+        )
+        configureFreshRouteDeviceDescriptor(backend, device: target, format: format)
+        configureFreshRouteDeviceDescriptor(backend, device: currentSource, format: format)
+        configureFreshRouteDeviceDescriptor(backend, device: reusedSourceID, format: format)
+        backend.setArray(
+            [currentSource.objectID],
+            objectID: request.processObjectID,
+            address: .init(
+                selector: kAudioProcessPropertyDevices,
+                scope: kAudioObjectPropertyScopeOutput
+            )
+        )
+
+        let fixture = EngineFixture()
+        let coreHardware = CoreAudioTapHardware(hal: AudioHALClient(backend: backend))
+        fixture.hardware.routePlanFreshnessValidator = {
+            try coreHardware.validateFreshRoutePlan($0)
+        }
+
+        let result = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
+
+        XCTAssertEqual(result.error, .routeStale)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testUnrelatedOutputDescriptorReadFailureDoesNotMakeFreshRouteStale() throws {
         let backend = FakeAudioHALBackend()
         let format = ProcessTapAudioFormat(

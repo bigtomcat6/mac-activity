@@ -251,6 +251,38 @@ final class AudioRoutePlannerTests: XCTestCase {
         XCTAssertEqual(plan.subdevices.map(\.outputStreams), [usbStreams, hdmiStreams])
     }
 
+    func testPlanReferencesAggregateSourceAndTargetLeavesByDeviceID() throws {
+        let sourceLeaves = [
+            fixtureDevice(objectID: 127, uid: "SourceLeafA"),
+            fixtureDevice(objectID: 128, uid: "SourceLeafB"),
+        ]
+        let sourceAggregate = fixtureDevice(
+            objectID: 129,
+            uid: "SourceAggregate",
+            isAggregate: true,
+            aggregateSubdeviceUIDs: sourceLeaves.map(\.uid)
+        )
+
+        let plan = try planner().plan(fixtureRequest(
+            sourceDeviceUIDs: [sourceAggregate.uid],
+            mode: .explicit(targetDeviceUIDs: ["StudioAggregate"]),
+            devices: fixtureDevices() + sourceLeaves + [sourceAggregate]
+        ))
+
+        XCTAssertEqual(plan.sourceDeviceIDs, [sourceAggregate.objectID])
+        XCTAssertEqual(
+            plan.referencedDeviceIDs,
+            [
+                sourceAggregate.objectID,
+                sourceLeaves[0].objectID,
+                sourceLeaves[1].objectID,
+                40,
+                20,
+                30,
+            ]
+        )
+    }
+
     func testNestedAggregatesAreRejected() {
         let devices = fixtureDevices() + [
             fixtureDevice(
