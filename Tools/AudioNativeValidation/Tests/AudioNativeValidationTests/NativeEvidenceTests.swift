@@ -63,7 +63,12 @@ final class NativeEvidenceTests: XCTestCase {
         let tap = fixtureTap()
         let failure = NativeRawFailure(
             seam: "readMuteState",
-            status: status
+            status: status,
+            operation: .getData,
+            objectID: tap.objectID,
+            selector: kAudioTapPropertyDescription,
+            scope: kAudioObjectPropertyScopeGlobal,
+            element: kAudioObjectPropertyElementMain
         )
         let observedInitialState = NativeTapMuteBehaviorObservation(
             diagnosticOnlyObjectID: tap.objectID,
@@ -159,7 +164,12 @@ final class NativeEvidenceTests: XCTestCase {
             )
             XCTAssertEqual(record.rawFailures, [NativeRawFailure(
                 seam: "readMuteState",
-                status: status
+                status: status,
+                operation: .getData,
+                objectID: tap.objectID,
+                selector: kAudioTapPropertyDescription,
+                scope: kAudioObjectPropertyScopeGlobal,
+                element: kAudioObjectPropertyElementMain
             )])
             XCTAssertFalse(record.eligibleForPolicyPromotion)
             XCTAssertTrue(record.sessionError?.contains("-32004") == true)
@@ -404,6 +414,68 @@ final class NativeEvidenceTests: XCTestCase {
         XCTAssertEqual(observation.attempts, 3)
         XCTAssertEqual(sequence.readCount, 3)
         XCTAssertTrue(observation.isReleased)
+    }
+
+    func testTeardownPollingRetriesIndeterminateIdentityUntilLaterPositiveAbsence() async throws {
+        let status = OSStatus(-308)
+        let sequence = NativeTeardownSequence([
+            NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+            NativeTeardownObservation(
+                attempts: 2,
+                callbackContextReleased: true,
+                aggregateIdentity: .absent,
+                tapIdentities: .absent
+            ),
+        ])
+
+        let observation = try await waitForNativeTeardownRelease(
+            maxAttempts: 2,
+            sleep: {},
+            advance: { [] },
+            observe: { attempt in sequence.next(attempt: attempt) }
+        )
+
+        XCTAssertEqual(sequence.readCount, 2)
+        XCTAssertEqual(observation.aggregateIdentity, .absent)
+        XCTAssertEqual(observation.tapIdentities, .absent)
+        XCTAssertTrue(observation.isReleased)
+    }
+
+    func testTeardownPollingTimesOutForPersistentIndeterminateIdentity() async throws {
+        let status = OSStatus(-308)
+        let sequence = NativeTeardownSequence([
+            NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+            NativeTeardownObservation(
+                attempts: 2,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+        ])
+
+        do {
+            _ = try await waitForNativeTeardownRelease(
+                maxAttempts: 2,
+                sleep: {},
+                advance: { [] },
+                observe: { attempt in sequence.next(attempt: attempt) }
+            )
+            XCTFail("Expected indeterminate identity teardown to time out")
+        } catch let NativeTeardownWaitError.timeout(observation) {
+            XCTAssertEqual(sequence.readCount, 2)
+            XCTAssertEqual(observation.aggregateIdentity, .indeterminate(status))
+            XCTAssertFalse(observation.isReleased)
+        }
     }
 
     private func subdevice(

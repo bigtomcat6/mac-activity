@@ -5,6 +5,68 @@ import Foundation
 struct NativeRawFailure: Codable, Equatable, Sendable {
     let seam: String
     let status: OSStatus
+    let operation: AudioHALOperation?
+    let objectID: AudioObjectID?
+    let selector: AudioObjectPropertySelector?
+    let scope: AudioObjectPropertyScope?
+    let element: AudioObjectPropertyElement?
+
+    init(
+        seam: String,
+        status: OSStatus,
+        operation: AudioHALOperation? = nil,
+        objectID: AudioObjectID? = nil,
+        selector: AudioObjectPropertySelector? = nil,
+        scope: AudioObjectPropertyScope? = nil,
+        element: AudioObjectPropertyElement? = nil
+    ) {
+        self.seam = seam
+        self.status = status
+        self.operation = operation
+        self.objectID = objectID
+        self.selector = selector
+        self.scope = scope
+        self.element = element
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case seam
+        case status
+        case operation
+        case objectID
+        case selector
+        case scope
+        case element
+    }
+
+    init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        seam = try container.decode(String.self, forKey: .seam)
+        status = try container.decode(OSStatus.self, forKey: .status)
+        operation = try container.decodeIfPresent(String.self, forKey: .operation)
+            .flatMap(AudioHALOperation.init(rawValue:))
+        objectID = try container.decodeIfPresent(AudioObjectID.self, forKey: .objectID)
+        selector = try container.decodeIfPresent(
+            AudioObjectPropertySelector.self,
+            forKey: .selector
+        )
+        scope = try container.decodeIfPresent(AudioObjectPropertyScope.self, forKey: .scope)
+        element = try container.decodeIfPresent(
+            AudioObjectPropertyElement.self,
+            forKey: .element
+        )
+    }
+
+    func encode(to encoder: any Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(seam, forKey: .seam)
+        try container.encode(status, forKey: .status)
+        try container.encodeIfPresent(operation?.rawValue, forKey: .operation)
+        try container.encodeIfPresent(objectID, forKey: .objectID)
+        try container.encodeIfPresent(selector, forKey: .selector)
+        try container.encodeIfPresent(scope, forKey: .scope)
+        try container.encodeIfPresent(element, forKey: .element)
+    }
 }
 
 struct NativeTapResourceObservation: Codable, Equatable, Sendable {
@@ -115,14 +177,56 @@ struct NativeTopologyObservation: Codable, Equatable, Sendable {
     let requestedInputStreamUsage: [UInt32]
 }
 
+enum NativeTeardownIdentityObservation: Codable, Equatable, Sendable {
+    case absent
+    case present
+    case indeterminate(OSStatus)
+}
+
 struct NativeTeardownObservation: Codable, Equatable, Sendable {
     let attempts: Int
     let callbackContextReleased: Bool
-    let aggregateIdentityAbsent: Bool
-    let tapIdentitiesAbsent: Bool
+    let aggregateIdentity: NativeTeardownIdentityObservation
+    let tapIdentities: NativeTeardownIdentityObservation
+
+    init(
+        attempts: Int,
+        callbackContextReleased: Bool,
+        aggregateIdentity: NativeTeardownIdentityObservation,
+        tapIdentities: NativeTeardownIdentityObservation
+    ) {
+        self.attempts = attempts
+        self.callbackContextReleased = callbackContextReleased
+        self.aggregateIdentity = aggregateIdentity
+        self.tapIdentities = tapIdentities
+    }
+
+    init(
+        attempts: Int,
+        callbackContextReleased: Bool,
+        aggregateIdentityAbsent: Bool,
+        tapIdentitiesAbsent: Bool
+    ) {
+        self.init(
+            attempts: attempts,
+            callbackContextReleased: callbackContextReleased,
+            aggregateIdentity: aggregateIdentityAbsent ? .absent : .present,
+            tapIdentities: tapIdentitiesAbsent ? .absent : .present
+        )
+    }
+
+    var aggregateIdentityAbsent: Bool {
+        aggregateIdentity == .absent
+    }
+
+    var tapIdentitiesAbsent: Bool {
+        tapIdentities == .absent
+    }
 
     var isReleased: Bool {
-        callbackContextReleased && aggregateIdentityAbsent && tapIdentitiesAbsent
+        callbackContextReleased
+            && aggregateIdentity == .absent
+            && tapIdentities == .absent
     }
 }
 
@@ -605,62 +709,89 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         let conservativeObservation = NativeTeardownObservation(
             attempts: attempt,
             callbackContextReleased: recorded.0,
-            aggregateIdentityAbsent: false,
-            tapIdentitiesAbsent: false
+            aggregateIdentity: .present,
+            tapIdentities: .present
         )
         locked { teardownStorage = conservativeObservation }
         guard recorded.0 else { return conservativeObservation }
-        let aggregateAbsent = try recorded.1.map { aggregate in
-            try currentIdentityIsAbsent(
+        let aggregateIdentity = try recorded.1.map { aggregate in
+            try currentIdentityObservation(
                 objectID: aggregate.diagnosticOnlyObjectID,
                 classID: kAudioAggregateDeviceClassID,
-                uid: aggregate.uid
+                uid: aggregate.uid,
+                seam: "observeTeardown.aggregateIdentity"
             )
-        } ?? true
-        let tapsAbsent = try recorded.2.allSatisfy { tap in
-            try currentIdentityIsAbsent(
+        } ?? .absent
+        let tapIdentities = try recorded.2.reduce(
+            NativeTeardownIdentityObservation.absent
+        ) { latest, tap in
+            let observation = try currentIdentityObservation(
                 objectID: tap.diagnosticOnlyObjectID,
                 classID: kAudioTapClassID,
-                uid: tap.uuid
+                uid: tap.uuid,
+                seam: "observeTeardown.tapIdentity"
             )
+            return mergedIdentityObservation(latest, observation)
         }
         let observation = NativeTeardownObservation(
             attempts: attempt,
             callbackContextReleased: recorded.0,
-            aggregateIdentityAbsent: aggregateAbsent,
-            tapIdentitiesAbsent: tapsAbsent
+            aggregateIdentity: aggregateIdentity,
+            tapIdentities: tapIdentities
         )
         locked { teardownStorage = observation }
         return observation
     }
 
-    private func currentIdentityIsAbsent(
+    private func currentIdentityObservation(
         objectID: AudioObjectID,
         classID expectedClassID: AudioClassID,
-        uid expectedUID: String
-    ) throws -> Bool {
-        let classAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
-        guard hal.hasProperty(objectID: objectID, address: classAddress) else {
-            return true
-        }
-        let currentClassID = try hal.readScalar(
-            AudioClassID.self,
-            from: objectID,
-            address: classAddress
-        )
-        guard currentClassID == expectedClassID else { return true }
+        uid expectedUID: String,
+        seam: String
+    ) throws -> NativeTeardownIdentityObservation {
+        do {
+            let classAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
+            guard hal.hasProperty(objectID: objectID, address: classAddress) else {
+                return .absent
+            }
+            let currentClassID = try hal.readScalar(
+                AudioClassID.self,
+                from: objectID,
+                address: classAddress
+            )
+            guard currentClassID == expectedClassID else { return .absent }
 
-        let uidSelector: AudioObjectPropertySelector
-        if #available(macOS 14.2, *), expectedClassID == kAudioTapClassID {
-            uidSelector = kAudioTapPropertyUID
-        } else {
-            uidSelector = kAudioDevicePropertyDeviceUID
+            let uidSelector: AudioObjectPropertySelector
+            if #available(macOS 14.2, *), expectedClassID == kAudioTapClassID {
+                uidSelector = kAudioTapPropertyUID
+            } else {
+                uidSelector = kAudioDevicePropertyDeviceUID
+            }
+            let currentUID = try hal.readRetainedString(
+                from: objectID,
+                address: AudioHALPropertyAddress(selector: uidSelector)
+            )
+            return currentUID == expectedUID ? .present : .absent
+        } catch let error as AudioHALError {
+            record(error, seam: seam)
+            return .indeterminate(error.status ?? kAudioHardwareUnspecifiedError)
         }
-        let currentUID = try hal.readRetainedString(
-            from: objectID,
-            address: AudioHALPropertyAddress(selector: uidSelector)
-        )
-        return currentUID != expectedUID
+    }
+
+    private func mergedIdentityObservation(
+        _ first: NativeTeardownIdentityObservation,
+        _ second: NativeTeardownIdentityObservation
+    ) -> NativeTeardownIdentityObservation {
+        switch (first, second) {
+        case (.present, _), (_, .present):
+            .present
+        case (.indeterminate, _):
+            first
+        case (_, .indeterminate):
+            second
+        case (.absent, .absent):
+            .absent
+        }
     }
 
     private func readFullSubdeviceUIDs(_ aggregateID: AudioObjectID) throws -> [String] {
@@ -750,10 +881,19 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     }
 
     private func record(_ error: Error, seam: String) {
-        appendFailure(NativeRawFailure(
-            seam: seam,
-            status: rawStatus(error)
-        ))
+        if let error = error as? AudioHALError {
+            appendFailure(NativeRawFailure(
+                seam: seam,
+                status: rawStatus(error),
+                operation: error.operation,
+                objectID: error.objectID,
+                selector: error.address?.selector,
+                scope: error.address?.scope,
+                element: error.address?.element
+            ))
+        } else {
+            appendFailure(NativeRawFailure(seam: seam, status: rawStatus(error)))
+        }
     }
 
     private func appendFailure(_ failure: NativeRawFailure) {
