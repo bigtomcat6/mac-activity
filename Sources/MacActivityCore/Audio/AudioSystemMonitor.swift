@@ -1,3 +1,4 @@
+import AudioToolbox
 import CoreAudio
 import Foundation
 
@@ -34,6 +35,8 @@ struct AudioRestartRecoveryBackoff: Sendable {
 public enum AudioDeviceSystemChange: Hashable, Sendable {
     case nominalSampleRate
     case liveness
+    case volume
+    case mute
 }
 
 public enum AudioProcessSystemChange: Hashable, Sendable {
@@ -305,7 +308,7 @@ private extension AudioSystemMonitor {
         for deviceID: AudioDeviceID,
         listenerGeneration: UInt64
     ) throws -> [AudioHALListenerToken] {
-        [
+        var tokens = [
             try makeToken(
                 objectID: deviceID,
                 address: .init(selector: kAudioDevicePropertyNominalSampleRate),
@@ -319,6 +322,35 @@ private extension AudioSystemMonitor {
                 listenerGeneration: listenerGeneration
             ),
         ]
+        let volumeAddress = AudioHALPropertyAddress(
+            selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+            scope: kAudioObjectPropertyScopeOutput
+        )
+        if hal.hasProperty(objectID: deviceID, address: volumeAddress) {
+            tokens.append(
+                try makeToken(
+                    objectID: deviceID,
+                    address: volumeAddress,
+                    change: .device(deviceID, .volume),
+                    listenerGeneration: listenerGeneration
+                )
+            )
+        }
+        let muteAddress = AudioHALPropertyAddress(
+            selector: kAudioDevicePropertyMute,
+            scope: kAudioObjectPropertyScopeOutput
+        )
+        if hal.hasProperty(objectID: deviceID, address: muteAddress) {
+            tokens.append(
+                try makeToken(
+                    objectID: deviceID,
+                    address: muteAddress,
+                    change: .device(deviceID, .mute),
+                    listenerGeneration: listenerGeneration
+                )
+            )
+        }
+        return tokens
     }
 
     func makeProcessTokenMap(

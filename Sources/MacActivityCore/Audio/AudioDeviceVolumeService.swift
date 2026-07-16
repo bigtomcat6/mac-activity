@@ -27,18 +27,23 @@ public final class AudioDeviceVolumeService:
     }
 
     public func routeDevices() throws -> [AudioRouteDevice] {
-        try outputDeviceIDs().map(routeDevice)
+        try outputDeviceIDs().compactMap { try? routeDevice($0) }
     }
 
     public func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
         var snapshots: [AudioOutputDeviceSnapshot] = []
         for deviceID in try outputDeviceIDs() {
-            let uid = try client.readRetainedString(
+            guard let uid = try? client.readRetainedString(
                 from: deviceID,
                 address: Self.deviceUIDAddress
-            )
+            ) else {
+                continue
+            }
             guard !Self.isInternalDeviceUID(uid) else { continue }
-            snapshots.append(try snapshot(deviceID: deviceID, uid: uid))
+            guard let snapshot = try? snapshot(deviceID: deviceID, uid: uid) else {
+                continue
+            }
+            snapshots.append(snapshot)
         }
         return snapshots
     }
