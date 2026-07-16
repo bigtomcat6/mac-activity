@@ -510,6 +510,17 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         record(delegate.destroyAggregate(aggregate), seam: "destroyAggregate")
     }
 
+    func aggregateIdentityIsPresent(
+        _ aggregate: AudioAggregateResource
+    ) throws -> Bool {
+        do {
+            return try delegate.aggregateIdentityIsPresent(aggregate)
+        } catch {
+            record(error, seam: "aggregateIdentityIsPresent")
+            throw error
+        }
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         record(delegate.destroyTap(tap), seam: "destroyTap")
     }

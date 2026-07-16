@@ -421,6 +421,16 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
+    func aggregateIdentityIsPresent(
+        _ aggregate: AudioAggregateResource
+    ) throws -> Bool {
+        try currentIdentityMatches(
+            objectID: aggregate.objectID,
+            classID: kAudioAggregateDeviceClassID,
+            uid: aggregate.uid
+        )
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         teardownStatus {
             guard try currentIdentityMatches(
@@ -616,5 +626,6 @@ protocol AudioTapHardware: AnyObject, Sendable {
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus
+    func aggregateIdentityIsPresent(_ aggregate: AudioAggregateResource) throws -> Bool
     func destroyTap(_ tap: AudioTapResource) -> OSStatus
 }

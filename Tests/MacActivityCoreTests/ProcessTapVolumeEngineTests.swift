@@ -1296,6 +1296,63 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         ])
     }
 
+    func testAggregateTeardownWaitsForExactIdentityDisappearanceBeforeDestroyingTaps() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+
+        let stopped = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(stopped.state, .idle)
+        XCTAssertEqual(fixture.hardware.aggregateIdentityProbeCount, 1)
+        XCTAssertFalse(fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0)))
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertEqual(fixture.hardware.aggregateIdentityProbeCount, 2)
+        XCTAssertTrue(fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0)))
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testAggregateIdentityReadFailureRetainsBundleBeforeDestroyingTaps() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .aggregateIdentityIsPresent
+        )
+        fixture.hardware.clearCalls()
+
+        let stopped = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(
+            stopped.error,
+            .operationFailed(
+                operation: .getData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertEqual(fixture.hardware.aggregateIdentityProbeCount, 1)
+        XCTAssertFalse(fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0)))
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+    }
+
     func testStopAllTearsDownEveryObjectIDSession() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(

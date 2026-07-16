@@ -1060,6 +1060,33 @@ private extension ProcessTapVolumeEngine {
                         retainBundle(acquisitionID)
                         return bundles[acquisitionID]?.failures ?? []
                     }
+                }
+                bundles[acquisitionID]?.stage = .waitForAggregateDisappearance
+            case .waitForAggregateDisappearance:
+                if let aggregate = bundles[acquisitionID]?.resources.aggregate {
+                    do {
+                        guard try hardware.aggregateIdentityIsPresent(aggregate) == false else {
+                            retainBundle(acquisitionID)
+                            return bundles[acquisitionID]?.failures ?? []
+                        }
+                    } catch {
+                        setBundleFailure(
+                            teardownFailure(
+                                from: error,
+                                fallbackOperation: .getData,
+                                objectID: aggregate.objectID,
+                                processObjectID: bundles[acquisitionID]?.resources.processObjectID
+                            ),
+                            acquisitionID: acquisitionID
+                        )
+                        retainBundle(acquisitionID)
+                        return bundles[acquisitionID]?.failures ?? []
+                    }
+                    removeBundleFailures(
+                        acquisitionID,
+                        operations: [.getData],
+                        objectID: aggregate.objectID
+                    )
                     bundles[acquisitionID]?.resources.aggregate = nil
                 }
                 bundles[acquisitionID]?.stage = .destroyTaps
@@ -1590,6 +1617,7 @@ private struct AudioAcquisitionBundle {
         case stopIOProc
         case destroyIOProc
         case destroyAggregate
+        case waitForAggregateDisappearance
         case destroyTaps
         case released
     }

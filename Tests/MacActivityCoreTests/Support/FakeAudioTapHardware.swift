@@ -36,6 +36,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case stopDevice
         case destroyIOProc
         case destroyAggregate
+        case aggregateIdentityIsPresent
         case destroyTap(Int)
     }
 
@@ -60,6 +61,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var tapMuteStates: [UUID: AudioTapMuteState] = [:]
     private var queuedMuteStateReads: [Int: [AudioTapMuteState]] = [:]
     private var liveAggregateIdentities: [AudioObjectID: String] = [:]
+    private var aggregatesAwaitingDisappearance: Set<AudioObjectID> = []
     private var liveIOProcParents: [UInt: AudioAggregateResource] = [:]
     private var contexts: [AudioObjectID: WeakContext] = [:]
     private var contextOrder: [AudioObjectID] = []
@@ -75,6 +77,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var createdTapResourcesStorage: [AudioTapResource] = []
     private var latestPlan: AudioRoutePlan?
     private var latestTaps: [AudioTapResource] = []
+    private var aggregateIdentityProbeCountStorage = 0
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
@@ -87,10 +90,15 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var streamUsageHALError: AudioHALError?
     var configuredStreamUsageOverride: [UInt32]?
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
+    var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
 
     var calls: [Call] {
         locked { recordedCalls }
+    }
+
+    var aggregateIdentityProbeCount: Int {
+        locked { aggregateIdentityProbeCountStorage }
     }
 
     var createdProcessObjectIDs: [AudioObjectID] {
@@ -149,6 +157,15 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     func clearCalls() {
         locked { recordedCalls.removeAll() }
+    }
+
+    func confirmAggregateDisappearance() {
+        locked {
+            for objectID in aggregatesAwaitingDisappearance {
+                liveAggregateIdentities.removeValue(forKey: objectID)
+            }
+            aggregatesAwaitingDisappearance.removeAll()
+        }
     }
 
     func enqueueStatus(_ status: OSStatus, at point: FailurePoint) {
@@ -482,9 +499,27 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         guard aggregateIdentityMatches(aggregate) else { return noErr }
         let status = takeStatus(at: .destroyAggregate)
         if status == noErr {
-            locked { liveAggregateIdentities.removeValue(forKey: aggregate.objectID) }
+            locked {
+                if deferAggregateDisappearance {
+                    aggregatesAwaitingDisappearance.insert(aggregate.objectID)
+                } else {
+                    liveAggregateIdentities.removeValue(forKey: aggregate.objectID)
+                }
+            }
         }
         return status
+    }
+
+    func aggregateIdentityIsPresent(
+        _ aggregate: AudioAggregateResource
+    ) throws -> Bool {
+        locked { aggregateIdentityProbeCountStorage += 1 }
+        try throwIfNeeded(
+            at: .aggregateIdentityIsPresent,
+            operation: .getData,
+            objectID: aggregate.objectID
+        )
+        return aggregateIdentityMatches(aggregate)
     }
 
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {

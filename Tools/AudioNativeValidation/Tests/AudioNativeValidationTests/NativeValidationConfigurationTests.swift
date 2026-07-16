@@ -414,6 +414,10 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
         fatalError("unreachable")
     }
 
+    func aggregateIdentityIsPresent(_ aggregate: AudioAggregateResource) throws -> Bool {
+        false
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         fatalError("unreachable")
     }
