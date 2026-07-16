@@ -297,6 +297,15 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         self.delegate = delegate
     }
 
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        do {
+            try delegate.validateFreshRoutePlan(plan)
+        } catch {
+            record(error, seam: "validateFreshRoutePlan")
+            throw error
+        }
+    }
+
     func createTap(
         processObjectID: AudioObjectID,
         source: AudioTapSource,

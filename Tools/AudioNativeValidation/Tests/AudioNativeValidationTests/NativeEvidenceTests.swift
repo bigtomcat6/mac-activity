@@ -296,6 +296,7 @@ final class NativeEvidenceTests: XCTestCase {
         )
         let plan = AudioRoutePlan(
             processObjectID: 42,
+            processIdentifier: 101,
             generation: 1,
             tapSources: [source],
             selectedTargetUIDs: ["main", "secondary"],
@@ -517,6 +518,10 @@ private final class NativeMuteBehaviorProbeHardware: AudioTapHardware, @unchecke
         self.tap = tap
         self.readFailureOnInvocation = readFailureOnInvocation
         self.readFailureStatus = readFailureStatus
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        // This evidence-only fake never creates or mutates an audio route.
     }
 
     func createTap(

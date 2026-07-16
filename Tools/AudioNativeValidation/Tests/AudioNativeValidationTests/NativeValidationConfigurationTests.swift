@@ -304,6 +304,7 @@ final class NativeValidationConfigurationTests: XCTestCase {
         )
         return AudioRouteRequest(
             processObjectID: 42,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: [device.uid],
             systemDefaultOutputDeviceUID: nil,
@@ -339,6 +340,10 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
 
     var createTapCallCount: Int {
         lock.withLock { createTapCallCountStorage }
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        // This wiring probe never executes a real native audio route.
     }
 
     func createTap(

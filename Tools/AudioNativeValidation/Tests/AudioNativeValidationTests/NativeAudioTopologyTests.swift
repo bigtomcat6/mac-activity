@@ -172,6 +172,7 @@ func makeNativeRequest(_ environment: NativeValidationEnvironment) throws -> Aud
     }
     return AudioRouteRequest(
         processObjectID: environment.processObjectID,
+        processIdentifier: process.processIdentifier,
         generation: 1,
         sourceDeviceUIDs: sourceUIDs,
         systemDefaultOutputDeviceUID: nil,

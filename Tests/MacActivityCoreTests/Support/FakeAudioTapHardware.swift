@@ -94,6 +94,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
     var routePlanFreshness: RoutePlanFreshness = .fresh
+    var routePlanFreshnessValidator: (@Sendable (AudioRoutePlan) throws -> Void)?
 
     enum RoutePlanFreshness {
         case fresh
@@ -233,6 +234,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
         record(.validateFreshRoutePlan)
+        try routePlanFreshnessValidator?(plan)
         guard routePlanFreshness == .fresh else {
             throw FakeRoutePlanFreshnessError.stale
         }

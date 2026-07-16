@@ -1971,6 +1971,75 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
     }
 
+    @available(macOS 14.2, *)
+    func testFreshDescriptorReadFailureReturnsRouteStaleBeforeMutableHardware() async throws {
+        let backend = FakeAudioHALBackend()
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let device = AudioRouteDevice(
+            objectID: 10,
+            uid: "source",
+            name: "Source",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_010,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let request = AudioRouteRequest(
+            processObjectID: 77,
+            processIdentifier: 101,
+            generation: 1,
+            sourceDeviceUIDs: [device.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: [device]
+        )
+        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        configureFreshRouteBackend(
+            backend,
+            processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
+            device: device,
+            format: format
+        )
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: device.objectID,
+            address: .init(selector: kAudioDevicePropertyClockDomain),
+            announcedByteCount: UInt32(MemoryLayout<UInt32>.size)
+        )
+
+        let fixture = EngineFixture()
+        let coreHardware = CoreAudioTapHardware(
+            hal: AudioHALClient(backend: backend)
+        )
+        fixture.hardware.routePlanFreshnessValidator = {
+            try coreHardware.validateFreshRoutePlan($0)
+        }
+
+        let result = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
+
+        XCTAssertEqual(result.error, .routeStale)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+
+        backend.removeProperty(
+            objectID: device.objectID,
+            address: .init(selector: kAudioDevicePropertyClockDomain)
+        )
+        XCTAssertNoThrow(try coreHardware.validateFreshRoutePlan(plan))
+    }
+
     func testInvalidActiveSessionBundleCannotBypassRuntimeRejection() async {
         let corruptions: [ProcessTapVolumeEngine.ActiveSessionCorruptionForTesting] = [
             .missingBundle,
@@ -2582,6 +2651,78 @@ private let callsThroughTapFormat: [FakeAudioTapHardware.Call] = [
     .createTap(sourceIndex: 0, initiallyMuted: false),
     .readTapFormat(sourceIndex: 0),
 ]
+
+private func configureFreshRouteBackend(
+    _ backend: FakeAudioHALBackend,
+    processObjectID: AudioObjectID,
+    processIdentifier: pid_t,
+    device: AudioRouteDevice,
+    format: ProcessTapAudioFormat
+) {
+    backend.setArray(
+        [device.objectID],
+        objectID: AudioObjectID(kAudioObjectSystemObject),
+        address: .init(selector: kAudioHardwarePropertyDevices)
+    )
+    backend.setString(
+        device.uid,
+        objectID: device.objectID,
+        address: .init(selector: kAudioDevicePropertyDeviceUID)
+    )
+    backend.setString(
+        device.name,
+        objectID: device.objectID,
+        address: .init(selector: kAudioObjectPropertyName)
+    )
+    backend.setScalar(
+        UInt32(1),
+        objectID: device.objectID,
+        address: .init(selector: kAudioDevicePropertyDeviceIsAlive)
+    )
+    backend.setArray(
+        device.outputStreams.map(\.streamObjectID),
+        objectID: device.objectID,
+        address: .init(
+            selector: kAudioDevicePropertyStreams,
+            scope: kAudioObjectPropertyScopeOutput
+        )
+    )
+    for stream in device.outputStreams {
+        backend.setScalar(
+            AudioStreamBasicDescription(
+                mSampleRate: format.sampleRate,
+                mFormatID: format.formatID,
+                mFormatFlags: format.formatFlags,
+                mBytesPerPacket: UInt32(format.channelCount * 4),
+                mFramesPerPacket: 1,
+                mBytesPerFrame: UInt32(format.channelCount * 4),
+                mChannelsPerFrame: UInt32(format.channelCount),
+                mBitsPerChannel: format.bitsPerChannel,
+                mReserved: 0
+            ),
+            objectID: stream.streamObjectID,
+            address: .init(selector: kAudioStreamPropertyVirtualFormat)
+        )
+    }
+    backend.setScalar(
+        processIdentifier,
+        objectID: processObjectID,
+        address: .init(selector: kAudioProcessPropertyPID)
+    )
+    backend.setScalar(
+        UInt32(1),
+        objectID: processObjectID,
+        address: .init(selector: kAudioProcessPropertyIsRunningOutput)
+    )
+    backend.setArray(
+        [device.objectID],
+        objectID: processObjectID,
+        address: .init(
+            selector: kAudioProcessPropertyDevices,
+            scope: kAudioObjectPropertyScopeOutput
+        )
+    )
+}
 
 private func retryRetainedBundles(
     _ engine: ProcessTapVolumeEngine
