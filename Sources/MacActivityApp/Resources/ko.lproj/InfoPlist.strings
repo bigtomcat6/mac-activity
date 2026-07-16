@@ -1,2 +1,3 @@
 "CFBundleDisplayName" = "Mac Activity";
 "NSHumanReadableCopyright" = "Copyright © 2026 How. All rights reserved.";
+"NSAudioCaptureUsageDescription" = "Mac Activity는 앱별 음량을 적용하고 선택한 출력 기기에서 재생하기 위해 앱의 출력 오디오를 캡처하고 다시 라우팅합니다.";

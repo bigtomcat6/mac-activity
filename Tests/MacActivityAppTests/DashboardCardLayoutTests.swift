@@ -7,14 +7,19 @@ import XCTest
 
 @MainActor
 final class DashboardCardLayoutTests: XCTestCase {
-    func testDashboardTabsIncludeEnergyImpactAsSeparatePage() {
-        XCTAssertEqual(DashboardTab.allCases, [.overview, .actives, .energyImpact])
+    func testDashboardTabsIncludeEnergyImpactAndAudioAsSeparatePages() {
+        XCTAssertEqual(DashboardTab.allCases, [.overview, .actives, .energyImpact, .audio])
         XCTAssertEqual(DashboardTab.energyImpact.title, AppLocalization.string(.dashboardTabEnergyImpact))
+        XCTAssertEqual(DashboardTab.audio.title, AppLocalization.string(.dashboardTabAudio))
     }
 
     func testSelectingActivesTabAdvancesActivesRefreshTrigger() {
         XCTAssertEqual(
             DashboardView.activesRefreshTrigger(afterSelecting: .overview, currentTrigger: 4),
+            4
+        )
+        XCTAssertEqual(
+            DashboardView.activesRefreshTrigger(afterSelecting: .audio, currentTrigger: 4),
             4
         )
         XCTAssertEqual(
@@ -30,6 +35,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
         XCTAssertEqual(
             DashboardView.energyImpactRefreshTrigger(afterSelecting: .actives, currentTrigger: 3),
+            3
+        )
+        XCTAssertEqual(
+            DashboardView.energyImpactRefreshTrigger(afterSelecting: .audio, currentTrigger: 3),
             3
         )
     }
@@ -945,6 +954,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -984,6 +994,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1007,6 +1018,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let storageOnlyContent = DashboardView(
             dashboardModel: storageOnlyModel,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1035,6 +1047,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1057,6 +1070,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let content = DashboardView(
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {}
         )
@@ -1085,6 +1099,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     showsProcessApplicationIdentifier: true
                 )
             ),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {},
             initialSelectedTab: .actives
@@ -1105,6 +1120,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     showsProcessApplicationIdentifier: true
                 )
             ),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             openPreferences: {},
             quitApplication: {},
             initialSelectedTab: .energyImpact

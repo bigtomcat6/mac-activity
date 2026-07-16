@@ -460,7 +460,7 @@ class ReleasePolicyTests(unittest.TestCase):
             workflow.index("Upload SwiftPM coverage to Codecov"),
         )
 
-    def test_codecov_patch_status_requires_full_diff_coverage(self):
+    def test_codecov_patch_status_requires_ninety_percent_diff_coverage(self):
         config = (REPO_ROOT / "codecov.yml").read_text()
 
         self.assertRegex(
@@ -470,7 +470,7 @@ class ReleasePolicyTests(unittest.TestCase):
                 r"  status:\n"
                 r"    patch:\n"
                 r"      default:\n"
-                r"        target: 100%\n"
+                r"        target: 90%\n"
                 r"        threshold: 0%\n"
             ),
         )

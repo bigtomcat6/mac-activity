@@ -35,7 +35,7 @@ enum DashboardPopoverLayout {
         switch tab {
         case .overview:
             return overviewContentHeight(for: metrics) + fixedChromeHeight
-        case .actives, .energyImpact:
+        case .actives, .energyImpact, .audio:
             return maximumHeight
         }
     }
@@ -112,6 +112,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     convenience init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
+        audioDashboardModel: AudioDashboardModel,
         onVisibilityChange: @escaping (Bool) -> Void,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void
@@ -121,6 +122,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             focusController: SharedDashboardPopoverFocusController(),
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
+            audioDashboardModel: audioDashboardModel,
             onVisibilityChange: onVisibilityChange,
             openPreferences: openPreferences,
             quitApplication: quitApplication
@@ -132,6 +134,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         focusController: DashboardPopoverFocusControlling,
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
+        audioDashboardModel: AudioDashboardModel,
         onVisibilityChange: @escaping (Bool) -> Void,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void
@@ -149,6 +152,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             rootView: DashboardView(
                 dashboardModel: dashboardModel,
                 preferencesController: preferencesController,
+                audioDashboardModel: audioDashboardModel,
                 openPreferences: { [weak popover] in
                     popover?.performClose(nil)
                     openPreferences()
@@ -182,4 +186,10 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         onVisibilityChange(false)
     }
+
+    #if DEBUG
+    var testingAudioDashboardModel: AudioDashboardModel? {
+        (popover.contentViewController as? NSHostingController<DashboardView>)?.rootView.audioDashboardModel
+    }
+    #endif
 }

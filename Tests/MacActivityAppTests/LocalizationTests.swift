@@ -59,6 +59,30 @@ final class LocalizationTests: XCTestCase {
         XCTAssertTrue(languages.contains { $0.preferredLanguageIdentifier == "fr" })
     }
 
+    func testAudioDashboardStringsExistForAllSupportedLanguages() throws {
+        let audioKeys: [AppLocalization.Key] = [
+            .dashboardTabAudio,
+            .audioDevicesTitle,
+            .audioProcessesTitle,
+            .audioUnsupportedDeviceVolume,
+            .audioProcessOwnedByAnotherInstance,
+            .audioProcessRuntimeUnavailable,
+        ]
+
+        for language in AppLanguage.supportedLanguages() {
+            guard let languageIdentifier = language.preferredLanguageIdentifier else {
+                continue
+            }
+
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: languageIdentifier))
+            for key in audioKeys {
+                let localized = AppLocalization.string(key, bundle: bundle)
+                XCTAssertNotEqual(localized, key.rawValue, "Missing \(key.rawValue) in \(languageIdentifier)")
+                XCTAssertFalse(localized.isEmpty, "\(key.rawValue) in \(languageIdentifier) must not be empty")
+            }
+        }
+    }
+
     func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
@@ -81,10 +105,15 @@ final class LocalizationTests: XCTestCase {
         for language in AppLocalization.availableLanguageIdentifiers() {
             let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
             for key in keys {
+                let localized = bundle.localizedString(forKey: key, value: nil, table: nil)
                 XCTAssertNotEqual(
-                    bundle.localizedString(forKey: key, value: nil, table: nil),
+                    localized,
                     key,
                     "Missing \(key) in \(language)"
+                )
+                XCTAssertFalse(
+                    localized.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    "\(key) in \(language) must not be empty"
                 )
             }
         }
@@ -106,23 +135,69 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
-    func testInfoPlistLocalizationKeysMatchEnglish() throws {
-        let expectedKeys = Set(["CFBundleDisplayName", "CFBundleName", "NSHumanReadableCopyright"])
-        let english = try infoPlistStrings(forLanguageIdentifier: "en")
-        let englishKeys = Set(english.keys).intersection(expectedKeys)
+    func testGermanAudioCapturePermissionUsesCaptureTerminology() throws {
+        let german = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "de"))
+        let permissionCopy = AppLocalization.string(.audioProcessPermissionDenied, bundle: german)
 
-        XCTAssertTrue(expectedKeys.isSuperset(of: englishKeys))
-        XCTAssertTrue(englishKeys.contains("CFBundleDisplayName"))
-        XCTAssertTrue(englishKeys.contains("NSHumanReadableCopyright"))
+        XCTAssertEqual(
+            permissionCopy,
+            "Die Berechtigung zur Audioerfassung ist erforderlich. Erlaube Mac Activity in den Systemeinstellungen und versuche es erneut."
+        )
+        XCTAssertFalse(permissionCopy.contains("Audioaufnahme"))
+    }
+
+    func testInfoPlistLocalizationKeysMatchRequiredSet() throws {
+        let requiredKeys = Set([
+            "CFBundleDisplayName",
+            "NSHumanReadableCopyright",
+            "NSAudioCaptureUsageDescription",
+        ])
+        let english = try infoPlistStrings(forLanguageIdentifier: "en")
+        XCTAssertEqual(Set(english.keys), requiredKeys)
 
         for language in AppLocalization.availableLanguageIdentifiers() where language != "en" {
             let localized = try infoPlistStrings(forLanguageIdentifier: language)
             XCTAssertEqual(
-                Set(localized.keys).intersection(expectedKeys),
-                englishKeys,
-                "InfoPlist.strings keys for \(language) must match English"
+                Set(localized.keys),
+                requiredKeys,
+                "InfoPlist.strings keys for \(language) must match the required localized keys"
             )
         }
+    }
+
+    func testAudioUsageDescriptionMatchesAccurateCopyInEveryLanguage() throws {
+        let expectedDescriptions = [
+            "en": "Mac Activity captures and reroutes an app’s outgoing audio to apply per-app volume and play it through your selected output devices.",
+            "de": "Mac Activity erfasst und leitet die Audioausgabe einer App um, um die Lautstärke pro App anzuwenden und sie über die ausgewählten Ausgabegeräte wiederzugeben.",
+            "fr": "Mac Activity capture et réachemine l’audio sortant d’une app afin d’appliquer son volume individuel et de le lire sur les appareils de sortie sélectionnés.",
+            "ja": "Mac Activityは、アプリごとの音量を適用し、選択した出力デバイスで再生するために、アプリの出力音声をキャプチャして再ルーティングします。",
+            "ko": "Mac Activity는 앱별 음량을 적용하고 선택한 출력 기기에서 재생하기 위해 앱의 출력 오디오를 캡처하고 다시 라우팅합니다.",
+            "zh-Hans": "Mac Activity 会捕获并重新路由应用的输出音频，以应用单独的应用音量并通过您选择的输出设备播放。",
+            "zh-Hant": "Mac Activity 會擷取並重新路由 App 的輸出音訊，以套用個別 App 音量並透過您選擇的輸出裝置播放。",
+        ]
+
+        XCTAssertEqual(Set(expectedDescriptions.keys), Set(AppLocalization.availableLanguageIdentifiers()))
+
+        for (language, expectedDescription) in expectedDescriptions {
+            let values = try infoPlistStrings(forLanguageIdentifier: language)
+            let description = try XCTUnwrap(values["NSAudioCaptureUsageDescription"])
+            XCTAssertEqual(description, expectedDescription, language)
+            XCTAssertFalse(description.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, language)
+            XCTAssertTrue(description.contains("Mac Activity"), language)
+        }
+    }
+
+    func testAudioUsageDescriptionFallbackMatchesEnglishCopy() throws {
+        let plistURL = Self.packageRootURL().appendingPathComponent("Configuration/MacActivity-Info.plist")
+        let data = try Data(contentsOf: plistURL)
+        let values = try XCTUnwrap(
+            PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any]
+        )
+
+        XCTAssertEqual(
+            values["NSAudioCaptureUsageDescription"] as? String,
+            "Mac Activity captures and reroutes an app’s outgoing audio to apply per-app volume and play it through your selected output devices."
+        )
     }
 
     func testGeneratedXcodeProjectIncludesBundledLocalizations() throws {

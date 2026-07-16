@@ -130,6 +130,30 @@ final class MetricsSchedulerTests: XCTestCase {
         XCTAssertEqual(memoryCount, 2)
     }
 
+    func testStopWaitsForInFlightSamplingBeforeReturning() async {
+        let store = await MainActor.run { MetricsStore() }
+        let provider = BlockingProvider()
+        let scheduler = MetricsScheduler(providers: [provider], store: store)
+        let stopObservation = StopObservation()
+
+        await scheduler.start()
+        await provider.waitUntilEntered()
+
+        let stopTask = Task {
+            await scheduler.stop()
+            await stopObservation.recordReturn()
+        }
+        await provider.waitUntilCanceled()
+
+        let returnedBeforeRelease = await stopObservation.didReturn
+        XCTAssertFalse(returnedBeforeRelease)
+
+        await provider.release()
+        await stopTask.value
+        let returnedAfterRelease = await stopObservation.didReturn
+        XCTAssertTrue(returnedAfterRelease)
+    }
+
     func testRealtimeProfileSamplesMemoryEveryTwoSeconds() {
         XCTAssertEqual(MemoryProvider().cadence, .medium)
         XCTAssertEqual(
@@ -223,5 +247,60 @@ private actor SequencedProvider: MetricProvider {
 
     func readCount() -> Int {
         callCount
+    }
+}
+
+private actor BlockingProvider: MetricProvider {
+    let kind = MetricKind.cpu
+    let cadence = MetricCadenceLane.fast
+
+    private var entered = false
+    private var canceled = false
+    private var released = false
+    private var enteredWaiters: [CheckedContinuation<Void, Never>] = []
+    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func sample() async -> MetricUpdate {
+        entered = true
+        enteredWaiters.forEach { $0.resume() }
+        enteredWaiters.removeAll()
+        await withTaskCancellationHandler {
+            guard released == false else { return }
+            await withCheckedContinuation { releaseContinuation = $0 }
+        } onCancel: {
+            Task { await self.recordCancellation() }
+        }
+        return .cpu(CPUReading(usagePercent: 1))
+    }
+
+    func waitUntilEntered() async {
+        guard entered == false else { return }
+        await withCheckedContinuation { enteredWaiters.append($0) }
+    }
+
+    func waitUntilCanceled() async {
+        guard canceled == false else { return }
+        await withCheckedContinuation { cancellationWaiters.append($0) }
+    }
+
+    func release() {
+        released = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    private func recordCancellation() {
+        canceled = true
+        cancellationWaiters.forEach { $0.resume() }
+        cancellationWaiters.removeAll()
+    }
+}
+
+private actor StopObservation {
+    private(set) var didReturn = false
+
+    func recordReturn() {
+        didReturn = true
     }
 }

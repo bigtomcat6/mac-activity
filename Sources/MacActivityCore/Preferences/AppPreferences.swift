@@ -55,6 +55,37 @@ private enum LegacyDiskCleanupScope: String, Codable {
     }
 }
 
+private struct DynamicCodingKey: CodingKey {
+    let stringValue: String
+    let intValue: Int? = nil
+
+    init?(stringValue: String) {
+        self.stringValue = stringValue
+    }
+
+    init?(intValue: Int) {
+        return nil
+    }
+}
+
+private struct LossyAudioProcessProfiles: Decodable {
+    let values: [String: AudioProcessProfile]
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: DynamicCodingKey.self)
+        var result: [String: AudioProcessProfile] = [:]
+        for key in container.allKeys {
+            guard let profile = try? container.decode(AudioProcessProfile.self, forKey: key),
+                  profile.bundleIdentifier == key.stringValue,
+                  profile.isDefault == false else {
+                continue
+            }
+            result[key.stringValue] = profile
+        }
+        self.values = result
+    }
+}
+
 public struct AppPreferences: Equatable, Codable, Sendable {
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]
@@ -65,6 +96,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var showsProcessApplicationIdentifier: Bool
     public var updateChannel: UpdateChannel
     public var lastSyncedUpdateChannelReleaseTag: String?
+    public var audioProcessProfiles: [String: AudioProcessProfile]
 
     public init(
         launchAtLoginEnabled: Bool,
@@ -75,7 +107,8 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         showsHardwareBatteryPercentage: Bool = false,
         showsProcessApplicationIdentifier: Bool = false,
         updateChannel: UpdateChannel = .release,
-        lastSyncedUpdateChannelReleaseTag: String? = nil
+        lastSyncedUpdateChannelReleaseTag: String? = nil,
+        audioProcessProfiles: [String: AudioProcessProfile] = [:]
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
@@ -86,6 +119,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.showsProcessApplicationIdentifier = showsProcessApplicationIdentifier
         self.updateChannel = updateChannel
         self.lastSyncedUpdateChannelReleaseTag = lastSyncedUpdateChannelReleaseTag
+        self.audioProcessProfiles = audioProcessProfiles
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -98,6 +132,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case showsProcessApplicationIdentifier
         case updateChannel
         case lastSyncedUpdateChannelReleaseTag
+        case audioProcessProfiles
         case diskCleanupScope
     }
 
@@ -127,6 +162,10 @@ public struct AppPreferences: Equatable, Codable, Sendable {
             String.self,
             forKey: .lastSyncedUpdateChannelReleaseTag
         )
+        self.audioProcessProfiles = try container.decodeIfPresent(
+            LossyAudioProcessProfiles.self,
+            forKey: .audioProcessProfiles
+        )?.values ?? [:]
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -140,6 +179,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(showsProcessApplicationIdentifier, forKey: .showsProcessApplicationIdentifier)
         try container.encode(updateChannel, forKey: .updateChannel)
         try container.encodeIfPresent(lastSyncedUpdateChannelReleaseTag, forKey: .lastSyncedUpdateChannelReleaseTag)
+        try container.encode(audioProcessProfiles, forKey: .audioProcessProfiles)
     }
 
     public static let diskCleanupCategoryOrder: [DiskCleanupCategoryKind] = [.userCaches, .trash, .userLogs]
@@ -157,6 +197,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         diskCleanupCategories: defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: false,
         showsProcessApplicationIdentifier: false,
-        updateChannel: .release
+        updateChannel: .release,
+        audioProcessProfiles: [:]
     )
 }

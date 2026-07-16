@@ -17,7 +17,15 @@ final class PreferencesStoreTests: XCTestCase {
             diskCleanupCategories: [.userCaches, .trash, .userLogs],
             showsHardwareBatteryPercentage: true,
             showsProcessApplicationIdentifier: false,
-            updateChannel: .alpha
+            updateChannel: .alpha,
+            audioProcessProfiles: [
+                "com.example.Player": AudioProcessProfile(
+                    bundleIdentifier: "com.example.Player",
+                    volume: 0.4,
+                    isMuted: true,
+                    route: .explicit(targetDeviceUIDs: ["MissingButStable"])
+                ),
+            ]
         )
 
         try store.save(expected)

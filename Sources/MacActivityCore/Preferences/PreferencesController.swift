@@ -82,4 +82,24 @@ public final class PreferencesController: ObservableObject {
         state.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: selectedCategories)
         try? store.save(state)
     }
+
+    public func setAudioProcessProfile(
+        _ profile: AudioProcessProfile?,
+        for bundleIdentifier: String
+    ) throws {
+        let previous = state
+        if let profile, profile.isDefault == false {
+            precondition(profile.bundleIdentifier == bundleIdentifier)
+            state.audioProcessProfiles[bundleIdentifier] = profile
+        } else {
+            state.audioProcessProfiles.removeValue(forKey: bundleIdentifier)
+        }
+
+        do {
+            try store.save(state)
+        } catch {
+            state = previous
+            throw error
+        }
+    }
 }

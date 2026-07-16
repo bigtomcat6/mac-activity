@@ -617,6 +617,7 @@ enum DashboardTab: CaseIterable, Identifiable {
     case overview
     case actives
     case energyImpact
+    case audio
 
     var id: Self { self }
 
@@ -628,6 +629,8 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabActives)
         case .energyImpact:
             return AppLocalization.string(.dashboardTabEnergyImpact)
+        case .audio:
+            return AppLocalization.string(.dashboardTabAudio)
         }
     }
 }
@@ -638,6 +641,7 @@ struct DashboardView: View {
     @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @StateObject private var energyImpactModel = EnergyImpactModel()
+    @ObservedObject var audioDashboardModel: AudioDashboardModel
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
@@ -648,6 +652,7 @@ struct DashboardView: View {
     init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
+        audioDashboardModel: AudioDashboardModel,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
         initialSelectedTab: DashboardTab = .overview,
@@ -655,6 +660,7 @@ struct DashboardView: View {
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
+        self.audioDashboardModel = audioDashboardModel
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
         self.onPreferredContentSizeChange = onPreferredContentSizeChange
@@ -678,6 +684,8 @@ struct DashboardView: View {
                     activesContent
                 case .energyImpact:
                     energyImpactContent
+                case .audio:
+                    audioContent
                 }
             }
 
@@ -760,6 +768,11 @@ struct DashboardView: View {
             showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
         )
         .padding(18)
+    }
+
+    private var audioContent: some View {
+        AudioDashboardView(model: audioDashboardModel)
+            .padding(18)
     }
 
     private var selectedTabBinding: Binding<DashboardTab> {

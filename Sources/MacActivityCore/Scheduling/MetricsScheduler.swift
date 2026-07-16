@@ -95,8 +95,10 @@ public actor MetricsScheduler {
         }
     }
 
-    public func stop() {
-        loopTask?.cancel()
+    public func stop() async {
+        guard let task = loopTask else { return }
+        task.cancel()
+        await task.value
         loopTask = nil
     }
 

@@ -15,6 +15,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: focusController,
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
@@ -41,6 +42,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -60,6 +62,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -77,6 +80,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
@@ -115,6 +119,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: store),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -128,6 +133,10 @@ final class DashboardPopoverControllerTests: XCTestCase {
     func testPopoverLayoutUsesMaximumHeightForActivesAndFallbackOverviewRows() {
         XCTAssertEqual(
             DashboardPopoverLayout.contentSize(for: .actives, metrics: []).height,
+            DashboardPopoverLayout.maximumHeight
+        )
+        XCTAssertEqual(
+            DashboardPopoverLayout.contentSize(for: .audio, metrics: []).height,
             DashboardPopoverLayout.maximumHeight
         )
         XCTAssertEqual(
@@ -163,6 +172,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
             openPreferences: {},
             quitApplication: {}
@@ -208,6 +218,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: DashboardModel(store: MetricsStore()),
             preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
             openPreferences: { forwardedActions.append("preferences") },
             quitApplication: { forwardedActions.append("quit") }
@@ -234,6 +245,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
                 focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
                 dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
                 preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
                 onVisibilityChange: { _ in },
                 openPreferences: {},
                 quitApplication: {}
