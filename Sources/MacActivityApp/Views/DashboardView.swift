@@ -280,7 +280,8 @@ enum DashboardOverviewLayout {
 
     static func storageDetailUsesTrailingFallback(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Bool {
         label.kind == .swap
-            && containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth) < storageTrailingFallbackMinWidth
+            && containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth)
+                < storageTrailingFallbackMinWidth
     }
 
     static func storageDetailRowXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
@@ -290,9 +291,10 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailRowWidth(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth)
-            ? containerWidth
-            : max(0, containerWidth - storageDetailRowAnchorXPosition(for: label, containerWidth: containerWidth))
+        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth) {
+            return storageDetailTrailingFallbackRowWidth(for: label, containerWidth: containerWidth)
+        }
+        return max(0, containerWidth - storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth))
     }
 
     static func storageDetailRowAlignment(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> Alignment {
@@ -304,20 +306,52 @@ enum DashboardOverviewLayout {
     }
 
     static func storageDetailMarkerXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        if storageDetailUsesTrailingFallback(for: label, containerWidth: containerWidth),
-           storageDetailIconName(for: label.kind) != nil {
-            return min(max(containerWidth - storageDetailIconCenterOffset, 0), max(0, containerWidth - storageDetailMarkerWidth))
-        }
-        let markerProgress = label.startProgress
-        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
         return min(
-            max(CGFloat(markerProgress) * containerWidth + iconOffset, 0),
+            max(storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth), 0),
             max(0, containerWidth - storageDetailMarkerWidth)
         )
     }
 
     static func storageDetailRowAnchorXPosition(for label: DashboardStorageUsageLabel, containerWidth: CGFloat) -> CGFloat {
-        min(max(CGFloat(label.startProgress) * containerWidth, 0), containerWidth)
+        storageDetailNormalRowXPosition(for: label, containerWidth: containerWidth)
+    }
+
+    private static func storageDetailNormalRowXPosition(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let iconCenterX = storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth)
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        return min(max(iconCenterX - iconOffset, 0), containerWidth)
+    }
+
+    private static func storageDetailTrailingFallbackRowWidth(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        min(
+            containerWidth,
+            max(0, storageDetailIconCenterXPosition(for: label, containerWidth: containerWidth) + storageDetailIconCenterOffset)
+        )
+    }
+
+    private static func storageDetailIconCenterXPosition(
+        for label: DashboardStorageUsageLabel,
+        containerWidth: CGFloat
+    ) -> CGFloat {
+        let progressX = min(max(CGFloat(storageDetailAnchorProgress(for: label)) * containerWidth, 0), containerWidth)
+        let iconOffset = storageDetailIconName(for: label.kind) == nil ? 0 : storageDetailIconCenterOffset
+        guard label.kind == .swap, label.endProgress != nil else {
+            return progressX + iconOffset
+        }
+        return progressX
+    }
+
+    private static func storageDetailAnchorProgress(for label: DashboardStorageUsageLabel) -> Double {
+        guard label.kind == .swap, let endProgress = label.endProgress else {
+            return label.startProgress
+        }
+        return clampedProgress((label.startProgress + endProgress) / 2)
     }
 
     private static func equalSlotStorageUsageSegments(for metrics: [DashboardMetric]) -> [DashboardStorageUsageSegment] {

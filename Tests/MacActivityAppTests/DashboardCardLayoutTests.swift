@@ -540,7 +540,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.storageConnectorHeight(for: labels[1]), 4, accuracy: 0.001)
     }
 
-    func testOverviewStorageDetailMarkersAlignWithMetricIcons() {
+    func testOverviewStorageDetailMarkersAlignDiskIconAndSwapSegmentCenter() {
         let metrics = [
             DashboardMetric(
                 kind: .disk,
@@ -584,7 +584,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 600
             ),
-            420,
+            443,
             accuracy: 0.001
         )
         XCTAssertEqual(
@@ -592,14 +592,25 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 600
             ),
-            427,
+            450,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ) + DashboardOverviewLayout.storageDetailIconCenterOffset,
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 600
+            ),
             accuracy: 0.001
         )
     }
 
     func testOverviewStorageSwapLabelFallsBackToTrailingWhenStartLeavesTooLittleRoom() {
         let diskLabel = DashboardStorageUsageLabel(kind: .disk, startProgress: 0.0, rowIndex: 0)
-        let swapLabel = DashboardStorageUsageLabel(kind: .swap, startProgress: 0.9, rowIndex: 1)
+        let swapLabel = DashboardStorageUsageLabel(kind: .swap, startProgress: 0.9, rowIndex: 1, endProgress: 1.0)
 
         XCTAssertFalse(
             DashboardOverviewLayout.storageDetailUsesTrailingFallback(
@@ -626,7 +637,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 for: swapLabel,
                 containerWidth: 180
             ),
-            180,
+            178,
             accuracy: 0.001
         )
         XCTAssertEqual(
@@ -637,11 +648,32 @@ final class DashboardCardLayoutTests: XCTestCase {
             .trailing
         )
         XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowTextAlignment(
+                for: swapLabel,
+                containerWidth: 180
+            ),
+            .trailing
+        )
+        XCTAssertEqual(
             DashboardOverviewLayout.storageDetailMarkerXPosition(
                 for: swapLabel,
                 containerWidth: 180
             ),
-            173,
+            171,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            DashboardOverviewLayout.storageDetailRowXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ) + DashboardOverviewLayout.storageDetailRowWidth(
+                for: swapLabel,
+                containerWidth: 180
+            ) - DashboardOverviewLayout.storageDetailIconCenterOffset,
+            DashboardOverviewLayout.storageDetailMarkerXPosition(
+                for: swapLabel,
+                containerWidth: 180
+            ),
             accuracy: 0.001
         )
     }
