@@ -168,7 +168,7 @@ public final class AudioProcessService: AudioProcessProviding {
     }
 }
 
-private extension AudioProcessService {
+extension AudioProcessService {
     static var runtimeProcessDiscoveryAvailable: Bool {
         if #available(macOS 14.2, *) {
             return true
@@ -197,7 +197,7 @@ private extension AudioProcessService {
     }
 
     @available(macOS 14.2, *)
-    static func processSnapshot(
+    nonisolated static func processSnapshot(
         for processObjectID: AudioObjectID,
         client: AudioHALClient
     ) -> AudioProcessSnapshot? {

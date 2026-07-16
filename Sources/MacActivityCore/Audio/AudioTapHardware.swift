@@ -40,6 +40,10 @@ enum AudioTapHardwareError: Error, Equatable, Sendable {
     case cancelled
 }
 
+enum AudioRouteFreshnessError: Error, Equatable, Sendable {
+    case stale
+}
+
 final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum ValidationError: Error, Equatable, Sendable {
         case tapResourcesMismatch
@@ -149,6 +153,31 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             uuid: description.uuid,
             source: source
         )
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        guard hal.processTapsAvailable else {
+            throw AudioHALError(
+                operation: .createTap,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+        guard #available(macOS 14.2, *),
+              let process = AudioProcessService.processSnapshot(
+                for: plan.processObjectID,
+                client: hal
+              ),
+              let devices = try? AudioDeviceVolumeService.routeDevices(client: hal),
+              AudioRoutePlanner.matchesFreshRoute(
+                plan: plan,
+                process: process,
+                devices: devices
+              )
+        else {
+            throw AudioRouteFreshnessError.stale
+        }
     }
 
     func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat {
@@ -593,6 +622,7 @@ private let coreAudioTapIOProc: AudioDeviceIOProc = {
 }
 
 protocol AudioTapHardware: AnyObject, Sendable {
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws
     func createTap(
         processObjectID: AudioObjectID,
         source: AudioTapSource,

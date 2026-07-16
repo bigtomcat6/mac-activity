@@ -310,6 +310,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let allowed = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -340,6 +341,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let follow = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -370,6 +372,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let explicit = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -401,6 +404,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let explicit = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -466,6 +470,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let devices = DeviceProviderFake().routeDescriptors
         let current = try AudioRoutePlanner().topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -494,6 +499,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let devices = DeviceProviderFake().routeDescriptors
         let allowed = try AudioRoutePlanner().topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -518,6 +524,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let devices = DeviceProviderFake().routeDescriptors
         let allowed = try AudioRoutePlanner().topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -560,6 +567,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         func fingerprint(_ mode: AudioRouteMode) throws -> AudioRouteTopologyFingerprint {
             try preflight.topologyFingerprint(for: AudioRouteRequest(
                 processObjectID: 11,
+                processIdentifier: 101,
                 generation: 1,
                 sourceDeviceUIDs: ["BuiltIn"],
                 systemDefaultOutputDeviceUID: nil,
@@ -617,6 +625,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let allowed = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -698,6 +707,16 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.plans.count, 1)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
         XCTAssertEqual(fixture.store.saveCount, 0)
+    }
+
+    func testSelectedProcessIdentifierReachesPlannedRoute() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.lastAppliedPlan?.processIdentifier, 101)
     }
 
     func testExplicitRouteUsesExactlySelectedTargetsWithoutDefaultInjection() async {
@@ -856,6 +875,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let fingerprints = try Set(modes.map { mode in
             try fingerprintPlanner.topologyFingerprint(for: AudioRouteRequest(
                 processObjectID: 11,
+                processIdentifier: 101,
                 generation: 1,
                 sourceDeviceUIDs: ["BuiltIn"],
                 systemDefaultOutputDeviceUID: nil,
@@ -2192,6 +2212,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let allowed = try preflight.topologyFingerprint(for: .init(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,
@@ -2200,6 +2221,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         ))
         let denied = try preflight.topologyFingerprint(for: .init(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: ["BuiltIn"],
             systemDefaultOutputDeviceUID: nil,

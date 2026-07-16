@@ -18,6 +18,7 @@ public enum ProcessTapEngineError: Error, Equatable, Sendable {
     case leaseFailed
     case permissionDenied(OSStatus)
     case unsupportedFormat
+    case routeStale
     case routeSuperseded
     case aggregateNotReady
     case cleanupBacklogFull
@@ -569,6 +570,33 @@ private extension ProcessTapVolumeEngine {
         guard runtimeRejections.contains(plan.topologyFingerprint) == false else {
             return publishFailure(
                 .unsupportedFormat,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
+        }
+
+        guard plan.tapSources.isEmpty == false else {
+            return publishFailure(
+                .unsupportedFormat,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
+        }
+
+        do {
+            try hardware.validateFreshRoutePlan(plan)
+        } catch let error as AudioHALError where error.reason == .processTapsUnavailable {
+            return publishFailure(
+                map(error),
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            )
+        } catch {
+            return publishFailure(
+                .routeStale,
                 processObjectID: plan.processObjectID,
                 generation: plan.generation,
                 token: token

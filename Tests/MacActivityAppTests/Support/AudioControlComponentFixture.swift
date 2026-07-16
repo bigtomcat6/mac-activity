@@ -77,6 +77,7 @@ final class CoordinatorFixture {
         let fingerprints = requests.compactMap { sourceUIDs, mode in
             try? fingerprintPlanner.topologyFingerprint(for: .init(
                 processObjectID: 11,
+                processIdentifier: 101,
                 generation: 1,
                 sourceDeviceUIDs: sourceUIDs,
                 systemDefaultOutputDeviceUID: nil,
@@ -274,6 +275,7 @@ final class AudioControlComponentFixture {
             for mode in modes {
                 guard let fingerprint = try? fingerprintPlanner.topologyFingerprint(for: .init(
                     processObjectID: 11,
+                    processIdentifier: 101,
                     generation: 1,
                     sourceDeviceUIDs: [sourceUID],
                     systemDefaultOutputDeviceUID: nil,

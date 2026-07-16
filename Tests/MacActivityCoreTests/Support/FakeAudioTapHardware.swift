@@ -6,6 +6,7 @@ import Foundation
 
 final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum Call: Equatable {
+        case validateFreshRoutePlan
         case createTap(sourceIndex: Int, initiallyMuted: Bool)
         case readTapFormat(sourceIndex: Int)
         case createAggregate(tapAutoStart: Bool)
@@ -92,6 +93,12 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
     var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
+    var routePlanFreshness: RoutePlanFreshness = .fresh
+
+    enum RoutePlanFreshness {
+        case fresh
+        case stale
+    }
 
     var calls: [Call] {
         locked { recordedCalls }
@@ -221,6 +228,13 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     func waitUntilCall(_ expected: Call) async {
         while calls.contains(expected) == false {
             await Task.yield()
+        }
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        record(.validateFreshRoutePlan)
+        guard routePlanFreshness == .fresh else {
+            throw FakeRoutePlanFreshnessError.stale
         }
     }
 
@@ -534,6 +548,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return status
     }
 
+}
+
+private enum FakeRoutePlanFreshnessError: Error {
+    case stale
 }
 
 private extension FakeAudioTapHardware {

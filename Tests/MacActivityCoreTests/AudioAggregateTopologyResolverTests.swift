@@ -378,6 +378,7 @@ private extension AudioAggregateTopologyResolverTests {
         let sources = tapSources ?? [fixtureSource()]
         return AudioRoutePlan(
             processObjectID: 77,
+            processIdentifier: 101,
             generation: 1,
             tapSources: sources,
             selectedTargetUIDs: outputGroups.indices.map { "Target.\($0)" },

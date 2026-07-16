@@ -4,6 +4,142 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioRoutePlannerTests: XCTestCase {
+    func testFreshRouteComparisonRejectsEachChangedRouteDimension() throws {
+        let originalDevices = fixtureDevices()
+        let request = fixtureRequest(
+            sourceDeviceUIDs: ["BuiltIn"],
+            mode: .explicit(targetDeviceUIDs: ["USB"]),
+            devices: originalDevices
+        )
+        let plan = try planner().plan(request)
+        let freshProcess = AudioProcessSnapshot(
+            processObjectID: request.processObjectID,
+            processIdentifier: 101,
+            bundleIdentifier: "com.example.player",
+            isRunningOutput: true,
+            outputDeviceIDs: [10]
+        )
+
+        XCTAssertTrue(AudioRoutePlanner.matchesFreshRoute(
+            plan: plan,
+            process: freshProcess,
+            devices: originalDevices
+        ))
+
+        let cases: [(String, AudioProcessSnapshot, [AudioRouteDevice])] = [
+            (
+                "PID reuse",
+                AudioProcessSnapshot(
+                    processObjectID: request.processObjectID,
+                    processIdentifier: 102,
+                    bundleIdentifier: freshProcess.bundleIdentifier,
+                    isRunningOutput: true,
+                    outputDeviceIDs: freshProcess.outputDeviceIDs
+                ),
+                originalDevices
+            ),
+            (
+                "stopped output",
+                AudioProcessSnapshot(
+                    processObjectID: request.processObjectID,
+                    processIdentifier: freshProcess.processIdentifier,
+                    bundleIdentifier: freshProcess.bundleIdentifier,
+                    isRunningOutput: false,
+                    outputDeviceIDs: freshProcess.outputDeviceIDs
+                ),
+                originalDevices
+            ),
+            (
+                "source UID drift",
+                AudioProcessSnapshot(
+                    processObjectID: request.processObjectID,
+                    processIdentifier: freshProcess.processIdentifier,
+                    bundleIdentifier: freshProcess.bundleIdentifier,
+                    isRunningOutput: true,
+                    outputDeviceIDs: [20]
+                ),
+                originalDevices
+            ),
+            (
+                "target UID drift",
+                freshProcess,
+                originalDevices.map { device in
+                    device.uid == "USB"
+                        ? fixtureDevice(objectID: 20, uid: "USB.Changed")
+                        : device
+                }
+            ),
+            (
+                "stream ID and index drift",
+                freshProcess,
+                originalDevices.map { device in
+                    device.uid == "BuiltIn"
+                        ? fixtureDevice(
+                            objectID: 10,
+                            uid: "BuiltIn",
+                            outputStreams: [AudioRouteStream(
+                                streamObjectID: 9_999,
+                                streamIndex: 7,
+                                format: fixtureFormat()
+                            )]
+                        )
+                        : device
+                }
+            ),
+            (
+                "format drift",
+                freshProcess,
+                originalDevices.map { device in
+                    device.uid == "BuiltIn"
+                        ? fixtureDevice(
+                            objectID: 10,
+                            uid: "BuiltIn",
+                            outputStreams: [AudioRouteStream(
+                                streamObjectID: 10_000,
+                                streamIndex: 0,
+                                format: fixtureFormat(sampleRate: 44_100)
+                            )]
+                        )
+                        : device
+                }
+            ),
+            (
+                "topology fingerprint drift",
+                freshProcess,
+                originalDevices.map { device in
+                    device.uid == "USB"
+                        ? AudioRouteDevice(
+                            objectID: device.objectID,
+                            uid: device.uid,
+                            name: device.name,
+                            isAlive: device.isAlive,
+                            isAggregate: device.isAggregate,
+                            aggregateSubdeviceUIDs: device.aggregateSubdeviceUIDs,
+                            inputStreams: device.inputStreams,
+                            outputStreams: device.outputStreams,
+                            clockDomain: device.clockDomain,
+                            transportType: device.transportType,
+                            modelUID: "model.USB.changed",
+                            driverIdentity: device.driverIdentity,
+                            aggregateComposition: device.aggregateComposition
+                        )
+                        : device
+                }
+            ),
+        ]
+
+        for (name, process, devices) in cases {
+            XCTAssertFalse(
+                AudioRoutePlanner.matchesFreshRoute(
+                    plan: plan,
+                    process: process,
+                    devices: devices
+                ),
+                name
+            )
+        }
+    }
+
     func testPlannerRejects257ChannelSourceFormat() {
         let request = fixtureRequest(
             devices: fixtureDevices(builtInOutputStreams: [
@@ -1341,6 +1477,7 @@ private extension AudioRoutePlannerTests {
     ) -> AudioRouteRequest {
         AudioRouteRequest(
             processObjectID: processObjectID,
+            processIdentifier: 101,
             generation: generation,
             sourceDeviceUIDs: sourceDeviceUIDs,
             systemDefaultOutputDeviceUID: systemDefaultOutputDeviceUID,

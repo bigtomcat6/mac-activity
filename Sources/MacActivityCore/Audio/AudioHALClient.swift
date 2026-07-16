@@ -141,7 +141,7 @@ public final class AudioHALClient: @unchecked Sendable {
     static let maximumArrayElementCount = 16_384
 
     private let backend: any AudioHALBackend
-    private let processTapsAvailable: Bool
+    let processTapsAvailable: Bool
 
     init(
         backend: any AudioHALBackend = CoreAudioHALBackend(),

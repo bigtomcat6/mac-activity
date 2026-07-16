@@ -1,4 +1,5 @@
 import CoreAudio
+import Darwin
 import Foundation
 
 public enum AudioRouteMode: Equatable, Sendable {
@@ -189,6 +190,7 @@ public struct AudioRouteDevice: Equatable, Sendable {
 
 public struct AudioRouteRequest: Equatable, Sendable {
     public let processObjectID: AudioObjectID
+    public let processIdentifier: pid_t
     public let generation: UInt64
     public let sourceDeviceUIDs: [String]
     public let systemDefaultOutputDeviceUID: String?
@@ -197,6 +199,7 @@ public struct AudioRouteRequest: Equatable, Sendable {
 
     public init(
         processObjectID: AudioObjectID,
+        processIdentifier: pid_t,
         generation: UInt64,
         sourceDeviceUIDs: [String],
         systemDefaultOutputDeviceUID: String?,
@@ -204,6 +207,7 @@ public struct AudioRouteRequest: Equatable, Sendable {
         devices: [AudioRouteDevice]
     ) {
         self.processObjectID = processObjectID
+        self.processIdentifier = processIdentifier
         self.generation = generation
         self.sourceDeviceUIDs = sourceDeviceUIDs
         self.systemDefaultOutputDeviceUID = systemDefaultOutputDeviceUID
@@ -257,6 +261,7 @@ public struct AudioRouteSubdevice: Equatable, Sendable {
 
 public struct AudioRoutePlan: Equatable, Sendable {
     public let processObjectID: AudioObjectID
+    public let processIdentifier: pid_t
     public let generation: UInt64
     public let tapSources: [AudioTapSource]
     public let selectedTargetUIDs: [String]
@@ -268,6 +273,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
 
     public init(
         processObjectID: AudioObjectID,
+        processIdentifier: pid_t,
         generation: UInt64,
         tapSources: [AudioTapSource],
         selectedTargetUIDs: [String],
@@ -278,6 +284,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
         topologyFingerprint: AudioRouteTopologyFingerprint
     ) {
         self.processObjectID = processObjectID
+        self.processIdentifier = processIdentifier
         self.generation = generation
         self.tapSources = tapSources
         self.selectedTargetUIDs = selectedTargetUIDs

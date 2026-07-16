@@ -14,7 +14,7 @@ public protocol AudioDeviceControlProviding: AnyObject {
 public final class AudioDeviceVolumeService:
     AudioDeviceControlProviding,
     AudioRouteDeviceProviding {
-    private static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
+    private nonisolated static let internalDeviceUIDPrefix = "com.how.macactivity.audio."
 
     private let client: AudioHALClient
 
@@ -27,12 +27,20 @@ public final class AudioDeviceVolumeService:
     }
 
     public func routeDevices() throws -> [AudioRouteDevice] {
-        try outputDeviceIDs().compactMap { try? routeDevice($0) }
+        try Self.routeDevices(client: client)
+    }
+
+    nonisolated static func routeDevices(
+        client: AudioHALClient
+    ) throws -> [AudioRouteDevice] {
+        try outputDeviceIDs(client: client).compactMap {
+            try? routeDevice($0, client: client)
+        }
     }
 
     public func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
         var snapshots: [AudioOutputDeviceSnapshot] = []
-        for deviceID in try outputDeviceIDs() {
+        for deviceID in try Self.outputDeviceIDs(client: client) {
             guard let uid = try? client.readRetainedString(
                 from: deviceID,
                 address: Self.deviceUIDAddress
@@ -84,127 +92,130 @@ public final class AudioDeviceVolumeService:
 }
 
 private extension AudioDeviceVolumeService {
-    static var devicesAddress: AudioHALPropertyAddress {
+    nonisolated static var devicesAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
     }
 
-    static var outputStreamsAddress: AudioHALPropertyAddress {
+    nonisolated static var outputStreamsAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioDevicePropertyStreams,
             scope: kAudioObjectPropertyScopeOutput
         )
     }
 
-    static var inputStreamsAddress: AudioHALPropertyAddress {
+    nonisolated static var inputStreamsAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioDevicePropertyStreams,
             scope: kAudioObjectPropertyScopeInput
         )
     }
 
-    static var deviceUIDAddress: AudioHALPropertyAddress {
+    nonisolated static var deviceUIDAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceUID)
     }
 
-    static var deviceNameAddress: AudioHALPropertyAddress {
+    nonisolated static var deviceNameAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
     }
 
-    static var deviceAliveAddress: AudioHALPropertyAddress {
+    nonisolated static var deviceAliveAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceIsAlive)
     }
 
-    static var activeAggregateSubdevicesAddress: AudioHALPropertyAddress {
+    nonisolated static var activeAggregateSubdevicesAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioAggregateDevicePropertyActiveSubDeviceList
         )
     }
 
-    static var fullAggregateSubdevicesAddress: AudioHALPropertyAddress {
+    nonisolated static var fullAggregateSubdevicesAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioAggregateDevicePropertyFullSubDeviceList
         )
     }
 
-    static var aggregateCompositionAddress: AudioHALPropertyAddress {
+    nonisolated static var aggregateCompositionAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioAggregateDevicePropertyComposition
         )
     }
 
-    static var aggregateMainSubdeviceAddress: AudioHALPropertyAddress {
+    nonisolated static var aggregateMainSubdeviceAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioAggregateDevicePropertyMainSubDevice
         )
     }
 
     @available(macOS 14.2, *)
-    static var aggregateTapListAddress: AudioHALPropertyAddress {
+    nonisolated static var aggregateTapListAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioAggregateDevicePropertyTapList
         )
     }
 
-    static var modelUIDAddress: AudioHALPropertyAddress {
+    nonisolated static var modelUIDAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyModelUID)
     }
 
-    static var transportTypeAddress: AudioHALPropertyAddress {
+    nonisolated static var transportTypeAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyTransportType)
     }
 
-    static var clockDomainAddress: AudioHALPropertyAddress {
+    nonisolated static var clockDomainAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioDevicePropertyClockDomain)
     }
 
-    static var ownerAddress: AudioHALPropertyAddress {
+    nonisolated static var ownerAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioObjectPropertyOwner)
     }
 
-    static var classAddress: AudioHALPropertyAddress {
+    nonisolated static var classAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
     }
 
-    static var plugInBundleIDAddress: AudioHALPropertyAddress {
+    nonisolated static var plugInBundleIDAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioPlugInPropertyBundleID)
     }
 
-    static var streamVirtualFormatAddress: AudioHALPropertyAddress {
+    nonisolated static var streamVirtualFormatAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(selector: kAudioStreamPropertyVirtualFormat)
     }
 
-    static var volumeAddress: AudioHALPropertyAddress {
+    nonisolated static var volumeAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
             scope: kAudioObjectPropertyScopeOutput
         )
     }
 
-    static var muteAddress: AudioHALPropertyAddress {
+    nonisolated static var muteAddress: AudioHALPropertyAddress {
         AudioHALPropertyAddress(
             selector: kAudioDevicePropertyMute,
             scope: kAudioObjectPropertyScopeOutput
         )
     }
 
-    static func isInternalDeviceUID(_ uid: String) -> Bool {
+    nonisolated static func isInternalDeviceUID(_ uid: String) -> Bool {
         uid.hasPrefix(internalDeviceUIDPrefix)
     }
 
-    static func doubleValue(_ value: Float32) -> Double {
+    nonisolated static func doubleValue(_ value: Float32) -> Double {
         Double(String(value)) ?? Double(value)
     }
 
-    func outputDeviceIDs() throws -> [AudioDeviceID] {
+    nonisolated static func outputDeviceIDs(client: AudioHALClient) throws -> [AudioDeviceID] {
         let deviceIDs = try client.readArray(
             AudioDeviceID.self,
             from: AudioObjectID(kAudioObjectSystemObject),
             address: Self.devicesAddress
         )
-        return deviceIDs.filter(hasOutputStreams)
+        return deviceIDs.filter { hasOutputStreams($0, client: client) }
     }
 
-    func hasOutputStreams(_ deviceID: AudioDeviceID) -> Bool {
+    nonisolated static func hasOutputStreams(
+        _ deviceID: AudioDeviceID,
+        client: AudioHALClient
+    ) -> Bool {
         guard client.hasProperty(objectID: deviceID, address: Self.outputStreamsAddress) else {
             return false
         }
@@ -218,7 +229,10 @@ private extension AudioDeviceVolumeService {
         return !streams.isEmpty
     }
 
-    func routeDevice(_ deviceID: AudioDeviceID) throws -> AudioRouteDevice {
+    nonisolated static func routeDevice(
+        _ deviceID: AudioDeviceID,
+        client: AudioHALClient
+    ) throws -> AudioRouteDevice {
         let uid = try client.readRetainedString(
             from: deviceID,
             address: Self.deviceUIDAddress
@@ -254,7 +268,7 @@ private extension AudioDeviceVolumeService {
             client.hasProperty(objectID: deviceID, address: $0)
         }
         let aggregateSubdeviceUIDs = isAggregate
-            ? activeAggregateSubdeviceUIDs(deviceID) ?? []
+            ? activeAggregateSubdeviceUIDs(deviceID, client: client) ?? []
             : []
 
         return AudioRouteDevice(
@@ -264,33 +278,40 @@ private extension AudioDeviceVolumeService {
             isAlive: isAlive,
             isAggregate: isAggregate,
             aggregateSubdeviceUIDs: aggregateSubdeviceUIDs,
-            inputStreams: try routeStreams(inputStreamIDs),
-            outputStreams: try routeStreams(outputStreamIDs),
+            inputStreams: try routeStreams(inputStreamIDs, client: client),
+            outputStreams: try routeStreams(outputStreamIDs, client: client),
             clockDomain: optionalScalar(
                 UInt32.self,
                 objectID: deviceID,
-                address: Self.clockDomainAddress
+                address: Self.clockDomainAddress,
+                client: client
             ),
             transportType: optionalScalar(
                 UInt32.self,
                 objectID: deviceID,
-                address: Self.transportTypeAddress
+                address: Self.transportTypeAddress,
+                client: client
             ),
             modelUID: optionalString(
                 objectID: deviceID,
-                address: Self.modelUIDAddress
+                address: Self.modelUIDAddress,
+                client: client
             ),
-            driverIdentity: driverIdentity(deviceID),
+            driverIdentity: driverIdentity(deviceID, client: client),
             aggregateComposition: isAggregate
                 ? aggregateComposition(
                     deviceID,
-                    activeSubdeviceUIDs: aggregateSubdeviceUIDs
+                    activeSubdeviceUIDs: aggregateSubdeviceUIDs,
+                    client: client
                 )
                 : nil
         )
     }
 
-    func routeStreams(_ streamIDs: [AudioStreamID]) throws -> [AudioRouteStream] {
+    nonisolated static func routeStreams(
+        _ streamIDs: [AudioStreamID],
+        client: AudioHALClient
+    ) throws -> [AudioRouteStream] {
         try streamIDs.enumerated().map { index, streamID in
             let format = try client.readScalar(
                 AudioStreamBasicDescription.self,
@@ -305,11 +326,15 @@ private extension AudioDeviceVolumeService {
         }
     }
 
-    func activeAggregateSubdeviceUIDs(_ deviceID: AudioDeviceID) -> [String]? {
+    nonisolated static func activeAggregateSubdeviceUIDs(
+        _ deviceID: AudioDeviceID,
+        client: AudioHALClient
+    ) -> [String]? {
         guard let subdeviceIDs = optionalArray(
             AudioObjectID.self,
             objectID: deviceID,
-            address: Self.activeAggregateSubdevicesAddress
+            address: Self.activeAggregateSubdevicesAddress,
+            client: client
         ) else {
             return nil
         }
@@ -318,15 +343,17 @@ private extension AudioDeviceVolumeService {
         }
     }
 
-    func aggregateComposition(
+    nonisolated static func aggregateComposition(
         _ deviceID: AudioDeviceID,
-        activeSubdeviceUIDs: [String]
+        activeSubdeviceUIDs: [String],
+        client: AudioHALClient
     ) -> AudioRouteAggregateComposition? {
         let tapUUIDs: [String]
         if #available(macOS 14.2, *) {
             guard let values = optionalStringArray(
                 objectID: deviceID,
-                address: Self.aggregateTapListAddress
+                address: Self.aggregateTapListAddress,
+                client: client
             ) else {
                 return nil
             }
@@ -338,7 +365,8 @@ private extension AudioDeviceVolumeService {
         let compositionDictionary = optionalObject(
             CFDictionary.self,
             objectID: deviceID,
-            address: Self.aggregateCompositionAddress
+            address: Self.aggregateCompositionAddress,
+            client: client
         )
         let isStacked = compositionDictionary.flatMap {
             ($0 as NSDictionary)[kAudioAggregateDeviceIsStackedKey] as? NSNumber
@@ -347,32 +375,40 @@ private extension AudioDeviceVolumeService {
         return AudioRouteAggregateComposition(
             fullSubdeviceUIDs: optionalStringArray(
                 objectID: deviceID,
-                address: Self.fullAggregateSubdevicesAddress
+                address: Self.fullAggregateSubdevicesAddress,
+                client: client
             ) ?? [],
             activeSubdeviceUIDs: activeSubdeviceUIDs,
             mainSubdeviceUID: optionalString(
                 objectID: deviceID,
-                address: Self.aggregateMainSubdeviceAddress
+                address: Self.aggregateMainSubdeviceAddress,
+                client: client
             ),
             isStacked: isStacked,
             tapUUIDs: tapUUIDs
         )
     }
 
-    func driverIdentity(_ deviceID: AudioDeviceID) -> AudioRouteDriverIdentity? {
+    nonisolated static func driverIdentity(
+        _ deviceID: AudioDeviceID,
+        client: AudioHALClient
+    ) -> AudioRouteDriverIdentity? {
         guard let ownerID = optionalScalar(
             AudioObjectID.self,
             objectID: deviceID,
-            address: Self.ownerAddress
+            address: Self.ownerAddress,
+            client: client
         ), ownerID != kAudioObjectUnknown,
         optionalScalar(
             AudioClassID.self,
             objectID: ownerID,
-            address: Self.classAddress
+            address: Self.classAddress,
+            client: client
         ) == kAudioPlugInClassID,
         let bundleID = optionalString(
             objectID: ownerID,
-            address: Self.plugInBundleIDAddress
+            address: Self.plugInBundleIDAddress,
+            client: client
         ) else {
             return nil
         }
@@ -382,49 +418,55 @@ private extension AudioDeviceVolumeService {
         )
     }
 
-    func optionalScalar<T>(
+    nonisolated static func optionalScalar<T>(
         _ type: T.Type,
         objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
+        address: AudioHALPropertyAddress,
+        client: AudioHALClient
     ) -> T? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
         return try? client.readScalar(type, from: objectID, address: address)
     }
 
-    func optionalArray<T>(
+    nonisolated static func optionalArray<T>(
         _ type: T.Type,
         objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
+        address: AudioHALPropertyAddress,
+        client: AudioHALClient
     ) -> [T]? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
         return try? client.readArray(type, from: objectID, address: address)
     }
 
-    func optionalString(
+    nonisolated static func optionalString(
         objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
+        address: AudioHALPropertyAddress,
+        client: AudioHALClient
     ) -> String? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
         return try? client.readRetainedString(from: objectID, address: address)
     }
 
-    func optionalObject<T: AnyObject>(
+    nonisolated static func optionalObject<T: AnyObject>(
         _ type: T.Type,
         objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
+        address: AudioHALPropertyAddress,
+        client: AudioHALClient
     ) -> T? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
         return try? client.readRetainedObject(type, from: objectID, address: address)
     }
 
-    func optionalStringArray(
+    nonisolated static func optionalStringArray(
         objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
+        address: AudioHALPropertyAddress,
+        client: AudioHALClient
     ) -> [String]? {
         guard let array = optionalObject(
             CFArray.self,
             objectID: objectID,
-            address: address
+            address: address,
+            client: client
         ) else {
             return nil
         }
@@ -436,7 +478,7 @@ private extension AudioDeviceVolumeService {
         return result
     }
 
-    static func routeFormat(
+    nonisolated static func routeFormat(
         _ format: AudioStreamBasicDescription
     ) -> ProcessTapAudioFormat {
         ProcessTapAudioFormat(
@@ -456,7 +498,7 @@ private extension AudioDeviceVolumeService {
             throw missingDeviceError()
         }
 
-        for deviceID in try outputDeviceIDs() {
+        for deviceID in try Self.outputDeviceIDs(client: client) {
             guard let candidateUID = try? client.readRetainedString(
                 from: deviceID,
                 address: Self.deviceUIDAddress

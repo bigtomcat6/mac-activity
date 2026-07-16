@@ -46,6 +46,7 @@ public struct AudioRoutePlanner: Sendable {
 
         return AudioRoutePlan(
             processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
             generation: request.generation,
             tapSources: candidate.tapSources,
             selectedTargetUIDs: candidate.selectedUIDs,
@@ -56,6 +57,56 @@ public struct AudioRoutePlanner: Sendable {
                 + "\(sessionID.uuidString).\(request.processObjectID).\(request.generation)",
             topologyFingerprint: candidate.topologyFingerprint
         )
+    }
+
+    public static func matchesFreshRoute(
+        plan: AudioRoutePlan,
+        process: AudioProcessSnapshot,
+        devices: [AudioRouteDevice]
+    ) -> Bool {
+        guard plan.processObjectID == process.processObjectID,
+              plan.processIdentifier == process.processIdentifier,
+              process.isRunningOutput
+        else {
+            return false
+        }
+
+        var devicesByID: [AudioObjectID: AudioRouteDevice] = [:]
+        for device in devices {
+            guard devicesByID.updateValue(device, forKey: device.objectID) == nil else {
+                return false
+            }
+        }
+        let sourceUIDs = process.outputDeviceIDs.compactMap {
+            devicesByID[$0]?.uid
+        }
+        guard sourceUIDs.count == process.outputDeviceIDs.count else {
+            return false
+        }
+
+        let request = AudioRouteRequest(
+            processObjectID: process.processObjectID,
+            processIdentifier: process.processIdentifier,
+            generation: plan.generation,
+            sourceDeviceUIDs: sourceUIDs,
+            systemDefaultOutputDeviceUID: nil,
+            mode: .explicit(targetDeviceUIDs: plan.selectedTargetUIDs),
+            devices: devices
+        )
+        let planner = AudioRoutePlanner(
+            policy: .allowingAllForTesting,
+            osBuildProvider: { plan.topologyFingerprint.osBuild },
+            sessionID: UUID()
+        )
+        guard let candidate = try? planner.candidate(for: request) else {
+            return false
+        }
+        return plan.tapSources == candidate.tapSources
+            && plan.selectedTargetUIDs == candidate.selectedUIDs
+            && plan.subdevices == candidate.subdevices
+            && plan.mainDeviceUID == candidate.mainDeviceUID
+            && plan.isStacked == candidate.isStacked
+            && plan.topologyFingerprint == candidate.topologyFingerprint
     }
 }
 

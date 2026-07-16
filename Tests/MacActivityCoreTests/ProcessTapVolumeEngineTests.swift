@@ -327,6 +327,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertEqual(snapshot.state, .running)
         XCTAssertNil(snapshot.error)
         XCTAssertEqual(fixture.hardware.calls, [
+            .validateFreshRoutePlan,
             .createTap(sourceIndex: 0, initiallyMuted: false),
             .readTapFormat(sourceIndex: 0),
             .createAggregate(tapAutoStart: false),
@@ -419,6 +420,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
         XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
         XCTAssertEqual(fixture.hardware.calls, [
+            .validateFreshRoutePlan,
             .createTap(sourceIndex: 0, initiallyMuted: false),
             .destroyTap(sourceIndex: 0),
         ])
@@ -588,6 +590,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 point: .createTap(0),
                 sourceCount: 2,
                 expectedCalls: [
+                    .validateFreshRoutePlan,
                     .createTap(sourceIndex: 0, initiallyMuted: false),
                 ]
             ),
@@ -595,6 +598,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 point: .createTap(1),
                 sourceCount: 2,
                 expectedCalls: [
+                    .validateFreshRoutePlan,
                     .createTap(sourceIndex: 0, initiallyMuted: false),
                     .createTap(sourceIndex: 1, initiallyMuted: false),
                     .destroyTap(sourceIndex: 0),
@@ -604,6 +608,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
                 point: .readTapFormat(1),
                 sourceCount: 2,
                 expectedCalls: [
+                    .validateFreshRoutePlan,
                     .createTap(sourceIndex: 0, initiallyMuted: false),
                     .createTap(sourceIndex: 1, initiallyMuted: false),
                     .readTapFormat(sourceIndex: 0),
@@ -705,6 +710,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 
         XCTAssertEqual(snapshot.error, .unsupportedFormat)
         XCTAssertEqual(fixture.hardware.calls, [
+            .validateFreshRoutePlan,
             .createTap(sourceIndex: 0, initiallyMuted: false),
             .readTapFormat(sourceIndex: 0),
             .destroyTap(sourceIndex: 0),
@@ -1074,9 +1080,13 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(next.state, .running)
-        XCTAssertEqual(fixture.hardware.calls.first, .destroyTap(sourceIndex: 0))
+        XCTAssertEqual(fixture.hardware.calls.first, .validateFreshRoutePlan)
         XCTAssertEqual(
             fixture.hardware.calls.dropFirst().first,
+            .destroyTap(sourceIndex: 0)
+        )
+        XCTAssertEqual(
+            fixture.hardware.calls.dropFirst(2).first,
             .createTap(sourceIndex: 0, initiallyMuted: false)
         )
     }
@@ -1153,7 +1163,10 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(rejected.error, .cleanupBacklogFull)
-        XCTAssertEqual(fixture.hardware.calls, [.destroyTap(sourceIndex: 0)])
+        XCTAssertEqual(fixture.hardware.calls, [
+            .validateFreshRoutePlan,
+            .destroyTap(sourceIndex: 0),
+        ])
         let remaining = await retryRetainedBundles(fixture.engine)
         XCTAssertEqual(remaining.count, 1)
         XCTAssertEqual(remaining.first?.operation, .destroyTap)
@@ -1703,6 +1716,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 
         XCTAssertEqual(snapshot.error, .routeSuperseded)
         XCTAssertEqual(fixture.hardware.calls, [
+            .validateFreshRoutePlan,
             .createTap(sourceIndex: 0, initiallyMuted: false),
             .createTap(sourceIndex: 1, initiallyMuted: false),
             .destroyTap(sourceIndex: 0),
@@ -1923,6 +1937,38 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         storage.process(with: context)
         let lastSample = try XCTUnwrap(storage.outputSamples.last)
         XCTAssertEqual(lastSample, 0.2, accuracy: 0.000_001)
+    }
+
+    func testStaleRouteFailsBeforeAnyHardwareMutation() async {
+        let fixture = EngineFixture()
+        fixture.hardware.routePlanFreshness = .stale
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .routeStale)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+    }
+
+    func testStaleRebuildPreservesRunningSessionWithoutTeardown() async {
+        let fixture = EngineFixture()
+        let initialResult = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(initialResult.state, .running)
+        fixture.hardware.clearCalls()
+        fixture.hardware.routePlanFreshness = .stale
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 2),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .routeStale)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
     }
 
     func testInvalidActiveSessionBundleCannotBypassRuntimeRejection() async {
@@ -2237,7 +2283,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         await fixture.engine.stopAll()
     }
 
-    func testRebuildPublishSupersessionPreservesExistingSession() async {
+    func testRebuildPublishSupersessionPreservesExistingSessionAfterFreshnessRead() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(
             plan: fixture.plan(generation: 1),
@@ -2255,11 +2301,11 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(result.error, .routeSuperseded)
-        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
         await fixture.engine.stopAll()
     }
 
-    func testPreparingPublishSupersessionSkipsHardwareWork() async {
+    func testPreparingPublishSupersessionSkipsMutationAfterFreshnessRead() async {
         let fixture = EngineFixture()
         await fixture.engine.supersedeNextSnapshotPublishForTesting(
             processObjectID: 77,
@@ -2272,7 +2318,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
 
         XCTAssertEqual(result.error, .routeSuperseded)
-        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
         await fixture.engine.stopAll()
     }
 
@@ -2532,6 +2578,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 }
 
 private let callsThroughTapFormat: [FakeAudioTapHardware.Call] = [
+    .validateFreshRoutePlan,
     .createTap(sourceIndex: 0, initiallyMuted: false),
     .readTapFormat(sourceIndex: 0),
 ]
@@ -2631,6 +2678,7 @@ private final class EngineFixture: @unchecked Sendable {
     ) -> AudioRoutePlan {
         AudioRoutePlan(
             processObjectID: processObjectID,
+            processIdentifier: 101,
             generation: generation,
             tapSources: (0..<sourceCount).map { index in
                 AudioTapSource(

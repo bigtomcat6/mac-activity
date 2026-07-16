@@ -1025,6 +1025,7 @@ private func fixturePlan(
     precondition(outputStreams.count == targets.count)
     return AudioRoutePlan(
         processObjectID: 91,
+        processIdentifier: 101,
         generation: 4,
         tapSources: tapSources ?? [fixtureSource(deviceUID: "Source.Device", streamIndex: 0)],
         selectedTargetUIDs: targets,
