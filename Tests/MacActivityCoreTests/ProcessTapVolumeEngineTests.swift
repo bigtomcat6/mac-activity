@@ -789,6 +789,28 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertFalse(fixture.hardware.calls.contains(.createIOProc))
     }
 
+    func testCancelledStableTopologyReportsSupersededAndTearsDownResources() async {
+        let fixture = EngineFixture()
+        fixture.hardware.stableTopologyFailure = .cancelled
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.state, .failed)
+        XCTAssertEqual(snapshot.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(
+            fixture.hardware.calls,
+            callsThroughStableTopology + [
+                .destroyAggregate,
+                .ownedObjects,
+                .destroyTap(sourceIndex: 0),
+            ]
+        )
+    }
+
     @available(macOS 14.2, *)
     func testProcessTapsUnavailableHALErrorMapsTruthfullyBeforeMutableHAL() async {
         let backend = FakeAudioHALBackend()

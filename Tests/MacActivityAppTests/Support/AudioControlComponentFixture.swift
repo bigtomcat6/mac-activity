@@ -581,6 +581,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private let applyReturnGate = ControlledIndexedCallGate()
     private let gainUpdateGate = ControlledIndexedCallGate()
     private var deferredObserverCalls: Set<Int> = []
+    private var deferredStopObserverCalls: Set<Int> = []
     private var deferredObservers: [ProcessTapSessionSnapshot] = []
 
     init() {
@@ -644,7 +645,11 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
             commandSequence: nextCommandSequence,
             emissionOrdinal: 1
         )
-        continuation.yield(snapshot)
+        if deferredStopObserverCalls.contains(stopCalls.count) {
+            deferredObservers.append(snapshot)
+        } else {
+            continuation.yield(snapshot)
+        }
         return snapshot
     }
     func stopAll() async {
@@ -701,6 +706,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         await gainUpdateGate.waitUntilEntered(count)
     }
     func deferApplyObserver(_ call: Int) { deferredObserverCalls.insert(call) }
+    func deferStopObserver(_ call: Int) { deferredStopObserverCalls.insert(call) }
     func deliverDeferredObservers() {
         let pending = deferredObservers
         deferredObservers.removeAll()

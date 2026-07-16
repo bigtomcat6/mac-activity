@@ -395,6 +395,37 @@ final class AudioSystemMonitorTests: XCTestCase {
         )
     }
 
+    func testRepeatedStartImmediatelyRetriesPendingServiceRestartRecovery() async throws {
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting,
+            delay: .milliseconds(10),
+            restartRecoveryBackoff: .init(
+                initialDelayMilliseconds: 1_000,
+                maximumDelayMilliseconds: 1_000
+            )
+        )
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+        let initialRegistrationCount = fixture.backend.addedListeners.count
+        fixture.backend.enqueueAddListenerStatuses([
+            noErr,
+            kAudioHardwareUnspecifiedError,
+        ])
+
+        fixture.fire(.serviceRestarted)
+        try fixture.monitor.start()
+
+        let changes = try await fixture.nextChangeSet(timeout: .milliseconds(250))
+        XCTAssertEqual(changes, [.serviceRestarted])
+        XCTAssertEqual(fixture.backend.addedListeners.count, initialRegistrationCount + 10)
+        XCTAssertEqual(fixture.backend.removedListeners.count, 1)
+        XCTAssertEqual(fixture.backend.activeListeners.count, initialRegistrationCount)
+    }
+
     func testStopCancelsPendingServiceRestartRecovery() throws {
         let fixture = MonitorFixture(
             macOS: (14, 2),

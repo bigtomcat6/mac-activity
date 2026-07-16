@@ -1646,6 +1646,29 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .operationFailed(stopError))
     }
 
+    func testUnavailableRouteUsesFailedStopReturnBeforeItsObserverSnapshot() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .running)
+        let stopError = ProcessTapEngineError.operationFailed(operation: .stopDevice, status: -1)
+        fixture.engine.scriptedStopResults = [(.failed, stopError)]
+        fixture.engine.deferStopObserver(1)
+
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["Missing"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .failed)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .operationFailed(stopError))
+
+        fixture.engine.deliverDeferredObservers()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .failed)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .operationFailed(stopError))
+    }
+
     func testSourceOutputChangeRebuildsFollowOriginalButDefaultChangeDoesNotRebuildExplicit() async {
         let followFixture = CoordinatorFixture(availability: .supported)
         await followFixture.coordinator.start()
