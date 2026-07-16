@@ -475,6 +475,22 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testTapFormatRejects257ChannelASBDBeforeMutableOperation() {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 702)
+        backend.setScalar(
+            fixtureASBD(channelCount: 257),
+            objectID: tap.objectID,
+            address: AudioHALPropertyAddress(selector: kAudioTapPropertyFormat)
+        )
+
+        XCTAssertThrowsError(try makeHardware(backend).readTapFormat(tap)) { error in
+            XCTAssertTrue(error is CoreAudioTapHardware.ValidationError)
+        }
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testInstanceMuteStateReadReturnsOnlyObservedTapStateWithoutWriting() throws {
         let backend = FakeAudioHALBackend()
         let tap = fixtureTap(objectID: 705)

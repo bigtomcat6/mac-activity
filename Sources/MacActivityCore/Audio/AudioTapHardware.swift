@@ -43,6 +43,7 @@ enum AudioTapHardwareError: Error, Equatable, Sendable {
 final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum ValidationError: Error, Equatable, Sendable {
         case tapResourcesMismatch
+        case unsupportedChannelCount
     }
 
     private let hal: AudioHALClient
@@ -552,6 +553,9 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             from: objectID,
             address: address
         )
+        guard asbd.mChannelsPerFrame <= UInt32(ProcessTapAudioFormat.maximumChannelCount) else {
+            throw ValidationError.unsupportedChannelCount
+        }
         let isNonInterleaved = asbd.mFormatFlags
             & kAudioFormatFlagIsNonInterleaved != 0
         return ProcessTapAudioFormat(

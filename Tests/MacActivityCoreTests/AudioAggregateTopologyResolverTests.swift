@@ -60,6 +60,16 @@ final class AudioAggregateTopologyResolverTests: XCTestCase {
         )
     }
 
+    func testResolverRejectsOutputChannelTotalAboveBudget() {
+        let oversized = fixtureFormat(channelCount: 129)
+        let plan = fixturePlan(outputGroups: [[stereo, stereo]])
+
+        assertUnsupported(
+            plan: plan,
+            snapshot: fixtureSnapshot(outputFormats: [oversized, oversized])
+        )
+    }
+
     func testResolverRejectsUnsupportedActualOutputFormat() {
         let unsupported = ProcessTapAudioFormat(
             sampleRate: 48_000,

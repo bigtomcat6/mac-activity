@@ -58,6 +58,8 @@ public enum AudioPCMInterleaving: String, Codable, Hashable, Sendable {
 }
 
 public struct ProcessTapAudioFormat: Codable, Hashable, Sendable {
+    public static let maximumChannelCount = 256
+
     public let sampleRate: Double
     public let channelCount: Int
     public let formatID: AudioFormatID
@@ -87,7 +89,7 @@ public struct ProcessTapAudioFormat: Codable, Hashable, Sendable {
             && bitsPerChannel == 32
             && sampleRate.isFinite
             && sampleRate > 0
-            && channelCount > 0
+            && (1...Self.maximumChannelCount).contains(channelCount)
     }
 }
 

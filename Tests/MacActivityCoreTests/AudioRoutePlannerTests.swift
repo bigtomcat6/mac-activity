@@ -4,6 +4,23 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioRoutePlannerTests: XCTestCase {
+    func testPlannerRejects257ChannelSourceFormat() {
+        let request = fixtureRequest(
+            devices: fixtureDevices(builtInOutputStreams: [
+                AudioRouteStream(
+                    streamObjectID: 10_000,
+                    streamIndex: 0,
+                    format: fixtureFormat(channelCount: 257)
+                ),
+            ])
+        )
+
+        assertPlanningError(
+            .unsupportedFormat(deviceUID: "BuiltIn", streamIndex: 0),
+            request: request
+        )
+    }
+
     func testFollowOriginalIgnoresDifferentSystemDefault() throws {
         let request = fixtureRequest(
             sourceDeviceUIDs: ["BuiltIn"],
@@ -1315,11 +1332,17 @@ private extension AudioRoutePlannerTests {
     }
 
     func fixtureDevices(
+        builtInOutputStreams: [AudioRouteStream]? = nil,
         usbOutputStreams: [AudioRouteStream]? = nil,
         hdmiOutputStreams: [AudioRouteStream]? = nil
     ) -> [AudioRouteDevice] {
         [
-            fixtureDevice(objectID: 10, uid: "BuiltIn", name: "MacBook Speakers"),
+            fixtureDevice(
+                objectID: 10,
+                uid: "BuiltIn",
+                name: "MacBook Speakers",
+                outputStreams: builtInOutputStreams
+            ),
             fixtureDevice(
                 objectID: 20,
                 uid: "USB",

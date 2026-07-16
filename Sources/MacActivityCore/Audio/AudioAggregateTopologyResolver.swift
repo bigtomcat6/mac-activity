@@ -28,6 +28,27 @@ struct AudioAggregatePlannedTopology: Equatable, Sendable {
 }
 
 enum AudioAggregateTopologyResolver {
+    static func checkedChannelTotal<S: Sequence>(
+        _ formats: S
+    ) throws -> Int where S.Element == ProcessTapAudioFormat {
+        var total = 0
+        for format in formats {
+            guard (1...ProcessTapAudioFormat.maximumChannelCount).contains(
+                format.channelCount
+            ) else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            let result = total.addingReportingOverflow(format.channelCount)
+            guard result.overflow == false,
+                  result.partialValue <= ProcessTapAudioFormat.maximumChannelCount
+            else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            total = result.partialValue
+        }
+        return total
+    }
+
     static func checkedSum(_ values: [Int]) throws -> Int {
         var total = 0
         for value in values {
@@ -53,16 +74,23 @@ enum AudioAggregateTopologyResolver {
         }
 
         var outputChannelCounts: [UInt32] = []
+        var totalOutputChannels = 0
         outputChannelCounts.reserveCapacity(plan.subdevices.count)
         for subdevice in plan.subdevices {
-            guard subdevice.outputStreams.isEmpty == false,
-                  subdevice.outputStreams.allSatisfy({ $0.format.channelCount > 0 })
+            guard subdevice.outputStreams.isEmpty == false
             else {
                 throw AudioAggregateTopologyError.unsupportedTopology
             }
-            let channelCount = try checkedSum(
-                subdevice.outputStreams.map(\.format.channelCount)
+            let channelCount = try checkedChannelTotal(
+                subdevice.outputStreams.lazy.map(\.format)
             )
+            let totalResult = totalOutputChannels.addingReportingOverflow(channelCount)
+            guard totalResult.overflow == false,
+                  totalResult.partialValue <= ProcessTapAudioFormat.maximumChannelCount
+            else {
+                throw AudioAggregateTopologyError.unsupportedTopology
+            }
+            totalOutputChannels = totalResult.partialValue
             guard let encodedChannelCount = UInt32(exactly: channelCount) else {
                 throw AudioAggregateTopologyError.unsupportedTopology
             }
@@ -119,6 +147,9 @@ enum AudioAggregateTopologyResolver {
         else {
             throw AudioAggregateTopologyError.unsupportedTopology
         }
+
+        _ = try checkedChannelTotal(snapshot.inputFormats)
+        _ = try checkedChannelTotal(snapshot.outputFormats)
 
         let inputLayout = expandABLFormats(
             snapshot.inputFormats,

@@ -456,6 +456,17 @@ final class ProcessTapDSPTests: XCTestCase {
         }
     }
 
+    func testConfigurationRejectsMoreThan256Channels() {
+        let oversized = audioFormat(channelCount: 257)
+
+        XCTAssertThrowsError(try ProcessTapDSPConfiguration.validated(
+            sampleRate: 48_000,
+            inputFormats: [oversized],
+            outputFormats: [oversized],
+            channelMaps: [map(interleavedChannelCount: 257)]
+        ))
+    }
+
     func testConfigurationRejectsUnsupportedLayoutSampleRateMapsAndCoefficients() {
         let stereo = audioFormat(channelCount: 2)
         let mismatchedLayout = audioFormat(
