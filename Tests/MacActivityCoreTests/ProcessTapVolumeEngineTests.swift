@@ -2015,7 +2015,8 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             mainDeviceUID: planned.mainDeviceUID,
             isStacked: planned.isStacked,
             aggregateUID: planned.aggregateUID,
-            topologyFingerprint: planned.topologyFingerprint
+            topologyFingerprint: planned.topologyFingerprint,
+            referencedDeviceIDs: planned.referencedDeviceIDs
         )
         configureFreshRouteBackend(
             backend,
