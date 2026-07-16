@@ -95,12 +95,10 @@ protocol AudioHALBackend: AnyObject, Sendable {
         queue: DispatchQueue,
         registration: AudioHALListenerRegistration
     ) -> OSStatus
-    @available(macOS 14.2, *)
     func createProcessTap(
         _ description: CATapDescription,
         objectID: inout AudioObjectID
     ) -> OSStatus
-    @available(macOS 14.2, *)
     func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus
     func createAggregateDevice(
         _ description: CFDictionary,
@@ -137,152 +135,6 @@ final class AudioHALListenerRegistration: @unchecked Sendable {
     }
 }
 
-final class CoreAudioHALBackend: AudioHALBackend, @unchecked Sendable {
-    func hasProperty(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress
-    ) -> Bool {
-        var rawAddress = address.rawValue
-        return AudioObjectHasProperty(objectID, &rawAddress)
-    }
-
-    func getPropertyDataSize(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        byteCount: inout UInt32
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectGetPropertyDataSize(objectID, &rawAddress, 0, nil, &byteCount)
-    }
-
-    func getPropertyData(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        byteCount: inout UInt32,
-        data: UnsafeMutableRawPointer
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectGetPropertyData(
-            objectID,
-            &rawAddress,
-            0,
-            nil,
-            &byteCount,
-            data
-        )
-    }
-
-    func setPropertyData(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        byteCount: UInt32,
-        data: UnsafeRawPointer
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectSetPropertyData(
-            objectID,
-            &rawAddress,
-            0,
-            nil,
-            byteCount,
-            data
-        )
-    }
-
-    func isPropertySettable(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        isSettable: inout DarwinBoolean
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectIsPropertySettable(objectID, &rawAddress, &isSettable)
-    }
-
-    func addPropertyListener(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        queue: DispatchQueue,
-        registration: AudioHALListenerRegistration
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectAddPropertyListenerBlock(
-            objectID,
-            &rawAddress,
-            queue,
-            registration.block
-        )
-    }
-
-    func removePropertyListener(
-        objectID: AudioObjectID,
-        address: AudioHALPropertyAddress,
-        queue: DispatchQueue,
-        registration: AudioHALListenerRegistration
-    ) -> OSStatus {
-        var rawAddress = address.rawValue
-        return AudioObjectRemovePropertyListenerBlock(
-            objectID,
-            &rawAddress,
-            queue,
-            registration.block
-        )
-    }
-
-    @available(macOS 14.2, *)
-    func createProcessTap(
-        _ description: CATapDescription,
-        objectID: inout AudioObjectID
-    ) -> OSStatus {
-        AudioHardwareCreateProcessTap(description, &objectID)
-    }
-
-    @available(macOS 14.2, *)
-    func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
-        AudioHardwareDestroyProcessTap(objectID)
-    }
-
-    func createAggregateDevice(
-        _ description: CFDictionary,
-        objectID: inout AudioObjectID
-    ) -> OSStatus {
-        AudioHardwareCreateAggregateDevice(description, &objectID)
-    }
-
-    func destroyAggregateDevice(_ objectID: AudioObjectID) -> OSStatus {
-        AudioHardwareDestroyAggregateDevice(objectID)
-    }
-
-    func createIOProc(
-        deviceID: AudioDeviceID,
-        callback: AudioDeviceIOProc,
-        clientData: UnsafeMutableRawPointer?,
-        ioProcID: inout AudioDeviceIOProcID?
-    ) -> OSStatus {
-        AudioDeviceCreateIOProcID(deviceID, callback, clientData, &ioProcID)
-    }
-
-    func destroyIOProc(
-        deviceID: AudioDeviceID,
-        ioProcID: AudioDeviceIOProcID
-    ) -> OSStatus {
-        AudioDeviceDestroyIOProcID(deviceID, ioProcID)
-    }
-
-    func startDevice(
-        deviceID: AudioDeviceID,
-        ioProcID: AudioDeviceIOProcID
-    ) -> OSStatus {
-        AudioDeviceStart(deviceID, ioProcID)
-    }
-
-    func stopDevice(
-        deviceID: AudioDeviceID,
-        ioProcID: AudioDeviceIOProcID
-    ) -> OSStatus {
-        AudioDeviceStop(deviceID, ioProcID)
-    }
-}
-
 public final class AudioHALClient: @unchecked Sendable {
     public static let system = AudioHALClient()
 
@@ -294,12 +146,10 @@ public final class AudioHALClient: @unchecked Sendable {
         processTapsAvailable: Bool? = nil
     ) {
         self.backend = backend
-        self.processTapsAvailable = processTapsAvailable ?? {
-            if #available(macOS 14.2, *) {
-                return true
-            }
-            return false
-        }()
+        self.processTapsAvailable = processTapsAvailable
+            ?? ProcessInfo.processInfo.isOperatingSystemAtLeast(
+                OperatingSystemVersion(majorVersion: 14, minorVersion: 2, patchVersion: 0)
+            )
     }
 
     public func hasProperty(
@@ -403,14 +253,7 @@ public final class AudioHALClient: @unchecked Sendable {
             )
         }
 
-        let string = autoreleasepool {
-            let bytes = Array((retainedValue as String).utf8)
-            guard let string = String(bytes: bytes, encoding: .utf8) else {
-                preconditionFailure("CFString must produce valid UTF-8")
-            }
-            return string
-        }
-        return string
+        return autoreleasepool { retainedValue as String }
     }
 
     public func readRetainedObject<T: AnyObject>(
@@ -463,14 +306,6 @@ public final class AudioHALClient: @unchecked Sendable {
         maxAttempts: Int = 3
     ) throws -> [T] {
         let elementStride = MemoryLayout<T>.stride
-        guard elementStride > 0 else {
-            throw AudioHALError(
-                operation: .getDataSize,
-                objectID: objectID,
-                address: address,
-                reason: .invalidDataSize(byteCount: 0, elementStride: elementStride)
-            )
-        }
 
         for attempt in 0..<maxAttempts {
             let announcedByteCount = try propertyDataSize(
@@ -645,15 +480,6 @@ public final class AudioHALClient: @unchecked Sendable {
                 reason: .processTapsUnavailable
             )
         }
-        guard #available(macOS 14.2, *) else {
-            throw AudioHALError(
-                operation: .createTap,
-                objectID: kAudioObjectUnknown,
-                address: nil,
-                reason: .processTapsUnavailable
-            )
-        }
-
         var objectID = kAudioObjectUnknown
         let status = withExtendedLifetime(description) {
             backend.createProcessTap(description, objectID: &objectID)
@@ -684,15 +510,6 @@ public final class AudioHALClient: @unchecked Sendable {
                 reason: .processTapsUnavailable
             )
         }
-        guard #available(macOS 14.2, *) else {
-            throw AudioHALError(
-                operation: .destroyTap,
-                objectID: objectID,
-                address: nil,
-                reason: .processTapsUnavailable
-            )
-        }
-
         try check(
             backend.destroyProcessTap(objectID),
             operation: .destroyTap,
