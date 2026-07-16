@@ -171,6 +171,18 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
+    func testDuplicateDeviceUIDsAreRejectedAndFailPreflight() {
+        let request = fixtureRequest(
+            mode: .explicit(targetDeviceUIDs: ["USB"]),
+            devices: fixtureDevices() + [
+                fixtureDevice(objectID: 62, uid: "USB", name: "Duplicate USB"),
+            ]
+        )
+
+        assertPlanningError(.unsupportedTopology, request: request)
+        XCTAssertFalse(planner().permits(request))
+    }
+
     func testAggregateCycleIsRejectedAsUnsupportedTopology() {
         let devices = fixtureDevices() + [
             fixtureDevice(
@@ -511,6 +523,13 @@ final class AudioRoutePlannerTests: XCTestCase {
                 fullSubdeviceUIDs: ["USB", "HDMI"],
                 activeSubdeviceUIDs: ["USB", "HDMI"],
                 mainSubdeviceUID: "Missing",
+                isStacked: true,
+                tapUUIDs: []
+            ),
+            AudioRouteAggregateComposition(
+                fullSubdeviceUIDs: ["USB", "HDMI"],
+                activeSubdeviceUIDs: ["USB", "HDMI"],
+                mainSubdeviceUID: nil,
                 isStacked: true,
                 tapUUIDs: []
             ),

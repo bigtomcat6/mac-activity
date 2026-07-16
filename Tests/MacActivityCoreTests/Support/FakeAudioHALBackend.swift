@@ -404,6 +404,13 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         )
     }
 
+    func removeProperty(
+        objectID: AudioObjectID,
+        address: AudioHALPropertyAddress
+    ) {
+        properties[PropertyKey(objectID: objectID, address: address)] = nil
+    }
+
     func setString(
         _ value: String,
         objectID: AudioObjectID,
@@ -632,7 +639,6 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         return removeListenerStatus
     }
 
-    @available(macOS 14.2, *)
     func createProcessTap(
         _ description: CATapDescription,
         objectID: inout AudioObjectID
@@ -648,7 +654,6 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         return result.0
     }
 
-    @available(macOS 14.2, *)
     func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
         withMutableState { state in
             state.operations.append(.destroyTap)

@@ -7,6 +7,23 @@ import XCTest
 private func testSystemFlock(_ descriptor: Int32, _ operation: Int32) -> Int32
 
 final class AudioProcessOwnershipLeaseTests: XCTestCase {
+    func testMissingApplicationSupportDirectoryReportsTypedSystemError() throws {
+        try withTemporaryApplicationSupport { applicationSupport in
+            let missingDirectory = applicationSupport.appendingPathComponent("missing")
+
+            XCTAssertThrowsError(
+                try DarwinAudioProcessOwnershipLeaseAcquirer(
+                    applicationSupportDirectory: missingDirectory
+                ).acquire()
+            ) { error in
+                XCTAssertEqual(
+                    error as? AudioProcessOwnershipLeaseError,
+                    .system(operation: .openDirectory, code: ENOENT)
+                )
+            }
+        }
+    }
+
     func testTwoAcquirersContendOnTheSameRealLock() throws {
         try withTemporaryApplicationSupport { applicationSupport in
             let firstAcquirer = DarwinAudioProcessOwnershipLeaseAcquirer(

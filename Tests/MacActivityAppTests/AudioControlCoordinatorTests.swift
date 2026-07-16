@@ -14,6 +14,17 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(snapshot.processes, [])
     }
 
+    func testRouteDeviceOptionUsesUIDForStableIdentifier() {
+        let option = AudioRouteDeviceOption(
+            uid: "BuiltIn",
+            name: "Built In Output",
+            isAvailable: true,
+            isSelected: false
+        )
+
+        XCTAssertEqual(option.id, "BuiltIn")
+    }
+
     func testUnsupportedStartupShowsDevicesWithoutEnumeratingProcessesOrApplying() async {
         let fixture = CoordinatorFixture(availability: .unsupported)
 
@@ -68,6 +79,33 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.startCount, 1)
         XCTAssertEqual(fixture.monitor.observedDeviceIDs, [10])
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
+    }
+
+    func testDefaultDelaySafelyClampsNonFiniteDeviceVolume() async {
+        let deviceProvider = DeviceProviderFake()
+        let processProvider = ProcessProviderFake()
+        let monitor = MonitorFake()
+        let engine = EngineFake()
+        let preferences = PreferencesController(
+            store: PreferencesStoreFake(),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let coordinator = AudioControlCoordinator(
+            availability: .unsupported,
+            deviceProvider: deviceProvider,
+            processProvider: processProvider,
+            routeDeviceProvider: deviceProvider,
+            monitor: monitor,
+            engine: engine,
+            preferences: preferences
+        )
+
+        await coordinator.start()
+        coordinator.setDeviceVolume(.nan, for: "BuiltIn")
+        await coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(deviceProvider.volumeWrites, [1])
+        await coordinator.shutdown()
     }
 
     func testLeaseContentionKeepsDeviceMonitoringAliveWithoutProcessWork() async {
@@ -2063,6 +2101,151 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.lifecycle.events.contains("engine.shutdown"))
         XCTAssertEqual(fixture.engine.shutdownCount, 1)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)
+    }
+
+    func testConcurrentShutdownWaitsForTheFirstShutdownToFinish() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        await fixture.engine.blockShutdown()
+
+        let firstShutdown = Task { @MainActor in
+            await fixture.coordinator.shutdown()
+        }
+        await fixture.engine.waitUntilShutdownCount(1)
+
+        let secondShutdownReturned = expectation(description: "second shutdown returned")
+        secondShutdownReturned.isInverted = true
+        let secondShutdown = Task { @MainActor in
+            await fixture.coordinator.shutdown()
+            secondShutdownReturned.fulfill()
+        }
+        for _ in 0..<5 { await Task.yield() }
+        await fulfillment(of: [secondShutdownReturned], timeout: 0.05)
+
+        await fixture.engine.resumeShutdown()
+        await firstShutdown.value
+        await secondShutdown.value
+
+        XCTAssertEqual(fixture.engine.shutdownCount, 1)
+    }
+
+    func testResetPersistenceFailureRestoresPreviousRunningRuleAndPublishesError() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.store.saveError = FixtureError.writeFailed
+
+        fixture.coordinator.reset(processObjectID: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 3])
+        XCTAssertEqual(row.volume, 0.4)
+        XCTAssertEqual(row.session.state, .running)
+        XCTAssertEqual(row.pendingValues, .default)
+        XCTAssertEqual(row.error, .persistenceFailed)
+    }
+
+    func testRunningSessionWithMissingExplicitRouteStopsAndPublishesUnavailableState() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["Missing"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(fixture.engine.stoppedProcessObjectIDs, [11])
+        XCTAssertEqual(row.session.state, .idle)
+        XCTAssertEqual(row.route, .explicit(targetDeviceUIDs: ["Missing"]))
+        XCTAssertEqual(row.pendingValues?.route, .explicit(targetDeviceUIDs: ["Missing"]))
+        XCTAssertEqual(row.error, .targetUnavailable(["Missing"]))
+    }
+
+    func testDeniedRoutePlanningPublishesTypedErrorWithoutCallingEngine() async throws {
+        let devices = DeviceProviderFake().routeDescriptors
+        let preflight = AudioRoutePlanner()
+        let allowed = try preflight.topologyFingerprint(for: .init(
+            processObjectID: 11,
+            generation: 1,
+            sourceDeviceUIDs: ["BuiltIn"],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: devices
+        ))
+        let denied = try preflight.topologyFingerprint(for: .init(
+            processObjectID: 11,
+            generation: 1,
+            sourceDeviceUIDs: ["BuiltIn"],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .explicit(targetDeviceUIDs: ["USB"]),
+            devices: devices
+        ))
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [allowed]))
+        )
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(row.pendingValues?.route, .explicit(targetDeviceUIDs: ["USB"]))
+        XCTAssertEqual(row.error, .routePlanning(.nativeValidationRequired(denied)))
+    }
+
+    func testReconnectedBundlelessExplicitRouteRebuildsUnavailableSession() async {
+        let fixture = CoordinatorFixture(availability: .supported, bundleIdentifier: nil)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        fixture.deviceProvider.setAlive(false, uid: "USB")
+        await fixture.emit([.device(20, .liveness)])
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].error,
+            .targetUnavailable(["USB"])
+        )
+
+        let applyCountBeforeReconnect = fixture.engine.applyCount
+        fixture.deviceProvider.setAlive(true, uid: "USB")
+        await fixture.emit([.device(20, .liveness)])
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(fixture.engine.applyCount, applyCountBeforeReconnect + 1)
+        XCTAssertEqual(row.route, .explicit(targetDeviceUIDs: ["USB"]))
+        XCTAssertEqual(row.session.state, .running)
+        XCTAssertNil(row.error)
+    }
+
+    func testSampleRateChangeSkipsDefaultProcessSession() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+
+        await fixture.emit([.device(10, .nominalSampleRate)])
+
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session.state, .idle)
+    }
+
+    func testSampleRateChangeForUnknownDeviceDoesNotRebuildExplicitRoute() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessRoute(.explicit(targetDeviceUIDs: ["USB"]), for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        let applyCount = fixture.engine.applyCount
+
+        await fixture.emit([.device(999, .nominalSampleRate)])
+
+        XCTAssertEqual(fixture.engine.applyCount, applyCount)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].route,
+            .explicit(targetDeviceUIDs: ["USB"])
+        )
     }
 
     func testCoordinatorDeallocatesAfterPopoverObservationEnds() async {

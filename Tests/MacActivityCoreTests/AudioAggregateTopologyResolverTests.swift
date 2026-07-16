@@ -209,6 +209,17 @@ final class AudioAggregateTopologyResolverTests: XCTestCase {
         }
     }
 
+    func testCheckedPlanSumRejectsNegativeInput() {
+        XCTAssertThrowsError(
+            try AudioAggregateTopologyResolver.checkedSum([-1])
+        ) { error in
+            XCTAssertEqual(
+                error as? AudioAggregateTopologyError,
+                .unsupportedTopology
+            )
+        }
+    }
+
     func testResolverRejectsDeadZeroDuplicateAndMismatchedStreamTopology() {
         let plan = fixturePlan(outputGroups: [[stereo], [stereo]])
         let cases = [

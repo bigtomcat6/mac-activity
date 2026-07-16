@@ -163,6 +163,28 @@ final class AudioRouteMetadataTests: XCTestCase {
             "25A1"
         )
     }
+
+    func testOSBuildDecodeRejectsInvalidUTF8() {
+        XCTAssertThrowsError(
+            try AudioRouteOSBuild.decode(
+                bytes: [CChar(bitPattern: 0xFF)],
+                returnedByteCount: 1
+            )
+        ) { error in
+            XCTAssertTrue(error is AudioRouteOSBuild.ReadError)
+        }
+    }
+
+    func testOSBuildDecodeRejectsEmptyUTF8() {
+        XCTAssertThrowsError(
+            try AudioRouteOSBuild.decode(
+                bytes: [0],
+                returnedByteCount: 1
+            )
+        ) { error in
+            XCTAssertTrue(error is AudioRouteOSBuild.ReadError)
+        }
+    }
 }
 
 @MainActor

@@ -1,8 +1,13 @@
+import AudioToolbox
 import CoreAudio
 import XCTest
 @testable import MacActivityCore
 
 final class AudioSystemMonitorTests: XCTestCase {
+    func testDefaultInitializerCanBeConstructedWithoutReadingHardware() {
+        _ = AudioSystemMonitor()
+    }
+
     func testConservativeProductionPolicyOmitsProcessListenersOnMacOS142() throws {
         let fixture = MonitorFixture(
             macOS: (14, 2),
@@ -19,6 +24,48 @@ final class AudioSystemMonitorTests: XCTestCase {
             $0.address == .processList || $0.objectID == 100
         })
         XCTAssertEqual(fixture.backend.addCount(for: 10), 2)
+    }
+
+    func testDeviceVolumeAndMuteListenersRegisterAndEmitADeviceRefresh() async throws {
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .conservative
+        )
+        fixture.backend.setScalar(
+            Float32(0.5),
+            objectID: 10,
+            address: .deviceVolume
+        )
+        fixture.backend.setScalar(
+            UInt32(0),
+            objectID: 10,
+            address: .deviceMute
+        )
+
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: []
+        )
+
+        guard fixture.backend.addedAddresses(for: 10).contains(.deviceVolume),
+              fixture.backend.addedAddresses(for: 10).contains(.deviceMute)
+        else {
+            return XCTFail("Expected volume and mute listeners for a controllable device")
+        }
+
+        let event = Task { try await fixture.nextChangeSet() }
+        XCTAssertTrue(
+            fixture.backend.invokeLatestListener(
+                objectID: 10,
+                address: .deviceVolume
+            )
+        )
+        let changes = try await event.value
+        XCTAssertTrue(changes.contains { change in
+            guard case .device(let deviceID, _) = change else { return false }
+            return deviceID == 10
+        })
     }
 
     func testRestartRecoveryBackoffSequenceIsExponentiallyCapped() {
@@ -94,6 +141,45 @@ final class AudioSystemMonitorTests: XCTestCase {
             Set(fixture.backend.addedAddresses(for: 100)),
             Set([.processOutputDevices, .processIsRunningOutput])
         )
+    }
+
+    func testObservedObjectsConfiguredBeforeStartAreRegisteredOnInitialStart() throws {
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
+
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+        try fixture.monitor.start()
+
+        XCTAssertEqual(fixture.backend.addCount(for: 10), 2)
+        XCTAssertEqual(fixture.backend.addCount(for: 100), 2)
+    }
+
+    func testObservedProcessRemovalCancelsOnlyThatProcessTokens() throws {
+        let fixture = MonitorFixture(
+            macOS: (14, 2),
+            nativeValidationPolicy: .allowingAllForTesting
+        )
+        try fixture.monitor.start()
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: [100]
+        )
+
+        try fixture.monitor.updateObservedObjects(
+            deviceIDs: [10],
+            processObjectIDs: []
+        )
+
+        XCTAssertEqual(
+            Set(fixture.backend.removedAddresses(for: 100)),
+            Set([.processOutputDevices, .processIsRunningOutput])
+        )
+        XCTAssertTrue(fixture.backend.removedAddresses(for: 10).isEmpty)
     }
 
     func testBurstIsEmittedAsOneTypedSet() async throws {
@@ -414,6 +500,10 @@ private final class MonitorFixture: @unchecked Sendable {
             registration = (deviceID, .nominalSampleRate)
         case .device(let deviceID, .liveness):
             registration = (deviceID, .deviceIsAlive)
+        case .device(let deviceID, .volume):
+            registration = (deviceID, .deviceVolume)
+        case .device(let deviceID, .mute):
+            registration = (deviceID, .deviceMute)
         case .process(let processObjectID, .runningOutput):
             registration = (processObjectID, .processIsRunningOutput)
         case .process(let processObjectID, .outputDevices):
@@ -478,6 +568,14 @@ private extension AudioHALPropertyAddress {
     )
     static let deviceIsAlive = AudioHALPropertyAddress(
         selector: kAudioDevicePropertyDeviceIsAlive
+    )
+    static let deviceVolume = AudioHALPropertyAddress(
+        selector: kAudioHardwareServiceDeviceProperty_VirtualMainVolume,
+        scope: kAudioObjectPropertyScopeOutput
+    )
+    static let deviceMute = AudioHALPropertyAddress(
+        selector: kAudioDevicePropertyMute,
+        scope: kAudioObjectPropertyScopeOutput
     )
     static let processOutputDevices = AudioHALPropertyAddress(
         selector: kAudioProcessPropertyDevices,

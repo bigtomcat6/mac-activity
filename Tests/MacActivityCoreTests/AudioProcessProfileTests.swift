@@ -3,6 +3,16 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioProcessProfileTests: XCTestCase {
+    func testFollowOriginalRouteEncodesOnlyItsKind() throws {
+        let data = try JSONEncoder().encode(AudioRouteMode.followOriginal)
+        let route = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+
+        XCTAssertEqual(route["kind"] as? String, "followOriginal")
+        XCTAssertNil(route["targetDeviceUIDs"])
+    }
+
     func testExistingPreferencesWithoutProfilesMigratesToEmptyMap() throws {
         let data = Data(#"{"launchAtLoginEnabled":false,"selectedSummaryMetrics":[]}"#.utf8)
 

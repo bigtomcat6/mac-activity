@@ -184,6 +184,45 @@ final class ProcessTapDSPTests: XCTestCase {
         XCTAssertEqual(context.testingCurrentGain, 1)
     }
 
+    func testInputBufferWithMissingDataSkipsMappedSamples() throws {
+        let context = try makeInterleavedContext(
+            channelCount: 1,
+            maps: [map()],
+            initialGain: 1
+        )
+        context.setOutputGateOpen(true)
+        context.setTargetGain(0)
+
+        var outputSample: Float32 = 9
+        var input = AudioBufferList(
+            mNumberBuffers: 1,
+            mBuffers: AudioBuffer(
+                mNumberChannels: 1,
+                mDataByteSize: UInt32(MemoryLayout<Float32>.stride),
+                mData: nil
+            )
+        )
+        withUnsafeMutablePointer(to: &outputSample) { outputData in
+            var output = AudioBufferList(
+                mNumberBuffers: 1,
+                mBuffers: AudioBuffer(
+                    mNumberChannels: 1,
+                    mDataByteSize: UInt32(MemoryLayout<Float32>.stride),
+                    mData: outputData
+                )
+            )
+
+            withUnsafePointer(to: &input) { inputPointer in
+                withUnsafeMutablePointer(to: &output) { outputPointer in
+                    context.process(input: inputPointer, output: outputPointer)
+                }
+            }
+        }
+
+        XCTAssertEqual(outputSample, 0)
+        XCTAssertLessThan(context.testingCurrentGain, 1)
+    }
+
     func testUnavailableMappedOutputWithValidUnmappedOutputDoesNotAdvanceRamp() throws {
         let storage = AudioBufferListTestStorage(
             inputs: [[1]],

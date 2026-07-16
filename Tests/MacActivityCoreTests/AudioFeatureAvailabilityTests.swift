@@ -44,6 +44,33 @@ final class AudioFeatureAvailabilityTests: XCTestCase {
             validatedFingerprints: [.testFixture]
         ).hasValidatedFingerprints)
     }
+
+    func testEqualityIncludesOperatingSystemVersionAndValidationPolicy() {
+        let validatedPolicy = AudioRouteNativeValidationPolicy(
+            validatedFingerprints: [.testFixture]
+        )
+
+        XCTAssertEqual(
+            AudioFeatureAvailability(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
+                nativeValidationPolicy: validatedPolicy
+            ),
+            AudioFeatureAvailability(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
+                nativeValidationPolicy: validatedPolicy
+            )
+        )
+        XCTAssertNotEqual(
+            AudioFeatureAvailability(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
+                nativeValidationPolicy: validatedPolicy
+            ),
+            AudioFeatureAvailability(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0),
+                nativeValidationPolicy: validatedPolicy
+            )
+        )
+    }
 }
 
 private extension AudioRouteTopologyFingerprint {

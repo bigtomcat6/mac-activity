@@ -2551,6 +2551,20 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         }
     }
 
+    func testMismatchedVerifiedStreamUsageFailsBeforeStartingTheIOProc() async {
+        let fixture = EngineFixture()
+        fixture.hardware.configuredStreamUsageOverride = [0]
+
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.state, .failed)
+        XCTAssertEqual(snapshot.error, .unsupportedFormat)
+        XCTAssertFalse(fixture.hardware.calls.contains(.startDevice))
+    }
+
     func testReadinessTimeoutIsNotCached() async {
         let fixture = EngineFixture()
         let fingerprint = fixture.plan(generation: 1).topologyFingerprint
@@ -2663,6 +2677,424 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
 
         XCTAssertEqual(reprobed.state, .running)
         XCTAssertFalse(fixture.hardware.calls.isEmpty)
+    }
+
+    func testUnsupportedRuntimeLifecycleOperationsDoNotTouchHardware() async {
+        let fixture = EngineFixture(macOS: (14, 1))
+
+        await fixture.engine.updateGain(
+            ProcessGainState(volume: 0.2),
+            for: 77
+        )
+        await fixture.engine.stopAll()
+        let preparation = await fixture.engine.prepareRuntime()
+        let stopped = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+        await fixture.engine.shutdown()
+
+        XCTAssertEqual(
+            preparation,
+            .unavailable(.processTapsUnavailable)
+        )
+        XCTAssertEqual(stopped.error, .processTapsUnavailable)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+    }
+
+    func testMissingSessionCorruptionDoesNotAffectLaterApply() async {
+        let fixture = EngineFixture()
+
+        await fixture.engine.corruptActiveSessionForTesting(
+            processObjectID: 77,
+            corruption: .missingBundle
+        )
+        let snapshot = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(snapshot.state, .running)
+        XCTAssertNil(snapshot.error)
+        await fixture.engine.stopAll()
+    }
+
+    func testActiveGainUpdatePublishSupersessionRetainsDSPGain() async throws {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+        let context = try XCTUnwrap(fixture.hardware.lastContext)
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 2
+        )
+        fixture.hardware.clearCalls()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState(volume: 0.2)
+        )
+
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        let frameCount = 1_440
+        let storage = AudioBufferListTestStorage.interleavedStereo(
+            input: Array(repeating: 1, count: frameCount * 2),
+            outputFrameCount: frameCount
+        )
+        storage.process(with: context)
+        let lastSample = try XCTUnwrap(storage.outputSamples.last)
+        XCTAssertEqual(lastSample, 0.2, accuracy: 0.000_001)
+        await fixture.engine.stopAll()
+    }
+
+    func testRebuildPublishSupersessionPreservesExistingSession() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 3
+        )
+        fixture.hardware.clearCalls()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 2),
+            gain: ProcessGainState(volume: 0.2)
+        )
+
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        await fixture.engine.stopAll()
+    }
+
+    func testPreparingPublishSupersessionSkipsHardwareWork() async {
+        let fixture = EngineFixture()
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 2
+        )
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        await fixture.engine.stopAll()
+    }
+
+    func testIdleStopPublishSupersessionReturnsSuperseded() async {
+        let fixture = EngineFixture()
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 2
+        )
+
+        let result = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+        await fixture.engine.stopAll()
+    }
+
+    func testRetainedBundleAdvanceSupersededByNewApply() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyTap(0)
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        fixture.hardware.setPersistentStatus(nil, at: .destroyTap(0))
+        fixture.hardware.blockCalls(at: .destroyTap(0))
+
+        let applying = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState(volume: 0.2)
+            )
+        }
+        await fixture.hardware.waitUntilBlocked(at: .destroyTap(0))
+        let newest = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        fixture.hardware.releaseCalls(at: .destroyTap(0))
+
+        let stale = await applying.value
+        let current = await newest.value
+
+        XCTAssertEqual(stale.error, .routeSuperseded)
+        XCTAssertEqual(current.state, .running)
+        await fixture.engine.stopAll()
+    }
+
+    func testRebuildTeardownSupersededByNewApply() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.blockCalls(at: .destroyTap(0))
+
+        let rebuilding = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState(volume: 0.2)
+            )
+        }
+        await fixture.hardware.waitUntilBlocked(at: .destroyTap(0))
+        let newest = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        fixture.hardware.releaseCalls(at: .destroyTap(0))
+
+        let stale = await rebuilding.value
+        let current = await newest.value
+
+        XCTAssertEqual(stale.error, .routeSuperseded)
+        XCTAssertEqual(current.state, .running)
+        await fixture.engine.stopAll()
+    }
+
+    func testStopAdvanceSupersededByNewApply() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyTap(0)
+        )
+        _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        fixture.hardware.setPersistentStatus(nil, at: .destroyTap(0))
+        fixture.hardware.blockCalls(at: .destroyTap(0))
+
+        let stopping = Task {
+            await fixture.engine.stop(processObjectID: 77, generation: 2)
+        }
+        await fixture.hardware.waitUntilBlocked(at: .destroyTap(0))
+        let newest = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        fixture.hardware.releaseCalls(at: .destroyTap(0))
+
+        let stale = await stopping.value
+        let current = await newest.value
+
+        XCTAssertEqual(stale.error, .routeSuperseded)
+        XCTAssertEqual(current.state, .running)
+        await fixture.engine.stopAll()
+    }
+
+    func testStopTeardownSupersededByNewApply() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.blockCalls(at: .destroyTap(0))
+
+        let stopping = Task {
+            await fixture.engine.stop(processObjectID: 77, generation: 2)
+        }
+        await fixture.hardware.waitUntilBlocked(at: .destroyTap(0))
+        let newest = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        fixture.hardware.releaseCalls(at: .destroyTap(0))
+
+        let stale = await stopping.value
+        let current = await newest.value
+
+        XCTAssertEqual(stale.error, .routeSuperseded)
+        XCTAssertEqual(current.state, .running)
+        await fixture.engine.stopAll()
+    }
+
+    func testEmptyTapSourcesFailBeforeHardwareCreation() async {
+        let fixture = EngineFixture()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, sourceCount: 0),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .unsupportedFormat)
+        XCTAssertTrue(fixture.hardware.calls.isEmpty)
+    }
+
+    func testSustainedCallbackDeadlineReturnsAggregateNotReady() async {
+        let fixture = EngineFixture()
+        fixture.hardware.singleCallbackOnly = true
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.error, .aggregateNotReady)
+        XCTAssertFalse(
+            fixture.hardware.calls.contains(.setTapMutedWhenTapped(sourceIndex: 0))
+        )
+    }
+
+    func testTeardownOwnedObjectEnumerationFailureIsRetainedForRetry() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.enqueueStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .ownedObjects
+        )
+
+        let result = await fixture.engine.stop(
+            processObjectID: 77,
+            generation: 1
+        )
+
+        XCTAssertEqual(result.state, .failed)
+        XCTAssertEqual(
+            result.error,
+            .operationFailed(
+                operation: .getData,
+                status: kAudioHardwareUnspecifiedError
+            )
+        )
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertFalse(
+            fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0))
+        )
+    }
+
+    func testBundleFailureOrderingUsesObjectIDForSameOperation() async {
+        let fixture = EngineFixture()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyTap(0)
+        )
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .destroyTap(1)
+        )
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1, sourceCount: 2),
+            gain: ProcessGainState()
+        )
+        let failures = await fixture.engine.cleanupOrphans()
+        let destroyTapFailures = failures.filter {
+            $0.operation == .destroyTap
+        }
+
+        XCTAssertEqual(result.error, .unsupportedFormat)
+        XCTAssertEqual(destroyTapFailures.map(\.objectID), [1_000, 1_001])
+    }
+
+    @available(macOS 14.2, *)
+    func testOwnedObjectCleanupTiebreaksSameIDByUID() async {
+        let fixture = EngineFixture()
+        let earlier = AudioOwnedObject(
+            id: 9_001,
+            classID: kAudioAggregateDeviceClassID,
+            uid: AudioRoutePlanner.aggregateUIDPrefix + "a",
+            name: nil
+        )
+        let later = AudioOwnedObject(
+            id: 9_001,
+            classID: kAudioAggregateDeviceClassID,
+            uid: AudioRoutePlanner.aggregateUIDPrefix + "b",
+            name: nil
+        )
+        fixture.hardware.ownedObjectValues = [later, earlier]
+
+        _ = await fixture.engine.cleanupOrphans()
+        let destroyed = fixture.hardware.calls.compactMap { call -> AudioOwnedObject? in
+            guard case .destroyOwnedObject(let object) = call else { return nil }
+            return object
+        }
+
+        XCTAssertEqual(destroyed, [earlier, later])
+    }
+
+    func testCancellingSupersededApplyLeavesNewerGenerationCurrent() async {
+        let fixture = EngineFixture(readinessInitiallyBlocked: true)
+        let older = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 1),
+                gain: ProcessGainState()
+            )
+        }
+        await fixture.hardware.waitUntilReadinessPolling()
+
+        let newer = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        let didSupersede = await waitUntilCondition {
+            fixture.hardware.invokeLatestReadinessCancellationProbe() == true
+        }
+        XCTAssertTrue(didSupersede)
+        older.cancel()
+
+        let oldResult = await older.value
+        let newestResult = await newer.value
+
+        XCTAssertEqual(oldResult.error, .routeSuperseded)
+        XCTAssertEqual(newestResult.state, .running)
+        await fixture.engine.stopAll()
+    }
+
+    func testStopAllInvalidatesInFlightApplyBeforeTeardown() async {
+        let fixture = EngineFixture(readinessInitiallyBlocked: true)
+        let applying = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 1),
+                gain: ProcessGainState()
+            )
+        }
+        await fixture.hardware.waitUntilReadinessPolling()
+
+        let stopping = Task {
+            await fixture.engine.stopAll()
+        }
+        let didInvalidate = await waitUntilCondition {
+            fixture.hardware.invokeLatestReadinessCancellationProbe() == true
+        }
+        XCTAssertTrue(didInvalidate)
+
+        let result = await applying.value
+        await stopping.value
+
+        XCTAssertEqual(result.error, .routeSuperseded)
     }
 }
 

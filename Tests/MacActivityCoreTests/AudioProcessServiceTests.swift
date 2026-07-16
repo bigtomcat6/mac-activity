@@ -49,6 +49,48 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testInjectedLiveReaderRunsWhenRuntimeIsAvailable() {
+        let expected = AudioProcessSnapshot(
+            processObjectID: 11,
+            processIdentifier: 101,
+            bundleIdentifier: "com.apple.Music",
+            isRunningOutput: true
+        )
+
+        XCTAssertEqual(
+            AudioProcessService.readProcessSnapshotsIfAvailable(
+                isRuntimeProcessDiscoveryAvailable: true,
+                reader: { [expected] in [expected] }
+            ),
+            [expected]
+        )
+    }
+
+    @MainActor
+    func testDefaultRuntimeAvailabilityOnlyInvokesInjectedReaderWhenSupported() {
+        var didReadSnapshots = false
+
+        let snapshots = AudioProcessService.readProcessSnapshotsIfAvailable(
+            reader: {
+                didReadSnapshots = true
+                return []
+            }
+        )
+
+        if #available(macOS 14.2, *) {
+            XCTAssertTrue(didReadSnapshots)
+        } else {
+            XCTAssertFalse(didReadSnapshots)
+        }
+        XCTAssertEqual(snapshots, [])
+    }
+
+    @MainActor
+    func testDefaultServiceKeepsProcessDiscoveryHiddenUnderConservativePolicy() {
+        XCTAssertEqual(AudioProcessService().audibleOutputProcesses(), [])
+    }
+
+    @MainActor
     func testAudibleOutputProcessesReturnsEmptyWithoutTouchingSnapshotsWhenAvailabilityUnsupported() {
         var didReadSnapshots = false
         let service = AudioProcessService(
@@ -266,5 +308,188 @@ final class AudioProcessServiceTests: XCTestCase {
             ]
         )
         XCTAssertTrue(backend.readSelectors.contains(kAudioProcessPropertyDevices))
+    }
+
+    @MainActor
+    func testLiveSnapshotListReadFailureReturnsEmpty() {
+        guard #available(macOS 14.2, *) else { return }
+
+        let backend = FakeAudioHALBackend()
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: AudioObjectID(kAudioObjectSystemObject),
+            address: .init(selector: kAudioHardwarePropertyProcessObjectList),
+            announcedByteCount: UInt32(MemoryLayout<AudioObjectID>.stride)
+        )
+
+        XCTAssertEqual(
+            AudioProcessService.readProcessSnapshotsIfAvailable(
+                client: AudioHALClient(backend: backend)
+            ),
+            []
+        )
+    }
+
+    @MainActor
+    func testLiveSnapshotsSkipMissingPIDAndDefaultMissingOptionalProperties() {
+        guard #available(macOS 14.2, *) else { return }
+
+        let backend = FakeAudioHALBackend()
+        backend.setArray(
+            [AudioObjectID(11), 12],
+            objectID: AudioObjectID(kAudioObjectSystemObject),
+            address: .init(selector: kAudioHardwarePropertyProcessObjectList)
+        )
+        backend.setScalar(
+            pid_t(101),
+            objectID: 11,
+            address: .init(selector: kAudioProcessPropertyPID)
+        )
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: 12,
+            address: .init(selector: kAudioProcessPropertyPID),
+            announcedByteCount: UInt32(MemoryLayout<pid_t>.stride)
+        )
+
+        XCTAssertEqual(
+            AudioProcessService.readProcessSnapshotsIfAvailable(
+                client: AudioHALClient(backend: backend)
+            ),
+            [
+                AudioProcessSnapshot(
+                    processObjectID: 11,
+                    processIdentifier: 101,
+                    bundleIdentifier: nil,
+                    isRunningOutput: false,
+                    outputDeviceIDs: []
+                ),
+            ]
+        )
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesMapAppAndSnapshotFallbackMetadata() {
+        let appURL = URL(fileURLWithPath: "/Applications/Studio.app")
+        let service = AudioProcessService(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
+            ),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: "com.example.Player",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: 102,
+                        bundleIdentifier: nil,
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 13,
+                        processIdentifier: 103,
+                        bundleIdentifier: "com.example.Studio",
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 103,
+                        name: "Studio",
+                        bundleIdentifier: nil,
+                        bundleURL: appURL
+                    ),
+                ]
+            }
+        )
+
+        let entriesByObjectID = Dictionary(
+            uniqueKeysWithValues: service.audibleOutputProcesses().map {
+                ($0.processObjectID, $0)
+            }
+        )
+
+        XCTAssertEqual(entriesByObjectID[11]?.name, "com.example.Player")
+        XCTAssertEqual(entriesByObjectID[11]?.bundleIdentifier, "com.example.Player")
+        XCTAssertNil(entriesByObjectID[11]?.bundleURL)
+        XCTAssertEqual(entriesByObjectID[12]?.name, "Process 102")
+        XCTAssertNil(entriesByObjectID[12]?.bundleIdentifier)
+        XCTAssertEqual(entriesByObjectID[13]?.name, "Studio")
+        XCTAssertEqual(entriesByObjectID[13]?.bundleIdentifier, "com.example.Studio")
+        XCTAssertEqual(entriesByObjectID[13]?.bundleURL, appURL)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesSortInjectedEntriesCaseInsensitively() {
+        let service = AudioProcessService(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                ),
+                nativeValidationPolicy: .allowingAllForTesting
+            ),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: "com.example.Zebra",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: 102,
+                        bundleIdentifier: "com.example.Alpha",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 13,
+                        processIdentifier: 103,
+                        bundleIdentifier: "com.example.Music",
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 101,
+                        name: "zebra",
+                        bundleIdentifier: "com.example.Zebra",
+                        bundleURL: nil
+                    ),
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 102,
+                        name: "Alpha",
+                        bundleIdentifier: "com.example.Alpha",
+                        bundleURL: nil
+                    ),
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 103,
+                        name: "music",
+                        bundleIdentifier: "com.example.Music",
+                        bundleURL: nil
+                    ),
+                ]
+            }
+        )
+
+        XCTAssertEqual(
+            service.audibleOutputProcesses().map(\.name),
+            ["Alpha", "music", "zebra"]
+        )
     }
 }

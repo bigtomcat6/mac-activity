@@ -4,6 +4,11 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioDeviceVolumeServiceTests: XCTestCase {
+    @MainActor
+    func testDefaultInitializerCanBeConstructedWithoutReadingHardware() {
+        _ = AudioDeviceVolumeService()
+    }
+
     func testVolumeInputIsClampedForWrites() {
         XCTAssertEqual(AudioDeviceVolumeService.clampedVolume(-0.5), 0)
         XCTAssertEqual(AudioDeviceVolumeService.clampedVolume(0.5), 0.5)
@@ -91,6 +96,32 @@ final class AudioDeviceVolumeServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedMuteReadReturnsItsTypedFailureState() throws {
+        let backend = configuredBackend(devices: [.builtInOutput])
+        backend.setScalar(
+            UInt32(0),
+            objectID: TestOutputDevice.builtInOutput.objectID,
+            address: muteAddress,
+            isSettable: true
+        )
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.builtInOutput.objectID,
+            address: muteAddress,
+            announcedByteCount: UInt32(MemoryLayout<UInt32>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        let snapshot = try service.outputDeviceSnapshot(forUID: "BuiltInOutput")
+
+        guard case .failed(let error) = snapshot.mute else {
+            return XCTFail("Expected a typed failure state")
+        }
+        XCTAssertEqual(error.operation, .getData)
+        XCTAssertEqual(error.status, kAudioHardwareUnspecifiedError)
+    }
+
+    @MainActor
     func testOutputSnapshotsFilterMacActivityInternalDeviceUIDs() throws {
         let backend = configuredBackend(
             devices: [
@@ -108,6 +139,91 @@ final class AudioDeviceVolumeServiceTests: XCTestCase {
 
         XCTAssertEqual(deviceUIDs, ["BuiltInOutput"])
         XCTAssertFalse(deviceUIDs.contains("com.how.macactivity.audio.aggregate.fixture"))
+    }
+
+    @MainActor
+    func testOutputSnapshotsSkipUnreadableDeviceWithoutDroppingReadableDevices() throws {
+        let backend = configuredBackend(devices: [.builtInOutput, .usbOutput])
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.usbOutput.objectID,
+            address: .init(selector: kAudioObjectPropertyName),
+            announcedByteCount: UInt32(MemoryLayout<UnsafeRawPointer?>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertEqual(try service.outputDeviceSnapshots().map(\.id), ["BuiltInOutput"])
+    }
+
+    @MainActor
+    func testOutputSnapshotsSkipDeviceWhoseUIDCannotBeRead() throws {
+        let backend = configuredBackend(devices: [.builtInOutput, .usbOutput])
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.usbOutput.objectID,
+            address: .init(selector: kAudioDevicePropertyDeviceUID),
+            announcedByteCount: UInt32(MemoryLayout<UnsafeRawPointer?>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertEqual(try service.outputDeviceSnapshots().map(\.id), ["BuiltInOutput"])
+    }
+
+    @MainActor
+    func testOutputDeviceEnumerationDropsMissingAndUnreadableOutputStreamMetadata() throws {
+        let backend = configuredBackend(devices: [.builtInOutput, .usbOutput])
+        backend.setRawBytes(
+            [],
+            objectID: TestOutputDevice.builtInOutput.objectID,
+            address: .init(
+                selector: kAudioDevicePropertyStreams,
+                scope: kAudioObjectPropertyScopeOutput
+            ),
+            isSettable: false
+        )
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.usbOutput.objectID,
+            address: .init(
+                selector: kAudioDevicePropertyStreams,
+                scope: kAudioObjectPropertyScopeOutput
+            ),
+            announcedByteCount: UInt32(MemoryLayout<AudioStreamID>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertEqual(try service.outputDeviceSnapshots(), [])
+    }
+
+    @MainActor
+    func testOutputDeviceEnumerationDropsDeviceWithoutAnOutputStreamProperty() throws {
+        let backend = configuredBackend(devices: [.builtInOutput])
+        backend.removeProperty(
+            objectID: TestOutputDevice.builtInOutput.objectID,
+            address: .init(
+                selector: kAudioDevicePropertyStreams,
+                scope: kAudioObjectPropertyScopeOutput
+            )
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertEqual(try service.outputDeviceSnapshots(), [])
+    }
+
+    @MainActor
+    func testRouteDevicesSkipUnreadableDeviceWithoutDroppingReadableDevices() throws {
+        let backend = configuredBackend(devices: [.builtInOutput, .usbOutput])
+        configureRouteMetadata(for: .builtInOutput, backend: backend)
+        configureRouteMetadata(for: .usbOutput, backend: backend)
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.usbOutput.objectID,
+            address: .init(selector: kAudioObjectPropertyName),
+            announcedByteCount: UInt32(MemoryLayout<UnsafeRawPointer?>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertEqual(try service.routeDevices().map(\.uid), ["BuiltInOutput"])
     }
 
     @MainActor
@@ -150,6 +266,39 @@ final class AudioDeviceVolumeServiceTests: XCTestCase {
         XCTAssertFalse(
             backend.readSelectors.contains(kAudioHardwareServiceDeviceProperty_VirtualMainVolume)
         )
+    }
+
+    @MainActor
+    func testDeviceLookupSkipsUnreadableCandidatesAndReportsMissingValue() {
+        let backend = configuredBackend(devices: [.builtInOutput, .usbOutput])
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: TestOutputDevice.builtInOutput.objectID,
+            address: .init(selector: kAudioDevicePropertyDeviceUID),
+            announcedByteCount: UInt32(MemoryLayout<UnsafeRawPointer?>.size)
+        )
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertThrowsError(try service.outputDeviceSnapshot(forUID: "Missing")) { error in
+            guard let halError = error as? AudioHALError else {
+                return XCTFail("Expected typed HAL error")
+            }
+            XCTAssertEqual(halError.operation, .getData)
+            XCTAssertEqual(halError.reason, .missingValue)
+        }
+    }
+
+    @MainActor
+    func testInternalDeviceUIDIsRejectedBeforeHardwareEnumeration() {
+        let backend = FakeAudioHALBackend()
+        let service = AudioDeviceVolumeService(client: AudioHALClient(backend: backend))
+
+        XCTAssertThrowsError(
+            try service.outputDeviceSnapshot(forUID: "com.how.macactivity.audio.aggregate.fixture")
+        ) { error in
+            XCTAssertEqual((error as? AudioHALError)?.reason, .missingValue)
+        }
+        XCTAssertEqual(backend.dataSizeCallCount, 0)
     }
 }
 
@@ -201,6 +350,32 @@ private extension AudioDeviceVolumeServiceTests {
 
         return backend
     }
+
+    func configureRouteMetadata(
+        for device: TestOutputDevice,
+        backend: FakeAudioHALBackend
+    ) {
+        backend.setScalar(
+            UInt32(1),
+            objectID: device.objectID,
+            address: .init(selector: kAudioDevicePropertyDeviceIsAlive)
+        )
+        backend.setScalar(
+            AudioStreamBasicDescription(
+                mSampleRate: 48_000,
+                mFormatID: kAudioFormatLinearPCM,
+                mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+                mBytesPerPacket: 8,
+                mFramesPerPacket: 1,
+                mBytesPerFrame: 8,
+                mChannelsPerFrame: 2,
+                mBitsPerChannel: 32,
+                mReserved: 0
+            ),
+            objectID: AudioStreamID(device.objectID + 1_000),
+            address: .init(selector: kAudioStreamPropertyVirtualFormat)
+        )
+    }
 }
 
 private struct TestOutputDevice {
@@ -212,5 +387,11 @@ private struct TestOutputDevice {
         objectID: 10,
         uid: "BuiltInOutput",
         name: "MacBook Speakers"
+    )
+
+    static let usbOutput = TestOutputDevice(
+        objectID: 11,
+        uid: "USBOutput",
+        name: "USB Speakers"
     )
 }
