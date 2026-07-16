@@ -47,6 +47,12 @@ public struct AudioHALError: Error, Equatable, Sendable {
     public enum Reason: Equatable, Sendable {
         case status(OSStatus)
         case invalidDataSize(byteCount: UInt32, elementStride: Int)
+        case arraySizeLimitExceeded(
+            byteCount: UInt32,
+            elementStride: Int,
+            maximumByteCount: UInt32,
+            maximumElementCount: Int
+        )
         case retryLimitExceeded
         case missingValue
         case processTapsUnavailable
