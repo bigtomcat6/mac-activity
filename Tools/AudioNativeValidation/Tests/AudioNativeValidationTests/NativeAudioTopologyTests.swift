@@ -269,11 +269,11 @@ func withNativeEngineShutdown<Value: Sendable>(
     }
 }
 
-private func runNativeSessionBody(
+func runNativeSessionBody(
     environment: NativeValidationEnvironment,
     plan: AudioRoutePlan,
     hardware: NativeRecordingAudioTapHardware,
-    engine: ProcessTapVolumeEngine
+    engine: any ProcessTapVolumeControlling
 ) async throws {
     var sessionError: Error?
     do {
@@ -312,7 +312,7 @@ private func runNativeSessionBody(
     } catch {
         throw NativeValidationError.teardownUnproven(String(describing: error))
     }
-    guard hardware.snapshot().rawFailures.isEmpty else {
+    guard !hardware.hasUnresolvedRawFailures() else {
         throw NativeValidationError.cleanup
     }
     if let sessionError {

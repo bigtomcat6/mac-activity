@@ -478,6 +478,63 @@ final class NativeEvidenceTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testRunSessionRetainsResolvedTransientTeardownProbeFailureInEvidence() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let tap = fixtureTap()
+        let aggregate = AudioAggregateResource(objectID: 701, uid: "aggregate")
+        let status = OSStatus(-308)
+        let probes = NativeTeardownProbeSequence(
+            transientFailure: AudioHALError(
+                operation: .getData,
+                objectID: aggregate.objectID,
+                address: .init(selector: kAudioObjectPropertyClass),
+                reason: .status(status)
+            ),
+            aggregateID: aggregate.objectID
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeSessionProbeHardware(tap: tap, aggregate: aggregate),
+            identityProbe: probes.observe
+        )
+        let plan = sessionPlan(source: tap.source, aggregateUID: aggregate.uid)
+        var context: ProcessTapDSPContext? = try fixtureDSPContext()
+        let engine = NativeSessionEngine(context: try XCTUnwrap(context))
+
+        _ = try hardware.createTap(
+            processObjectID: plan.processObjectID,
+            source: tap.source,
+            uuid: tap.uuid
+        )
+        _ = try hardware.createAggregate(plan: plan, taps: [tap])
+        _ = try hardware.createIOProc(
+            aggregate: aggregate,
+            context: try XCTUnwrap(context)
+        )
+        context = nil
+
+        try await runNativeSessionBody(
+            environment: environment(outputURL: outputURL, observationSeconds: 0),
+            plan: plan,
+            hardware: hardware,
+            engine: engine
+        )
+
+        let snapshot = hardware.snapshot()
+        XCTAssertTrue(try XCTUnwrap(snapshot.teardown).isReleased)
+        XCTAssertEqual(probes.aggregateProbeCount, 2)
+        XCTAssertEqual(snapshot.rawFailures, [NativeRawFailure(
+            seam: "observeTeardown.aggregateIdentity",
+            status: status,
+            operation: .getData,
+            objectID: aggregate.objectID,
+            selector: kAudioObjectPropertyClass,
+            scope: kAudioObjectPropertyScopeGlobal,
+            element: kAudioObjectPropertyElementMain
+        )])
+    }
+
     private func subdevice(
         uid: String,
         drift: AudioRouteDriftCompensation,
@@ -507,13 +564,63 @@ final class NativeEvidenceTests: XCTestCase {
         return directory.appendingPathComponent("evidence.json")
     }
 
-    private func environment(outputURL: URL) -> NativeValidationEnvironment {
+    private func environment(
+        outputURL: URL,
+        observationSeconds: Double = 1
+    ) -> NativeValidationEnvironment {
         NativeValidationEnvironment(
             processObjectID: 42,
             targetUIDs: ["output"],
             outputURL: outputURL,
             microphoneTCCObservation: "No prompt appeared.",
-            observationSeconds: 1
+            observationSeconds: observationSeconds
+        )
+    }
+
+    private func sessionPlan(
+        source: AudioTapSource,
+        aggregateUID: String
+    ) -> AudioRoutePlan {
+        AudioRoutePlan(
+            processObjectID: 42,
+            processIdentifier: 42,
+            generation: 1,
+            tapSources: [source],
+            selectedTargetUIDs: ["output"],
+            subdevices: [],
+            mainDeviceUID: "output",
+            isStacked: false,
+            aggregateUID: aggregateUID,
+            topologyFingerprint: fingerprint
+        )
+    }
+
+    private func fixtureDSPContext() throws -> ProcessTapDSPContext {
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 1,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let address = ProcessTapChannelAddress(
+            bufferIndex: 0,
+            channelIndex: 0,
+            interleavedChannelCount: 1
+        )
+        return ProcessTapDSPContext(
+            configuration: try ProcessTapDSPConfiguration.validated(
+                sampleRate: format.sampleRate,
+                inputFormats: [format],
+                outputFormats: [format],
+                channelMaps: [ProcessTapChannelMap(
+                    input: address,
+                    output: address,
+                    mixCoefficient: 1
+                )]
+            ),
+            initialGain: 1
         )
     }
 
@@ -710,3 +817,154 @@ private final class NativeTeardownSequence: @unchecked Sendable {
         return observations.removeFirst()
     }
 }
+
+private final class NativeTeardownProbeSequence: @unchecked Sendable {
+    private let transientFailure: AudioHALError
+    private let aggregateID: AudioObjectID
+    private let lock = NSLock()
+    private var aggregateProbeCountStorage = 0
+
+    var aggregateProbeCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return aggregateProbeCountStorage
+    }
+
+    init(transientFailure: AudioHALError, aggregateID: AudioObjectID) {
+        self.transientFailure = transientFailure
+        self.aggregateID = aggregateID
+    }
+
+    func observe(
+        objectID: AudioObjectID,
+        _: AudioClassID,
+        _: String
+    ) throws -> NativeTeardownIdentityObservation {
+        guard objectID == aggregateID else { return .absent }
+        lock.lock()
+        defer { lock.unlock() }
+        aggregateProbeCountStorage += 1
+        if aggregateProbeCountStorage == 1 { throw transientFailure }
+        return .absent
+    }
+}
+
+private final class NativeSessionEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
+    private var context: ProcessTapDSPContext?
+
+    init(context: ProcessTapDSPContext) {
+        self.context = context
+        sessionSnapshots = AsyncStream { continuation in continuation.finish() }
+    }
+
+    func apply(
+        plan: AudioRoutePlan,
+        gain _: ProcessGainState
+    ) async -> ProcessTapSessionSnapshot {
+        ProcessTapSessionSnapshot(
+            processObjectID: plan.processObjectID,
+            generation: plan.generation,
+            state: .running,
+            error: nil
+        )
+    }
+
+    func updateGain(_: ProcessGainState, for _: AudioObjectID) async {}
+
+    func stop(
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) async -> ProcessTapSessionSnapshot {
+        context = nil
+        return ProcessTapSessionSnapshot(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: .idle,
+            error: nil
+        )
+    }
+
+    func stopAll() async {}
+
+    func prepareRuntime() async -> ProcessTapRuntimePreparation {
+        .ready(cleanupFailures: [])
+    }
+
+    func shutdown() async {}
+}
+
+private final class NativeSessionProbeHardware: AudioTapHardware, @unchecked Sendable {
+    private let tap: AudioTapResource
+    private let aggregate: AudioAggregateResource
+
+    init(tap: AudioTapResource, aggregate: AudioAggregateResource) {
+        self.tap = tap
+        self.aggregate = aggregate
+    }
+
+    func validateFreshRoutePlan(_: AudioRoutePlan) throws {}
+
+    func createTap(
+        processObjectID _: AudioObjectID,
+        source _: AudioTapSource,
+        uuid _: UUID
+    ) throws -> AudioTapResource {
+        tap
+    }
+
+    func readTapFormat(_: AudioTapResource) throws -> ProcessTapAudioFormat { fatalError("unreachable") }
+
+    func readMuteState(for _: AudioTapResource) throws -> AudioTapMuteState { fatalError("unreachable") }
+
+    func createAggregate(
+        plan _: AudioRoutePlan,
+        taps _: [AudioTapResource]
+    ) throws -> AudioAggregateResource {
+        aggregate
+    }
+
+    func waitForStableTopology(
+        _: AudioAggregateResource,
+        deadline _: DispatchTime,
+        isCancelled _: @escaping @Sendable () -> Bool
+    ) throws -> AudioAggregateTopologySnapshot {
+        fatalError("unreachable")
+    }
+
+    func createIOProc(
+        aggregate _: AudioAggregateResource,
+        context _: ProcessTapDSPContext
+    ) throws -> AudioIOProcResource {
+        AudioIOProcResource(
+            aggregateDeviceID: aggregate.objectID,
+            aggregateUID: aggregate.uid,
+            ioProcID: nativeSessionIOProc
+        )
+    }
+
+    func start(_: AudioIOProcResource) throws {}
+
+    func configureInputStreamUsage(
+        _: [UInt32],
+        for _: AudioIOProcResource
+    ) throws -> [UInt32] {
+        fatalError("unreachable")
+    }
+
+    func setMuteState(_: AudioTapMuteState, for _: AudioTapResource) throws {}
+
+    func restoreOriginalAudio(for _: AudioTapResource) -> OSStatus { noErr }
+
+    func stop(_: AudioIOProcResource) -> OSStatus { noErr }
+
+    func destroyIOProc(_: AudioIOProcResource) -> OSStatus { noErr }
+
+    func destroyAggregate(_: AudioAggregateResource) -> OSStatus { noErr }
+
+    func aggregateIdentityIsPresent(_: AudioAggregateResource) throws -> Bool { false }
+
+    func destroyTap(_: AudioTapResource) -> OSStatus { noErr }
+}
+
+private let nativeSessionIOProc: AudioDeviceIOProcID = { _, _, _, _, _, _, _ in noErr }

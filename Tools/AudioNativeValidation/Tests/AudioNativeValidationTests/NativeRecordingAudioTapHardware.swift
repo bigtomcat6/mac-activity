@@ -377,8 +377,16 @@ enum NativeTopologyEvidence {
 }
 
 final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendable {
+    private struct TeardownIdentity: Hashable {
+        let objectID: AudioObjectID
+        let classID: AudioClassID
+        let uid: String
+    }
+
     private let delegate: any AudioTapHardware
     private let hal = AudioHALClient.system
+    private let identityProbe: ((AudioObjectID, AudioClassID, String) throws
+        -> NativeTeardownIdentityObservation)?
     private let stateLock = NSLock()
     private weak var callbackContextStorage: ProcessTapDSPContext?
 
@@ -393,12 +401,19 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     private var callbackCountAfterObservationStorage: Int32?
     private var teardownStorage: NativeTeardownObservation?
     private var rawFailuresStorage: [NativeRawFailure] = []
+    private var pendingTeardownProbeFailureIndexes: [TeardownIdentity: [Int]] = [:]
+    private var resolvedTeardownProbeFailureIndexes: Set<Int> = []
 
     private var recordedPlanStorage: AudioRoutePlan?
     private var recordedTapStorage: AudioTapResource?
 
-    init(delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system)) {
+    init(
+        delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system),
+        identityProbe: ((AudioObjectID, AudioClassID, String) throws
+            -> NativeTeardownIdentityObservation)? = nil
+    ) {
         self.delegate = delegate
+        self.identityProbe = identityProbe
     }
 
     func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
@@ -749,9 +764,22 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         uid expectedUID: String,
         seam: String
     ) throws -> NativeTeardownIdentityObservation {
+        let identity = TeardownIdentity(
+            objectID: objectID,
+            classID: expectedClassID,
+            uid: expectedUID
+        )
         do {
+            if let identityProbe {
+                let observation = try identityProbe(objectID, expectedClassID, expectedUID)
+                if observation == .absent {
+                    resolveTeardownProbeFailures(for: identity)
+                }
+                return observation
+            }
             let classAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
             guard hal.hasProperty(objectID: objectID, address: classAddress) else {
+                resolveTeardownProbeFailures(for: identity)
                 return .absent
             }
             let currentClassID = try hal.readScalar(
@@ -759,7 +787,10 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 from: objectID,
                 address: classAddress
             )
-            guard currentClassID == expectedClassID else { return .absent }
+            guard currentClassID == expectedClassID else {
+                resolveTeardownProbeFailures(for: identity)
+                return .absent
+            }
 
             let uidSelector: AudioObjectPropertySelector
             if #available(macOS 14.2, *), expectedClassID == kAudioTapClassID {
@@ -771,10 +802,42 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 from: objectID,
                 address: AudioHALPropertyAddress(selector: uidSelector)
             )
-            return currentUID == expectedUID ? .present : .absent
+            guard currentUID == expectedUID else {
+                resolveTeardownProbeFailures(for: identity)
+                return .absent
+            }
+            return .present
         } catch let error as AudioHALError {
-            record(error, seam: seam)
+            let failureIndex = appendFailure(NativeRawFailure(
+                seam: seam,
+                status: rawStatus(error),
+                operation: error.operation,
+                objectID: error.objectID,
+                selector: error.address?.selector,
+                scope: error.address?.scope,
+                element: error.address?.element
+            ))
+            locked {
+                pendingTeardownProbeFailureIndexes[identity, default: []].append(failureIndex)
+            }
             return .indeterminate(error.status ?? kAudioHardwareUnspecifiedError)
+        }
+    }
+
+    func hasUnresolvedRawFailures() -> Bool {
+        locked {
+            rawFailuresStorage.indices.contains {
+                !resolvedTeardownProbeFailureIndexes.contains($0)
+            }
+        }
+    }
+
+    private func resolveTeardownProbeFailures(for identity: TeardownIdentity) {
+        locked {
+            guard let indexes = pendingTeardownProbeFailureIndexes.removeValue(forKey: identity) else {
+                return
+            }
+            resolvedTeardownProbeFailureIndexes.formUnion(indexes)
         }
     }
 
@@ -896,8 +959,12 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         }
     }
 
-    private func appendFailure(_ failure: NativeRawFailure) {
-        locked { rawFailuresStorage.append(failure) }
+    @discardableResult
+    private func appendFailure(_ failure: NativeRawFailure) -> Int {
+        locked {
+            rawFailuresStorage.append(failure)
+            return rawFailuresStorage.index(before: rawFailuresStorage.endIndex)
+        }
     }
 
     private func locked<T>(_ body: () throws -> T) rethrows -> T {
