@@ -40,6 +40,18 @@ public final class AudioDeviceVolumeService:
         }
     }
 
+    nonisolated static func routeDevices(
+        for deviceIDs: [AudioDeviceID],
+        client: AudioHALClient
+    ) throws -> [AudioRouteDevice] {
+        var seenDeviceIDs: Set<AudioDeviceID> = []
+        return try deviceIDs.compactMap { deviceID in
+            seenDeviceIDs.insert(deviceID).inserted ? deviceID : nil
+        }.map {
+            try routeDevice($0, client: client)
+        }
+    }
+
     public func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
         var snapshots: [AudioOutputDeviceSnapshot] = []
         for deviceID in try Self.outputDeviceIDs(client: client) {

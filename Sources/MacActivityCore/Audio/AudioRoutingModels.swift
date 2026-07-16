@@ -270,6 +270,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
     public let isStacked: Bool
     public let aggregateUID: String
     public let topologyFingerprint: AudioRouteTopologyFingerprint
+    public let referencedDeviceIDs: [AudioDeviceID]
 
     public init(
         processObjectID: AudioObjectID,
@@ -281,7 +282,8 @@ public struct AudioRoutePlan: Equatable, Sendable {
         mainDeviceUID: String,
         isStacked: Bool,
         aggregateUID: String,
-        topologyFingerprint: AudioRouteTopologyFingerprint
+        topologyFingerprint: AudioRouteTopologyFingerprint,
+        referencedDeviceIDs: [AudioDeviceID] = []
     ) {
         self.processObjectID = processObjectID
         self.processIdentifier = processIdentifier
@@ -293,6 +295,7 @@ public struct AudioRoutePlan: Equatable, Sendable {
         self.isStacked = isStacked
         self.aggregateUID = aggregateUID
         self.topologyFingerprint = topologyFingerprint
+        self.referencedDeviceIDs = referencedDeviceIDs
     }
 }
 

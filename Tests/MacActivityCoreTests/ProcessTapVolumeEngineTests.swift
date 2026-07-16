@@ -1972,6 +1972,79 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testUnrelatedOutputDescriptorReadFailureDoesNotMakeFreshRouteStale() throws {
+        let backend = FakeAudioHALBackend()
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let source = AudioRouteDevice(
+            objectID: 10,
+            uid: "source",
+            name: "Source",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_010,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let unrelated = AudioRouteDevice(
+            objectID: 20,
+            uid: "unrelated",
+            name: "Unrelated",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 2_020,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let request = AudioRouteRequest(
+            processObjectID: 77,
+            processIdentifier: 101,
+            generation: 1,
+            sourceDeviceUIDs: [source.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: [source]
+        )
+        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        configureFreshRouteBackend(
+            backend,
+            processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
+            device: source,
+            format: format
+        )
+        configureFreshRouteDeviceDescriptor(backend, device: unrelated, format: format)
+        backend.setArray(
+            [source.objectID, unrelated.objectID],
+            objectID: AudioObjectID(kAudioObjectSystemObject),
+            address: .init(selector: kAudioHardwarePropertyDevices)
+        )
+        backend.setReadError(
+            kAudioHardwareUnspecifiedError,
+            objectID: unrelated.objectID,
+            address: .init(selector: kAudioDevicePropertyClockDomain),
+            announcedByteCount: UInt32(MemoryLayout<UInt32>.size)
+        )
+
+        let hardware = CoreAudioTapHardware(hal: AudioHALClient(backend: backend))
+
+        XCTAssertNoThrow(try hardware.validateFreshRoutePlan(plan))
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testFreshDescriptorReadFailureReturnsRouteStaleBeforeMutableHardware() async throws {
         let backend = FakeAudioHALBackend()
         let format = ProcessTapAudioFormat(
@@ -2664,6 +2737,32 @@ private func configureFreshRouteBackend(
         objectID: AudioObjectID(kAudioObjectSystemObject),
         address: .init(selector: kAudioHardwarePropertyDevices)
     )
+    configureFreshRouteDeviceDescriptor(backend, device: device, format: format)
+    backend.setScalar(
+        processIdentifier,
+        objectID: processObjectID,
+        address: .init(selector: kAudioProcessPropertyPID)
+    )
+    backend.setScalar(
+        UInt32(1),
+        objectID: processObjectID,
+        address: .init(selector: kAudioProcessPropertyIsRunningOutput)
+    )
+    backend.setArray(
+        [device.objectID],
+        objectID: processObjectID,
+        address: .init(
+            selector: kAudioProcessPropertyDevices,
+            scope: kAudioObjectPropertyScopeOutput
+        )
+    )
+}
+
+private func configureFreshRouteDeviceDescriptor(
+    _ backend: FakeAudioHALBackend,
+    device: AudioRouteDevice,
+    format: ProcessTapAudioFormat
+) {
     backend.setString(
         device.uid,
         objectID: device.objectID,
@@ -2704,24 +2803,6 @@ private func configureFreshRouteBackend(
             address: .init(selector: kAudioStreamPropertyVirtualFormat)
         )
     }
-    backend.setScalar(
-        processIdentifier,
-        objectID: processObjectID,
-        address: .init(selector: kAudioProcessPropertyPID)
-    )
-    backend.setScalar(
-        UInt32(1),
-        objectID: processObjectID,
-        address: .init(selector: kAudioProcessPropertyIsRunningOutput)
-    )
-    backend.setArray(
-        [device.objectID],
-        objectID: processObjectID,
-        address: .init(
-            selector: kAudioProcessPropertyDevices,
-            scope: kAudioObjectPropertyScopeOutput
-        )
-    )
 }
 
 private func retryRetainedBundles(

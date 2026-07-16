@@ -169,7 +169,10 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
                 for: plan.processObjectID,
                 client: hal
               ),
-              let devices = try? AudioDeviceVolumeService.routeDevices(client: hal),
+              let devices = try? AudioDeviceVolumeService.routeDevices(
+                for: process.outputDeviceIDs + plan.referencedDeviceIDs,
+                client: hal
+              ),
               AudioRoutePlanner.matchesFreshRoute(
                 plan: plan,
                 process: process,

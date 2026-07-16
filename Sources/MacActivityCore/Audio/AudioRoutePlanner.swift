@@ -55,7 +55,8 @@ public struct AudioRoutePlanner: Sendable {
             isStacked: candidate.isStacked,
             aggregateUID: Self.aggregateUIDPrefix
                 + "\(sessionID.uuidString).\(request.processObjectID).\(request.generation)",
-            topologyFingerprint: candidate.topologyFingerprint
+            topologyFingerprint: candidate.topologyFingerprint,
+            referencedDeviceIDs: candidate.referencedDeviceIDs
         )
     }
 
@@ -118,6 +119,7 @@ private extension AudioRoutePlanner {
         let mainDeviceUID: String
         let isStacked: Bool
         let topologyFingerprint: AudioRouteTopologyFingerprint
+        let referencedDeviceIDs: [AudioDeviceID]
     }
 
     func candidate(for request: AudioRouteRequest) throws -> Candidate {
@@ -190,7 +192,10 @@ private extension AudioRoutePlanner {
             subdevices: subdevices,
             mainDeviceUID: mainDeviceUID,
             isStacked: isStacked,
-            topologyFingerprint: fingerprint
+            topologyFingerprint: fingerprint,
+            referencedDeviceIDs: participatingUIDs.compactMap {
+                devicesByUID[$0]?.objectID
+            }
         )
     }
 
