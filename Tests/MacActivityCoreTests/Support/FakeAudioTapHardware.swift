@@ -20,8 +20,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyIOProc
         case destroyAggregate
         case destroyTap(sourceIndex: Int)
-        case ownedObjects
-        case destroyOwnedObject(object: AudioOwnedObject)
     }
 
     enum FailurePoint: Hashable {
@@ -39,8 +37,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyIOProc
         case destroyAggregate
         case destroyTap(Int)
-        case ownedObjects
-        case destroyOwnedObject(AudioObjectID)
     }
 
     private final class WeakContext: @unchecked Sendable {
@@ -79,7 +75,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var createdTapResourcesStorage: [AudioTapResource] = []
     private var latestPlan: AudioRoutePlan?
     private var latestTaps: [AudioTapResource] = []
-    private var aggregatesAwaitingDisappearance: Set<AudioObjectID> = []
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
@@ -92,10 +87,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var streamUsageHALError: AudioHALError?
     var configuredStreamUsageOverride: [UInt32]?
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
-    var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
-    var ownedObjectValues: [AudioOwnedObject] = []
-    var ownedDiscoveryFailures: [AudioTeardownFailure] = []
 
     var calls: [Call] {
         locked { recordedCalls }
@@ -157,25 +149,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
 
     func clearCalls() {
         locked { recordedCalls.removeAll() }
-    }
-
-    func confirmAggregateDisappearance() {
-        locked {
-            for objectID in aggregatesAwaitingDisappearance {
-                liveAggregateIdentities.removeValue(forKey: objectID)
-            }
-            aggregatesAwaitingDisappearance.removeAll()
-        }
-    }
-
-    func confirmOwnedObjectDisappearance(_ object: AudioOwnedObject) {
-        locked {
-            ownedObjectValues.removeAll {
-                $0.id == object.id
-                    && $0.classID == object.classID
-                    && $0.uid == object.uid
-            }
-        }
     }
 
     func enqueueStatus(_ status: OSStatus, at point: FailurePoint) {
@@ -509,13 +482,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         guard aggregateIdentityMatches(aggregate) else { return noErr }
         let status = takeStatus(at: .destroyAggregate)
         if status == noErr {
-            locked {
-                if deferAggregateDisappearance {
-                    aggregatesAwaitingDisappearance.insert(aggregate.objectID)
-                } else {
-                    liveAggregateIdentities.removeValue(forKey: aggregate.objectID)
-                }
-            }
+            locked { liveAggregateIdentities.removeValue(forKey: aggregate.objectID) }
         }
         return status
     }
@@ -532,39 +499,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return status
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        record(.ownedObjects)
-        try throwIfNeeded(
-            at: .ownedObjects,
-            operation: .getData,
-            objectID: AudioObjectID(kAudioObjectSystemObject)
-        )
-        return locked {
-            AudioOwnedObjectDiscovery(
-                objects: ownedObjectValues + liveAggregateIdentities.map {
-                    AudioOwnedObject(
-                        id: $0.key,
-                        classID: kAudioAggregateDeviceClassID,
-                        uid: $0.value,
-                        name: nil
-                    )
-                } + liveTapIdentities.map {
-                    AudioOwnedObject(
-                        id: $0.key,
-                        classID: kAudioTapClassID,
-                        uid: $0.value.uuidString,
-                        name: nil
-                    )
-                },
-                failures: ownedDiscoveryFailures
-            )
-        }
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        record(.destroyOwnedObject(object: object))
-        return takeStatus(at: .destroyOwnedObject(object.id))
-    }
 }
 
 private extension FakeAudioTapHardware {

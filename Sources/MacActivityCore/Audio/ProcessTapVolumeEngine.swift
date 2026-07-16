@@ -132,7 +132,6 @@ public protocol ProcessTapVolumeControlling: AnyObject, Sendable {
 
     func stopAll() async
     func prepareRuntime() async -> ProcessTapRuntimePreparation
-    func cleanupOrphans() async -> [AudioTeardownFailure]
     func shutdown() async
 }
 
@@ -155,7 +154,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     // Queue confined.
     private var sessions: [AudioObjectID: ProcessTapSession] = [:]
     private var bundles: [UUID: AudioAcquisitionBundle] = [:]
-    private var successfullyDestroyedOwnedIdentities: Set<AudioOwnedObjectInstanceIdentity> = []
     private var retryBackoff = ProcessTapRetryBackoff()
     private var runtimeRejections: ProcessTapRuntimeRejectionCache
     private var nextRetryScheduleID: UInt64 = 0
@@ -168,7 +166,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var retryPassCount = 0
     private var maximumConcurrentRetryPasses = 0
     #endif
-    private var orphanCleanupPending = false
     private var ownershipLease: (any AudioProcessOwnershipLease)?
     private var cleanupRetention: ProcessTapVolumeEngine?
     private var isDraining = false
@@ -306,8 +303,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             else {
                 sessions.removeAll()
                 bundles.removeAll()
-                successfullyDestroyedOwnedIdentities.removeAll()
-                orphanCleanupPending = false
                 cancelPendingRetry()
                 cleanupRetention = nil
                 return
@@ -320,15 +315,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         await enqueue { [self] in prepareRuntimeOnQueue() }
     }
 
-    public func cleanupOrphans() async -> [AudioTeardownFailure] {
-        switch await prepareRuntime() {
-        case .ready(let cleanupFailures):
-            cleanupFailures
-        case .unavailable:
-            []
-        }
-    }
-
     public func shutdown() async {
         generations.cancelAll()
         await enqueue { [self] in
@@ -339,8 +325,6 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             else {
                 sessions.removeAll()
                 bundles.removeAll()
-                successfullyDestroyedOwnedIdentities.removeAll()
-                orphanCleanupPending = false
                 cancelPendingRetry()
                 cleanupRetention = nil
                 releaseOwnershipIfTerminal()
@@ -461,13 +445,8 @@ private extension ProcessTapVolumeEngine {
             return .unavailable(leaseError)
         }
         advanceRetainedBundles(using: hardware)
-        let cleanup = cleanupOwnedObjects(using: hardware)
-        orphanCleanupPending = cleanup.shouldRetry
-        if cleanup.didProgress {
-            recordRetryProgress()
-        }
         scheduleRetryIfNeeded()
-        return .ready(cleanupFailures: cleanup.failures + bundleFailures())
+        return .ready(cleanupFailures: bundleFailures())
     }
 
     func acquireOwnershipIfNeeded() -> ProcessTapEngineError? {
@@ -1081,60 +1060,6 @@ private extension ProcessTapVolumeEngine {
                         retainBundle(acquisitionID)
                         return bundles[acquisitionID]?.failures ?? []
                     }
-                    successfullyDestroyedOwnedIdentities.insert(
-                        AudioOwnedObjectInstanceIdentity(
-                            objectID: aggregate.objectID,
-                            classID: kAudioAggregateDeviceClassID,
-                            uid: aggregate.uid
-                        )
-                    )
-                }
-                bundles[acquisitionID]?.stage = .waitForAggregateDisappearance
-            case .waitForAggregateDisappearance:
-                if let aggregate = bundles[acquisitionID]?.resources.aggregate {
-                    let discovery: AudioOwnedObjectDiscovery
-                    do {
-                        discovery = try hardware.ownedObjects()
-                    } catch {
-                        let failure = teardownFailure(
-                            from: error,
-                            fallbackOperation: .getData,
-                            objectID: aggregate.objectID,
-                            processObjectID: bundles[acquisitionID]?.resources.processObjectID
-                        )
-                        setBundleFailure(failure, acquisitionID: acquisitionID)
-                        retainBundle(acquisitionID)
-                        return bundles[acquisitionID]?.failures ?? []
-                    }
-                    if let identityFailure = discovery.failures.first(where: {
-                        $0.objectID == aggregate.objectID
-                    }) {
-                        setBundleFailure(
-                            AudioTeardownFailure(
-                                processObjectID: bundles[acquisitionID]?.resources.processObjectID,
-                                operation: identityFailure.operation,
-                                objectID: identityFailure.objectID,
-                                status: identityFailure.status
-                            ),
-                            acquisitionID: acquisitionID
-                        )
-                        retainBundle(acquisitionID)
-                        return bundles[acquisitionID]?.failures ?? []
-                    }
-                    removeBundleFailures(
-                        acquisitionID,
-                        operations: [.getData],
-                        objectID: aggregate.objectID
-                    )
-                    let stillExists = discovery.objects.contains {
-                        $0.id == aggregate.objectID
-                            && $0.classID == kAudioAggregateDeviceClassID
-                            && $0.uid == aggregate.uid
-                    }
-                    guard stillExists == false else {
-                        retainBundle(acquisitionID)
-                        return bundles[acquisitionID]?.failures ?? []
-                    }
                     bundles[acquisitionID]?.resources.aggregate = nil
                 }
                 bundles[acquisitionID]?.stage = .destroyTaps
@@ -1149,13 +1074,6 @@ private extension ProcessTapVolumeEngine {
                         acquisitionID: acquisitionID
                     )
                     guard status == noErr else { continue }
-                    successfullyDestroyedOwnedIdentities.insert(
-                        AudioOwnedObjectInstanceIdentity(
-                            objectID: tap.objectID,
-                            classID: kAudioTapClassID,
-                            uid: tap.uuid.uuidString
-                        )
-                    )
                     bundles[acquisitionID]?.resources.taps.removeAll {
                         $0.objectID == tap.objectID && $0.uuid == tap.uuid
                     }
@@ -1301,7 +1219,7 @@ private extension ProcessTapVolumeEngine {
         let hasRetainedBundle = bundles.values.contains {
             $0.state == .retainedBundle
         }
-        guard hasRetainedBundle || orphanCleanupPending else {
+        guard hasRetainedBundle else {
             retryBackoff.recordProgress()
             cancelPendingRetry()
             refreshCleanupRetention()
@@ -1355,13 +1273,6 @@ private extension ProcessTapVolumeEngine {
            #available(macOS 14.2, *),
            let hardware {
             advanceRetainedBundles(using: hardware)
-            if orphanCleanupPending {
-                let cleanup = cleanupOwnedObjects(using: hardware)
-                orphanCleanupPending = cleanup.shouldRetry
-                if cleanup.didProgress {
-                    recordRetryProgress()
-                }
-            }
         }
         #if DEBUG
         concurrentRetryPasses -= 1
@@ -1382,85 +1293,6 @@ private extension ProcessTapVolumeEngine {
         )
     }
 
-    @available(macOS 14.2, *)
-    func cleanupOwnedObjects(
-        using hardware: any AudioTapHardware
-    ) -> AudioOwnedObjectCleanupResult {
-        let discovery: AudioOwnedObjectDiscovery
-        do {
-            discovery = try hardware.ownedObjects()
-        } catch {
-            return AudioOwnedObjectCleanupResult(
-                failures: [teardownFailure(
-                    from: error,
-                    fallbackOperation: .getData,
-                    objectID: AudioObjectID(kAudioObjectSystemObject),
-                    processObjectID: nil
-                )],
-                hasVerifiedOrphans: false,
-                didProgress: false
-            )
-        }
-
-        let ownedObjects = CoreAudioTapHardware.ownedOrphans(in: discovery.objects)
-        let enumeratedIdentities = Set(ownedObjects.map(Self.ownedInstanceIdentity))
-        successfullyDestroyedOwnedIdentities.formIntersection(enumeratedIdentities)
-
-        let activeObjectIDs = activeOwnedObjectIDs()
-        let verifiedOrphans = ownedObjects
-            .filter { activeObjectIDs.contains($0.id) == false }
-            .filter { bundleRepresents($0) == false }
-        let candidates = verifiedOrphans.filter {
-            successfullyDestroyedOwnedIdentities.contains(
-                Self.ownedInstanceIdentity($0)
-            ) == false
-        }
-            .sorted(by: Self.ownedObjectComesBefore)
-
-        var failures = discovery.failures
-        var didProgress = false
-        for object in candidates {
-            let operation = Self.destroyOperation(for: object)
-            let status = hardware.destroyOwnedObject(object)
-            if status == noErr {
-                successfullyDestroyedOwnedIdentities.insert(
-                    Self.ownedInstanceIdentity(object)
-                )
-                didProgress = true
-                continue
-            }
-
-            failures.append(AudioTeardownFailure(
-                processObjectID: nil,
-                operation: operation,
-                objectID: object.id,
-                status: status
-            ))
-        }
-        return AudioOwnedObjectCleanupResult(
-            failures: failures,
-            hasVerifiedOrphans: verifiedOrphans.isEmpty == false,
-            didProgress: didProgress
-        )
-    }
-
-    @available(macOS 14.2, *)
-    func bundleRepresents(_ object: AudioOwnedObject) -> Bool {
-        bundles.values.contains { bundle in
-            if let aggregate = bundle.resources.aggregate,
-               object.classID == kAudioAggregateDeviceClassID,
-               object.id == aggregate.objectID,
-               object.uid == aggregate.uid {
-                return true
-            }
-            return bundle.resources.taps.contains { tap in
-                object.classID == kAudioTapClassID
-                    && object.id == tap.objectID
-                    && object.uid == tap.uuid.uuidString
-            }
-        }
-    }
-
     func bundleFailures() -> [AudioTeardownFailure] {
         bundles.values
             .sorted { $0.acquisitionID.uuidString < $1.acquisitionID.uuidString }
@@ -1475,7 +1307,7 @@ private extension ProcessTapVolumeEngine {
     }
 
     func refreshCleanupRetention() {
-        if bundles.isEmpty == false || orphanCleanupPending {
+        if bundles.isEmpty == false {
             cleanupRetention = self
         } else {
             cleanupRetention = nil
@@ -1486,17 +1318,9 @@ private extension ProcessTapVolumeEngine {
         guard isDraining,
               sessions.isEmpty,
               bundles.isEmpty,
-              orphanCleanupPending == false,
               pendingRetryScheduleID == nil,
               isRetryPassRunning == false else { return }
         ownershipLease = nil
-    }
-
-    func activeOwnedObjectIDs() -> Set<AudioObjectID> {
-        Set(bundles.values.flatMap { bundle in
-            bundle.resources.taps.map(\.objectID)
-                + [bundle.resources.aggregate?.objectID].compactMap { $0 }
-        })
     }
 
     var nonReleasedBundleCount: Int {
@@ -1726,42 +1550,6 @@ private extension ProcessTapVolumeEngine {
             && layoutMatches
     }
 
-    @available(macOS 14.2, *)
-    static func ownedInstanceIdentity(
-        _ object: AudioOwnedObject
-    ) -> AudioOwnedObjectInstanceIdentity {
-        AudioOwnedObjectInstanceIdentity(
-            objectID: object.id,
-            classID: object.classID,
-            uid: object.uid
-        )
-    }
-
-    @available(macOS 14.2, *)
-    static func destroyOperation(
-        for object: AudioOwnedObject
-    ) -> AudioHALOperation {
-        object.classID == kAudioAggregateDeviceClassID
-            ? .destroyAggregate
-            : .destroyTap
-    }
-
-    @available(macOS 14.2, *)
-    static func ownedObjectComesBefore(
-        _ lhs: AudioOwnedObject,
-        _ rhs: AudioOwnedObject
-    ) -> Bool {
-        let lhsPriority = lhs.classID == kAudioAggregateDeviceClassID ? 0 : 1
-        let rhsPriority = rhs.classID == kAudioAggregateDeviceClassID ? 0 : 1
-        if lhsPriority != rhsPriority {
-            return lhsPriority < rhsPriority
-        }
-        if lhs.id != rhs.id {
-            return lhs.id < rhs.id
-        }
-        return lhs.uid < rhs.uid
-    }
-
     func enqueue<T: Sendable>(
         _ operation: @escaping @Sendable () -> T
     ) async -> T {
@@ -1802,7 +1590,6 @@ private struct AudioAcquisitionBundle {
         case stopIOProc
         case destroyIOProc
         case destroyAggregate
-        case waitForAggregateDisappearance
         case destroyTaps
         case released
     }
@@ -1824,28 +1611,12 @@ private struct AudioAcquisitionProgress: Equatable {
     let hasIOProc: Bool
 }
 
-private struct AudioOwnedObjectCleanupResult {
-    let failures: [AudioTeardownFailure]
-    let hasVerifiedOrphans: Bool
-    let didProgress: Bool
-
-    var shouldRetry: Bool {
-        failures.isEmpty == false || hasVerifiedOrphans
-    }
-}
-
 private struct ProcessTapPreparationAbort: Swift.Error {
     let error: ProcessTapEngineError
 
     init(_ error: ProcessTapEngineError) {
         self.error = error
     }
-}
-
-private struct AudioOwnedObjectInstanceIdentity: Hashable {
-    let objectID: AudioObjectID
-    let classID: AudioClassID
-    let uid: String
 }
 
 private final class ProcessTapCommandContext: @unchecked Sendable {

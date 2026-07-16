@@ -167,52 +167,6 @@ final class NativeEvidenceTests: XCTestCase {
     }
 
     @MainActor
-    func testOwnedObjectScanFailureWritesCurrentConservativeEvidenceBeforeRethrow() async throws {
-        let outputURL = try makeOutputURL()
-        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
-        let status = OSStatus(-32_002)
-        let hardware = NativeRecordingAudioTapHardware(teardownOwnedObjects: {
-            throw AudioHALError(
-                operation: .getData,
-                objectID: AudioObjectID(kAudioObjectSystemObject),
-                address: nil,
-                reason: .status(status)
-            )
-        })
-        let expectedTeardown = NativeTeardownObservation(
-            attempts: 7,
-            callbackContextReleased: true,
-            aggregateIdentityAbsent: false,
-            tapIdentitiesAbsent: false
-        )
-
-        do {
-            _ = try await persistNativeValidationEvidence(
-                environment: environment(outputURL: outputURL),
-                fingerprint: fingerprint,
-                recordingSnapshot: hardware.snapshot,
-                runSession: {
-                    do {
-                        _ = try hardware.observeTeardown(attempt: expectedTeardown.attempts)
-                    } catch {
-                        throw NativeValidationError.teardownUnproven(String(describing: error))
-                    }
-                }
-            )
-            XCTFail("Expected owned object scan failure")
-        } catch NativeValidationError.teardownUnproven {
-            let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
-            XCTAssertEqual(record.teardown, expectedTeardown)
-            XCTAssertEqual(record.rawFailures, [NativeRawFailure(
-                seam: "ownedObjects",
-                status: status
-            )])
-            XCTAssertTrue(record.sessionError?.contains("-32002") == true)
-        }
-    }
-
-    @MainActor
     func testRetainedCleanupFailureWritesCurrentEvidenceBeforeRethrow() async throws {
         let outputURL = try makeOutputURL()
         defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
@@ -651,13 +605,6 @@ private final class NativeMuteBehaviorProbeHardware: AudioTapHardware, @unchecke
         fatalError("unreachable")
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        fatalError("unreachable")
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        fatalError("unreachable")
-    }
 }
 
 private final class NativeTeardownSequence: @unchecked Sendable {

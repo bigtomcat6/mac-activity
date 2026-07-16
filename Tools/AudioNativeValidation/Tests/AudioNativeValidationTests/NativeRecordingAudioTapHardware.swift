@@ -144,7 +144,6 @@ enum NativeRecordingError: Error {
     case missingPlanOrTap
     case missingDSPContext
     case invalidComposition
-    case ownedObjectScanFailed
 }
 
 enum NativeTeardownWaitError: Error {
@@ -276,7 +275,6 @@ enum NativeTopologyEvidence {
 final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private let delegate: any AudioTapHardware
     private let hal = AudioHALClient.system
-    private let teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)?
     private let stateLock = NSLock()
     private weak var callbackContextStorage: ProcessTapDSPContext?
 
@@ -295,12 +293,8 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     private var recordedPlanStorage: AudioRoutePlan?
     private var recordedTapStorage: AudioTapResource?
 
-    init(
-        delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system),
-        teardownOwnedObjects: (@Sendable () throws -> AudioOwnedObjectDiscovery)? = nil
-    ) {
+    init(delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system)) {
         self.delegate = delegate
-        self.teardownOwnedObjects = teardownOwnedObjects
     }
 
     func createTap(
@@ -520,28 +514,6 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         record(delegate.destroyTap(tap), seam: "destroyTap")
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        do {
-            let discovery = try delegate.ownedObjects()
-            locked {
-                rawFailuresStorage.append(contentsOf: discovery.failures.map {
-                    NativeRawFailure(
-                    seam: "ownedObjects.\($0.operation.rawValue)",
-                    status: $0.status
-                    )
-                })
-            }
-            return discovery
-        } catch {
-            record(error, seam: "ownedObjects")
-            throw error
-        }
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        record(delegate.destroyOwnedObject(object), seam: "destroyOwnedObject")
-    }
-
     func sampleCallbackCountBeforeObservation() throws {
         guard let context = locked({ callbackContextStorage }) else {
             throw NativeRecordingError.missingDSPContext
@@ -618,23 +590,19 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         )
         locked { teardownStorage = conservativeObservation }
         guard recorded.0 else { return conservativeObservation }
-        let discovery = try ownedObjectsForTeardown()
-        guard discovery.failures.isEmpty else {
-            throw NativeRecordingError.ownedObjectScanFailed
-        }
-        let aggregateAbsent = recorded.1.map { aggregate in
-            discovery.objects.contains {
-                $0.id == aggregate.diagnosticOnlyObjectID
-                    && $0.classID == kAudioAggregateDeviceClassID
-                    && $0.uid == aggregate.uid
-            } == false
+        let aggregateAbsent = try recorded.1.map { aggregate in
+            try currentIdentityIsAbsent(
+                objectID: aggregate.diagnosticOnlyObjectID,
+                classID: kAudioAggregateDeviceClassID,
+                uid: aggregate.uid
+            )
         } ?? true
-        let tapsAbsent = recorded.2.allSatisfy { tap in
-            discovery.objects.contains {
-                $0.id == tap.diagnosticOnlyObjectID
-                    && $0.classID == kAudioTapClassID
-                    && $0.uid == tap.uuid
-            } == false
+        let tapsAbsent = try recorded.2.allSatisfy { tap in
+            try currentIdentityIsAbsent(
+                objectID: tap.diagnosticOnlyObjectID,
+                classID: kAudioTapClassID,
+                uid: tap.uuid
+            )
         }
         let observation = NativeTeardownObservation(
             attempts: attempt,
@@ -646,23 +614,33 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         return observation
     }
 
-    private func ownedObjectsForTeardown() throws -> AudioOwnedObjectDiscovery {
-        guard let teardownOwnedObjects else { return try ownedObjects() }
-        do {
-            let discovery = try teardownOwnedObjects()
-            locked {
-                rawFailuresStorage.append(contentsOf: discovery.failures.map {
-                    NativeRawFailure(
-                        seam: "ownedObjects.\($0.operation.rawValue)",
-                        status: $0.status
-                    )
-                })
-            }
-            return discovery
-        } catch {
-            record(error, seam: "ownedObjects")
-            throw error
+    private func currentIdentityIsAbsent(
+        objectID: AudioObjectID,
+        classID expectedClassID: AudioClassID,
+        uid expectedUID: String
+    ) throws -> Bool {
+        let classAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
+        guard hal.hasProperty(objectID: objectID, address: classAddress) else {
+            return true
         }
+        let currentClassID = try hal.readScalar(
+            AudioClassID.self,
+            from: objectID,
+            address: classAddress
+        )
+        guard currentClassID == expectedClassID else { return true }
+
+        let uidSelector: AudioObjectPropertySelector
+        if #available(macOS 14.2, *), expectedClassID == kAudioTapClassID {
+            uidSelector = kAudioTapPropertyUID
+        } else {
+            uidSelector = kAudioDevicePropertyDeviceUID
+        }
+        let currentUID = try hal.readRetainedString(
+            from: objectID,
+            address: AudioHALPropertyAddress(selector: uidSelector)
+        )
+        return currentUID != expectedUID
     }
 
     private func readFullSubdeviceUIDs(_ aggregateID: AudioObjectID) throws -> [String] {

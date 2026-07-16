@@ -367,7 +367,6 @@ private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unc
         await state.enterPreparation()
         return .ready(cleanupFailures: [])
     }
-    func cleanupOrphans() async -> [AudioTeardownFailure] { [] }
     func shutdown() async { await state.recordShutdown() }
 
     func blockPrepareRuntime() async { await state.blockPreparation() }

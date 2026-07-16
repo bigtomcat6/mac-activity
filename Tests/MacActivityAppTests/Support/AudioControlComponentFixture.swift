@@ -569,12 +569,10 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
         RecordingEngineApplyKey: (ProcessTapSessionState, ProcessTapEngineError?)
     ] = [:]
     var scriptedStopResults: [(ProcessTapSessionState, ProcessTapEngineError?)] = []
-    var scriptedCleanupResults: [[AudioTeardownFailure]] = []
     var scriptedPreparationResults: [ProcessTapRuntimePreparation] = []
     var lifecycle: LifecycleRecorder?
     private var nextCommandSequence: UInt64 = 0
     private let stopGate = ControlledCallGate()
-    private let cleanupGate = ControlledCallGate()
     private let prepareRuntimeGate = ControlledCallGate()
     private let shutdownGate = ControlledCallGate()
     private let applyGate = ControlledIndexedCallGate()
@@ -664,12 +662,6 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
             ? .ready(cleanupFailures: [])
             : scriptedPreparationResults.removeFirst()
     }
-    func cleanupOrphans() async -> [AudioTeardownFailure] {
-        cleanupCount += 1
-        lifecycle?.events.append("engine.cleanup")
-        await cleanupGate.enter()
-        return scriptedCleanupResults.isEmpty ? [] : scriptedCleanupResults.removeFirst()
-    }
     func shutdown() async {
         shutdownCount += 1
         lifecycle?.events.append("engine.shutdown")
@@ -681,9 +673,6 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func blockStops() async { await stopGate.block() }
     func resumeStops() async { await stopGate.resumeAll() }
     func waitUntilStopCount(_ count: Int) async { await stopGate.waitUntilEntered(count) }
-    func blockCleanup() async { await cleanupGate.block() }
-    func resumeCleanup() async { await cleanupGate.resumeAll() }
-    func waitUntilCleanupCount(_ count: Int) async { await cleanupGate.waitUntilEntered(count) }
     func blockPrepareRuntime() async { await prepareRuntimeGate.block() }
     func resumePrepareRuntime() async { await prepareRuntimeGate.resumeAll() }
     func waitUntilPrepareRuntimeCount(_ count: Int) async {

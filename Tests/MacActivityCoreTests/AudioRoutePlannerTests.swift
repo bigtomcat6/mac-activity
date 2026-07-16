@@ -400,11 +400,29 @@ final class AudioRoutePlannerTests: XCTestCase {
         XCTAssertEqual(first, second)
         XCTAssertEqual(first.processObjectID, 77)
         XCTAssertEqual(first.generation, 9)
-        XCTAssertEqual(
-            first.aggregateUID,
-            AudioRoutePlanner.aggregateUIDPrefix + "77.9"
-        )
+        XCTAssertTrue(first.aggregateUID.hasSuffix(".77.9"))
         XCTAssertFalse(first.isStacked)
+    }
+
+    func testPlannerSessionNamespaceIsStablePerPlannerAndUniqueAcrossSessions() throws {
+        let sessionA = UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!
+        let sessionB = UUID(uuidString: "4D414341-0000-4000-8000-000000000002")!
+        let request = fixtureRequest(processObjectID: 77, generation: 9)
+        let firstPlanner = planner(sessionID: sessionA)
+        let secondPlanner = planner(sessionID: sessionB)
+
+        XCTAssertEqual(
+            try firstPlanner.plan(request).aggregateUID,
+            try firstPlanner.plan(request).aggregateUID
+        )
+        XCTAssertNotEqual(
+            try firstPlanner.plan(request).aggregateUID,
+            try secondPlanner.plan(request).aggregateUID
+        )
+        XCTAssertEqual(
+            try firstPlanner.plan(request).aggregateUID,
+            AudioRoutePlanner.aggregateUIDPrefix + "\(sessionA.uuidString).77.9"
+        )
     }
 
     func testPlannerRejectsEveryMultipleSourceTapMatrix() {
@@ -1414,10 +1432,11 @@ private extension AudioRoutePlannerTests {
         )
     }
 
-    func planner() -> AudioRoutePlanner {
+    func planner(sessionID: UUID = UUID()) -> AudioRoutePlanner {
         AudioRoutePlanner(
             policy: .allowingAllForTesting,
-            osBuildProvider: { "25A123" }
+            osBuildProvider: { "25A123" },
+            sessionID: sessionID
         )
     }
 

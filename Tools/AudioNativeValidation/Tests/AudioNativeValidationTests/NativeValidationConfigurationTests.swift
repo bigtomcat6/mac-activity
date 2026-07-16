@@ -418,13 +418,6 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
         fatalError("unreachable")
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        AudioOwnedObjectDiscovery(objects: [], failures: [])
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        fatalError("unreachable")
-    }
 }
 
 private enum NativeRuntimeWiringProbeError: Error {

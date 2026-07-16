@@ -7,18 +7,22 @@ public struct AudioRoutePlanner: Sendable {
 
     private let policy: AudioRouteNativeValidationPolicy
     private let osBuildProvider: @Sendable () throws -> String
+    private let sessionID: UUID
 
     public init(policy: AudioRouteNativeValidationPolicy = .conservative) {
         self.policy = policy
         self.osBuildProvider = AudioRouteOSBuild.current
+        self.sessionID = UUID()
     }
 
     init(
         policy: AudioRouteNativeValidationPolicy,
-        osBuildProvider: @escaping @Sendable () throws -> String
+        osBuildProvider: @escaping @Sendable () throws -> String,
+        sessionID: UUID = UUID()
     ) {
         self.policy = policy
         self.osBuildProvider = osBuildProvider
+        self.sessionID = sessionID
     }
 
     public func topologyFingerprint(
@@ -49,7 +53,7 @@ public struct AudioRoutePlanner: Sendable {
             mainDeviceUID: candidate.mainDeviceUID,
             isStacked: candidate.isStacked,
             aggregateUID: Self.aggregateUIDPrefix
-                + "\(request.processObjectID).\(request.generation)",
+                + "\(sessionID.uuidString).\(request.processObjectID).\(request.generation)",
             topologyFingerprint: candidate.topologyFingerprint
         )
     }

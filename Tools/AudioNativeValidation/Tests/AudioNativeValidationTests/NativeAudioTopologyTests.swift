@@ -300,8 +300,10 @@ private func runNativeSessionBody(
             maxAttempts: 200,
             sleep: { try await Task.sleep(for: .milliseconds(10)) },
             advance: {
-                let failures = await engine.cleanupOrphans()
-                hardware.record(failures, seam: "retainedCleanup")
+                guard case .ready(let failures) = await engine.prepareRuntime() else {
+                    return []
+                }
+                hardware.record(failures, seam: "retainedBundle")
                 return failures
             },
             observe: hardware.observeTeardown
