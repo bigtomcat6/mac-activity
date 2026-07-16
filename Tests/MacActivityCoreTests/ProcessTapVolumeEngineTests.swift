@@ -1972,6 +1972,73 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
+    func testManualNonemptyPlanMissingSourceDeviceIDsFailsClosedBeforeMutableHardware() async throws {
+        let backend = FakeAudioHALBackend()
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 2,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let source = AudioRouteDevice(
+            objectID: 10,
+            uid: "source",
+            name: "Source",
+            isAlive: true,
+            isAggregate: false,
+            aggregateSubdeviceUIDs: [],
+            outputStreams: [AudioRouteStream(
+                streamObjectID: 1_010,
+                streamIndex: 0,
+                format: format
+            )]
+        )
+        let request = AudioRouteRequest(
+            processObjectID: 77,
+            processIdentifier: 101,
+            generation: 1,
+            sourceDeviceUIDs: [source.uid],
+            systemDefaultOutputDeviceUID: nil,
+            mode: .followOriginal,
+            devices: [source]
+        )
+        let planned = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        let manualPlan = AudioRoutePlan(
+            processObjectID: planned.processObjectID,
+            processIdentifier: planned.processIdentifier,
+            generation: planned.generation,
+            tapSources: planned.tapSources,
+            selectedTargetUIDs: planned.selectedTargetUIDs,
+            subdevices: planned.subdevices,
+            mainDeviceUID: planned.mainDeviceUID,
+            isStacked: planned.isStacked,
+            aggregateUID: planned.aggregateUID,
+            topologyFingerprint: planned.topologyFingerprint
+        )
+        configureFreshRouteBackend(
+            backend,
+            processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
+            device: source,
+            format: format
+        )
+
+        let fixture = EngineFixture()
+        let coreHardware = CoreAudioTapHardware(hal: AudioHALClient(backend: backend))
+        fixture.hardware.routePlanFreshnessValidator = {
+            try coreHardware.validateFreshRoutePlan($0)
+        }
+
+        let result = await fixture.engine.apply(plan: manualPlan, gain: ProcessGainState())
+
+        XCTAssertEqual(result.error, .routeStale)
+        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
+    }
+
+    @available(macOS 14.2, *)
     func testSourceObjectIDDriftWithOldIDReuseReturnsRouteStaleBeforeMutableHardware() async throws {
         let backend = FakeAudioHALBackend()
         let format = ProcessTapAudioFormat(
