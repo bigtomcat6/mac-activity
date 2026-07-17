@@ -137,9 +137,11 @@ final class AudioHALListenerRegistration: @unchecked Sendable {
 
 public final class AudioHALClient: @unchecked Sendable {
     public static let system = AudioHALClient()
+    static let maximumArrayByteCount: UInt32 = 1_048_576
+    static let maximumArrayElementCount = 16_384
 
     private let backend: any AudioHALBackend
-    private let processTapsAvailable: Bool
+    let processTapsAvailable: Bool
 
     init(
         backend: any AudioHALBackend = CoreAudioHALBackend(),
@@ -320,6 +322,21 @@ public final class AudioHALClient: @unchecked Sendable {
                     reason: .invalidDataSize(
                         byteCount: announcedByteCount,
                         elementStride: elementStride
+                    )
+                )
+            }
+            let elementCount = Int(announcedByteCount) / elementStride
+            guard announcedByteCount <= Self.maximumArrayByteCount,
+                  elementCount <= Self.maximumArrayElementCount else {
+                throw AudioHALError(
+                    operation: .getDataSize,
+                    objectID: objectID,
+                    address: address,
+                    reason: .arraySizeLimitExceeded(
+                        byteCount: announcedByteCount,
+                        elementStride: elementStride,
+                        maximumByteCount: Self.maximumArrayByteCount,
+                        maximumElementCount: Self.maximumArrayElementCount
                     )
                 )
             }

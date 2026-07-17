@@ -63,7 +63,12 @@ final class NativeEvidenceTests: XCTestCase {
         let tap = fixtureTap()
         let failure = NativeRawFailure(
             seam: "readMuteState",
-            status: status
+            status: status,
+            operation: .getData,
+            objectID: tap.objectID,
+            selector: kAudioTapPropertyDescription,
+            scope: kAudioObjectPropertyScopeGlobal,
+            element: kAudioObjectPropertyElementMain
         )
         let observedInitialState = NativeTapMuteBehaviorObservation(
             diagnosticOnlyObjectID: tap.objectID,
@@ -159,56 +164,15 @@ final class NativeEvidenceTests: XCTestCase {
             )
             XCTAssertEqual(record.rawFailures, [NativeRawFailure(
                 seam: "readMuteState",
-                status: status
+                status: status,
+                operation: .getData,
+                objectID: tap.objectID,
+                selector: kAudioTapPropertyDescription,
+                scope: kAudioObjectPropertyScopeGlobal,
+                element: kAudioObjectPropertyElementMain
             )])
             XCTAssertFalse(record.eligibleForPolicyPromotion)
             XCTAssertTrue(record.sessionError?.contains("-32004") == true)
-        }
-    }
-
-    @MainActor
-    func testOwnedObjectScanFailureWritesCurrentConservativeEvidenceBeforeRethrow() async throws {
-        let outputURL = try makeOutputURL()
-        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
-        let status = OSStatus(-32_002)
-        let hardware = NativeRecordingAudioTapHardware(teardownOwnedObjects: {
-            throw AudioHALError(
-                operation: .getData,
-                objectID: AudioObjectID(kAudioObjectSystemObject),
-                address: nil,
-                reason: .status(status)
-            )
-        })
-        let expectedTeardown = NativeTeardownObservation(
-            attempts: 7,
-            callbackContextReleased: true,
-            aggregateIdentityAbsent: false,
-            tapIdentitiesAbsent: false
-        )
-
-        do {
-            _ = try await persistNativeValidationEvidence(
-                environment: environment(outputURL: outputURL),
-                fingerprint: fingerprint,
-                recordingSnapshot: hardware.snapshot,
-                runSession: {
-                    do {
-                        _ = try hardware.observeTeardown(attempt: expectedTeardown.attempts)
-                    } catch {
-                        throw NativeValidationError.teardownUnproven(String(describing: error))
-                    }
-                }
-            )
-            XCTFail("Expected owned object scan failure")
-        } catch NativeValidationError.teardownUnproven {
-            let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
-            XCTAssertEqual(record.teardown, expectedTeardown)
-            XCTAssertEqual(record.rawFailures, [NativeRawFailure(
-                seam: "ownedObjects",
-                status: status
-            )])
-            XCTAssertTrue(record.sessionError?.contains("-32002") == true)
         }
     }
 
@@ -342,6 +306,7 @@ final class NativeEvidenceTests: XCTestCase {
         )
         let plan = AudioRoutePlan(
             processObjectID: 42,
+            processIdentifier: 101,
             generation: 1,
             tapSources: [source],
             selectedTargetUIDs: ["main", "secondary"],
@@ -417,6 +382,136 @@ final class NativeEvidenceTests: XCTestCase {
         XCTAssertTrue(evidence.subTap.driftMatchesExpected)
     }
 
+    func testAggregateCompositionReadsSubdeviceDriftWithoutPhysicalDeviceProperties() throws {
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceSubDeviceListKey: [
+                [
+                    kAudioSubDeviceUIDKey: "main",
+                    kAudioSubDeviceDriftCompensationKey: false,
+                ],
+                [
+                    kAudioSubDeviceUIDKey: "secondary",
+                    kAudioSubDeviceDriftCompensationKey: true,
+                    kAudioSubDeviceDriftCompensationQualityKey:
+                        kAudioAggregateDriftCompensationHighQuality,
+                ],
+            ],
+        ]
+
+        XCTAssertEqual(
+            try NativeAggregateComposition.subdeviceDrifts(from: composition),
+            [
+                NativeCompositionSubdeviceDrift(
+                    uid: "main",
+                    enabled: 0,
+                    quality: 0
+                ),
+                NativeCompositionSubdeviceDrift(
+                    uid: "secondary",
+                    enabled: 1,
+                    quality: kAudioAggregateDriftCompensationHighQuality
+                ),
+            ]
+        )
+    }
+
+    func testAggregateCompositionReadsSubTapDriftWithoutSubTapObjectProperties() throws {
+        let uuid = UUID().uuidString
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceTapListKey: [[
+                kAudioSubTapUIDKey: uuid,
+                kAudioSubTapDriftCompensationKey: true,
+                kAudioSubTapDriftCompensationQualityKey:
+                    kAudioAggregateDriftCompensationHighQuality,
+            ]],
+        ]
+
+        XCTAssertEqual(
+            try NativeAggregateComposition.subTapDrift(from: composition, uuid: uuid),
+            NativeCompositionSubTapDrift(
+                uuid: uuid,
+                enabled: 1,
+                quality: kAudioAggregateDriftCompensationHighQuality
+            )
+        )
+    }
+
+    func testAggregateCompositionRejectsMissingOrDuplicateSubTap() {
+        let uuid = UUID().uuidString
+        let duplicateTap: [String: Any] = [
+            kAudioSubTapUIDKey: uuid,
+            kAudioSubTapDriftCompensationKey: false,
+        ]
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceTapListKey: [duplicateTap, duplicateTap],
+        ]
+
+        XCTAssertThrowsError(
+            try NativeAggregateComposition.subTapDrift(from: composition, uuid: uuid)
+        )
+    }
+
+    func testAggregateCompositionRejectsFractionalDriftValue() {
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceSubDeviceListKey: [[
+                kAudioSubDeviceUIDKey: "main",
+                kAudioSubDeviceDriftCompensationKey: 1.5,
+                kAudioSubDeviceDriftCompensationQualityKey:
+                    kAudioAggregateDriftCompensationHighQuality,
+            ]],
+        ]
+
+        XCTAssertThrowsError(try NativeAggregateComposition.subdeviceDrifts(from: composition))
+    }
+
+    func testAggregateCompositionRejectsOutOfRangeDriftQuality() {
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceSubDeviceListKey: [[
+                kAudioSubDeviceUIDKey: "main",
+                kAudioSubDeviceDriftCompensationKey: true,
+                kAudioSubDeviceDriftCompensationQualityKey:
+                    NSNumber(value: UInt64(UInt32.max) + 1),
+            ]],
+        ]
+
+        XCTAssertThrowsError(try NativeAggregateComposition.subdeviceDrifts(from: composition))
+    }
+
+    func testDelegateTopologyWaitFailureRecordsDelegateSeam() throws {
+        let tap = fixtureTap()
+        let aggregate = AudioAggregateResource(objectID: 701, uid: "aggregate")
+        let failure = AudioHALError(
+            operation: .getData,
+            objectID: aggregate.objectID,
+            address: .init(selector: kAudioAggregateDevicePropertyComposition),
+            reason: .status(kAudioHardwareUnknownPropertyError)
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeSessionProbeHardware(
+                tap: tap,
+                aggregate: aggregate,
+                waitError: failure
+            )
+        )
+
+        XCTAssertThrowsError(
+            try hardware.waitForStableTopology(
+                aggregate,
+                deadline: .now() + .seconds(1),
+                isCancelled: { false }
+            )
+        )
+        XCTAssertEqual(hardware.snapshot().rawFailures, [NativeRawFailure(
+            seam: "waitForStableTopology.delegate",
+            status: kAudioHardwareUnknownPropertyError,
+            operation: .getData,
+            objectID: aggregate.objectID,
+            selector: kAudioAggregateDevicePropertyComposition,
+            scope: kAudioObjectPropertyScopeGlobal,
+            element: kAudioObjectPropertyElementMain
+        )])
+    }
+
     func testTeardownPollingWaitsForDeferredIdentityDisappearance() async throws {
         let sequence = NativeTeardownSequence([
             NativeTeardownObservation(
@@ -451,6 +546,127 @@ final class NativeEvidenceTests: XCTestCase {
         XCTAssertTrue(observation.isReleased)
     }
 
+    func testTeardownPollingRetriesIndeterminateIdentityUntilLaterPositiveAbsence() async throws {
+        let status = OSStatus(-308)
+        let sequence = NativeTeardownSequence([
+            NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+            NativeTeardownObservation(
+                attempts: 2,
+                callbackContextReleased: true,
+                aggregateIdentity: .absent,
+                tapIdentities: .absent
+            ),
+        ])
+
+        let observation = try await waitForNativeTeardownRelease(
+            maxAttempts: 2,
+            sleep: {},
+            advance: { [] },
+            observe: { attempt in sequence.next(attempt: attempt) }
+        )
+
+        XCTAssertEqual(sequence.readCount, 2)
+        XCTAssertEqual(observation.aggregateIdentity, .absent)
+        XCTAssertEqual(observation.tapIdentities, .absent)
+        XCTAssertTrue(observation.isReleased)
+    }
+
+    func testTeardownPollingTimesOutForPersistentIndeterminateIdentity() async throws {
+        let status = OSStatus(-308)
+        let sequence = NativeTeardownSequence([
+            NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+            NativeTeardownObservation(
+                attempts: 2,
+                callbackContextReleased: true,
+                aggregateIdentity: .indeterminate(status),
+                tapIdentities: .absent
+            ),
+        ])
+
+        do {
+            _ = try await waitForNativeTeardownRelease(
+                maxAttempts: 2,
+                sleep: {},
+                advance: { [] },
+                observe: { attempt in sequence.next(attempt: attempt) }
+            )
+            XCTFail("Expected indeterminate identity teardown to time out")
+        } catch let NativeTeardownWaitError.timeout(observation) {
+            XCTAssertEqual(sequence.readCount, 2)
+            XCTAssertEqual(observation.aggregateIdentity, .indeterminate(status))
+            XCTAssertFalse(observation.isReleased)
+        }
+    }
+
+    @MainActor
+    func testRunSessionRetainsResolvedTransientTeardownProbeFailureInEvidence() async throws {
+        let outputURL = try makeOutputURL()
+        defer { try? FileManager.default.removeItem(at: outputURL.deletingLastPathComponent()) }
+        let tap = fixtureTap()
+        let aggregate = AudioAggregateResource(objectID: 701, uid: "aggregate")
+        let status = OSStatus(-308)
+        let probes = NativeTeardownProbeSequence(
+            transientFailure: AudioHALError(
+                operation: .getData,
+                objectID: aggregate.objectID,
+                address: .init(selector: kAudioObjectPropertyClass),
+                reason: .status(status)
+            ),
+            aggregateID: aggregate.objectID
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeSessionProbeHardware(tap: tap, aggregate: aggregate),
+            identityProbe: probes.observe
+        )
+        let plan = sessionPlan(source: tap.source, aggregateUID: aggregate.uid)
+        var context: ProcessTapDSPContext? = try fixtureDSPContext()
+        let engine = NativeSessionEngine(context: try XCTUnwrap(context))
+
+        _ = try hardware.createTap(
+            processObjectID: plan.processObjectID,
+            source: tap.source,
+            uuid: tap.uuid
+        )
+        _ = try hardware.createAggregate(plan: plan, taps: [tap])
+        _ = try hardware.createIOProc(
+            aggregate: aggregate,
+            context: try XCTUnwrap(context)
+        )
+        context = nil
+
+        try await runNativeSessionBody(
+            environment: environment(outputURL: outputURL, observationSeconds: 0),
+            plan: plan,
+            hardware: hardware,
+            engine: engine
+        )
+
+        let snapshot = hardware.snapshot()
+        XCTAssertTrue(try XCTUnwrap(snapshot.teardown).isReleased)
+        XCTAssertEqual(probes.aggregateProbeCount, 2)
+        XCTAssertTrue(snapshot.unresolvedRawFailures.isEmpty)
+        XCTAssertTrue(snapshot.rawFailures.isEmpty)
+        XCTAssertEqual(snapshot.resolvedTeardownProbeFailures, [NativeRawFailure(
+            seam: "observeTeardown.aggregateIdentity",
+            status: status,
+            operation: .getData,
+            objectID: aggregate.objectID,
+            selector: kAudioObjectPropertyClass,
+            scope: kAudioObjectPropertyScopeGlobal,
+            element: kAudioObjectPropertyElementMain
+        )])
+    }
+
     private func subdevice(
         uid: String,
         drift: AudioRouteDriftCompensation,
@@ -480,13 +696,63 @@ final class NativeEvidenceTests: XCTestCase {
         return directory.appendingPathComponent("evidence.json")
     }
 
-    private func environment(outputURL: URL) -> NativeValidationEnvironment {
+    private func environment(
+        outputURL: URL,
+        observationSeconds: Double = 1
+    ) -> NativeValidationEnvironment {
         NativeValidationEnvironment(
             processObjectID: 42,
             targetUIDs: ["output"],
             outputURL: outputURL,
             microphoneTCCObservation: "No prompt appeared.",
-            observationSeconds: 1
+            observationSeconds: observationSeconds
+        )
+    }
+
+    private func sessionPlan(
+        source: AudioTapSource,
+        aggregateUID: String
+    ) -> AudioRoutePlan {
+        AudioRoutePlan(
+            processObjectID: 42,
+            processIdentifier: 42,
+            generation: 1,
+            tapSources: [source],
+            selectedTargetUIDs: ["output"],
+            subdevices: [],
+            mainDeviceUID: "output",
+            isStacked: false,
+            aggregateUID: aggregateUID,
+            topologyFingerprint: fingerprint
+        )
+    }
+
+    private func fixtureDSPContext() throws -> ProcessTapDSPContext {
+        let format = ProcessTapAudioFormat(
+            sampleRate: 48_000,
+            channelCount: 1,
+            formatID: kAudioFormatLinearPCM,
+            formatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked,
+            bitsPerChannel: 32,
+            interleaving: .interleaved
+        )
+        let address = ProcessTapChannelAddress(
+            bufferIndex: 0,
+            channelIndex: 0,
+            interleavedChannelCount: 1
+        )
+        return ProcessTapDSPContext(
+            configuration: try ProcessTapDSPConfiguration.validated(
+                sampleRate: format.sampleRate,
+                inputFormats: [format],
+                outputFormats: [format],
+                channelMaps: [ProcessTapChannelMap(
+                    input: address,
+                    output: address,
+                    mixCoefficient: 1
+                )]
+            ),
+            initialGain: 1
         )
     }
 
@@ -502,7 +768,9 @@ final class NativeEvidenceTests: XCTestCase {
     private func snapshot(
         teardown: NativeTeardownObservation?,
         tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation] = [],
-        rawFailures: [NativeRawFailure] = []
+        rawFailures: [NativeRawFailure] = [],
+        resolvedTeardownProbeFailures: [NativeRawFailure] = [],
+        unresolvedRawFailures: [NativeRawFailure]? = nil
     ) -> NativeRecordingSnapshot {
         NativeRecordingSnapshot(
             taps: [],
@@ -515,7 +783,9 @@ final class NativeEvidenceTests: XCTestCase {
             callbackCountBeforeObservation: nil,
             callbackCountAfterObservation: nil,
             teardown: teardown,
-            rawFailures: rawFailures
+            rawFailures: rawFailures,
+            resolvedTeardownProbeFailures: resolvedTeardownProbeFailures,
+            unresolvedRawFailures: unresolvedRawFailures ?? rawFailures
         )
     }
 
@@ -563,6 +833,10 @@ private final class NativeMuteBehaviorProbeHardware: AudioTapHardware, @unchecke
         self.tap = tap
         self.readFailureOnInvocation = readFailureOnInvocation
         self.readFailureStatus = readFailureStatus
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        // This evidence-only fake never creates or mutates an audio route.
     }
 
     func createTap(
@@ -647,17 +921,14 @@ private final class NativeMuteBehaviorProbeHardware: AudioTapHardware, @unchecke
         fatalError("unreachable")
     }
 
+    func aggregateIdentityIsPresent(_ aggregate: AudioAggregateResource) throws -> Bool {
+        false
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         fatalError("unreachable")
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        fatalError("unreachable")
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        fatalError("unreachable")
-    }
 }
 
 private final class NativeTeardownSequence: @unchecked Sendable {
@@ -682,3 +953,161 @@ private final class NativeTeardownSequence: @unchecked Sendable {
         return observations.removeFirst()
     }
 }
+
+private final class NativeTeardownProbeSequence: @unchecked Sendable {
+    private let transientFailure: AudioHALError
+    private let aggregateID: AudioObjectID
+    private let lock = NSLock()
+    private var aggregateProbeCountStorage = 0
+
+    var aggregateProbeCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return aggregateProbeCountStorage
+    }
+
+    init(transientFailure: AudioHALError, aggregateID: AudioObjectID) {
+        self.transientFailure = transientFailure
+        self.aggregateID = aggregateID
+    }
+
+    func observe(
+        objectID: AudioObjectID,
+        _: AudioClassID,
+        _: String
+    ) throws -> NativeTeardownIdentityObservation {
+        guard objectID == aggregateID else { return .absent }
+        lock.lock()
+        defer { lock.unlock() }
+        aggregateProbeCountStorage += 1
+        if aggregateProbeCountStorage == 1 { throw transientFailure }
+        return .absent
+    }
+}
+
+private final class NativeSessionEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
+    private var context: ProcessTapDSPContext?
+
+    init(context: ProcessTapDSPContext) {
+        self.context = context
+        sessionSnapshots = AsyncStream { continuation in continuation.finish() }
+    }
+
+    func apply(
+        plan: AudioRoutePlan,
+        gain _: ProcessGainState
+    ) async -> ProcessTapSessionSnapshot {
+        ProcessTapSessionSnapshot(
+            processObjectID: plan.processObjectID,
+            generation: plan.generation,
+            state: .running,
+            error: nil
+        )
+    }
+
+    func updateGain(_: ProcessGainState, for _: AudioObjectID) async {}
+
+    func stop(
+        processObjectID: AudioObjectID,
+        generation: UInt64
+    ) async -> ProcessTapSessionSnapshot {
+        context = nil
+        return ProcessTapSessionSnapshot(
+            processObjectID: processObjectID,
+            generation: generation,
+            state: .idle,
+            error: nil
+        )
+    }
+
+    func stopAll() async {}
+
+    func prepareRuntime() async -> ProcessTapRuntimePreparation {
+        .ready(cleanupFailures: [])
+    }
+
+    func shutdown() async {}
+}
+
+private final class NativeSessionProbeHardware: AudioTapHardware, @unchecked Sendable {
+    private let tap: AudioTapResource
+    private let aggregate: AudioAggregateResource
+    private let waitError: AudioHALError?
+
+    init(
+        tap: AudioTapResource,
+        aggregate: AudioAggregateResource,
+        waitError: AudioHALError? = nil
+    ) {
+        self.tap = tap
+        self.aggregate = aggregate
+        self.waitError = waitError
+    }
+
+    func validateFreshRoutePlan(_: AudioRoutePlan) throws {}
+
+    func createTap(
+        processObjectID _: AudioObjectID,
+        source _: AudioTapSource,
+        uuid _: UUID
+    ) throws -> AudioTapResource {
+        tap
+    }
+
+    func readTapFormat(_: AudioTapResource) throws -> ProcessTapAudioFormat { fatalError("unreachable") }
+
+    func readMuteState(for _: AudioTapResource) throws -> AudioTapMuteState { fatalError("unreachable") }
+
+    func createAggregate(
+        plan _: AudioRoutePlan,
+        taps _: [AudioTapResource]
+    ) throws -> AudioAggregateResource {
+        aggregate
+    }
+
+    func waitForStableTopology(
+        _: AudioAggregateResource,
+        deadline _: DispatchTime,
+        isCancelled _: @escaping @Sendable () -> Bool
+    ) throws -> AudioAggregateTopologySnapshot {
+        if let waitError { throw waitError }
+        fatalError("unreachable")
+    }
+
+    func createIOProc(
+        aggregate _: AudioAggregateResource,
+        context _: ProcessTapDSPContext
+    ) throws -> AudioIOProcResource {
+        AudioIOProcResource(
+            aggregateDeviceID: aggregate.objectID,
+            aggregateUID: aggregate.uid,
+            ioProcID: nativeSessionIOProc
+        )
+    }
+
+    func start(_: AudioIOProcResource) throws {}
+
+    func configureInputStreamUsage(
+        _: [UInt32],
+        for _: AudioIOProcResource
+    ) throws -> [UInt32] {
+        fatalError("unreachable")
+    }
+
+    func setMuteState(_: AudioTapMuteState, for _: AudioTapResource) throws {}
+
+    func restoreOriginalAudio(for _: AudioTapResource) -> OSStatus { noErr }
+
+    func stop(_: AudioIOProcResource) -> OSStatus { noErr }
+
+    func destroyIOProc(_: AudioIOProcResource) -> OSStatus { noErr }
+
+    func destroyAggregate(_: AudioAggregateResource) -> OSStatus { noErr }
+
+    func aggregateIdentityIsPresent(_: AudioAggregateResource) throws -> Bool { false }
+
+    func destroyTap(_: AudioTapResource) -> OSStatus { noErr }
+}
+
+private let nativeSessionIOProc: AudioDeviceIOProcID = { _, _, _, _, _, _, _ in noErr }

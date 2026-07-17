@@ -110,45 +110,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertTrue(backend.mutableOperations.isEmpty)
     }
 
-    @available(macOS 14.2, *)
-    func testOwnedDiscoveryContinuesAfterPerObjectFailureAndNameIsOptional() throws {
-        let backend = FakeAudioHALBackend()
-        let system = AudioObjectID(kAudioObjectSystemObject)
-        backend.setArray(
-            [AudioDeviceID(1), 2], objectID: system,
-            address: .init(selector: kAudioHardwarePropertyDevices)
-        )
-        backend.setArray(
-            [AudioObjectID](), objectID: system,
-            address: .init(selector: kAudioHardwarePropertyTapList)
-        )
-        backend.setReadError(
-            -777, objectID: 1,
-            address: .init(selector: kAudioObjectPropertyClass),
-            announcedByteCount: UInt32(MemoryLayout<AudioClassID>.size)
-        )
-        backend.setScalar(
-            kAudioAggregateDeviceClassID,
-            objectID: 2,
-            address: .init(selector: kAudioObjectPropertyClass)
-        )
-        backend.setString(
-            AudioRoutePlanner.aggregateUIDPrefix + "old",
-            objectID: 2,
-            address: .init(selector: kAudioDevicePropertyDeviceUID)
-        )
-
-        let discovery = try makeHardware(backend).ownedObjects()
-        XCTAssertEqual(discovery.objects.map(\.id), [2])
-        XCTAssertNil(discovery.objects[0].name)
-        XCTAssertEqual(discovery.failures.map(\.objectID), [1])
-        XCTAssertEqual(discovery.failures.map(\.status), [-777])
-    }
-
-    @available(macOS 14.2, *)
-    func testOwnedDiscoveryFailsWhenRootDeviceListCannotBeRead() {
-        XCTAssertThrowsError(try makeHardware(FakeAudioHALBackend()).ownedObjects())
-    }
 
     @available(macOS 14.2, *)
     func testStableTopologyTimeoutPreservesLastRawReadStatus() {
@@ -285,38 +246,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertTrue(description.uuid.uuidString.hasPrefix("4D414341-"))
     }
 
-    @available(macOS 14.2, *)
-    func testOrphanSelectionRequiresExactClassAndOwnedNamespace() {
-        let objects: [AudioOwnedObject] = [
-            .init(
-                id: 1,
-                classID: kAudioAggregateDeviceClassID,
-                uid: "com.how.macactivity.audio.aggregate.old",
-                name: "Anything"
-            ),
-            .init(
-                id: 2,
-                classID: kAudioDeviceClassID,
-                uid: "com.how.macactivity.audio.aggregate.foreign-class",
-                name: "MacActivity"
-            ),
-            .init(
-                id: 3,
-                classID: kAudioTapClassID,
-                uid: "4D414341-0000-4000-8000-000000000001",
-                name: "Anything"
-            ),
-            .init(
-                id: 4,
-                classID: kAudioTapClassID,
-                uid: "11111111-0000-4000-8000-000000000001",
-                name: "MacActivity"
-            ),
-        ]
-
-        let ownedOrphans: [AudioOwnedObject] = CoreAudioTapHardware.ownedOrphans(in: objects)
-        XCTAssertEqual(ownedOrphans.map(\.id), [1, 3])
-    }
 
     @available(macOS 14.2, *)
     func testAggregateDescriptionRejectsInvalidTapCardinalityAndEmptyTopology() {
@@ -355,41 +284,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertNil(taps[0][kAudioSubTapDriftCompensationQualityKey])
     }
 
-    @available(macOS 14.2, *)
-    func testFailedOwnedOrphanDeletionIsReported() {
-        let calls = OrphanDeletionCalls()
-        let failureStatus = OSStatus(-50)
-        let objects: [AudioOwnedObject] = [
-            .init(
-                id: 1,
-                classID: kAudioAggregateDeviceClassID,
-                uid: "com.how.macactivity.audio.aggregate.old",
-                name: "Owned aggregate"
-            ),
-            .init(
-                id: 3,
-                classID: kAudioTapClassID,
-                uid: "4D414341-0000-4000-8000-000000000003",
-                name: "Owned tap"
-            ),
-        ]
-
-        let failures = CoreAudioTapHardware.destroyOwnedOrphans(
-            in: objects,
-            destroyAggregate: { objectID in
-                calls.recordAggregate(objectID)
-                return failureStatus
-            },
-            destroyTap: { objectID in
-                calls.recordTap(objectID)
-                return noErr
-            }
-        )
-
-        XCTAssertEqual(calls.aggregateIDs, [1])
-        XCTAssertEqual(calls.tapIDs, [3])
-        XCTAssertEqual(failures.count, 1)
-    }
 
     @available(macOS 14.2, *)
     func testInstanceCreateTapUsesSourceDescriptionAndReturnsCreatedIdentity() throws {
@@ -472,6 +366,22 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             )
         )
         XCTAssertEqual(backend.readSelectors, [kAudioTapPropertyFormat])
+    }
+
+    @available(macOS 14.2, *)
+    func testTapFormatRejects257ChannelASBDBeforeMutableOperation() {
+        let backend = FakeAudioHALBackend()
+        let tap = fixtureTap(objectID: 702)
+        backend.setScalar(
+            fixtureASBD(channelCount: 257),
+            objectID: tap.objectID,
+            address: AudioHALPropertyAddress(selector: kAudioTapPropertyFormat)
+        )
+
+        XCTAssertThrowsError(try makeHardware(backend).readTapFormat(tap)) { error in
+            XCTAssertTrue(error is CoreAudioTapHardware.ValidationError)
+        }
+        XCTAssertTrue(backend.mutableOperations.isEmpty)
     }
 
     @available(macOS 14.2, *)
@@ -1005,18 +915,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             objectID: 721,
             uuid: UUID(uuidString: "4D414341-0000-4000-8000-000000000721")!
         )
-        let ownedAggregate = AudioOwnedObject(
-            id: 722,
-            classID: kAudioAggregateDeviceClassID,
-            uid: "Owned.Aggregate.722",
-            name: "Owned aggregate"
-        )
-        let ownedTap = AudioOwnedObject(
-            id: 723,
-            classID: kAudioTapClassID,
-            uid: "4D414341-0000-4000-8000-000000000723",
-            name: "Owned tap"
-        )
         for object in [
             AudioOwnedObject(
                 id: aggregate.objectID,
@@ -1030,8 +928,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
                 uid: tap.uuid.uuidString,
                 name: "Tap"
             ),
-            ownedAggregate,
-            ownedTap,
         ] {
             configureDestroyIdentity(
                 backend,
@@ -1045,13 +941,9 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
 
         XCTAssertEqual(hardware.destroyAggregate(aggregate), -820)
         XCTAssertEqual(hardware.destroyTap(tap), -821)
-        XCTAssertEqual(hardware.destroyOwnedObject(ownedAggregate), -820)
-        XCTAssertEqual(hardware.destroyOwnedObject(ownedTap), -821)
-        XCTAssertEqual(backend.destroyedAggregateDeviceIDs, [720, 722])
-        XCTAssertEqual(backend.destroyedProcessTapIDs, [721, 723])
+        XCTAssertEqual(backend.destroyedAggregateDeviceIDs, [720])
+        XCTAssertEqual(backend.destroyedProcessTapIDs, [721])
         XCTAssertEqual(backend.mutableOperations, [
-            .destroyAggregate,
-            .destroyTap,
             .destroyAggregate,
             .destroyTap,
         ])
@@ -1066,12 +958,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             objectID: 731,
             uuid: UUID(uuidString: "4D414341-0000-4000-8000-000000000731")!
         )
-        let classReusedObject = AudioOwnedObject(
-            id: 732,
-            classID: kAudioAggregateDeviceClassID,
-            uid: "Old.Aggregate.732",
-            name: "Old aggregate"
-        )
         configureDestroyIdentity(
             backend,
             id: aggregate.objectID,
@@ -1084,16 +970,8 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
             classID: kAudioTapClassID,
             uid: "4D414341-0000-4000-8000-000000009999"
         )
-        configureDestroyIdentity(
-            backend,
-            id: classReusedObject.id,
-            classID: kAudioDeviceClassID,
-            uid: "Replacement.Device"
-        )
-
         XCTAssertEqual(hardware.destroyAggregate(aggregate), noErr)
         XCTAssertEqual(hardware.destroyTap(tap), noErr)
-        XCTAssertEqual(hardware.destroyOwnedObject(classReusedObject), noErr)
         XCTAssertEqual(
             hardware.destroyAggregate(
                 AudioAggregateResource(objectID: 733, uid: "Missing.Aggregate")
@@ -1122,107 +1000,6 @@ final class AudioTapHardwareDescriptionTests: XCTestCase {
         XCTAssertTrue(backend.destroyedAggregateDeviceIDs.isEmpty)
     }
 
-    @available(macOS 14.2, *)
-    func testInstanceOwnedObjectsEnumeratesDevicesAndTapsWithClassSpecificUIDs() throws {
-        let backend = FakeAudioHALBackend()
-        let devicesAddress = AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
-        let tapsAddress = AudioHALPropertyAddress(selector: kAudioHardwarePropertyTapList)
-        let classAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyClass)
-        let deviceUIDAddress = AudioHALPropertyAddress(selector: kAudioDevicePropertyDeviceUID)
-        let tapUIDAddress = AudioHALPropertyAddress(selector: kAudioTapPropertyUID)
-        let nameAddress = AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
-        backend.setArray(
-            [AudioDeviceID(81), 82],
-            objectID: AudioObjectID(kAudioObjectSystemObject),
-            address: devicesAddress
-        )
-        backend.setArray(
-            [AudioObjectID(91), 92],
-            objectID: AudioObjectID(kAudioObjectSystemObject),
-            address: tapsAddress
-        )
-        configureOwnedObject(
-            backend,
-            id: 81,
-            classID: kAudioAggregateDeviceClassID,
-            uid: "com.how.macactivity.audio.aggregate.old",
-            name: "Owned aggregate",
-            uidAddress: deviceUIDAddress,
-            classAddress: classAddress,
-            nameAddress: nameAddress
-        )
-        configureOwnedObject(
-            backend,
-            id: 82,
-            classID: kAudioDeviceClassID,
-            uid: "External.Device",
-            name: "External device",
-            uidAddress: deviceUIDAddress,
-            classAddress: classAddress,
-            nameAddress: nameAddress
-        )
-        configureOwnedObject(
-            backend,
-            id: 91,
-            classID: kAudioTapClassID,
-            uid: "4D414341-0000-4000-8000-000000000091",
-            name: "Owned tap",
-            uidAddress: tapUIDAddress,
-            classAddress: classAddress,
-            nameAddress: nameAddress
-        )
-        configureOwnedObject(
-            backend,
-            id: 92,
-            classID: kAudioTapClassID,
-            uid: "11111111-0000-4000-8000-000000000092",
-            name: "Foreign tap",
-            uidAddress: tapUIDAddress,
-            classAddress: classAddress,
-            nameAddress: nameAddress
-        )
-
-        let objects = try makeHardware(backend).ownedObjects()
-
-        XCTAssertEqual(
-            objects.objects,
-            [
-                AudioOwnedObject(
-                    id: 81,
-                    classID: kAudioAggregateDeviceClassID,
-                    uid: "com.how.macactivity.audio.aggregate.old",
-                    name: "Owned aggregate"
-                ),
-                AudioOwnedObject(
-                    id: 82,
-                    classID: kAudioDeviceClassID,
-                    uid: "External.Device",
-                    name: "External device"
-                ),
-                AudioOwnedObject(
-                    id: 91,
-                    classID: kAudioTapClassID,
-                    uid: "4D414341-0000-4000-8000-000000000091",
-                    name: "Owned tap"
-                ),
-                AudioOwnedObject(
-                    id: 92,
-                    classID: kAudioTapClassID,
-                    uid: "11111111-0000-4000-8000-000000000092",
-                    name: "Foreign tap"
-                ),
-            ]
-        )
-        XCTAssertEqual(
-            backend.readSelectors.filter { $0 == kAudioDevicePropertyDeviceUID }.count,
-            2
-        )
-        XCTAssertEqual(
-            backend.readSelectors.filter { $0 == kAudioTapPropertyUID }.count,
-            2
-        )
-        XCTAssertTrue(backend.mutableOperations.isEmpty)
-    }
 }
 
 private func dictionaries(in description: NSDictionary, key: String) throws -> [NSDictionary] {
@@ -1248,6 +1025,7 @@ private func fixturePlan(
     precondition(outputStreams.count == targets.count)
     return AudioRoutePlan(
         processObjectID: 91,
+        processIdentifier: 101,
         generation: 4,
         tapSources: tapSources ?? [fixtureSource(deviceUID: "Source.Device", streamIndex: 0)],
         selectedTargetUIDs: targets,
@@ -1480,21 +1258,6 @@ private func invokeIOProc(
     }
 }
 
-private func configureOwnedObject(
-    _ backend: FakeAudioHALBackend,
-    id: AudioObjectID,
-    classID: AudioClassID,
-    uid: String,
-    name: String,
-    uidAddress: AudioHALPropertyAddress,
-    classAddress: AudioHALPropertyAddress,
-    nameAddress: AudioHALPropertyAddress
-) {
-    backend.setScalar(classID, objectID: id, address: classAddress)
-    backend.setString(uid, objectID: id, address: uidAddress)
-    backend.setString(name, objectID: id, address: nameAddress)
-}
-
 @available(macOS 14.2, *)
 private func configureDestroyIdentity(
     _ backend: FakeAudioHALBackend,
@@ -1515,30 +1278,4 @@ private func configureDestroyIdentity(
         objectID: id,
         address: AudioHALPropertyAddress(selector: uidSelector)
     )
-}
-
-private final class OrphanDeletionCalls: @unchecked Sendable {
-    private let lock = NSLock()
-    private var aggregates: [AudioObjectID] = []
-    private var taps: [AudioObjectID] = []
-
-    var aggregateIDs: [AudioObjectID] {
-        lock.withLock { aggregates }
-    }
-
-    var tapIDs: [AudioObjectID] {
-        lock.withLock { taps }
-    }
-
-    func recordAggregate(_ objectID: AudioObjectID) {
-        lock.withLock {
-            aggregates.append(objectID)
-        }
-    }
-
-    func recordTap(_ objectID: AudioObjectID) {
-        lock.withLock {
-            taps.append(objectID)
-        }
-    }
 }

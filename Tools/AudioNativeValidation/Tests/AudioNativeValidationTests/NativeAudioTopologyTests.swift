@@ -73,6 +73,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let teardown: NativeTeardownObservation?
     let microphoneTCCObservation: String
     let rawFailures: [NativeRawFailure]
+    let resolvedTeardownProbeFailures: [NativeRawFailure]
     let sessionError: String?
     let eligibleForPolicyPromotion: Bool
 }
@@ -172,6 +173,7 @@ func makeNativeRequest(_ environment: NativeValidationEnvironment) throws -> Aud
     }
     return AudioRouteRequest(
         processObjectID: environment.processObjectID,
+        processIdentifier: process.processIdentifier,
         generation: 1,
         sourceDeviceUIDs: sourceUIDs,
         systemDefaultOutputDeviceUID: nil,
@@ -268,11 +270,11 @@ func withNativeEngineShutdown<Value: Sendable>(
     }
 }
 
-private func runNativeSessionBody(
+func runNativeSessionBody(
     environment: NativeValidationEnvironment,
     plan: AudioRoutePlan,
     hardware: NativeRecordingAudioTapHardware,
-    engine: ProcessTapVolumeEngine
+    engine: any ProcessTapVolumeControlling
 ) async throws {
     var sessionError: Error?
     do {
@@ -300,8 +302,10 @@ private func runNativeSessionBody(
             maxAttempts: 200,
             sleep: { try await Task.sleep(for: .milliseconds(10)) },
             advance: {
-                let failures = await engine.cleanupOrphans()
-                hardware.record(failures, seam: "retainedCleanup")
+                guard case .ready(let failures) = await engine.prepareRuntime() else {
+                    return []
+                }
+                hardware.record(failures, seam: "retainedBundle")
                 return failures
             },
             observe: hardware.observeTeardown
@@ -309,7 +313,7 @@ private func runNativeSessionBody(
     } catch {
         throw NativeValidationError.teardownUnproven(String(describing: error))
     }
-    guard hardware.snapshot().rawFailures.isEmpty else {
+    guard !hardware.hasUnresolvedRawFailures() else {
         throw NativeValidationError.cleanup
     }
     if let sessionError {
@@ -342,6 +346,7 @@ private func makeRecord(
         teardown: snapshot.teardown,
         microphoneTCCObservation: environment.microphoneTCCObservation,
         rawFailures: snapshot.rawFailures,
+        resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
         sessionError: sessionError,
         eligibleForPolicyPromotion: false
     )

@@ -473,6 +473,13 @@ private extension AudioNativePreflightPropertyObservation {
             detail = "status \(status)"
         case .invalidDataSize(let byteCount, let elementStride):
             detail = "invalid data size \(byteCount) for stride \(elementStride)"
+        case .arraySizeLimitExceeded(
+            let byteCount,
+            let elementStride,
+            let maximumByteCount,
+            let maximumElementCount
+        ):
+            detail = "array size \(byteCount) for stride \(elementStride) exceeds limits \(maximumByteCount) bytes and \(maximumElementCount) elements"
         case .retryLimitExceeded:
             detail = "retry limit exceeded"
         case .missingValue:

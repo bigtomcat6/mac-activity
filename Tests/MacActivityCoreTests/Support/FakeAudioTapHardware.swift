@@ -6,6 +6,7 @@ import Foundation
 
 final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum Call: Equatable {
+        case validateFreshRoutePlan
         case createTap(sourceIndex: Int, initiallyMuted: Bool)
         case readTapFormat(sourceIndex: Int)
         case createAggregate(tapAutoStart: Bool)
@@ -20,8 +21,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case destroyIOProc
         case destroyAggregate
         case destroyTap(sourceIndex: Int)
-        case ownedObjects
-        case destroyOwnedObject(object: AudioOwnedObject)
     }
 
     enum FailurePoint: Hashable {
@@ -38,9 +37,8 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         case stopDevice
         case destroyIOProc
         case destroyAggregate
+        case aggregateIdentityIsPresent
         case destroyTap(Int)
-        case ownedObjects
-        case destroyOwnedObject(AudioObjectID)
     }
 
     private final class WeakContext: @unchecked Sendable {
@@ -64,6 +62,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var tapMuteStates: [UUID: AudioTapMuteState] = [:]
     private var queuedMuteStateReads: [Int: [AudioTapMuteState]] = [:]
     private var liveAggregateIdentities: [AudioObjectID: String] = [:]
+    private var aggregatesAwaitingDisappearance: Set<AudioObjectID> = []
     private var liveIOProcParents: [UInt: AudioAggregateResource] = [:]
     private var contexts: [AudioObjectID: WeakContext] = [:]
     private var contextOrder: [AudioObjectID] = []
@@ -79,7 +78,7 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private var createdTapResourcesStorage: [AudioTapResource] = []
     private var latestPlan: AudioRoutePlan?
     private var latestTaps: [AudioTapResource] = []
-    private var aggregatesAwaitingDisappearance: Set<AudioObjectID> = []
+    private var aggregateIdentityProbeCountStorage = 0
 
     var readinessInitiallyBlocked = false
     var firstCallbackInitiallyBlocked = false
@@ -94,11 +93,20 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     var aggregateTopologySnapshotOverride: AudioAggregateTopologySnapshot?
     var deferAggregateDisappearance = false
     var tapFormatOverrides: [Int: ProcessTapAudioFormat] = [:]
-    var ownedObjectValues: [AudioOwnedObject] = []
-    var ownedDiscoveryFailures: [AudioTeardownFailure] = []
+    var routePlanFreshness: RoutePlanFreshness = .fresh
+    var routePlanFreshnessValidator: (@Sendable (AudioRoutePlan) throws -> Void)?
+
+    enum RoutePlanFreshness {
+        case fresh
+        case stale
+    }
 
     var calls: [Call] {
         locked { recordedCalls }
+    }
+
+    var aggregateIdentityProbeCount: Int {
+        locked { aggregateIdentityProbeCountStorage }
     }
 
     var createdProcessObjectIDs: [AudioObjectID] {
@@ -168,16 +176,6 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    func confirmOwnedObjectDisappearance(_ object: AudioOwnedObject) {
-        locked {
-            ownedObjectValues.removeAll {
-                $0.id == object.id
-                    && $0.classID == object.classID
-                    && $0.uid == object.uid
-            }
-        }
-    }
-
     func enqueueStatus(_ status: OSStatus, at point: FailurePoint) {
         locked { queuedStatuses[point, default: []].append(status) }
     }
@@ -231,6 +229,14 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     func waitUntilCall(_ expected: Call) async {
         while calls.contains(expected) == false {
             await Task.yield()
+        }
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        record(.validateFreshRoutePlan)
+        try routePlanFreshnessValidator?(plan)
+        guard routePlanFreshness == .fresh else {
+            throw FakeRoutePlanFreshnessError.stale
         }
     }
 
@@ -520,6 +526,18 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return status
     }
 
+    func aggregateIdentityIsPresent(
+        _ aggregate: AudioAggregateResource
+    ) throws -> Bool {
+        locked { aggregateIdentityProbeCountStorage += 1 }
+        try throwIfNeeded(
+            at: .aggregateIdentityIsPresent,
+            operation: .getData,
+            objectID: aggregate.objectID
+        )
+        return aggregateIdentityMatches(aggregate)
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         let sourceIndex = sourceIndex(for: tap)
         record(.destroyTap(sourceIndex: sourceIndex))
@@ -532,39 +550,10 @@ final class FakeAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return status
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        record(.ownedObjects)
-        try throwIfNeeded(
-            at: .ownedObjects,
-            operation: .getData,
-            objectID: AudioObjectID(kAudioObjectSystemObject)
-        )
-        return locked {
-            AudioOwnedObjectDiscovery(
-                objects: ownedObjectValues + liveAggregateIdentities.map {
-                    AudioOwnedObject(
-                        id: $0.key,
-                        classID: kAudioAggregateDeviceClassID,
-                        uid: $0.value,
-                        name: nil
-                    )
-                } + liveTapIdentities.map {
-                    AudioOwnedObject(
-                        id: $0.key,
-                        classID: kAudioTapClassID,
-                        uid: $0.value.uuidString,
-                        name: nil
-                    )
-                },
-                failures: ownedDiscoveryFailures
-            )
-        }
-    }
+}
 
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        record(.destroyOwnedObject(object: object))
-        return takeStatus(at: .destroyOwnedObject(object.id))
-    }
+private enum FakeRoutePlanFreshnessError: Error {
+    case stale
 }
 
 private extension FakeAudioTapHardware {

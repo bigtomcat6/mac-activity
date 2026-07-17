@@ -125,6 +125,7 @@ final class AppSamplingControllerTests: XCTestCase {
         let preflight = AudioRoutePlanner()
         let fingerprint = try preflight.topologyFingerprint(for: AudioRouteRequest(
             processObjectID: 11,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: [audioServices.routeDevice.uid],
             systemDefaultOutputDeviceUID: nil,
@@ -367,7 +368,6 @@ private final class AppTerminationAudioEngine: ProcessTapVolumeControlling, @unc
         await state.enterPreparation()
         return .ready(cleanupFailures: [])
     }
-    func cleanupOrphans() async -> [AudioTeardownFailure] { [] }
     func shutdown() async { await state.recordShutdown() }
 
     func blockPrepareRuntime() async { await state.blockPreparation() }

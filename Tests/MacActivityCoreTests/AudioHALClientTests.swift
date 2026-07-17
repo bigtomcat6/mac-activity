@@ -397,6 +397,78 @@ final class AudioHALClientTests: XCTestCase {
         XCTAssertEqual(backend.dataSizeCallCount, 0)
     }
 
+    func testReadArrayRejectsAlignedByteLimitBeforeDataRead() {
+        let backend = FakeAudioHALBackend()
+        let address = AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
+        backend.enqueueRawSize(1_048_580)
+
+        XCTAssertThrowsError(try AudioHALClient(backend: backend).readArray(
+            UInt32.self,
+            from: 1,
+            address: address
+        )) { error in
+            XCTAssertEqual((error as? AudioHALError)?.operation, .getDataSize)
+            XCTAssertEqual(
+                (error as? AudioHALError)?.reason,
+                .arraySizeLimitExceeded(
+                    byteCount: 1_048_580,
+                    elementStride: 4,
+                    maximumByteCount: 1_048_576,
+                    maximumElementCount: 16_384
+                )
+            )
+        }
+        XCTAssertEqual(backend.dataSizeCallCount, 1)
+        XCTAssertEqual(backend.dataReadCount(for: kAudioHardwarePropertyDevices), 0)
+    }
+
+    func testReadArrayRejectsElementLimitBeforeDataRead() {
+        let backend = FakeAudioHALBackend()
+        let address = AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
+        backend.enqueueRawSize(16_385)
+
+        XCTAssertThrowsError(try AudioHALClient(backend: backend).readArray(
+            UInt8.self,
+            from: 1,
+            address: address
+        )) { error in
+            XCTAssertEqual((error as? AudioHALError)?.operation, .getDataSize)
+            XCTAssertEqual(
+                (error as? AudioHALError)?.reason,
+                .arraySizeLimitExceeded(
+                    byteCount: 16_385,
+                    elementStride: 1,
+                    maximumByteCount: 1_048_576,
+                    maximumElementCount: 16_384
+                )
+            )
+        }
+        XCTAssertEqual(backend.dataSizeCallCount, 1)
+        XCTAssertEqual(backend.dataReadCount(for: kAudioHardwarePropertyDevices), 0)
+    }
+
+    func testReadArrayAllowsExactElementLimit() throws {
+        let backend = FakeAudioHALBackend()
+        let address = AudioHALPropertyAddress(selector: kAudioHardwarePropertyDevices)
+        XCTAssertEqual(AudioHALClient.maximumArrayByteCount, 1_048_576)
+        XCTAssertEqual(AudioHALClient.maximumArrayElementCount, 16_384)
+        backend.enqueueArrayRead(
+            announced: Array(repeating: UInt32(0), count: 16_384),
+            returned: [42]
+        )
+
+        XCTAssertEqual(
+            try AudioHALClient(backend: backend).readArray(
+                UInt32.self,
+                from: 1,
+                address: address
+            ),
+            [42]
+        )
+        XCTAssertEqual(backend.dataSizeCallCount, 1)
+        XCTAssertEqual(backend.dataReadCount(for: kAudioHardwarePropertyDevices), 1)
+    }
+
     func testMalformedArraySizeIsTyped() {
         let backend = FakeAudioHALBackend()
         backend.enqueueRawSize(3)

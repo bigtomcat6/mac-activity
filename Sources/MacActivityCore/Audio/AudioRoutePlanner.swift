@@ -7,18 +7,22 @@ public struct AudioRoutePlanner: Sendable {
 
     private let policy: AudioRouteNativeValidationPolicy
     private let osBuildProvider: @Sendable () throws -> String
+    private let sessionID: UUID
 
     public init(policy: AudioRouteNativeValidationPolicy = .conservative) {
         self.policy = policy
         self.osBuildProvider = AudioRouteOSBuild.current
+        self.sessionID = UUID()
     }
 
     init(
         policy: AudioRouteNativeValidationPolicy,
-        osBuildProvider: @escaping @Sendable () throws -> String
+        osBuildProvider: @escaping @Sendable () throws -> String,
+        sessionID: UUID = UUID()
     ) {
         self.policy = policy
         self.osBuildProvider = osBuildProvider
+        self.sessionID = sessionID
     }
 
     public func topologyFingerprint(
@@ -42,6 +46,7 @@ public struct AudioRoutePlanner: Sendable {
 
         return AudioRoutePlan(
             processObjectID: request.processObjectID,
+            processIdentifier: request.processIdentifier,
             generation: request.generation,
             tapSources: candidate.tapSources,
             selectedTargetUIDs: candidate.selectedUIDs,
@@ -49,9 +54,70 @@ public struct AudioRoutePlanner: Sendable {
             mainDeviceUID: candidate.mainDeviceUID,
             isStacked: candidate.isStacked,
             aggregateUID: Self.aggregateUIDPrefix
-                + "\(request.processObjectID).\(request.generation)",
-            topologyFingerprint: candidate.topologyFingerprint
+                + "\(sessionID.uuidString).\(request.processObjectID).\(request.generation)",
+            topologyFingerprint: candidate.topologyFingerprint,
+            sourceDeviceIDs: candidate.sourceDeviceIDs,
+            referencedDeviceIDs: candidate.referencedDeviceIDs
         )
+    }
+
+    public static func matchesFreshRoute(
+        plan: AudioRoutePlan,
+        process: AudioProcessSnapshot,
+        devices: [AudioRouteDevice]
+    ) -> Bool {
+        guard plan.processObjectID == process.processObjectID,
+              plan.processIdentifier == process.processIdentifier,
+              process.isRunningOutput,
+              plan.sourceDeviceIDs
+                == Self.stableUniqueDeviceIDs(process.outputDeviceIDs)
+        else {
+            return false
+        }
+
+        var devicesByID: [AudioObjectID: AudioRouteDevice] = [:]
+        for device in devices {
+            guard devicesByID.updateValue(device, forKey: device.objectID) == nil else {
+                return false
+            }
+        }
+        let sourceUIDs = process.outputDeviceIDs.compactMap {
+            devicesByID[$0]?.uid
+        }
+        guard sourceUIDs.count == process.outputDeviceIDs.count else {
+            return false
+        }
+
+        let request = AudioRouteRequest(
+            processObjectID: process.processObjectID,
+            processIdentifier: process.processIdentifier,
+            generation: plan.generation,
+            sourceDeviceUIDs: sourceUIDs,
+            systemDefaultOutputDeviceUID: nil,
+            mode: .explicit(targetDeviceUIDs: plan.selectedTargetUIDs),
+            devices: devices
+        )
+        let planner = AudioRoutePlanner(
+            policy: .allowingAllForTesting,
+            osBuildProvider: { plan.topologyFingerprint.osBuild },
+            sessionID: UUID()
+        )
+        guard let candidate = try? planner.candidate(for: request) else {
+            return false
+        }
+        return plan.tapSources == candidate.tapSources
+            && plan.selectedTargetUIDs == candidate.selectedUIDs
+            && plan.subdevices == candidate.subdevices
+            && plan.mainDeviceUID == candidate.mainDeviceUID
+            && plan.isStacked == candidate.isStacked
+            && plan.topologyFingerprint == candidate.topologyFingerprint
+    }
+
+    private static func stableUniqueDeviceIDs(
+        _ deviceIDs: [AudioDeviceID]
+    ) -> [AudioDeviceID] {
+        var seenDeviceIDs: Set<AudioDeviceID> = []
+        return deviceIDs.filter { seenDeviceIDs.insert($0).inserted }
     }
 }
 
@@ -63,6 +129,8 @@ private extension AudioRoutePlanner {
         let mainDeviceUID: String
         let isStacked: Bool
         let topologyFingerprint: AudioRouteTopologyFingerprint
+        let sourceDeviceIDs: [AudioDeviceID]
+        let referencedDeviceIDs: [AudioDeviceID]
     }
 
     func candidate(for request: AudioRouteRequest) throws -> Candidate {
@@ -81,6 +149,20 @@ private extension AudioRoutePlanner {
         try validateStreamIdentities(
             participatingUIDs,
             devicesByUID: devicesByUID
+        )
+        let sourceDeviceIDs = Self.stableUniqueDeviceIDs(try sourceUIDs.map { uid in
+            guard let device = devicesByUID[uid] else {
+                throw AudioRoutePlanningError.missingDevice(uid)
+            }
+            return device.objectID
+        })
+        let participatingDeviceIDs = Self.stableUniqueDeviceIDs(
+            try participatingUIDs.map { uid in
+                guard let device = devicesByUID[uid] else {
+                    throw AudioRoutePlanningError.missingDevice(uid)
+                }
+                return device.objectID
+            }
         )
         try validateTargets(flattenedUIDs, devicesByUID: devicesByUID)
 
@@ -135,7 +217,9 @@ private extension AudioRoutePlanner {
             subdevices: subdevices,
             mainDeviceUID: mainDeviceUID,
             isStacked: isStacked,
-            topologyFingerprint: fingerprint
+            topologyFingerprint: fingerprint,
+            sourceDeviceIDs: sourceDeviceIDs,
+            referencedDeviceIDs: participatingDeviceIDs
         )
     }
 

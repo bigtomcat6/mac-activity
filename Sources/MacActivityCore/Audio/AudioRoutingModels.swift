@@ -1,4 +1,5 @@
 import CoreAudio
+import Darwin
 import Foundation
 
 public enum AudioRouteMode: Equatable, Sendable {
@@ -58,6 +59,8 @@ public enum AudioPCMInterleaving: String, Codable, Hashable, Sendable {
 }
 
 public struct ProcessTapAudioFormat: Codable, Hashable, Sendable {
+    public static let maximumChannelCount = 256
+
     public let sampleRate: Double
     public let channelCount: Int
     public let formatID: AudioFormatID
@@ -87,7 +90,7 @@ public struct ProcessTapAudioFormat: Codable, Hashable, Sendable {
             && bitsPerChannel == 32
             && sampleRate.isFinite
             && sampleRate > 0
-            && channelCount > 0
+            && (1...Self.maximumChannelCount).contains(channelCount)
     }
 }
 
@@ -187,6 +190,7 @@ public struct AudioRouteDevice: Equatable, Sendable {
 
 public struct AudioRouteRequest: Equatable, Sendable {
     public let processObjectID: AudioObjectID
+    public let processIdentifier: pid_t
     public let generation: UInt64
     public let sourceDeviceUIDs: [String]
     public let systemDefaultOutputDeviceUID: String?
@@ -195,6 +199,7 @@ public struct AudioRouteRequest: Equatable, Sendable {
 
     public init(
         processObjectID: AudioObjectID,
+        processIdentifier: pid_t,
         generation: UInt64,
         sourceDeviceUIDs: [String],
         systemDefaultOutputDeviceUID: String?,
@@ -202,6 +207,7 @@ public struct AudioRouteRequest: Equatable, Sendable {
         devices: [AudioRouteDevice]
     ) {
         self.processObjectID = processObjectID
+        self.processIdentifier = processIdentifier
         self.generation = generation
         self.sourceDeviceUIDs = sourceDeviceUIDs
         self.systemDefaultOutputDeviceUID = systemDefaultOutputDeviceUID
@@ -255,6 +261,7 @@ public struct AudioRouteSubdevice: Equatable, Sendable {
 
 public struct AudioRoutePlan: Equatable, Sendable {
     public let processObjectID: AudioObjectID
+    public let processIdentifier: pid_t
     public let generation: UInt64
     public let tapSources: [AudioTapSource]
     public let selectedTargetUIDs: [String]
@@ -263,9 +270,12 @@ public struct AudioRoutePlan: Equatable, Sendable {
     public let isStacked: Bool
     public let aggregateUID: String
     public let topologyFingerprint: AudioRouteTopologyFingerprint
+    public let sourceDeviceIDs: [AudioDeviceID]
+    public let referencedDeviceIDs: [AudioDeviceID]
 
     public init(
         processObjectID: AudioObjectID,
+        processIdentifier: pid_t,
         generation: UInt64,
         tapSources: [AudioTapSource],
         selectedTargetUIDs: [String],
@@ -273,9 +283,12 @@ public struct AudioRoutePlan: Equatable, Sendable {
         mainDeviceUID: String,
         isStacked: Bool,
         aggregateUID: String,
-        topologyFingerprint: AudioRouteTopologyFingerprint
+        topologyFingerprint: AudioRouteTopologyFingerprint,
+        sourceDeviceIDs: [AudioDeviceID] = [],
+        referencedDeviceIDs: [AudioDeviceID] = []
     ) {
         self.processObjectID = processObjectID
+        self.processIdentifier = processIdentifier
         self.generation = generation
         self.tapSources = tapSources
         self.selectedTargetUIDs = selectedTargetUIDs
@@ -284,6 +297,8 @@ public struct AudioRoutePlan: Equatable, Sendable {
         self.isStacked = isStacked
         self.aggregateUID = aggregateUID
         self.topologyFingerprint = topologyFingerprint
+        self.sourceDeviceIDs = sourceDeviceIDs
+        self.referencedDeviceIDs = referencedDeviceIDs
     }
 }
 

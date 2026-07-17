@@ -304,6 +304,7 @@ final class NativeValidationConfigurationTests: XCTestCase {
         )
         return AudioRouteRequest(
             processObjectID: 42,
+            processIdentifier: 101,
             generation: 1,
             sourceDeviceUIDs: [device.uid],
             systemDefaultOutputDeviceUID: nil,
@@ -339,6 +340,10 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
 
     var createTapCallCount: Int {
         lock.withLock { createTapCallCountStorage }
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        // This wiring probe never executes a real native audio route.
     }
 
     func createTap(
@@ -414,17 +419,14 @@ private final class NativeRuntimeWiringProbeHardware: AudioTapHardware, @uncheck
         fatalError("unreachable")
     }
 
+    func aggregateIdentityIsPresent(_ aggregate: AudioAggregateResource) throws -> Bool {
+        false
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         fatalError("unreachable")
     }
 
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        AudioOwnedObjectDiscovery(objects: [], failures: [])
-    }
-
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        fatalError("unreachable")
-    }
 }
 
 private enum NativeRuntimeWiringProbeError: Error {

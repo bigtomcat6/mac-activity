@@ -1038,6 +1038,7 @@ private extension AudioControlCoordinator {
         }
         return AudioRouteRequest(
             processObjectID: process.processObjectID,
+            processIdentifier: process.processIdentifier,
             generation: generation,
             sourceDeviceUIDs: sourceUIDs,
             systemDefaultOutputDeviceUID: nil,

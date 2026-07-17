@@ -40,9 +40,14 @@ enum AudioTapHardwareError: Error, Equatable, Sendable {
     case cancelled
 }
 
+enum AudioRouteFreshnessError: Error, Equatable, Sendable {
+    case stale
+}
+
 final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     enum ValidationError: Error, Equatable, Sendable {
         case tapResourcesMismatch
+        case unsupportedChannelCount
     }
 
     private let hal: AudioHALClient
@@ -123,50 +128,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         return description as CFDictionary
     }
 
-    @available(macOS 14.2, *)
-    static func ownedOrphans(in objects: [AudioOwnedObject]) -> [AudioOwnedObject] {
-        objects.filter { object in
-            switch object.classID {
-            case kAudioAggregateDeviceClassID:
-                object.uid.hasPrefix(AudioRoutePlanner.aggregateUIDPrefix)
-            case kAudioTapClassID:
-                object.uid.hasPrefix("4D414341-")
-            default:
-                false
-            }
-        }
-    }
-
-    @available(macOS 14.2, *)
-    static func destroyOwnedOrphans(
-        in objects: [AudioOwnedObject],
-        destroyAggregate: (AudioObjectID) -> OSStatus,
-        destroyTap: (AudioObjectID) -> OSStatus
-    ) -> [AudioTeardownFailure] {
-        ownedOrphans(in: objects).compactMap { object in
-            let operation: AudioHALOperation
-            let status: OSStatus
-            switch object.classID {
-            case kAudioAggregateDeviceClassID:
-                operation = .destroyAggregate
-                status = destroyAggregate(object.id)
-            case kAudioTapClassID:
-                operation = .destroyTap
-                status = destroyTap(object.id)
-            default:
-                return nil
-            }
-
-            guard status != noErr else { return nil }
-            return AudioTeardownFailure(
-                processObjectID: nil,
-                operation: operation,
-                objectID: object.id,
-                status: status
-            )
-        }
-    }
-
     func createTap(
         processObjectID: AudioObjectID,
         source: AudioTapSource,
@@ -192,6 +153,34 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             uuid: description.uuid,
             source: source
         )
+    }
+
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
+        guard hal.processTapsAvailable else {
+            throw AudioHALError(
+                operation: .createTap,
+                objectID: kAudioObjectUnknown,
+                address: nil,
+                reason: .processTapsUnavailable
+            )
+        }
+        guard #available(macOS 14.2, *),
+              let process = AudioProcessService.processSnapshot(
+                for: plan.processObjectID,
+                client: hal
+              ),
+              let devices = try? AudioDeviceVolumeService.routeDevices(
+                for: process.outputDeviceIDs + plan.referencedDeviceIDs,
+                client: hal
+              ),
+              AudioRoutePlanner.matchesFreshRoute(
+                plan: plan,
+                process: process,
+                devices: devices
+              )
+        else {
+            throw AudioRouteFreshnessError.stale
+        }
     }
 
     func readTapFormat(_ tap: AudioTapResource) throws -> ProcessTapAudioFormat {
@@ -464,6 +453,16 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
+    func aggregateIdentityIsPresent(
+        _ aggregate: AudioAggregateResource
+    ) throws -> Bool {
+        try currentIdentityMatches(
+            objectID: aggregate.objectID,
+            classID: kAudioAggregateDeviceClassID,
+            uid: aggregate.uid
+        )
+    }
+
     func destroyTap(_ tap: AudioTapResource) -> OSStatus {
         teardownStatus {
             guard try currentIdentityMatches(
@@ -477,72 +476,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
         }
     }
 
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus {
-        if object.classID == kAudioAggregateDeviceClassID {
-            return teardownStatus {
-                guard try currentIdentityMatches(
-                    objectID: object.id,
-                    classID: object.classID,
-                    uid: object.uid
-                ) else {
-                    return
-                }
-                try hal.destroyAggregateDevice(object.id)
-            }
-        }
-        guard #available(macOS 14.2, *), object.classID == kAudioTapClassID else {
-            return kAudioHardwareUnspecifiedError
-        }
-        return teardownStatus {
-            guard try currentIdentityMatches(
-                objectID: object.id,
-                classID: object.classID,
-                uid: object.uid
-            ) else {
-                return
-            }
-            try hal.destroyProcessTap(object.id)
-        }
-    }
-
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery {
-        let systemObject = AudioObjectID(kAudioObjectSystemObject)
-        let deviceIDs = try hal.readArray(
-            AudioDeviceID.self,
-            from: systemObject,
-            address: AudioHALPropertyAddress(
-                selector: kAudioHardwarePropertyDevices
-            )
-        )
-        var objectIDs = deviceIDs
-
-        if #available(macOS 14.2, *) {
-            let tapIDs = try hal.readArray(
-                AudioObjectID.self,
-                from: systemObject,
-                address: AudioHALPropertyAddress(
-                    selector: kAudioHardwarePropertyTapList
-                )
-            )
-            objectIDs.append(contentsOf: tapIDs)
-        }
-        var objects: [AudioOwnedObject] = []
-        var failures: [AudioTeardownFailure] = []
-        for objectID in objectIDs {
-            do {
-                objects.append(try readOwnedObject(objectID))
-            } catch {
-                failures.append(AudioTeardownFailure(
-                    processObjectID: nil,
-                    operation: .getData,
-                    objectID: objectID,
-                    status: rawStatus(from: error) ?? kAudioHardwareUnspecifiedError
-                ))
-            }
-        }
-        return AudioOwnedObjectDiscovery(objects: objects, failures: failures)
-    }
-
     private func readFormat(
         from objectID: AudioObjectID,
         address: AudioHALPropertyAddress
@@ -552,6 +485,9 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             from: objectID,
             address: address
         )
+        guard asbd.mChannelsPerFrame <= UInt32(ProcessTapAudioFormat.maximumChannelCount) else {
+            throw ValidationError.unsupportedChannelCount
+        }
         let isNonInterleaved = asbd.mFormatFlags
             & kAudioFormatFlagIsNonInterleaved != 0
         return ProcessTapAudioFormat(
@@ -561,38 +497,6 @@ final class CoreAudioTapHardware: AudioTapHardware, @unchecked Sendable {
             formatFlags: asbd.mFormatFlags,
             bitsPerChannel: asbd.mBitsPerChannel,
             interleaving: isNonInterleaved ? .nonInterleaved : .interleaved
-        )
-    }
-
-    private func readOwnedObject(
-        _ objectID: AudioObjectID
-    ) throws -> AudioOwnedObject {
-        let classID = try hal.readScalar(
-            AudioClassID.self,
-            from: objectID,
-            address: AudioHALPropertyAddress(
-                selector: kAudioObjectPropertyClass
-            )
-        )
-        let uidSelector: AudioObjectPropertySelector
-        if #available(macOS 14.2, *), classID == kAudioTapClassID {
-            uidSelector = kAudioTapPropertyUID
-        } else {
-            uidSelector = kAudioDevicePropertyDeviceUID
-        }
-        let uid = try hal.readRetainedString(
-            from: objectID,
-            address: AudioHALPropertyAddress(selector: uidSelector)
-        )
-        let name = try? hal.readRetainedString(
-            from: objectID,
-            address: AudioHALPropertyAddress(selector: kAudioObjectPropertyName)
-        )
-        return AudioOwnedObject(
-            id: objectID,
-            classID: classID,
-            uid: uid,
-            name: name
         )
     }
 
@@ -721,6 +625,7 @@ private let coreAudioTapIOProc: AudioDeviceIOProc = {
 }
 
 protocol AudioTapHardware: AnyObject, Sendable {
+    func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws
     func createTap(
         processObjectID: AudioObjectID,
         source: AudioTapSource,
@@ -754,7 +659,6 @@ protocol AudioTapHardware: AnyObject, Sendable {
     func stop(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyIOProc(_ ioProc: AudioIOProcResource) -> OSStatus
     func destroyAggregate(_ aggregate: AudioAggregateResource) -> OSStatus
+    func aggregateIdentityIsPresent(_ aggregate: AudioAggregateResource) throws -> Bool
     func destroyTap(_ tap: AudioTapResource) -> OSStatus
-    func ownedObjects() throws -> AudioOwnedObjectDiscovery
-    func destroyOwnedObject(_ object: AudioOwnedObject) -> OSStatus
 }
