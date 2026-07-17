@@ -322,7 +322,9 @@ final class NativeEvidenceTests: XCTestCase {
                 sourceDeviceUIDs: ["source"],
                 selectedTargetUIDs: ["main", "secondary"],
                 devices: []
-            )
+            ),
+            sourceDeviceIDs: [42],
+            referencedDeviceIDs: [42]
         )
         let tap = AudioTapResource(objectID: 200, uuid: UUID(), source: source)
         let snapshot = AudioAggregateTopologySnapshot(
@@ -723,7 +725,9 @@ final class NativeEvidenceTests: XCTestCase {
             mainDeviceUID: "output",
             isStacked: false,
             aggregateUID: aggregateUID,
-            topologyFingerprint: fingerprint
+            topologyFingerprint: fingerprint,
+            sourceDeviceIDs: [42],
+            referencedDeviceIDs: [42]
         )
     }
 

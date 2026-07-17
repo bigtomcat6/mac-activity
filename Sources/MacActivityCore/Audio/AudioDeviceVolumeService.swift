@@ -33,14 +33,6 @@ public final class AudioDeviceVolumeService:
     }
 
     nonisolated static func routeDevices(
-        client: AudioHALClient
-    ) throws -> [AudioRouteDevice] {
-        try freshRouteOutputDeviceIDs(client: client).map {
-            try routeDevice($0, client: client)
-        }
-    }
-
-    nonisolated static func routeDevices(
         for deviceIDs: [AudioDeviceID],
         client: AudioHALClient
     ) throws -> [AudioRouteDevice] {
@@ -226,28 +218,6 @@ private extension AudioDeviceVolumeService {
         return deviceIDs.filter { hasOutputStreams($0, client: client) }
     }
 
-    nonisolated static func freshRouteOutputDeviceIDs(
-        client: AudioHALClient
-    ) throws -> [AudioDeviceID] {
-        let deviceIDs = try client.readArray(
-            AudioDeviceID.self,
-            from: AudioObjectID(kAudioObjectSystemObject),
-            address: Self.devicesAddress
-        )
-        return try deviceIDs.reduce(into: []) { outputIDs, deviceID in
-            guard client.hasProperty(objectID: deviceID, address: Self.outputStreamsAddress) else {
-                return
-            }
-            let streams = try client.readArray(
-                AudioStreamID.self,
-                from: deviceID,
-                address: Self.outputStreamsAddress
-            )
-            guard streams.isEmpty == false else { return }
-            outputIDs.append(deviceID)
-        }
-    }
-
     nonisolated static func hasOutputStreams(
         _ deviceID: AudioDeviceID,
         client: AudioHALClient
@@ -322,19 +292,19 @@ private extension AudioDeviceVolumeService {
             aggregateSubdeviceUIDs: aggregateSubdeviceUIDs,
             inputStreams: try routeStreams(inputStreamIDs, client: client),
             outputStreams: try routeStreams(outputStreamIDs, client: client),
-            clockDomain: try optionalScalar(
+            clockDomain: optionalScalar(
                 UInt32.self,
                 objectID: deviceID,
                 address: Self.clockDomainAddress,
                 client: client
             ),
-            transportType: try optionalScalar(
+            transportType: optionalScalar(
                 UInt32.self,
                 objectID: deviceID,
                 address: Self.transportTypeAddress,
                 client: client
             ),
-            modelUID: try optionalString(
+            modelUID: optionalString(
                 objectID: deviceID,
                 address: Self.modelUIDAddress,
                 client: client
@@ -372,7 +342,7 @@ private extension AudioDeviceVolumeService {
         _ deviceID: AudioDeviceID,
         client: AudioHALClient
     ) throws -> [String]? {
-        guard let subdeviceIDs = try optionalArray(
+        guard let subdeviceIDs = optionalArray(
             AudioObjectID.self,
             objectID: deviceID,
             address: Self.activeAggregateSubdevicesAddress,
@@ -404,7 +374,7 @@ private extension AudioDeviceVolumeService {
             tapUUIDs = []
         }
 
-        let compositionDictionary = try optionalObject(
+        let compositionDictionary = optionalObject(
             CFDictionary.self,
             objectID: deviceID,
             address: Self.aggregateCompositionAddress,
@@ -421,7 +391,7 @@ private extension AudioDeviceVolumeService {
                 client: client
             ) ?? [],
             activeSubdeviceUIDs: activeSubdeviceUIDs,
-            mainSubdeviceUID: try optionalString(
+            mainSubdeviceUID: optionalString(
                 objectID: deviceID,
                 address: Self.aggregateMainSubdeviceAddress,
                 client: client
@@ -435,19 +405,19 @@ private extension AudioDeviceVolumeService {
         _ deviceID: AudioDeviceID,
         client: AudioHALClient
     ) throws -> AudioRouteDriverIdentity? {
-        guard let ownerID = try optionalScalar(
+        guard let ownerID = optionalScalar(
             AudioObjectID.self,
             objectID: deviceID,
             address: Self.ownerAddress,
             client: client
         ), ownerID != kAudioObjectUnknown,
-        try optionalScalar(
+        optionalScalar(
             AudioClassID.self,
             objectID: ownerID,
             address: Self.classAddress,
             client: client
         ) == kAudioPlugInClassID,
-        let bundleID = try optionalString(
+        let bundleID = optionalString(
             objectID: ownerID,
             address: Self.plugInBundleIDAddress,
             client: client
@@ -465,9 +435,9 @@ private extension AudioDeviceVolumeService {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         client: AudioHALClient
-    ) throws -> T? {
+    ) -> T? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
-        return try client.readScalar(type, from: objectID, address: address)
+        return try? client.readScalar(type, from: objectID, address: address)
     }
 
     nonisolated static func optionalArray<T>(
@@ -475,18 +445,18 @@ private extension AudioDeviceVolumeService {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         client: AudioHALClient
-    ) throws -> [T]? {
+    ) -> [T]? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
-        return try client.readArray(type, from: objectID, address: address)
+        return try? client.readArray(type, from: objectID, address: address)
     }
 
     nonisolated static func optionalString(
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         client: AudioHALClient
-    ) throws -> String? {
+    ) -> String? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
-        return try client.readRetainedString(from: objectID, address: address)
+        return try? client.readRetainedString(from: objectID, address: address)
     }
 
     nonisolated static func optionalObject<T: AnyObject>(
@@ -494,9 +464,9 @@ private extension AudioDeviceVolumeService {
         objectID: AudioObjectID,
         address: AudioHALPropertyAddress,
         client: AudioHALClient
-    ) throws -> T? {
+    ) -> T? {
         guard client.hasProperty(objectID: objectID, address: address) else { return nil }
-        return try client.readRetainedObject(type, from: objectID, address: address)
+        return try? client.readRetainedObject(type, from: objectID, address: address)
     }
 
     nonisolated static func optionalStringArray(
@@ -504,7 +474,7 @@ private extension AudioDeviceVolumeService {
         address: AudioHALPropertyAddress,
         client: AudioHALClient
     ) throws -> [String]? {
-        guard let array = try optionalObject(
+        guard let array = optionalObject(
             CFArray.self,
             objectID: objectID,
             address: address,
