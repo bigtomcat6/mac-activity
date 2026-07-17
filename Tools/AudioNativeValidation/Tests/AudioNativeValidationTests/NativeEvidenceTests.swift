@@ -415,6 +415,42 @@ final class NativeEvidenceTests: XCTestCase {
         )
     }
 
+    func testAggregateCompositionReadsSubTapDriftWithoutSubTapObjectProperties() throws {
+        let uuid = UUID().uuidString
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceTapListKey: [[
+                kAudioSubTapUIDKey: uuid,
+                kAudioSubTapDriftCompensationKey: true,
+                kAudioSubTapDriftCompensationQualityKey:
+                    kAudioAggregateDriftCompensationHighQuality,
+            ]],
+        ]
+
+        XCTAssertEqual(
+            try NativeAggregateComposition.subTapDrift(from: composition, uuid: uuid),
+            NativeCompositionSubTapDrift(
+                uuid: uuid,
+                enabled: 1,
+                quality: kAudioAggregateDriftCompensationHighQuality
+            )
+        )
+    }
+
+    func testAggregateCompositionRejectsMissingOrDuplicateSubTap() {
+        let uuid = UUID().uuidString
+        let duplicateTap: [String: Any] = [
+            kAudioSubTapUIDKey: uuid,
+            kAudioSubTapDriftCompensationKey: false,
+        ]
+        let composition: NSDictionary = [
+            kAudioAggregateDeviceTapListKey: [duplicateTap, duplicateTap],
+        ]
+
+        XCTAssertThrowsError(
+            try NativeAggregateComposition.subTapDrift(from: composition, uuid: uuid)
+        )
+    }
+
     func testAggregateCompositionRejectsFractionalDriftValue() {
         let composition: NSDictionary = [
             kAudioAggregateDeviceSubDeviceListKey: [[

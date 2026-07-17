@@ -134,6 +134,12 @@ struct NativeCompositionSubdeviceDrift: Equatable, Sendable {
     let quality: UInt32
 }
 
+struct NativeCompositionSubTapDrift: Equatable, Sendable {
+    let uuid: String
+    let enabled: UInt32
+    let quality: UInt32
+}
+
 enum NativeAggregateComposition {
     static func subdeviceDrifts(
         from composition: NSDictionary
@@ -171,6 +177,47 @@ enum NativeAggregateComposition {
                 quality: quality ?? 0
             )
         }
+    }
+
+    static func subTapDrift(
+        from composition: NSDictionary,
+        uuid: String
+    ) throws -> NativeCompositionSubTapDrift {
+        guard let values = composition[kAudioAggregateDeviceTapListKey] as? NSArray else {
+            throw NativeRecordingError.invalidComposition
+        }
+        let matchingTaps = values.compactMap { value -> NSDictionary? in
+            guard let tap = value as? NSDictionary,
+                  tap[kAudioSubTapUIDKey] as? String == uuid
+            else {
+                return nil
+            }
+            return tap
+        }
+        guard matchingTaps.count == 1,
+              let enabledValue = matchingTaps[0][kAudioSubTapDriftCompensationKey] as? NSNumber,
+              let enabled = exactUInt32(enabledValue),
+              enabled <= 1
+        else {
+            throw NativeRecordingError.invalidComposition
+        }
+        let qualityValue = matchingTaps[0][
+            kAudioSubTapDriftCompensationQualityKey
+        ] as? NSNumber
+        let quality = try qualityValue.map { value -> UInt32 in
+            guard let quality = exactUInt32(value) else {
+                throw NativeRecordingError.invalidComposition
+            }
+            return quality
+        }
+        guard enabled == 0 || quality != nil else {
+            throw NativeRecordingError.invalidComposition
+        }
+        return NativeCompositionSubTapDrift(
+            uuid: uuid,
+            enabled: enabled,
+            quality: quality ?? 0
+        )
     }
 
     private static func exactUInt32(_ value: NSNumber) -> UInt32? {
@@ -606,6 +653,11 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             guard snapshot.activeSubTapIDs.count == 1 else {
                 throw NativeRecordingError.invalidComposition
             }
+            let subTap = try readSubTapDrift(
+                activeSubTapID: snapshot.activeSubTapIDs[0],
+                tapUUID: recordedTap.uuid.uuidString,
+                composition: composition
+            )
             let topology = try NativeTopologyEvidence.make(
                 plan: recordedPlan,
                 tap: recordedTap,
@@ -615,10 +667,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 activeSubdevices: activeSubdevices,
                 actualMainSubdeviceUID: try readMainSubdeviceUID(aggregate.objectID),
                 actualIsStacked: try readIsStacked(composition),
-                subTap: try readSubTapDrift(
-                    objectID: snapshot.activeSubTapIDs[0],
-                    tapUUID: recordedTap.uuid.uuidString
-                )
+                subTap: subTap
             )
             locked { topologyStorage = topology }
             return snapshot
@@ -973,22 +1022,19 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     }
 
     private func readSubTapDrift(
-        objectID: AudioObjectID,
-        tapUUID: String
+        activeSubTapID: AudioObjectID,
+        tapUUID: String,
+        composition: NSDictionary
     ) throws -> NativeObservedDrift {
-        NativeObservedDrift(
+        let drift = try NativeAggregateComposition.subTapDrift(
+            from: composition,
+            uuid: tapUUID
+        )
+        return NativeObservedDrift(
             uid: tapUUID,
-            diagnosticOnlyObjectID: objectID,
-            enabled: try hal.readScalar(
-                UInt32.self,
-                from: objectID,
-                address: .init(selector: kAudioSubTapPropertyDriftCompensation)
-            ),
-            quality: try hal.readScalar(
-                UInt32.self,
-                from: objectID,
-                address: .init(selector: kAudioSubTapPropertyDriftCompensationQuality)
-            )
+            diagnosticOnlyObjectID: activeSubTapID,
+            enabled: drift.enabled,
+            quality: drift.quality
         )
     }
 
