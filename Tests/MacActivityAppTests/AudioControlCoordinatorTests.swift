@@ -694,6 +694,53 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].error, .deviceWrite)
     }
 
+    func testProcessSliderZeroMutesWithoutDiscardingRestoreVolume() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.coordinator.setProcessVolume(0, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.volume, 0.4)
+        XCTAssertTrue(row.isMuted)
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.last?.gain, .init(volume: 0.4, isMuted: true))
+        let profile = fixture.store.savedPreferences.audioProcessProfiles["com.example.music"]
+        XCTAssertEqual(profile?.volume, 0.4)
+        XCTAssertEqual(profile?.isMuted, true)
+    }
+
+    func testProcessPositiveSliderValueSetsVolumeAndUnmutesTogether() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setProcessMuted(true, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        fixture.coordinator.setProcessVolume(0.3, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.volume, 0.3)
+        XCTAssertFalse(row.isMuted)
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.last?.gain, .init(volume: 0.3, isMuted: false))
+    }
+
+    func testProcessCannotUnmuteAnInitiallyZeroProfile() async {
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            savedProfiles: ["com.example.music": .init(
+                bundleIdentifier: "com.example.music", volume: 0, isMuted: false
+            )]
+        )
+        await fixture.coordinator.start()
+        await fixture.coordinator.testingWaitUntilIdle()
+        let count = fixture.engine.gains.count
+        fixture.coordinator.setProcessMuted(false, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0)
+        XCTAssertEqual(fixture.engine.gains.count, count)
+    }
+
     func testBundlelessProcessIntentIsSessionOnly() async {
         let fixture = CoordinatorFixture(
             availability: .supported,

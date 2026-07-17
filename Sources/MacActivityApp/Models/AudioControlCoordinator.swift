@@ -335,11 +335,23 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func setProcessVolume(_ volume: Double, for processObjectID: AudioObjectID) {
-        updateProcessIntent(processObjectID) { $0.volume = min(1, max(0, volume)) }
+        updateProcessIntent(processObjectID) { values in
+            let next = AudioEffectiveVolumeState(
+                rawVolume: values.volume, isMuted: values.isMuted
+            ).settingDisplayVolume(volume)
+            values.volume = next.rawVolume
+            values.isMuted = next.isMuted
+        }
     }
 
     func setProcessMuted(_ isMuted: Bool, for processObjectID: AudioObjectID) {
-        updateProcessIntent(processObjectID) { $0.isMuted = isMuted }
+        updateProcessIntent(processObjectID) { values in
+            guard let next = AudioEffectiveVolumeState(
+                rawVolume: values.volume, isMuted: values.isMuted
+            ).settingMuted(isMuted) else { return }
+            values.volume = next.rawVolume
+            values.isMuted = next.isMuted
+        }
     }
 
     func setProcessRoute(_ route: AudioRouteMode, for processObjectID: AudioObjectID) {
@@ -617,8 +629,10 @@ private extension AudioControlCoordinator {
             isMuted: row.isMuted,
             route: row.route
         )
+        let originalValues = values
         let previousRoute = values.route
         mutate(&values)
+        guard values != originalValues else { return }
         let routeOptions = values.route == previousRoute
             ? row.routeOptions
             : makeRouteOptions(for: values.route, process: row.process)
