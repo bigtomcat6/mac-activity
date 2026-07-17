@@ -46,6 +46,7 @@ enum AppLocalization {
         case audioVolumeAccessibility = "audio.accessibility.volume"
         case audioMuteAccessibility = "audio.accessibility.mute"
         case audioUnmuteAccessibility = "audio.accessibility.unmute"
+        case audioMuteRestoreUnavailable = "audio.accessibility.muteRestoreUnavailable"
         case audioMuted = "audio.state.muted"
         case audioNotMuted = "audio.state.notMuted"
         case dashboardCPUGPU = "dashboard.cpuGpu"

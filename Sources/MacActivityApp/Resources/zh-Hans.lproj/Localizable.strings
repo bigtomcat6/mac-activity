@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "%@ 音量，百分之 %d";
 "audio.accessibility.mute" = "将 %@ 静音";
 "audio.accessibility.unmute" = "取消 %@ 静音";
+"audio.accessibility.muteRestoreUnavailable" = "已静音，没有可恢复的历史音量";
 "audio.state.muted" = "已静音";
 "audio.state.notMuted" = "未静音";
 "dashboard.cpuGpu" = "CPU / GPU";

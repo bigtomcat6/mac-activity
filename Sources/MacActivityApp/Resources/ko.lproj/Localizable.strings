@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "%@ 음량, %d퍼센트";
 "audio.accessibility.mute" = "%@ 음소거";
 "audio.accessibility.unmute" = "%@ 음소거 해제";
+"audio.accessibility.muteRestoreUnavailable" = "음소거됨. 복원할 이전 음량이 없습니다";
 "audio.state.muted" = "음소거됨";
 "audio.state.notMuted" = "음소거되지 않음";
 "dashboard.cpuGpu" = "CPU / GPU";

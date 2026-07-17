@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "Lautstärke von %@, %d Prozent";
 "audio.accessibility.mute" = "%@ stummschalten";
 "audio.accessibility.unmute" = "Stummschaltung für %@ aufheben";
+"audio.accessibility.muteRestoreUnavailable" = "Stummgeschaltet; keine vorherige Lautstärke zum Wiederherstellen";
 "audio.state.muted" = "Stummgeschaltet";
 "audio.state.notMuted" = "Nicht stummgeschaltet";
 "dashboard.cpuGpu" = "CPU / GPU";

@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "%@ 音量，百分之 %d";
 "audio.accessibility.mute" = "將 %@ 靜音";
 "audio.accessibility.unmute" = "取消 %@ 靜音";
+"audio.accessibility.muteRestoreUnavailable" = "已靜音，沒有可恢復的先前音量";
 "audio.state.muted" = "已靜音";
 "audio.state.notMuted" = "未靜音";
 "dashboard.cpuGpu" = "CPU / GPU";
