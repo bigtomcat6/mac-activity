@@ -37,54 +37,104 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(state.settingDisplayVolume(.nan).displayVolume, 1)
     }
 
-    func testMuteGlyphPresentationDrawsAndErasesSlashWithoutChangingTheSpeaker() {
-        let audible = AudioMuteGlyphPresentation(isMuted: false, reduceMotion: false)
-        let muted = AudioMuteGlyphPresentation(isMuted: true, reduceMotion: false)
+    func testMuteGlyphPresentationCrossfadesTheSystemIconsAtTheSpecifiedDurations() {
+        let audible = AudioMuteGlyphPresentation(
+            isMuted: false, reduceMotion: false, motion: .external
+        )
+        let muted = AudioMuteGlyphPresentation(
+            isMuted: true, reduceMotion: false, motion: .rollback
+        )
+        let reduced = AudioMuteGlyphPresentation(
+            isMuted: true, reduceMotion: true, motion: .mute
+        )
 
-        XCTAssertEqual(audible.symbolName, "speaker.wave.2.fill")
-        XCTAssertEqual(audible.slashProgress, 0)
         XCTAssertEqual(audible.waveOpacity, 1)
-        XCTAssertTrue(audible.drawsSlash)
+        XCTAssertEqual(audible.mutedOpacity, 0)
+        XCTAssertEqual(audible.crossfadeDuration, 0.14)
 
-        XCTAssertEqual(muted.symbolName, "speaker.wave.2.fill")
-        XCTAssertEqual(muted.slashProgress, 1)
-        XCTAssertEqual(muted.waveOpacity, 0.55)
-        XCTAssertTrue(muted.drawsSlash)
+        XCTAssertEqual(muted.waveOpacity, 0)
+        XCTAssertEqual(muted.mutedOpacity, 1)
+        XCTAssertEqual(muted.crossfadeDuration, 0.16)
+
+        XCTAssertEqual(reduced.crossfadeDuration, 0.1)
     }
 
-    func testMuteGlyphPresentationUsesStaticSymbolCrossfadeForReducedMotion() {
-        let audible = AudioMuteGlyphPresentation(isMuted: false, reduceMotion: true)
-        let muted = AudioMuteGlyphPresentation(isMuted: true, reduceMotion: true)
+    func testVolumeMotionPolicyMatchesTheDragToggleRollbackAndExternalTimingContract() {
+        XCTAssertNil(AudioVolumeMotionPolicy(
+            isEditing: true, reduceMotion: false, motion: .mute
+        ).duration)
+        XCTAssertNil(AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: true, motion: .restore
+        ).duration)
 
-        XCTAssertFalse(audible.drawsSlash)
-        XCTAssertFalse(muted.drawsSlash)
-        XCTAssertEqual(audible.staticSymbolName, "speaker.wave.2.fill")
-        XCTAssertEqual(muted.staticSymbolName, "speaker.slash.fill")
+        let mute = AudioVolumeMotionPolicy(isEditing: false, reduceMotion: false, motion: .mute)
+        XCTAssertEqual(mute.duration, 0.2)
+        XCTAssertTrue(mute.usesSpring)
+
+        let restore = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .restore
+        )
+        XCTAssertEqual(restore.duration, 0.22)
+        XCTAssertTrue(restore.usesSpring)
+
+        let rollback = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .rollback
+        )
+        XCTAssertEqual(rollback.duration, 0.16)
+        XCTAssertFalse(rollback.usesSpring)
+
+        let external = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .external
+        )
+        XCTAssertEqual(external.duration, 0.14)
+        XCTAssertFalse(external.usesSpring)
     }
 
-    func testVolumeMotionPolicyKeepsDirectManipulationAndReducedMotionStatic() {
-        XCTAssertFalse(AudioVolumeMotionPolicy(isEditing: true, reduceMotion: false)
-            .animatesProgrammaticChanges)
-        XCTAssertFalse(AudioVolumeMotionPolicy(isEditing: false, reduceMotion: true)
-            .animatesProgrammaticChanges)
-        XCTAssertTrue(AudioVolumeMotionPolicy(isEditing: false, reduceMotion: false)
-            .animatesProgrammaticChanges)
+    func testVolumeMotionSelectionPrioritizesWriteRollbackOverAnUnconsumedToggle() {
+        let trigger = AudioVolumeMotionTrigger(id: 3, motion: .mute)
+
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: nil,
+                hasWriteFailure: true
+            ),
+            .rollback
+        )
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: nil,
+                hasWriteFailure: false
+            ),
+            .mute
+        )
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: trigger.id,
+                hasWriteFailure: false
+            ),
+            .external
+        )
     }
 
-    func testAudioControlsUseSharedSlashGlyphAndProgrammaticVolumeMotion() throws {
+    func testAudioControlsUseSharedCrossfadeGlyphAndSourceAwareVolumeMotion() throws {
         let source = try audioDashboardViewSource()
 
         for fragment in [
             "struct AudioMuteGlyph",
-            "struct AudioMuteSlash",
-            ".trim(from: 0, to: presentation.slashProgress)",
+            ".animation(.easeInOut(duration: presentation.crossfadeDuration), value: isMuted)",
             "@Environment(\\.accessibilityReduceMotion)",
             "struct AudioAnimatedVolumeSlider",
+            "struct AudioVolumeMotionTrigger",
+            "trigger: muteMotion",
+            "hasWriteFailure: snapshot.error != nil",
             "AudioMuteButtonStyle"
         ] {
             XCTAssertTrue(source.contains(fragment), fragment)
         }
-        XCTAssertEqual(source.components(separatedBy: "AudioMuteGlyph(isMuted:").count - 1, 3)
+        XCTAssertEqual(source.components(separatedBy: "AudioMuteGlyph(").count - 1, 3)
         XCTAssertEqual(source.components(separatedBy: "AudioAnimatedVolumeSlider(").count - 1, 2)
     }
 

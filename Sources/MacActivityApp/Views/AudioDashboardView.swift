@@ -60,68 +60,85 @@ extension View {
     }
 }
 
+enum AudioVolumeMotion: Equatable {
+    case mute
+    case restore
+    case rollback
+    case external
+}
+
+struct AudioVolumeMotionTrigger: Equatable {
+    let id: UInt64
+    let motion: AudioVolumeMotion
+}
+
+enum AudioVolumeMotionSelection {
+    static func resolve(
+        trigger: AudioVolumeMotionTrigger?,
+        consumedTriggerID: UInt64?,
+        hasWriteFailure: Bool
+    ) -> AudioVolumeMotion {
+        if hasWriteFailure { return .rollback }
+        guard let trigger, trigger.id != consumedTriggerID else { return .external }
+        return trigger.motion
+    }
+}
+
 struct AudioMuteGlyphPresentation: Equatable {
     let isMuted: Bool
     let reduceMotion: Bool
+    let motion: AudioVolumeMotion
 
-    var symbolName: String { "speaker.wave.2.fill" }
-    var staticSymbolName: String { isMuted ? "speaker.slash.fill" : symbolName }
-    var slashProgress: CGFloat { isMuted ? 1 : 0 }
-    var waveOpacity: Double { isMuted ? 0.55 : 1 }
-    var drawsSlash: Bool { !reduceMotion }
+    var waveOpacity: Double { isMuted ? 0 : 1 }
+    var mutedOpacity: Double { isMuted ? 1 : 0 }
+    var crossfadeDuration: TimeInterval {
+        if reduceMotion { return 0.1 }
+        return motion == .rollback ? 0.16 : 0.14
+    }
 }
 
 struct AudioVolumeMotionPolicy: Equatable {
     let isEditing: Bool
     let reduceMotion: Bool
+    let motion: AudioVolumeMotion
 
-    var animatesProgrammaticChanges: Bool { !isEditing && !reduceMotion }
-}
+    var duration: TimeInterval? {
+        guard !isEditing && !reduceMotion else { return nil }
+        switch motion {
+        case .mute: return 0.2
+        case .restore: return 0.22
+        case .rollback: return 0.16
+        case .external: return 0.14
+        }
+    }
 
-private struct AudioMuteSlash: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        path.move(to: CGPoint(x: rect.minX + rect.width * 0.16, y: rect.maxY - rect.height * 0.18))
-        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.16, y: rect.minY + rect.height * 0.18))
-        return path
+    var usesSpring: Bool { motion == .mute || motion == .restore }
+
+    var animation: Animation? {
+        guard let duration else { return nil }
+        return usesSpring
+            ? .spring(response: duration, dampingFraction: 1)
+            : .easeInOut(duration: duration)
     }
 }
 
 private struct AudioMuteGlyph: View {
     let isMuted: Bool
+    let motion: AudioVolumeMotion
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var presentation: AudioMuteGlyphPresentation {
-        .init(isMuted: isMuted, reduceMotion: reduceMotion)
+        .init(isMuted: isMuted, reduceMotion: reduceMotion, motion: motion)
     }
 
     var body: some View {
-        Group {
-            if presentation.drawsSlash {
-                ZStack {
-                    Image(systemName: presentation.symbolName)
-                        .opacity(presentation.waveOpacity)
-
-                    AudioMuteSlash()
-                        .trim(from: 0, to: presentation.slashProgress)
-                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                        .padding(2)
-                }
-                .animation(
-                    .spring(response: 0.22, dampingFraction: 1),
-                    value: presentation.slashProgress
-                )
-                .animation(.easeOut(duration: 0.1), value: presentation.waveOpacity)
-            } else {
-                ZStack {
-                    Image(systemName: "speaker.wave.2.fill")
-                        .opacity(isMuted ? 0 : 1)
-                    Image(systemName: "speaker.slash.fill")
-                        .opacity(isMuted ? 1 : 0)
-                }
-                .animation(.easeOut(duration: 0.1), value: isMuted)
-            }
+        ZStack {
+            Image(systemName: "speaker.wave.2.fill")
+                .opacity(presentation.waveOpacity)
+            Image(systemName: "speaker.slash.fill")
+                .opacity(presentation.mutedOpacity)
         }
+        .animation(.easeInOut(duration: presentation.crossfadeDuration), value: isMuted)
         .frame(width: 20, height: 20)
     }
 }
@@ -140,21 +157,32 @@ private struct AudioMuteButtonStyle: ButtonStyle {
 private struct AudioAnimatedVolumeSlider: View {
     @Binding var value: Double
     let accessibility: AudioAccessibilityContract
+    let trigger: AudioVolumeMotionTrigger?
+    let hasWriteFailure: Bool
     @State private var isEditing = false
+    @State private var consumedTriggerID: UInt64?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private var motionPolicy: AudioVolumeMotionPolicy {
-        .init(isEditing: isEditing, reduceMotion: reduceMotion)
+        .init(isEditing: isEditing, reduceMotion: reduceMotion, motion: motion)
+    }
+
+    private var motion: AudioVolumeMotion {
+        AudioVolumeMotionSelection.resolve(
+            trigger: trigger,
+            consumedTriggerID: consumedTriggerID,
+            hasWriteFailure: hasWriteFailure
+        )
     }
 
     var body: some View {
         Slider(value: $value, in: 0...1, onEditingChanged: { isEditing = $0 })
-            .animation(
-                motionPolicy.animatesProgrammaticChanges
-                    ? .spring(response: 0.22, dampingFraction: 1)
-                    : nil,
-                value: value
-            )
+            .animation(motionPolicy.animation, value: value)
+            .onChange(of: value) { _ in
+                if let trigger, trigger.id != consumedTriggerID {
+                    consumedTriggerID = trigger.id
+                }
+            }
             .audioAccessibility(accessibility)
     }
 }
@@ -333,8 +361,12 @@ private struct AudioDashboardSection<Content: View>: View {
 private struct AudioDeviceControlRow: View {
     let presentation: AudioDeviceRowPresentation
     @ObservedObject var model: AudioDashboardModel
+    @State private var muteMotion: AudioVolumeMotionTrigger?
 
     private var snapshot: AudioDeviceControlSnapshot { presentation.snapshot }
+    private var muteVisualMotion: AudioVolumeMotion {
+        snapshot.error == nil ? (muteMotion?.motion ?? .external) : .rollback
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -374,7 +406,9 @@ private struct AudioDeviceControlRow: View {
                 value: AudioDashboardControlBindings.deviceVolume(
                     model: model, deviceUID: snapshot.id, fallback: value
                 ),
-                accessibility: presentation.volumeAccessibility
+                accessibility: presentation.volumeAccessibility,
+                trigger: muteMotion,
+                hasWriteFailure: snapshot.error != nil
             )
 
         case .readOnly(let value):
@@ -403,17 +437,18 @@ private struct AudioDeviceControlRow: View {
         switch presentation.mute {
         case .button(let isMuted, _):
             Button {
+                recordMuteToggle(from: isMuted)
                 AudioDashboardControlBindings.toggleDeviceMute(
                     model: model, deviceUID: snapshot.id
                 )
             } label: {
-                AudioMuteGlyph(isMuted: isMuted)
+                AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
             }
             .buttonStyle(AudioMuteButtonStyle())
             .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
-            AudioMuteGlyph(isMuted: isMuted)
+            AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
                 .foregroundStyle(.secondary)
                 .audioAccessibility(presentation.muteAccessibility)
 
@@ -448,13 +483,24 @@ private struct AudioDeviceControlRow: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
     }
+
+    private func recordMuteToggle(from isMuted: Bool) {
+        muteMotion = .init(
+            id: (muteMotion?.id ?? 0) &+ 1,
+            motion: isMuted ? .restore : .mute
+        )
+    }
 }
 
 private struct AudioProcessControlRow: View {
     let presentation: AudioProcessRowPresentation
     @ObservedObject var model: AudioDashboardModel
+    @State private var muteMotion: AudioVolumeMotionTrigger?
 
     private var snapshot: AudioProcessControlSnapshot { presentation.snapshot }
+    private var muteVisualMotion: AudioVolumeMotion {
+        snapshot.error == nil ? (muteMotion?.motion ?? .external) : .rollback
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -467,16 +513,22 @@ private struct AudioProcessControlRow: View {
 
                 AudioAnimatedVolumeSlider(
                     value: volumeBinding,
-                    accessibility: presentation.volumeAccessibility
+                    accessibility: presentation.volumeAccessibility,
+                    trigger: muteMotion,
+                    hasWriteFailure: snapshot.error != nil
                 )
                     .frame(maxWidth: 130)
 
                 Button {
+                    recordMuteToggle(from: presentation.showsMutedIcon)
                     AudioDashboardControlBindings.toggleProcessMute(
                         model: model, processObjectID: snapshot.id
                     )
                 } label: {
-                    AudioMuteGlyph(isMuted: presentation.showsMutedIcon)
+                    AudioMuteGlyph(
+                        isMuted: presentation.showsMutedIcon,
+                        motion: muteVisualMotion
+                    )
                 }
                 .buttonStyle(AudioMuteButtonStyle())
                 .audioAccessibility(presentation.muteAccessibility)
@@ -502,6 +554,13 @@ private struct AudioProcessControlRow: View {
             model: model,
             processObjectID: snapshot.id,
             fallback: snapshot.volume
+        )
+    }
+
+    private func recordMuteToggle(from isMuted: Bool) {
+        muteMotion = .init(
+            id: (muteMotion?.id ?? 0) &+ 1,
+            motion: isMuted ? .restore : .mute
         )
     }
 
