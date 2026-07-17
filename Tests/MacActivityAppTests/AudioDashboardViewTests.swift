@@ -138,6 +138,13 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(source.components(separatedBy: "AudioAnimatedVolumeSlider(").count - 1, 2)
     }
 
+    func testDeviceVolumeControlReservesAndCentersTheSliderLaneForUnavailableText() throws {
+        let source = try audioDashboardViewSource()
+
+        XCTAssertTrue(source.contains(".frame(width: 150, alignment: .center)"))
+        XCTAssertFalse(source.contains(".frame(maxWidth: 150)"))
+    }
+
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
         let source = try audioDashboardViewSource()
 

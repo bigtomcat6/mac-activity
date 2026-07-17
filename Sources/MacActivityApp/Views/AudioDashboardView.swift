@@ -377,7 +377,7 @@ private struct AudioDeviceControlRow: View {
 
                 Spacer(minLength: 12)
                 volumeControl
-                    .frame(maxWidth: 150)
+                    .frame(width: 150, alignment: .center)
                 muteControl
             }
 
