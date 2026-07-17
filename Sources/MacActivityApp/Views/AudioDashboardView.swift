@@ -154,14 +154,50 @@ private struct AudioMuteButtonStyle: ButtonStyle {
     }
 }
 
+private struct AudioVolumeTrack: View {
+    let value: Double
+
+    private var clampedValue: CGFloat {
+        CGFloat(min(max(value, 0), 1))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: geometry.size.width * clampedValue)
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
+
 private struct AudioAnimatedVolumeSlider: View {
     @Binding var value: Double
     let accessibility: AudioAccessibilityContract
     let trigger: AudioVolumeMotionTrigger?
     let hasWriteFailure: Bool
+    @State private var displayedValue: Double
     @State private var isEditing = false
     @State private var consumedTriggerID: UInt64?
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        value: Binding<Double>,
+        accessibility: AudioAccessibilityContract,
+        trigger: AudioVolumeMotionTrigger?,
+        hasWriteFailure: Bool
+    ) {
+        _value = value
+        self.accessibility = accessibility
+        self.trigger = trigger
+        self.hasWriteFailure = hasWriteFailure
+        _displayedValue = State(initialValue: value.wrappedValue)
+    }
 
     private var motionPolicy: AudioVolumeMotionPolicy {
         .init(isEditing: isEditing, reduceMotion: reduceMotion, motion: motion)
@@ -176,14 +212,40 @@ private struct AudioAnimatedVolumeSlider: View {
     }
 
     var body: some View {
-        Slider(value: $value, in: 0...1, onEditingChanged: { isEditing = $0 })
-            .animation(motionPolicy.animation, value: value)
-            .onChange(of: value) { _ in
-                if let trigger, trigger.id != consumedTriggerID {
-                    consumedTriggerID = trigger.id
-                }
+        ZStack {
+            AudioVolumeTrack(value: displayedValue)
+                .allowsHitTesting(false)
+
+            Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
+                .opacity(0.01)
+        }
+        .frame(height: 20)
+        .onChange(of: displayedValue) { updatedValue in
+            guard isEditing else { return }
+            value = updatedValue
+        }
+        .onChange(of: value) { updatedValue in
+            synchronizeDisplayedValue(to: updatedValue)
+
+            if let trigger, trigger.id != consumedTriggerID {
+                consumedTriggerID = trigger.id
             }
-            .audioAccessibility(accessibility)
+        }
+        .onChange(of: hasWriteFailure) { didFail in
+            guard didFail else { return }
+            synchronizeDisplayedValue(to: value)
+        }
+        .audioAccessibility(accessibility)
+    }
+
+    private func synchronizeDisplayedValue(to updatedValue: Double) {
+        if isEditing {
+            displayedValue = updatedValue
+        } else {
+            withAnimation(motionPolicy.animation) {
+                displayedValue = updatedValue
+            }
+        }
     }
 }
 
@@ -377,7 +439,7 @@ private struct AudioDeviceControlRow: View {
 
                 Spacer(minLength: 12)
                 volumeControl
-                    .frame(width: 150, alignment: .center)
+                    .frame(width: 150, height: 20, alignment: .center)
                 muteControl
             }
 

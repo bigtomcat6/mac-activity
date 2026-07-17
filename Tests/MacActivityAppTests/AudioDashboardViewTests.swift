@@ -141,8 +141,21 @@ final class AudioDashboardViewTests: XCTestCase {
     func testDeviceVolumeControlReservesAndCentersTheSliderLaneForUnavailableText() throws {
         let source = try audioDashboardViewSource()
 
-        XCTAssertTrue(source.contains(".frame(width: 150, alignment: .center)"))
+        XCTAssertTrue(source.contains(".frame(width: 150, height: 20, alignment: .center)"))
         XCTAssertFalse(source.contains(".frame(maxWidth: 150)"))
+    }
+
+    func testAnimatedVolumeSliderUsesDisplayedValueForMuteTransitions() throws {
+        let source = try audioDashboardViewSource()
+
+        for fragment in [
+            "@State private var displayedValue: Double",
+            "AudioVolumeTrack(value: displayedValue)",
+            "Slider(value: $displayedValue, in: 0...1",
+            "withAnimation(motionPolicy.animation)"
+        ] {
+            XCTAssertTrue(source.contains(fragment), fragment)
+        }
     }
 
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
