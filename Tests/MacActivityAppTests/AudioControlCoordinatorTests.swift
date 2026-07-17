@@ -734,11 +734,13 @@ final class AudioControlCoordinatorTests: XCTestCase {
         )
         await fixture.coordinator.start()
         await fixture.coordinator.testingWaitUntilIdle()
-        let count = fixture.engine.gains.count
+        let gainUpdateCount = fixture.engine.gainUpdateCalls.count
+        let saveCount = fixture.store.saveCount
         fixture.coordinator.setProcessMuted(false, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0)
-        XCTAssertEqual(fixture.engine.gains.count, count)
+        XCTAssertEqual(fixture.engine.gainUpdateCalls.count, gainUpdateCount)
+        XCTAssertEqual(fixture.store.saveCount, saveCount)
     }
 
     func testBundlelessProcessIntentIsSessionOnly() async {
