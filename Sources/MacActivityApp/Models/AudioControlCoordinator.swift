@@ -600,10 +600,19 @@ private extension AudioControlCoordinator {
     }
 
     func refreshDevices() {
-        snapshot.devices = (try? deviceProvider.outputDeviceSnapshots().map {
-            confirmedDevices[$0.id] = $0
-            return AudioDeviceControlSnapshot(device: $0, error: Self.deviceError(in: $0))
-        }) ?? []
+        guard let devices = try? deviceProvider.outputDeviceSnapshots() else {
+            snapshot.devices = []
+            return
+        }
+        var refreshedDevices: [String: AudioOutputDeviceSnapshot] = [:]
+        snapshot.devices = devices.map { device in
+            refreshedDevices[device.id] = device
+            return AudioDeviceControlSnapshot(
+                device: device,
+                error: Self.deviceError(in: device)
+            )
+        }
+        confirmedDevices = refreshedDevices
     }
 
     func refreshProcesses(resetSessions: Bool = false) {

@@ -312,8 +312,112 @@ final class AudioDashboardViewTests: XCTestCase {
             volume: .value(0.5, isWritable: true),
             mute: .unsupported
         ))
-        XCTAssertEqual(unsupportedMute.volume, .slider(0.5))
+        XCTAssertEqual(unsupportedMute.volume, .readOnly(0.5))
         XCTAssertEqual(unsupportedMute.mute, .unsupported)
+    }
+
+    func testDeviceCapabilityMatrixMatchesAcceptedHelperIntents() {
+        let failure = Self.halFailure
+        let cases: [(
+            name: String,
+            volume: AudioPropertyValue<Double>,
+            mute: AudioPropertyValue<Bool>,
+            expectedVolume: AudioVolumeControlPresentation,
+            expectedMute: AudioMuteControlPresentation,
+            acceptsVolume: Bool,
+            acceptsMute: Bool
+        )] = [
+            (
+                "fully writable",
+                .value(0.5, isWritable: true),
+                .value(false, isWritable: true),
+                .slider(0.5),
+                .button(isMuted: false, canToggle: true),
+                true,
+                true
+            ),
+            (
+                "authorized mute only",
+                .value(0.5, isWritable: false),
+                .value(false, isWritable: true),
+                .readOnly(0.5),
+                .button(isMuted: false, canToggle: true),
+                false,
+                true
+            ),
+            (
+                "writable volume read only mute",
+                .value(0.5, isWritable: true),
+                .value(false, isWritable: false),
+                .readOnly(0.5),
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "writable volume unsupported mute",
+                .value(0.5, isWritable: true),
+                .unsupported,
+                .readOnly(0.5),
+                .unsupported,
+                false,
+                false
+            ),
+            (
+                "unsupported volume writable mute",
+                .unsupported,
+                .value(false, isWritable: true),
+                .unsupported,
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "unavailable volume writable mute",
+                .unavailable,
+                .value(false, isWritable: true),
+                .unavailable,
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "failed volume writable mute",
+                .failed(failure),
+                .value(false, isWritable: true),
+                .failed,
+                .readOnly(false),
+                false,
+                false
+            ),
+        ]
+
+        for entry in cases {
+            var snapshot = AudioControlSnapshot.fixture()
+            snapshot.devices[0] = .fixture(volume: entry.volume, mute: entry.mute)
+            let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+            let model = AudioDashboardModel(coordinator: coordinator)
+            let presentation = AudioDeviceRowPresentation(snapshot.devices[0])
+
+            XCTAssertEqual(presentation.volume, entry.expectedVolume, entry.name)
+            XCTAssertEqual(presentation.mute, entry.expectedMute, entry.name)
+            AudioDashboardControlBindings.deviceVolume(
+                model: model, deviceUID: "BuiltInOutput", fallback: 1
+            ).wrappedValue = 0.8
+            AudioDashboardControlBindings.toggleDeviceMute(
+                model: model, deviceUID: "BuiltInOutput"
+            )
+            XCTAssertEqual(
+                coordinator.deviceVolumes.isEmpty == false,
+                entry.acceptsVolume,
+                entry.name
+            )
+            XCTAssertEqual(
+                coordinator.deviceMutes.isEmpty == false,
+                entry.acceptsMute,
+                entry.name
+            )
+        }
     }
 
     func testMuteFailurePresentationsContainVisibleDeviceNameTextAndRetry() {

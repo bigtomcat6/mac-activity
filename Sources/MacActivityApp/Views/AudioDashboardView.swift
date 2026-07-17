@@ -79,7 +79,8 @@ enum AudioDashboardControlBindings {
             },
             set: { value in
                 guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
-                      row.device.volume.isWritable else { return }
+                      case .value(_, isWritable: true) = row.device.volume,
+                      case .value(_, isWritable: true) = row.device.mute else { return }
                 model.setDeviceVolume(value, for: deviceUID)
             }
         )
@@ -689,9 +690,23 @@ struct AudioDeviceRowPresentation: Identifiable {
         } else {
             effective = nil
         }
+        let supportsStrongBinding: Bool
+        let supportsMuteOnly: Bool
+        switch (snapshot.device.volume, snapshot.device.mute) {
+        case (.value(_, isWritable: true), .value(_, isWritable: true)):
+            supportsStrongBinding = true
+            supportsMuteOnly = false
+        case (.value(_, isWritable: false), .value(_, isWritable: true)):
+            supportsStrongBinding = false
+            supportsMuteOnly = true
+        default:
+            supportsStrongBinding = false
+            supportsMuteOnly = false
+        }
         switch snapshot.device.volume {
         case .value(let value, isWritable: true):
-            volume = .slider(effective?.displayVolume ?? value)
+            let displayVolume = effective?.displayVolume ?? value
+            volume = supportsStrongBinding ? .slider(displayVolume) : .readOnly(displayVolume)
         case .value(let value, isWritable: false):
             volume = .readOnly(effective?.displayVolume ?? value)
         case .unsupported: volume = .unsupported
@@ -701,10 +716,14 @@ struct AudioDeviceRowPresentation: Identifiable {
         switch snapshot.device.mute {
         case .value(let value, isWritable: true):
             let isMuted = effective?.showsMutedIcon ?? value
-            mute = .button(
-                isMuted: isMuted,
-                canToggle: isMuted ? (effective?.canRestore ?? true) : true
-            )
+            if supportsStrongBinding || supportsMuteOnly {
+                mute = .button(
+                    isMuted: isMuted,
+                    canToggle: isMuted ? (effective?.canRestore ?? true) : true
+                )
+            } else {
+                mute = .readOnly(isMuted)
+            }
         case .value(let value, isWritable: false):
             mute = .readOnly(effective?.showsMutedIcon ?? value)
         case .unsupported: mute = .unsupported
