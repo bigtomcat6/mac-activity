@@ -1972,7 +1972,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
-    func testManualNonemptyPlanMissingSourceDeviceIDsFailsClosedBeforeMutableHardware() async throws {
+    func testManualPlanWithCapturedRouteIdentityPassesFreshnessValidation() throws {
         let backend = FakeAudioHALBackend()
         let format = ProcessTapAudioFormat(
             sampleRate: 48_000,
@@ -2016,6 +2016,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             isStacked: planned.isStacked,
             aggregateUID: planned.aggregateUID,
             topologyFingerprint: planned.topologyFingerprint,
+            sourceDeviceIDs: planned.sourceDeviceIDs,
             referencedDeviceIDs: planned.referencedDeviceIDs
         )
         configureFreshRouteBackend(
@@ -2026,16 +2027,9 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             format: format
         )
 
-        let fixture = EngineFixture()
         let coreHardware = CoreAudioTapHardware(hal: AudioHALClient(backend: backend))
-        fixture.hardware.routePlanFreshnessValidator = {
-            try coreHardware.validateFreshRoutePlan($0)
-        }
 
-        let result = await fixture.engine.apply(plan: manualPlan, gain: ProcessGainState())
-
-        XCTAssertEqual(result.error, .routeStale)
-        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+        XCTAssertNoThrow(try coreHardware.validateFreshRoutePlan(manualPlan))
         XCTAssertTrue(backend.mutableOperations.isEmpty)
     }
 
@@ -2218,7 +2212,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
     }
 
     @available(macOS 14.2, *)
-    func testFreshDescriptorReadFailureReturnsRouteStaleBeforeMutableHardware() async throws {
+    func testFreshDescriptorOptionalReadFailurePreservesRoute() throws {
         let backend = FakeAudioHALBackend()
         let format = ProcessTapAudioFormat(
             sampleRate: 48_000,
@@ -2265,18 +2259,11 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             announcedByteCount: UInt32(MemoryLayout<UInt32>.size)
         )
 
-        let fixture = EngineFixture()
         let coreHardware = CoreAudioTapHardware(
             hal: AudioHALClient(backend: backend)
         )
-        fixture.hardware.routePlanFreshnessValidator = {
-            try coreHardware.validateFreshRoutePlan($0)
-        }
 
-        let result = await fixture.engine.apply(plan: plan, gain: ProcessGainState())
-
-        XCTAssertEqual(result.error, .routeStale)
-        XCTAssertEqual(fixture.hardware.calls, [.validateFreshRoutePlan])
+        XCTAssertNoThrow(try coreHardware.validateFreshRoutePlan(plan))
         XCTAssertTrue(backend.mutableOperations.isEmpty)
 
         backend.removeProperty(
@@ -3107,7 +3094,9 @@ private final class EngineFixture: @unchecked Sendable {
                 sourceDeviceUIDs: ["source-0"],
                 selectedTargetUIDs: ["output"],
                 devices: []
-            )
+            ),
+            sourceDeviceIDs: (0..<sourceCount).map { AudioDeviceID($0 + 1) },
+            referencedDeviceIDs: [1_000]
         )
     }
 }

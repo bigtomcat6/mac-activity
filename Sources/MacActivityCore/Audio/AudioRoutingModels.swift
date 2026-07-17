@@ -284,8 +284,8 @@ public struct AudioRoutePlan: Equatable, Sendable {
         isStacked: Bool,
         aggregateUID: String,
         topologyFingerprint: AudioRouteTopologyFingerprint,
-        sourceDeviceIDs: [AudioDeviceID] = [],
-        referencedDeviceIDs: [AudioDeviceID] = []
+        sourceDeviceIDs: [AudioDeviceID],
+        referencedDeviceIDs: [AudioDeviceID]
     ) {
         self.processObjectID = processObjectID
         self.processIdentifier = processIdentifier

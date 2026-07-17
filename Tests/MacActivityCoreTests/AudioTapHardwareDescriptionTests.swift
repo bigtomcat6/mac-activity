@@ -1040,7 +1040,9 @@ private func fixturePlan(
         mainDeviceUID: targets.first ?? "",
         isStacked: true,
         aggregateUID: "com.how.macactivity.audio.aggregate.fixture",
-        topologyFingerprint: fixtureTopologyFingerprint()
+        topologyFingerprint: fixtureTopologyFingerprint(),
+        sourceDeviceIDs: [91],
+        referencedDeviceIDs: [91]
     )
 }
 
