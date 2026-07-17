@@ -37,6 +37,57 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(state.settingDisplayVolume(.nan).displayVolume, 1)
     }
 
+    func testMuteGlyphPresentationDrawsAndErasesSlashWithoutChangingTheSpeaker() {
+        let audible = AudioMuteGlyphPresentation(isMuted: false, reduceMotion: false)
+        let muted = AudioMuteGlyphPresentation(isMuted: true, reduceMotion: false)
+
+        XCTAssertEqual(audible.symbolName, "speaker.wave.2.fill")
+        XCTAssertEqual(audible.slashProgress, 0)
+        XCTAssertEqual(audible.waveOpacity, 1)
+        XCTAssertTrue(audible.drawsSlash)
+
+        XCTAssertEqual(muted.symbolName, "speaker.wave.2.fill")
+        XCTAssertEqual(muted.slashProgress, 1)
+        XCTAssertEqual(muted.waveOpacity, 0.55)
+        XCTAssertTrue(muted.drawsSlash)
+    }
+
+    func testMuteGlyphPresentationUsesStaticSymbolCrossfadeForReducedMotion() {
+        let audible = AudioMuteGlyphPresentation(isMuted: false, reduceMotion: true)
+        let muted = AudioMuteGlyphPresentation(isMuted: true, reduceMotion: true)
+
+        XCTAssertFalse(audible.drawsSlash)
+        XCTAssertFalse(muted.drawsSlash)
+        XCTAssertEqual(audible.staticSymbolName, "speaker.wave.2.fill")
+        XCTAssertEqual(muted.staticSymbolName, "speaker.slash.fill")
+    }
+
+    func testVolumeMotionPolicyKeepsDirectManipulationAndReducedMotionStatic() {
+        XCTAssertFalse(AudioVolumeMotionPolicy(isEditing: true, reduceMotion: false)
+            .animatesProgrammaticChanges)
+        XCTAssertFalse(AudioVolumeMotionPolicy(isEditing: false, reduceMotion: true)
+            .animatesProgrammaticChanges)
+        XCTAssertTrue(AudioVolumeMotionPolicy(isEditing: false, reduceMotion: false)
+            .animatesProgrammaticChanges)
+    }
+
+    func testAudioControlsUseSharedSlashGlyphAndProgrammaticVolumeMotion() throws {
+        let source = try audioDashboardViewSource()
+
+        for fragment in [
+            "struct AudioMuteGlyph",
+            "struct AudioMuteSlash",
+            ".trim(from: 0, to: presentation.slashProgress)",
+            "@Environment(\\.accessibilityReduceMotion)",
+            "struct AudioAnimatedVolumeSlider",
+            "AudioMuteButtonStyle"
+        ] {
+            XCTAssertTrue(source.contains(fragment), fragment)
+        }
+        XCTAssertEqual(source.components(separatedBy: "AudioMuteGlyph(isMuted:").count - 1, 3)
+        XCTAssertEqual(source.components(separatedBy: "AudioAnimatedVolumeSlider(").count - 1, 2)
+    }
+
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
         let source = try audioDashboardViewSource()
 
@@ -44,9 +95,9 @@ final class AudioDashboardViewTests: XCTestCase {
         let requiredCalls: [(String, Int)] = [
             ("accessibility: presentation.devicesAccessibility", 1),
             ("accessibility: processSection.accessibility", 1),
-            (".audioAccessibility(accessibility)", 2),
+            (".audioAccessibility(accessibility)", 3),
             (".audioAccessibility(processSection.emptyAccessibility)", 1),
-            (".audioAccessibility(presentation.volumeAccessibility)", 6),
+            (".audioAccessibility(presentation.volumeAccessibility)", 4),
             (".audioAccessibility(presentation.muteAccessibility)", 5),
             (".audioAccessibility(presentation.rowAccessibility)", 2),
             (".audioAccessibility(presentation.resetAccessibility)", 1),

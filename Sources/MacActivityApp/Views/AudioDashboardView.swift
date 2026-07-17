@@ -60,6 +60,105 @@ extension View {
     }
 }
 
+struct AudioMuteGlyphPresentation: Equatable {
+    let isMuted: Bool
+    let reduceMotion: Bool
+
+    var symbolName: String { "speaker.wave.2.fill" }
+    var staticSymbolName: String { isMuted ? "speaker.slash.fill" : symbolName }
+    var slashProgress: CGFloat { isMuted ? 1 : 0 }
+    var waveOpacity: Double { isMuted ? 0.55 : 1 }
+    var drawsSlash: Bool { !reduceMotion }
+}
+
+struct AudioVolumeMotionPolicy: Equatable {
+    let isEditing: Bool
+    let reduceMotion: Bool
+
+    var animatesProgrammaticChanges: Bool { !isEditing && !reduceMotion }
+}
+
+private struct AudioMuteSlash: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX + rect.width * 0.16, y: rect.maxY - rect.height * 0.18))
+        path.addLine(to: CGPoint(x: rect.maxX - rect.width * 0.16, y: rect.minY + rect.height * 0.18))
+        return path
+    }
+}
+
+private struct AudioMuteGlyph: View {
+    let isMuted: Bool
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var presentation: AudioMuteGlyphPresentation {
+        .init(isMuted: isMuted, reduceMotion: reduceMotion)
+    }
+
+    var body: some View {
+        Group {
+            if presentation.drawsSlash {
+                ZStack {
+                    Image(systemName: presentation.symbolName)
+                        .opacity(presentation.waveOpacity)
+
+                    AudioMuteSlash()
+                        .trim(from: 0, to: presentation.slashProgress)
+                        .stroke(style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                        .padding(2)
+                }
+                .animation(
+                    .spring(response: 0.22, dampingFraction: 1),
+                    value: presentation.slashProgress
+                )
+                .animation(.easeOut(duration: 0.1), value: presentation.waveOpacity)
+            } else {
+                ZStack {
+                    Image(systemName: "speaker.wave.2.fill")
+                        .opacity(isMuted ? 0 : 1)
+                    Image(systemName: "speaker.slash.fill")
+                        .opacity(isMuted ? 1 : 0)
+                }
+                .animation(.easeOut(duration: 0.1), value: isMuted)
+            }
+        }
+        .frame(width: 20, height: 20)
+    }
+}
+
+private struct AudioMuteButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+private struct AudioAnimatedVolumeSlider: View {
+    @Binding var value: Double
+    let accessibility: AudioAccessibilityContract
+    @State private var isEditing = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var motionPolicy: AudioVolumeMotionPolicy {
+        .init(isEditing: isEditing, reduceMotion: reduceMotion)
+    }
+
+    var body: some View {
+        Slider(value: $value, in: 0...1, onEditingChanged: { isEditing = $0 })
+            .animation(
+                motionPolicy.animatesProgrammaticChanges
+                    ? .spring(response: 0.22, dampingFraction: 1)
+                    : nil,
+                value: value
+            )
+            .audioAccessibility(accessibility)
+    }
+}
+
 @MainActor
 enum AudioDashboardControlBindings {
     static func deviceVolume(
@@ -271,13 +370,12 @@ private struct AudioDeviceControlRow: View {
     private var volumeControl: some View {
         switch presentation.volume {
         case .slider(let value):
-            Slider(
+            AudioAnimatedVolumeSlider(
                 value: AudioDashboardControlBindings.deviceVolume(
                     model: model, deviceUID: snapshot.id, fallback: value
                 ),
-                in: 0...1
+                accessibility: presentation.volumeAccessibility
             )
-            .audioAccessibility(presentation.volumeAccessibility)
 
         case .readOnly(let value):
             Text(value, format: .percent.precision(.fractionLength(0)))
@@ -309,14 +407,13 @@ private struct AudioDeviceControlRow: View {
                     model: model, deviceUID: snapshot.id
                 )
             } label: {
-                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .frame(width: 20)
+                AudioMuteGlyph(isMuted: isMuted)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AudioMuteButtonStyle())
             .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
-            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            AudioMuteGlyph(isMuted: isMuted)
                 .foregroundStyle(.secondary)
                 .audioAccessibility(presentation.muteAccessibility)
 
@@ -368,20 +465,20 @@ private struct AudioProcessControlRow: View {
 
                 Spacer(minLength: 12)
 
-                Slider(value: volumeBinding, in: 0...1)
+                AudioAnimatedVolumeSlider(
+                    value: volumeBinding,
+                    accessibility: presentation.volumeAccessibility
+                )
                     .frame(maxWidth: 130)
-                    .audioAccessibility(presentation.volumeAccessibility)
 
                 Button {
                     AudioDashboardControlBindings.toggleProcessMute(
                         model: model, processObjectID: snapshot.id
                     )
                 } label: {
-                    Image(systemName: presentation.showsMutedIcon
-                          ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .frame(width: 20)
+                    AudioMuteGlyph(isMuted: presentation.showsMutedIcon)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AudioMuteButtonStyle())
                 .audioAccessibility(presentation.muteAccessibility)
 
                 routeMenu
