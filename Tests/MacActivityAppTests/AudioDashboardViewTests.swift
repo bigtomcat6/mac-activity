@@ -8,6 +8,35 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    func testEffectiveVolumeStatePreservesRestoreVolumeAcrossMuteAndUnmute() throws {
+        let audible = AudioEffectiveVolumeState(rawVolume: 0.6, isMuted: false)
+        let muted = audible.settingDisplayVolume(0)
+        XCTAssertEqual(muted.rawVolume, 0.6)
+        XCTAssertEqual(muted.displayVolume, 0)
+        XCTAssertTrue(muted.showsMutedIcon)
+        XCTAssertTrue(muted.canRestore)
+        XCTAssertEqual(try XCTUnwrap(muted.settingMuted(false)), audible)
+    }
+
+    func testEffectiveVolumeStateCannotInventRestoreForInitialZero() {
+        let zero = AudioEffectiveVolumeState(rawVolume: 0, isMuted: false)
+        XCTAssertEqual(zero.displayVolume, 0)
+        XCTAssertTrue(zero.showsMutedIcon)
+        XCTAssertFalse(zero.canRestore)
+        XCTAssertNil(zero.settingMuted(false))
+        XCTAssertEqual(
+            zero.settingDisplayVolume(0.3),
+            AudioEffectiveVolumeState(rawVolume: 0.3, isMuted: false)
+        )
+    }
+
+    func testEffectiveVolumeStateClampsDisplayInput() {
+        let state = AudioEffectiveVolumeState(rawVolume: 0.4, isMuted: false)
+        XCTAssertEqual(state.settingDisplayVolume(-1).displayVolume, 0)
+        XCTAssertEqual(state.settingDisplayVolume(2).displayVolume, 1)
+        XCTAssertEqual(state.settingDisplayVolume(.nan).displayVolume, 1)
+    }
+
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
         let source = try audioDashboardViewSource()
 

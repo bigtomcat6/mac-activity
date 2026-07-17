@@ -57,6 +57,37 @@ struct AudioProcessControlValues: Equatable, Sendable {
     }
 }
 
+struct AudioEffectiveVolumeState: Equatable, Sendable {
+    let rawVolume: Double
+    let isMuted: Bool
+
+    init(rawVolume: Double, isMuted: Bool) {
+        self.rawVolume = Self.clamped(rawVolume)
+        self.isMuted = isMuted
+    }
+
+    var displayVolume: Double { isMuted || rawVolume == 0 ? 0 : rawVolume }
+    var showsMutedIcon: Bool { displayVolume == 0 }
+    var canRestore: Bool { rawVolume > 0 }
+
+    func settingDisplayVolume(_ value: Double) -> Self {
+        let requested = Self.clamped(value)
+        return requested == 0
+            ? Self(rawVolume: rawVolume, isMuted: true)
+            : Self(rawVolume: requested, isMuted: false)
+    }
+
+    func settingMuted(_ muted: Bool) -> Self? {
+        if muted { return Self(rawVolume: rawVolume, isMuted: true) }
+        guard canRestore else { return nil }
+        return Self(rawVolume: rawVolume, isMuted: false)
+    }
+
+    private static func clamped(_ value: Double) -> Double {
+        min(1, max(0, value.isFinite ? value : 1))
+    }
+}
+
 struct AudioProcessControlSnapshot: Identifiable, Equatable, Sendable {
     var id: AudioObjectID { process.processObjectID }
     let process: AudioProcessEntry
