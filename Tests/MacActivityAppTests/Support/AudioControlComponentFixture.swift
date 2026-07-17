@@ -313,12 +313,18 @@ extension AudioFeatureAvailability {
 
 @MainActor
 final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDeviceProviding {
+    enum Write: Equatable {
+        case volume(Double)
+        case mute(Bool)
+    }
+
     var volumeWriteError: Error?
     var muteWriteError: Error?
     var confirmedMute = false
     var confirmedVolume = 0.5
     var snapshotVolume = 0.5
     var snapshotMute = false
+    private(set) var writes: [Write] = []
     private(set) var volumeWrites: [Double] = []
     private(set) var muteWrites: [Bool] = []
     var lifecycle: LifecycleRecorder?
@@ -348,11 +354,13 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     }
 
     func writeVolume(_ volume: Double, forUID uid: String) throws -> Double {
+        writes.append(.volume(volume))
         volumeWrites.append(volume)
         if let volumeWriteError { throw volumeWriteError }
         return confirmedVolume
     }
     func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool {
+        writes.append(.mute(isMuted))
         muteWrites.append(isMuted)
         if let muteWriteError { throw muteWriteError }
         return confirmedMute

@@ -694,6 +694,16 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].error, .deviceWrite)
     }
 
+    func testRapidDeviceIntentsCommitOnlyLatestEffectiveState() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.deviceProvider.confirmedMute = true
+        fixture.coordinator.setDeviceVolume(0.2, for: "BuiltIn")
+        fixture.coordinator.setDeviceVolume(0, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.deviceProvider.writes, [.mute(true)])
+    }
+
     func testProcessSliderZeroMutesWithoutDiscardingRestoreVolume() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
@@ -2091,6 +2101,42 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].error, .deviceWrite)
     }
 
+    func testDeviceSliderZeroMutesWithoutWritingRawVolumeZero() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.confirmedMute = true
+        await fixture.coordinator.start()
+        fixture.coordinator.setDeviceVolume(0, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.deviceProvider.writes, [.mute(true)])
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.5)
+    }
+
+    func testDevicePositiveValueWhileMutedWritesVolumeBeforeUnmute() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.snapshotMute = true
+        fixture.deviceProvider.confirmedVolume = 0.3
+        fixture.deviceProvider.confirmedMute = false
+        await fixture.coordinator.start()
+        fixture.coordinator.setDeviceVolume(0.3, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        XCTAssertEqual(fixture.deviceProvider.writes, [.volume(0.3), .mute(false)])
+    }
+
+    func testDeviceUnmuteFailureKeepsNewConfirmedVolumeMuted() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.snapshotMute = true
+        fixture.deviceProvider.confirmedVolume = 0.3
+        fixture.deviceProvider.muteWriteError = FixtureError.writeFailed
+        await fixture.coordinator.start()
+        fixture.coordinator.setDeviceVolume(0.3, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        let row = fixture.coordinator.snapshot.devices[0]
+        XCTAssertEqual(fixture.deviceProvider.writes, [.volume(0.3), .mute(false)])
+        XCTAssertEqual(row.device.volume.value, 0.3)
+        XCTAssertEqual(row.device.mute.value, true)
+        XCTAssertEqual(row.error, .deviceWrite)
+    }
+
     func testDeviceVolumeUsesHardwareConfirmedValueAndRetryRefreshesOneRow() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
@@ -2109,7 +2155,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.processProvider.callCount, 1)
     }
 
-    func testDeviceVolumeAndMuteUseIndependentTasksAndMergeLatestConfirmation() async {
+    func testDeviceVolumeAndMuteShareTaskAndMergeLatestConfirmation() async {
         let delay = ControlledAudioDelay()
         let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
         await fixture.coordinator.start()
@@ -2119,8 +2165,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
         await delay.waitUntilCallCount(1)
         fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
-        await fixture.coordinator.testingWaitForDeviceMute("BuiltIn")
         await delay.resumeAll()
+        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.8])
