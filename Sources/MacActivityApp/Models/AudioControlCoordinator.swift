@@ -324,28 +324,38 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         let task = trackedTask { @MainActor [weak self] in
             await previous?.value
             guard let self, isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
-            var confirmed = confirmedDevices[uid] ?? fallback
             do {
-                guard var current = writableDeviceState(confirmed) else { return }
+                guard var confirmed = confirmedDevices[uid],
+                      var current = writableDeviceState(confirmed) else { return }
                 if current.rawVolume != target.rawVolume {
-                    if debounceVolume { await delay(.milliseconds(75)) }
-                    guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
-                    let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
-                    confirmed = Self.device(
-                        confirmed,
-                        volume: .value(volume, isWritable: true)
-                    )
-                    confirmedDevices[uid] = confirmed
-                    current = AudioEffectiveVolumeState(
-                        rawVolume: volume,
-                        isMuted: current.isMuted
-                    )
-                    guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
+                    if debounceVolume {
+                        await delay(.milliseconds(75))
+                        guard isCurrentDeviceIntent(uid, ordinal: ordinal),
+                              let latest = confirmedDevices[uid],
+                              let latestState = writableDeviceState(latest) else { return }
+                        confirmed = latest
+                        current = latestState
+                    }
+                    if current.rawVolume != target.rawVolume {
+                        let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
+                        guard let latest = confirmedDevices[uid],
+                              writableDeviceState(latest) != nil else { return }
+                        confirmed = Self.device(
+                            latest,
+                            volume: .value(volume, isWritable: true)
+                        )
+                        confirmedDevices[uid] = confirmed
+                        guard let merged = writableDeviceState(confirmed) else { return }
+                        current = merged
+                        guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
+                    }
                 }
                 if current.isMuted != target.isMuted {
                     let muted = try deviceProvider.writeMute(target.isMuted, forUID: uid)
+                    guard let latest = confirmedDevices[uid],
+                          writableDeviceState(latest) != nil else { return }
                     confirmed = Self.device(
-                        confirmed,
+                        latest,
                         mute: .value(muted, isWritable: true)
                     )
                     confirmedDevices[uid] = confirmed

@@ -328,6 +328,8 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     private(set) var volumeWrites: [Double] = []
     private(set) var muteWrites: [Bool] = []
     var lifecycle: LifecycleRecorder?
+    var onVolumeWrite: (@MainActor () -> Void)?
+    var onMuteWrite: (@MainActor () -> Void)?
     var onRouteRead: (@MainActor () -> Void)?
     var routeReadError: Error?
     var outputSnapshots: [AudioOutputDeviceSnapshot]?
@@ -356,12 +358,14 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     func writeVolume(_ volume: Double, forUID uid: String) throws -> Double {
         writes.append(.volume(volume))
         volumeWrites.append(volume)
+        onVolumeWrite?()
         if let volumeWriteError { throw volumeWriteError }
         return confirmedVolume
     }
     func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool {
         writes.append(.mute(isMuted))
         muteWrites.append(isMuted)
+        onMuteWrite?()
         if let muteWriteError { throw muteWriteError }
         return confirmedMute
     }
