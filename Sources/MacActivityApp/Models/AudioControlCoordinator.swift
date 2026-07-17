@@ -339,13 +339,19 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                     if current.rawVolume != target.rawVolume {
                         let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
                         guard let latest = confirmedDevices[uid],
-                              writableDeviceState(latest) != nil else { return }
+                              case .value(_, let isWritable) = latest.volume else { return }
                         confirmed = Self.device(
                             latest,
-                            volume: .value(volume, isWritable: true)
+                            volume: .value(volume, isWritable: isWritable)
                         )
                         confirmedDevices[uid] = confirmed
-                        guard let merged = writableDeviceState(confirmed) else { return }
+                        guard let merged = writableDeviceState(confirmed) else {
+                            guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
+                            updateDevice(uid) { row in
+                                row.device = confirmed
+                            }
+                            return
+                        }
                         current = merged
                         guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
                     }
@@ -353,10 +359,10 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                 if current.isMuted != target.isMuted {
                     let muted = try deviceProvider.writeMute(target.isMuted, forUID: uid)
                     guard let latest = confirmedDevices[uid],
-                          writableDeviceState(latest) != nil else { return }
+                          case .value(_, let isWritable) = latest.mute else { return }
                     confirmed = Self.device(
                         latest,
-                        mute: .value(muted, isWritable: true)
+                        mute: .value(muted, isWritable: isWritable)
                     )
                     confirmedDevices[uid] = confirmed
                     guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return }
