@@ -2522,6 +2522,34 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(row.error, .deviceRead(muteFailure))
     }
 
+    func testSuccessfulVolumeReadbackPreservesLatestNonWritableVolumeCapability() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.confirmedVolume = 0.73
+        await fixture.coordinator.start()
+        fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
+            id: "BuiltIn",
+            objectID: 10,
+            name: "Speakers",
+            volume: .value(0.61, isWritable: false),
+            mute: .value(false, isWritable: true)
+        )]
+        fixture.deviceProvider.onVolumeWrite = {
+            fixture.coordinator.retryDevice("BuiltIn")
+        }
+
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        var device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(device.volume, .value(0.73, isWritable: false))
+        XCTAssertEqual(device.mute, .value(false, isWritable: true))
+
+        fixture.coordinator.setDeviceVolume(0.9, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(fixture.deviceProvider.writes, [.volume(0.8)])
+        XCTAssertEqual(device.volume, .value(0.73, isWritable: false))
+    }
+
     func testSuccessfulEffectiveMuteReadbackReplacesUnavailableMuteAndRetainsLatestVolumeFailure() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.deviceProvider.confirmedMute = true
@@ -2550,6 +2578,34 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(row.device.volume, .failed(volumeFailure))
         XCTAssertEqual(row.device.mute, .value(true, isWritable: true))
         XCTAssertEqual(row.error, .deviceRead(volumeFailure))
+    }
+
+    func testSuccessfulEffectiveMuteReadbackPreservesLatestNonWritableMuteCapability() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.confirmedMute = true
+        await fixture.coordinator.start()
+        fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
+            id: "BuiltIn",
+            objectID: 10,
+            name: "Speakers",
+            volume: .value(0.44, isWritable: true),
+            mute: .value(false, isWritable: false)
+        )]
+        fixture.deviceProvider.onMuteWrite = {
+            fixture.coordinator.retryDevice("BuiltIn")
+        }
+
+        fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        var device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(device.volume, .value(0.44, isWritable: true))
+        XCTAssertEqual(device.mute, .value(true, isWritable: false))
+
+        fixture.coordinator.setDeviceMuted(false, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(fixture.deviceProvider.writes, [.mute(true)])
+        XCTAssertEqual(device.mute, .value(true, isWritable: false))
     }
 
     func testSuccessfulMuteOnlyReadbackReplacesFailedMute() async {
@@ -2587,6 +2643,41 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(row.device.volume, .value(0.42, isWritable: false))
         XCTAssertEqual(row.device.mute, .value(true, isWritable: true))
         XCTAssertNil(row.error)
+    }
+
+    func testSuccessfulMuteOnlyReadbackPreservesLatestNonWritableMuteCapability() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
+            id: "BuiltIn",
+            objectID: 10,
+            name: "Speakers",
+            volume: .value(0.61, isWritable: false),
+            mute: .value(false, isWritable: true)
+        )]
+        fixture.deviceProvider.confirmedMute = true
+        await fixture.coordinator.start()
+        fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
+            id: "BuiltIn",
+            objectID: 10,
+            name: "Speakers",
+            volume: .value(0.42, isWritable: false),
+            mute: .value(false, isWritable: false)
+        )]
+        fixture.deviceProvider.onMuteWrite = {
+            fixture.coordinator.retryDevice("BuiltIn")
+        }
+
+        fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        var device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(device.volume, .value(0.42, isWritable: false))
+        XCTAssertEqual(device.mute, .value(true, isWritable: false))
+
+        fixture.coordinator.setDeviceMuted(false, for: "BuiltIn")
+        await fixture.coordinator.testingWaitUntilIdle()
+        device = fixture.coordinator.snapshot.devices[0].device
+        XCTAssertEqual(fixture.deviceProvider.writes, [.mute(true)])
+        XCTAssertEqual(device.mute, .value(true, isWritable: false))
     }
 
     func testSuccessfulReadbackDoesNotMergeIntoReplacementDeviceLifetime() async {

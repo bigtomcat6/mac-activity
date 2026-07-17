@@ -136,6 +136,11 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         case muteOnly(Bool)
     }
 
+    private enum DeviceControlReadback {
+        case volume(Double)
+        case mute(Bool)
+    }
+
     @Published private(set) var snapshot: AudioControlSnapshot = .empty
 
     let supportsProcessControls: Bool
@@ -468,10 +473,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             let muted = try deviceProvider.writeMute(targetMuted, forUID: uid)
             guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
                   let refreshed = confirmedDevices[uid] else { return nil }
-            let confirmed = Self.device(
-                refreshed,
-                mute: .value(muted, isWritable: true)
-            )
+            let confirmed = mergeSuccessfulDeviceReadback(.mute(muted), into: refreshed)
             confirmedDevices[uid] = confirmed
             guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
             return confirmed
@@ -512,10 +514,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                 let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
                 guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
                       let latest = confirmedDevices[uid] else { return nil }
-                confirmed = Self.device(
-                    latest,
-                    volume: .value(volume, isWritable: true)
-                )
+                confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
                 confirmedDevices[uid] = confirmed
                 guard let merged = writableDeviceState(confirmed) else {
                     guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
@@ -535,14 +534,41 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             let muted = try deviceProvider.writeMute(target.isMuted, forUID: uid)
             guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
                   let latest = confirmedDevices[uid] else { return nil }
-            confirmed = Self.device(
-                latest,
-                mute: .value(muted, isWritable: true)
-            )
+            confirmed = mergeSuccessfulDeviceReadback(.mute(muted), into: latest)
             confirmedDevices[uid] = confirmed
             guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
         }
         return confirmed
+    }
+
+    private func mergeSuccessfulDeviceReadback(
+        _ readback: DeviceControlReadback,
+        into latest: AudioOutputDeviceSnapshot
+    ) -> AudioOutputDeviceSnapshot {
+        switch readback {
+        case .volume(let volume):
+            let isWritable: Bool
+            if case .value(_, let latestWritable) = latest.volume {
+                isWritable = latestWritable
+            } else {
+                isWritable = true
+            }
+            return Self.device(
+                latest,
+                volume: .value(volume, isWritable: isWritable)
+            )
+        case .mute(let muted):
+            let isWritable: Bool
+            if case .value(_, let latestWritable) = latest.mute {
+                isWritable = latestWritable
+            } else {
+                isWritable = true
+            }
+            return Self.device(
+                latest,
+                mute: .value(muted, isWritable: isWritable)
+            )
+        }
     }
 
     func setProcessVolume(_ volume: Double, for processObjectID: AudioObjectID) {
