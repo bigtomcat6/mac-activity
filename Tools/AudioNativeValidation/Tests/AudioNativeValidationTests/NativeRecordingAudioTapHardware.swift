@@ -128,6 +128,64 @@ struct NativeObservedDrift: Equatable, Sendable {
     let quality: UInt32
 }
 
+struct NativeCompositionSubdeviceDrift: Equatable, Sendable {
+    let uid: String
+    let enabled: UInt32
+    let quality: UInt32
+}
+
+enum NativeAggregateComposition {
+    static func subdeviceDrifts(
+        from composition: NSDictionary
+    ) throws -> [NativeCompositionSubdeviceDrift] {
+        guard let values = composition[kAudioAggregateDeviceSubDeviceListKey] as? NSArray else {
+            throw NativeRecordingError.invalidComposition
+        }
+
+        var seenUIDs: Set<String> = []
+        return try values.map { value in
+            guard let subdevice = value as? NSDictionary,
+                  let uid = subdevice[kAudioSubDeviceUIDKey] as? String,
+                  seenUIDs.insert(uid).inserted,
+                  let enabledValue = subdevice[kAudioSubDeviceDriftCompensationKey] as? NSNumber
+            else {
+                throw NativeRecordingError.invalidComposition
+            }
+            guard let enabled = exactUInt32(enabledValue) else {
+                throw NativeRecordingError.invalidComposition
+            }
+            guard enabled <= 1 else { throw NativeRecordingError.invalidComposition }
+            let qualityValue = subdevice[kAudioSubDeviceDriftCompensationQualityKey] as? NSNumber
+            let quality = try qualityValue.map { value -> UInt32 in
+                guard let quality = exactUInt32(value) else {
+                    throw NativeRecordingError.invalidComposition
+                }
+                return quality
+            }
+            guard enabled == 0 || quality != nil else {
+                throw NativeRecordingError.invalidComposition
+            }
+            return NativeCompositionSubdeviceDrift(
+                uid: uid,
+                enabled: enabled,
+                quality: quality ?? 0
+            )
+        }
+    }
+
+    private static func exactUInt32(_ value: NSNumber) -> UInt32? {
+        let number = value.doubleValue
+        guard number.isFinite,
+              number >= 0,
+              number <= Double(UInt32.max),
+              number.rounded(.towardZero) == number
+        else {
+            return nil
+        }
+        return UInt32(number)
+    }
+}
+
 struct NativeSubdeviceDriftObservation: Codable, Equatable, Sendable {
     let uid: String
     let diagnosticOnlyObjectID: AudioObjectID?
@@ -242,6 +300,8 @@ struct NativeRecordingSnapshot: Sendable {
     let callbackCountAfterObservation: Int32?
     let teardown: NativeTeardownObservation?
     let rawFailures: [NativeRawFailure]
+    let resolvedTeardownProbeFailures: [NativeRawFailure]
+    let unresolvedRawFailures: [NativeRawFailure]
 }
 
 enum NativeRecordingError: Error {
@@ -511,12 +571,18 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         deadline: DispatchTime,
         isCancelled: @escaping @Sendable () -> Bool
     ) throws -> AudioAggregateTopologySnapshot {
+        let snapshot: AudioAggregateTopologySnapshot
         do {
-            let snapshot = try delegate.waitForStableTopology(
+            snapshot = try delegate.waitForStableTopology(
                 aggregate,
                 deadline: deadline,
                 isCancelled: isCancelled
             )
+        } catch {
+            record(error, seam: "waitForStableTopology.delegate")
+            throw error
+        }
+        do {
             let recorded = locked { (recordedPlanStorage, recordedTapStorage) }
             guard let recordedPlan = recorded.0, let recordedTap = recorded.1 else {
                 throw NativeRecordingError.missingPlanOrTap
@@ -532,7 +598,11 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 from: aggregate.objectID,
                 address: .init(selector: kAudioAggregateDevicePropertyActiveSubDeviceList)
             )
-            let activeSubdevices = try subdeviceIDs.map(readSubdeviceDrift)
+            let composition = try readAggregateComposition(aggregate.objectID)
+            let activeSubdevices = try readActiveSubdeviceDrifts(
+                subdeviceIDs,
+                composition: composition
+            )
             guard snapshot.activeSubTapIDs.count == 1 else {
                 throw NativeRecordingError.invalidComposition
             }
@@ -544,7 +614,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 fullSubdeviceUIDs: fullSubdeviceUIDs,
                 activeSubdevices: activeSubdevices,
                 actualMainSubdeviceUID: try readMainSubdeviceUID(aggregate.objectID),
-                actualIsStacked: try readIsStacked(aggregate.objectID),
+                actualIsStacked: try readIsStacked(composition),
                 subTap: try readSubTapDrift(
                     objectID: snapshot.activeSubTapIDs[0],
                     tapUUID: recordedTap.uuid.uuidString
@@ -553,7 +623,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             locked { topologyStorage = topology }
             return snapshot
         } catch {
-            record(error, seam: "waitForStableTopology")
+            record(error, seam: "waitForStableTopology.evidence")
             throw error
         }
     }
@@ -697,7 +767,13 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
 
     func snapshot() -> NativeRecordingSnapshot {
         locked {
-            NativeRecordingSnapshot(
+            let resolvedFailures = rawFailuresStorage.enumerated().compactMap { index, failure in
+                resolvedTeardownProbeFailureIndexes.contains(index) ? failure : nil
+            }
+            let unresolvedFailures = rawFailuresStorage.enumerated().compactMap { index, failure in
+                resolvedTeardownProbeFailureIndexes.contains(index) ? nil : failure
+            }
+            return NativeRecordingSnapshot(
                 taps: tapsStorage,
                 tapFormats: tapFormatsStorage,
                 tapMuteBehaviorObservations: tapMuteBehaviorObservationsStorage,
@@ -708,7 +784,9 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 callbackCountBeforeObservation: callbackCountBeforeObservationStorage,
                 callbackCountAfterObservation: callbackCountAfterObservationStorage,
                 teardown: teardownStorage,
-                rawFailures: rawFailuresStorage
+                rawFailures: unresolvedFailures,
+                resolvedTeardownProbeFailures: resolvedFailures,
+                unresolvedRawFailures: unresolvedFailures
             )
         }
     }
@@ -871,29 +949,27 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         }
     }
 
-    private func readSubdeviceDrift(
-        objectID: AudioObjectID
-    ) throws -> NativeObservedDrift {
-        let uid = try hal.readRetainedString(
-            from: objectID,
-            address: .init(selector: kAudioDevicePropertyDeviceUID)
-        )
-        let enabled = try hal.readScalar(
-            UInt32.self,
-            from: objectID,
-            address: .init(selector: kAudioSubDevicePropertyDriftCompensation)
-        )
-        let quality = try hal.readScalar(
-            UInt32.self,
-            from: objectID,
-            address: .init(selector: kAudioSubDevicePropertyDriftCompensationQuality)
-        )
-        return NativeObservedDrift(
-            uid: uid,
-            diagnosticOnlyObjectID: objectID,
-            enabled: enabled,
-            quality: quality
-        )
+    private func readActiveSubdeviceDrifts(
+        _ objectIDs: [AudioObjectID],
+        composition: NSDictionary
+    ) throws -> [NativeObservedDrift] {
+        let drifts = try NativeAggregateComposition.subdeviceDrifts(from: composition)
+        let driftsByUID = Dictionary(uniqueKeysWithValues: drifts.map { ($0.uid, $0) })
+        return try objectIDs.map { objectID in
+            let uid = try hal.readRetainedString(
+                from: objectID,
+                address: .init(selector: kAudioDevicePropertyDeviceUID)
+            )
+            guard let drift = driftsByUID[uid] else {
+                throw NativeRecordingError.invalidComposition
+            }
+            return NativeObservedDrift(
+                uid: uid,
+                diagnosticOnlyObjectID: objectID,
+                enabled: drift.enabled,
+                quality: drift.quality
+            )
+        }
     }
 
     private func readSubTapDrift(
@@ -923,12 +999,15 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         )
     }
 
-    private func readIsStacked(_ aggregateID: AudioObjectID) throws -> Bool {
-        let composition = try hal.readRetainedObject(
+    private func readAggregateComposition(_ aggregateID: AudioObjectID) throws -> NSDictionary {
+        try hal.readRetainedObject(
             CFDictionary.self,
             from: aggregateID,
             address: .init(selector: kAudioAggregateDevicePropertyComposition)
         ) as NSDictionary
+    }
+
+    private func readIsStacked(_ composition: NSDictionary) throws -> Bool {
         guard let value = composition[kAudioAggregateDeviceIsStackedKey] as? NSNumber else {
             throw NativeRecordingError.invalidComposition
         }

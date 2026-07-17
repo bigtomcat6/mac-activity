@@ -73,6 +73,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let teardown: NativeTeardownObservation?
     let microphoneTCCObservation: String
     let rawFailures: [NativeRawFailure]
+    let resolvedTeardownProbeFailures: [NativeRawFailure]
     let sessionError: String?
     let eligibleForPolicyPromotion: Bool
 }
@@ -345,6 +346,7 @@ private func makeRecord(
         teardown: snapshot.teardown,
         microphoneTCCObservation: environment.microphoneTCCObservation,
         rawFailures: snapshot.rawFailures,
+        resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
         sessionError: sessionError,
         eligibleForPolicyPromotion: false
     )
