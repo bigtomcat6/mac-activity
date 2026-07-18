@@ -2397,6 +2397,26 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertFalse(fixture.hardware.calls.contains(.startDevice))
     }
 
+    func testMultiTargetTopologyFailureNeverSuppressesOriginalAudio() async {
+        let fixture = EngineFixture()
+        fixture.hardware.stableTopologyFailure = .aggregateNotReady(lastStatus: -1)
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(
+                generation: 1,
+                targetUIDs: ["BuiltIn", "USB"]
+            ),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.state, .failed)
+        XCTAssertFalse(
+            fixture.hardware.calls.contains(.setTapMutedWhenTapped(sourceIndex: 0))
+        )
+        XCTAssertFalse(fixture.hardware.calls.contains(.startDevice))
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
     func testReadinessTimeoutIsNotCached() async {
         let fixture = EngineFixture()
         let fingerprint = fixture.plan(generation: 1).topologyFingerprint
@@ -3052,47 +3072,52 @@ private final class EngineFixture: @unchecked Sendable {
         processObjectID: AudioObjectID = 77,
         generation: UInt64,
         sourceCount: Int = 1,
+        targetUIDs: [String] = ["output"],
         fingerprint: AudioRouteTopologyFingerprint? = nil
     ) -> AudioRoutePlan {
-        AudioRoutePlan(
+        let targetStreams = targetUIDs.enumerated().map { index, uid in
+            AudioRouteSubdevice(
+                uid: uid,
+                driftCompensation: index == 0 ? .disabled : .highQuality,
+                inputStreams: [],
+                outputStreams: [
+                    AudioRouteStream(
+                        streamObjectID: AudioObjectID(1_000 + index),
+                        streamIndex: 0,
+                        format: format
+                    ),
+                ]
+            )
+        }
+        let sourceUIDs = (0..<sourceCount).map { "source-\($0)" }
+        return AudioRoutePlan(
             processObjectID: processObjectID,
             processIdentifier: 101,
             generation: generation,
             tapSources: (0..<sourceCount).map { index in
                 AudioTapSource(
-                    deviceUID: "source-\(index)",
+                    deviceUID: sourceUIDs[index],
                     streamIndex: UInt(index),
                     expectedFormat: format,
                     driftCompensation: .disabled
                 )
             },
-            selectedTargetUIDs: ["output"],
-            subdevices: [
-                AudioRouteSubdevice(
-                    uid: "output",
-                    driftCompensation: .disabled,
-                    inputStreams: [],
-                    outputStreams: [
-                        AudioRouteStream(
-                            streamObjectID: 1_000,
-                            streamIndex: 0,
-                            format: format
-                        ),
-                    ]
-                ),
-            ],
-            mainDeviceUID: "output",
-            isStacked: true,
+            selectedTargetUIDs: targetUIDs,
+            subdevices: targetStreams,
+            mainDeviceUID: targetUIDs.first ?? "output",
+            isStacked: targetUIDs.count > 1,
             aggregateUID: AudioRoutePlanner.aggregateUIDPrefix
                 + "\(processObjectID).\(generation)",
             topologyFingerprint: fingerprint ?? AudioRouteTopologyFingerprint(
                 osBuild: "25A123",
-                sourceDeviceUIDs: ["source-0"],
-                selectedTargetUIDs: ["output"],
+                sourceDeviceUIDs: sourceUIDs,
+                selectedTargetUIDs: targetUIDs,
                 devices: []
             ),
             sourceDeviceIDs: (0..<sourceCount).map { AudioDeviceID($0 + 1) },
-            referencedDeviceIDs: [1_000]
+            referencedDeviceIDs: targetUIDs.indices.map {
+                AudioDeviceID(1_000 + $0)
+            }
         )
     }
 }
