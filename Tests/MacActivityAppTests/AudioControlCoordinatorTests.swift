@@ -2621,6 +2621,27 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(row.error, .targetUnavailable(["Missing"]))
     }
 
+    func testStructurallyRejectedRoutePublishesTypedErrorWithoutCallingEngine() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        let ownedUID = AudioRoutePlanner.aggregateUIDPrefix + "foreign"
+        fixture.deviceProvider.routeDescriptors.append(
+            DeviceProviderFake.makeRouteDevice(id: 99, uid: ownedUID)
+        )
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: [ownedUID]),
+            for: 11
+        )
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.engine.applyCount, 0)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].error,
+            .routePlanning(.macActivityAggregateSelected(ownedUID))
+        )
+    }
+
     func testReconnectedBundlelessExplicitRouteRebuildsUnavailableSession() async {
         let fixture = CoordinatorFixture(availability: .supported, bundleIdentifier: nil)
         await fixture.coordinator.start()

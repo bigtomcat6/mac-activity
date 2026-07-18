@@ -7,6 +7,30 @@ import XCTest
 
 @MainActor
 final class AudioControlComponentTests: XCTestCase {
+    func testSupportedRuntimeAppliesExactTwoTargetRoute() async {
+        let fixture = AudioControlComponentFixture()
+        await fixture.start()
+
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["BuiltIn", "USB"]),
+            for: fixture.player.processObjectID
+        )
+        await fixture.finishPendingCommands()
+
+        let plan = fixture.engine.lastAppliedPlan
+        XCTAssertEqual(plan?.selectedTargetUIDs, ["BuiltIn", "USB"])
+        XCTAssertEqual(plan?.subdevices.map(\.uid), ["BuiltIn", "USB"])
+        XCTAssertEqual(plan?.isStacked, true)
+        XCTAssertEqual(
+            fixture.coordinator.snapshot.processes[0].route,
+            .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])
+        )
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier]?.route,
+            .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])
+        )
+    }
+
     func testExplicitDisconnectRebuildsWithRemainingTargetAndKeepsProfileUIDs() async {
         let fixture = AudioControlComponentFixture()
         await fixture.start()

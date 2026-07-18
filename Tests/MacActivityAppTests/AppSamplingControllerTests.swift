@@ -14,6 +14,7 @@ final class AppSamplingControllerTests: XCTestCase {
             .appendingPathComponent("Sources/MacActivityApp/AppDelegate.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
+        XCTAssertTrue(source.contains("let availability = AudioFeatureAvailability("))
         for injection in [
             "processProvider: AudioProcessService(availability: availability)",
             "monitor: AudioSystemMonitor(availability: availability)",
@@ -22,6 +23,7 @@ final class AppSamplingControllerTests: XCTestCase {
         ] {
             XCTAssertTrue(source.contains(injection), injection)
         }
+        XCTAssertFalse(source.contains("AudioRouteNativeValidationPolicy"))
     }
 
     func testHiddenDashboardDefaultsToBackgroundSampling() {
