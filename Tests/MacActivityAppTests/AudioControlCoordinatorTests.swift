@@ -841,6 +841,28 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertNil(fixture.coordinator.snapshot.processes[0].pendingValues)
     }
 
+    func testPermissionFailureCanRetrySameValueThroughControl() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.engine.nextError = .permissionDenied(-1)
+
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 1)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.4)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .permissionDenied)
+
+        fixture.engine.nextError = nil
+        fixture.coordinator.setProcessVolume(0.4, for: 11)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let row = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(row.volume, 0.4)
+        XCTAssertNil(row.pendingValues)
+        XCTAssertNil(row.error)
+    }
+
     func testResetStopsNonDefaultSessionWithoutApplyingDefaultProfile() async {
         let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()

@@ -894,9 +894,10 @@ private extension AudioControlCoordinator {
             route: row.route
         )
         let originalValues = values
+        let shouldRetryFailedIntent = row.error != nil
         let previousRoute = values.route
         mutate(&values)
-        guard values != originalValues else { return }
+        guard values != originalValues || shouldRetryFailedIntent else { return }
         let routeOptions = values.route == previousRoute
             ? row.routeOptions
             : makeRouteOptions(for: values.route, process: row.process)
