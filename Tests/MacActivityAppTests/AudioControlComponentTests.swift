@@ -17,10 +17,11 @@ final class AudioControlComponentTests: XCTestCase {
         )
         await fixture.finishPendingCommands()
 
-        let plan = fixture.engine.lastAppliedPlan
-        XCTAssertEqual(plan?.selectedTargetUIDs, ["BuiltIn", "USB"])
-        XCTAssertEqual(plan?.subdevices.map(\.uid), ["BuiltIn", "USB"])
-        XCTAssertEqual(plan?.isStacked, true)
+        let plans = fixture.engine.plans
+        XCTAssertEqual(plans.count, 1)
+        XCTAssertEqual(plans.map(\.selectedTargetUIDs), [["BuiltIn", "USB"]])
+        XCTAssertEqual(plans.map { $0.subdevices.map(\.uid) }, [["BuiltIn", "USB"]])
+        XCTAssertEqual(plans.first?.isStacked, true)
         XCTAssertEqual(
             fixture.coordinator.snapshot.processes[0].route,
             .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])
