@@ -2001,7 +2001,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             mode: .followOriginal,
             devices: [source]
         )
-        let planned = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        let planned = try AudioRoutePlanner(osBuildProvider: { "25A123" }).plan(request)
         let manualPlan = AudioRoutePlan(
             processObjectID: planned.processObjectID,
             processIdentifier: planned.processIdentifier,
@@ -2102,7 +2102,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             mode: .explicit(targetDeviceUIDs: [target.uid]),
             devices: [source, target]
         )
-        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        let plan = try AudioRoutePlanner(osBuildProvider: { "25A123" }).plan(request)
         configureFreshRouteBackend(
             backend,
             processObjectID: request.processObjectID,
@@ -2181,7 +2181,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             mode: .followOriginal,
             devices: [source]
         )
-        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        let plan = try AudioRoutePlanner(osBuildProvider: { "25A123" }).plan(request)
         configureFreshRouteBackend(
             backend,
             processObjectID: request.processObjectID,
@@ -2241,7 +2241,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
             mode: .followOriginal,
             devices: [device]
         )
-        let plan = try AudioRoutePlanner(policy: .allowingAllForTesting).plan(request)
+        let plan = try AudioRoutePlanner(osBuildProvider: { "25A123" }).plan(request)
         configureFreshRouteBackend(
             backend,
             processObjectID: request.processObjectID,

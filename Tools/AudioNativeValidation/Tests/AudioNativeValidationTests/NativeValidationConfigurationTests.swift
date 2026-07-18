@@ -6,7 +6,7 @@ import XCTest
 
 final class NativeValidationConfigurationTests: XCTestCase {
     @MainActor
-    func testExactRuntimePolicyReachesInjectedHardwareInsteadOfAvailabilityRejection() async throws {
+    func testStructurallyAdmittedRuntimeReachesInjectedHardwareInsteadOfAvailabilityRejection() async throws {
         let hardware = NativeRuntimeWiringProbeHardware()
         let request = nativeRuntimeWiringRequest()
 
@@ -22,7 +22,6 @@ final class NativeValidationConfigurationTests: XCTestCase {
         )
         await runtime.engine.shutdown()
 
-        XCTAssertTrue(runtime.policy.permits(runtime.fingerprint))
         XCTAssertTrue(runtime.availability.supportsProcessControls)
         XCTAssertTrue(runtime.planner.permits(request))
         XCTAssertEqual(runtime.plan.topologyFingerprint, runtime.fingerprint)

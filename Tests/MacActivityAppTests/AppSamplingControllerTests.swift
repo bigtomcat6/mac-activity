@@ -115,23 +115,13 @@ final class AppSamplingControllerTests: XCTestCase {
             store: AppDelegatePreferencesStore(),
             launchService: NoopLaunchAtLoginService()
         )
-        let preflight = AudioRoutePlanner()
-        let fingerprint = try preflight.topologyFingerprint(for: AudioRouteRequest(
-            processObjectID: 11,
-            processIdentifier: 101,
-            generation: 1,
-            sourceDeviceUIDs: [audioServices.routeDevice.uid],
-            systemDefaultOutputDeviceUID: nil,
-            mode: .followOriginal,
-            devices: [audioServices.routeDevice]
-        ))
         let coordinator = AudioControlCoordinator(
             availability: .supported,
             deviceProvider: audioServices,
             processProvider: audioServices,
             routeDeviceProvider: audioServices,
             monitor: audioMonitor,
-            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [fingerprint])),
+            planner: AudioRoutePlanner(),
             engine: audioEngine,
             preferences: preferences
         )

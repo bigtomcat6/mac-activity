@@ -13,7 +13,6 @@ struct NativeValidationEnvironment {
 
 struct NativeValidationRuntime {
     let fingerprint: AudioRouteTopologyFingerprint
-    let policy: AudioRouteNativeValidationPolicy
     let availability: AudioFeatureAvailability
     let planner: AudioRoutePlanner
     let plan: AudioRoutePlan
@@ -28,12 +27,10 @@ func makeNativeValidationRuntime(
     leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
         DarwinAudioProcessOwnershipLeaseAcquirer()
 ) throws -> NativeValidationRuntime {
-    let fingerprint = try AudioRoutePlanner().topologyFingerprint(for: request)
-    let policy = AudioRouteNativeValidationPolicy(validatedFingerprints: [fingerprint])
     let availability = AudioFeatureAvailability(
         operatingSystemVersion: operatingSystemVersion
     )
-    let planner = AudioRoutePlanner(policy: policy)
+    let planner = AudioRoutePlanner()
     let plan = try planner.plan(request)
     let engine = ProcessTapVolumeEngine(
         hardware: hardware,
@@ -41,8 +38,7 @@ func makeNativeValidationRuntime(
         availability: availability
     )
     return NativeValidationRuntime(
-        fingerprint: fingerprint,
-        policy: policy,
+        fingerprint: plan.topologyFingerprint,
         availability: availability,
         planner: planner,
         plan: plan,
