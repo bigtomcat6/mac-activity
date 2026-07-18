@@ -267,6 +267,32 @@ final class NativeValidationConfigurationTests: XCTestCase {
         ))
     }
 
+    func testAtomicWriterPreservesLiteralPrivateTemporaryParentPath() throws {
+        let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent(
+                "MacActivityNativeValidation-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let outputURL = directory.appendingPathComponent("result.json")
+        let output = try NativeValidationOutputPath.validate(
+            outputURL.path,
+            restrictedRoots: []
+        )
+
+        try NativeAtomicOutputWriter.write(Data("private temporary output".utf8), to: output)
+
+        XCTAssertEqual(
+            try String(contentsOf: outputURL, encoding: .utf8),
+            "private temporary output"
+        )
+    }
+
     func testAtomicWriterReplacesRegularFileAtValidatedPath() throws {
         let outputURL = scratchURL.appendingPathComponent("result.json")
         try Data("old".utf8).write(to: outputURL)
