@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "Volume de %@, %d pour cent";
 "audio.accessibility.mute" = "Couper le son de %@";
 "audio.accessibility.unmute" = "Réactiver le son de %@";
+"audio.accessibility.muteRestoreUnavailable" = "Son coupé ; aucun volume précédent à restaurer";
 "audio.state.muted" = "Son coupé";
 "audio.state.notMuted" = "Son non coupé";
 "dashboard.cpuGpu" = "CPU / GPU";

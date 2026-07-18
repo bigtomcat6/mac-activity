@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "%@の音量、%dパーセント";
 "audio.accessibility.mute" = "%@をミュート";
 "audio.accessibility.unmute" = "%@のミュートを解除";
+"audio.accessibility.muteRestoreUnavailable" = "ミュート中。復元できる以前の音量はありません";
 "audio.state.muted" = "ミュート中";
 "audio.state.notMuted" = "ミュートされていません";
 "dashboard.cpuGpu" = "CPU / GPU";

@@ -313,17 +313,26 @@ extension AudioFeatureAvailability {
 
 @MainActor
 final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDeviceProviding {
+    enum Write: Equatable {
+        case volume(Double)
+        case mute(Bool)
+    }
+
     var volumeWriteError: Error?
     var muteWriteError: Error?
     var confirmedMute = false
     var confirmedVolume = 0.5
     var snapshotVolume = 0.5
     var snapshotMute = false
+    private(set) var writes: [Write] = []
     private(set) var volumeWrites: [Double] = []
     private(set) var muteWrites: [Bool] = []
     var lifecycle: LifecycleRecorder?
+    var onVolumeWrite: (@MainActor () -> Void)?
+    var onMuteWrite: (@MainActor () -> Void)?
     var onRouteRead: (@MainActor () -> Void)?
     var routeReadError: Error?
+    var outputSnapshotsError: Error?
     var outputSnapshots: [AudioOutputDeviceSnapshot]?
 
     var routeDescriptors: [AudioRouteDevice] = [
@@ -333,6 +342,7 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
 
     func outputDeviceSnapshots() throws -> [AudioOutputDeviceSnapshot] {
         lifecycle?.events.append("devices.read")
+        if let outputSnapshotsError { throw outputSnapshotsError }
         return outputSnapshots ?? [.init(
             id: "BuiltIn",
             objectID: 10,
@@ -348,12 +358,16 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
     }
 
     func writeVolume(_ volume: Double, forUID uid: String) throws -> Double {
+        writes.append(.volume(volume))
         volumeWrites.append(volume)
+        onVolumeWrite?()
         if let volumeWriteError { throw volumeWriteError }
         return confirmedVolume
     }
     func writeMute(_ isMuted: Bool, forUID uid: String) throws -> Bool {
+        writes.append(.mute(isMuted))
         muteWrites.append(isMuted)
+        onMuteWrite?()
         if let muteWriteError { throw muteWriteError }
         return confirmedMute
     }

@@ -36,6 +36,7 @@
 "audio.accessibility.volume" = "%@ volume, %d percent";
 "audio.accessibility.mute" = "Mute %@";
 "audio.accessibility.unmute" = "Unmute %@";
+"audio.accessibility.muteRestoreUnavailable" = "Muted; no previous volume to restore";
 "audio.state.muted" = "Muted";
 "audio.state.notMuted" = "Not muted";
 "dashboard.cpuGpu" = "CPU / GPU";

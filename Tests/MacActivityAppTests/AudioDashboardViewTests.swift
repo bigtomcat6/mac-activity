@@ -8,6 +8,156 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    func testEffectiveVolumeStatePreservesRestoreVolumeAcrossMuteAndUnmute() throws {
+        let audible = AudioEffectiveVolumeState(rawVolume: 0.6, isMuted: false)
+        let muted = audible.settingDisplayVolume(0)
+        XCTAssertEqual(muted.rawVolume, 0.6)
+        XCTAssertEqual(muted.displayVolume, 0)
+        XCTAssertTrue(muted.showsMutedIcon)
+        XCTAssertTrue(muted.canRestore)
+        XCTAssertEqual(try XCTUnwrap(muted.settingMuted(false)), audible)
+    }
+
+    func testEffectiveVolumeStateCannotInventRestoreForInitialZero() {
+        let zero = AudioEffectiveVolumeState(rawVolume: 0, isMuted: false)
+        XCTAssertEqual(zero.displayVolume, 0)
+        XCTAssertTrue(zero.showsMutedIcon)
+        XCTAssertFalse(zero.canRestore)
+        XCTAssertNil(zero.settingMuted(false))
+        XCTAssertEqual(
+            zero.settingDisplayVolume(0.3),
+            AudioEffectiveVolumeState(rawVolume: 0.3, isMuted: false)
+        )
+    }
+
+    func testEffectiveVolumeStateClampsDisplayInput() {
+        let state = AudioEffectiveVolumeState(rawVolume: 0.4, isMuted: false)
+        XCTAssertEqual(state.settingDisplayVolume(-1).displayVolume, 0)
+        XCTAssertEqual(state.settingDisplayVolume(2).displayVolume, 1)
+        XCTAssertEqual(state.settingDisplayVolume(.nan).displayVolume, 1)
+    }
+
+    func testMuteGlyphPresentationCrossfadesTheSystemIconsAtTheSpecifiedDurations() {
+        let audible = AudioMuteGlyphPresentation(
+            isMuted: false, reduceMotion: false, motion: .external
+        )
+        let muted = AudioMuteGlyphPresentation(
+            isMuted: true, reduceMotion: false, motion: .rollback
+        )
+        let reduced = AudioMuteGlyphPresentation(
+            isMuted: true, reduceMotion: true, motion: .mute
+        )
+
+        XCTAssertEqual(audible.waveOpacity, 1)
+        XCTAssertEqual(audible.mutedOpacity, 0)
+        XCTAssertEqual(audible.crossfadeDuration, 0.14)
+
+        XCTAssertEqual(muted.waveOpacity, 0)
+        XCTAssertEqual(muted.mutedOpacity, 1)
+        XCTAssertEqual(muted.crossfadeDuration, 0.16)
+
+        XCTAssertEqual(reduced.crossfadeDuration, 0.1)
+    }
+
+    func testVolumeMotionPolicyMatchesTheDragToggleRollbackAndExternalTimingContract() {
+        XCTAssertNil(AudioVolumeMotionPolicy(
+            isEditing: true, reduceMotion: false, motion: .mute
+        ).duration)
+        XCTAssertNil(AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: true, motion: .restore
+        ).duration)
+
+        let mute = AudioVolumeMotionPolicy(isEditing: false, reduceMotion: false, motion: .mute)
+        XCTAssertEqual(mute.duration, 0.2)
+        XCTAssertTrue(mute.usesSpring)
+
+        let restore = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .restore
+        )
+        XCTAssertEqual(restore.duration, 0.22)
+        XCTAssertTrue(restore.usesSpring)
+
+        let rollback = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .rollback
+        )
+        XCTAssertEqual(rollback.duration, 0.16)
+        XCTAssertFalse(rollback.usesSpring)
+
+        let external = AudioVolumeMotionPolicy(
+            isEditing: false, reduceMotion: false, motion: .external
+        )
+        XCTAssertEqual(external.duration, 0.14)
+        XCTAssertFalse(external.usesSpring)
+    }
+
+    func testVolumeMotionSelectionPrioritizesWriteRollbackOverAnUnconsumedToggle() {
+        let trigger = AudioVolumeMotionTrigger(id: 3, motion: .mute)
+
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: nil,
+                hasWriteFailure: true
+            ),
+            .rollback
+        )
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: nil,
+                hasWriteFailure: false
+            ),
+            .mute
+        )
+        XCTAssertEqual(
+            AudioVolumeMotionSelection.resolve(
+                trigger: trigger,
+                consumedTriggerID: trigger.id,
+                hasWriteFailure: false
+            ),
+            .external
+        )
+    }
+
+    func testAudioControlsUseSharedCrossfadeGlyphAndSourceAwareVolumeMotion() throws {
+        let source = try audioDashboardViewSource()
+
+        for fragment in [
+            "struct AudioMuteGlyph",
+            ".animation(.easeInOut(duration: presentation.crossfadeDuration), value: isMuted)",
+            "@Environment(\\.accessibilityReduceMotion)",
+            "struct AudioAnimatedVolumeSlider",
+            "struct AudioVolumeMotionTrigger",
+            "trigger: muteMotion",
+            "hasWriteFailure: snapshot.error != nil",
+            "AudioMuteButtonStyle"
+        ] {
+            XCTAssertTrue(source.contains(fragment), fragment)
+        }
+        XCTAssertEqual(source.components(separatedBy: "AudioMuteGlyph(").count - 1, 3)
+        XCTAssertEqual(source.components(separatedBy: "AudioAnimatedVolumeSlider(").count - 1, 2)
+    }
+
+    func testDeviceVolumeControlReservesAndCentersTheSliderLaneForUnavailableText() throws {
+        let source = try audioDashboardViewSource()
+
+        XCTAssertTrue(source.contains(".frame(width: 150, height: 20, alignment: .center)"))
+        XCTAssertFalse(source.contains(".frame(maxWidth: 150)"))
+    }
+
+    func testAnimatedVolumeSliderUsesDisplayedValueForMuteTransitions() throws {
+        let source = try audioDashboardViewSource()
+
+        for fragment in [
+            "@State private var displayedValue: Double",
+            "AudioVolumeTrack(value: displayedValue)",
+            "Slider(value: $displayedValue, in: 0...1",
+            "withAnimation(motionPolicy.animation)"
+        ] {
+            XCTAssertTrue(source.contains(fragment), fragment)
+        }
+    }
+
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
         let source = try audioDashboardViewSource()
 
@@ -15,9 +165,9 @@ final class AudioDashboardViewTests: XCTestCase {
         let requiredCalls: [(String, Int)] = [
             ("accessibility: presentation.devicesAccessibility", 1),
             ("accessibility: processSection.accessibility", 1),
-            (".audioAccessibility(accessibility)", 2),
+            (".audioAccessibility(accessibility)", 3),
             (".audioAccessibility(processSection.emptyAccessibility)", 1),
-            (".audioAccessibility(presentation.volumeAccessibility)", 6),
+            (".audioAccessibility(presentation.volumeAccessibility)", 4),
             (".audioAccessibility(presentation.muteAccessibility)", 5),
             (".audioAccessibility(presentation.rowAccessibility)", 2),
             (".audioAccessibility(presentation.resetAccessibility)", 1),
@@ -152,6 +302,243 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(coordinator.processMutes.count, 1)
         XCTAssertEqual(coordinator.processMutes[0].0, 11)
         XCTAssertTrue(coordinator.processMutes[0].1)
+    }
+
+    func testMutedBindingsDisplayZeroAndPositiveInputForwardsOneValue() {
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.devices[0].device = .fixtureDevice(
+            uid: "BuiltInOutput", volume: 0.5, mute: true
+        )
+        snapshot.processes[0].volume = 0.4
+        snapshot.processes[0].isMuted = true
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        let model = AudioDashboardModel(coordinator: coordinator)
+        let device = AudioDashboardControlBindings.deviceVolume(
+            model: model, deviceUID: "BuiltInOutput", fallback: 1
+        )
+        let process = AudioDashboardControlBindings.processVolume(
+            model: model, processObjectID: 11, fallback: 1
+        )
+        XCTAssertEqual(device.wrappedValue, 0)
+        XCTAssertEqual(process.wrappedValue, 0)
+        device.wrappedValue = 0.3
+        process.wrappedValue = 0.2
+        XCTAssertEqual(coordinator.deviceVolumes.last?.1, 0.3)
+        XCTAssertEqual(coordinator.processVolumes.last?.1, 0.2)
+    }
+
+    func testInitialZeroRowsShowMutedAndDisableRestore() {
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.devices[0].device = .fixtureDevice(
+            uid: "BuiltInOutput", volume: 0, mute: false
+        )
+        snapshot.processes[0].volume = 0
+        snapshot.processes[0].isMuted = false
+        let device = AudioDeviceRowPresentation(snapshot.devices[0])
+        let process = AudioProcessRowPresentation(snapshot.processes[0])
+        XCTAssertEqual(device.mute, .button(isMuted: true, canToggle: false))
+        XCTAssertTrue(process.showsMutedIcon)
+        XCTAssertFalse(process.canToggleMute)
+        XCTAssertFalse(device.muteAccessibility.isEnabled)
+        XCTAssertFalse(process.muteAccessibility.isEnabled)
+        XCTAssertEqual(device.volumeAccessibility.value, "0%")
+        XCTAssertEqual(process.volumeAccessibility.value, "0%")
+    }
+
+    func testInitialZeroMuteHelpersDoNotSendNoOpIntents() {
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.devices[0].device = .fixtureDevice(
+            uid: "BuiltInOutput", volume: 0, mute: false
+        )
+        snapshot.processes[0].volume = 0
+        snapshot.processes[0].isMuted = false
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        AudioDashboardControlBindings.toggleDeviceMute(
+            model: model, deviceUID: "BuiltInOutput"
+        )
+        AudioDashboardControlBindings.toggleProcessMute(
+            model: model, processObjectID: 11
+        )
+
+        XCTAssertTrue(coordinator.deviceMutes.isEmpty)
+        XCTAssertTrue(coordinator.processMutes.isEmpty)
+    }
+
+    func testNoRestoreAccessibilityUsesLocalizedLabelAndRetainsMutedValue() {
+        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+        AppLocalization.setPreferredLanguageIdentifier("en")
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.devices[0].device = .fixtureDevice(
+            uid: "BuiltInOutput", volume: 0, mute: false
+        )
+        snapshot.processes[0].volume = 0
+        snapshot.processes[0].isMuted = false
+
+        let device = AudioDeviceRowPresentation(snapshot.devices[0])
+        let process = AudioProcessRowPresentation(snapshot.processes[0])
+
+        XCTAssertTrue(device.muteAccessibility.label?.contains("BuiltInOutput") == true)
+        XCTAssertTrue(process.muteAccessibility.label?.contains("Music") == true)
+        XCTAssertTrue(device.muteAccessibility.label?.contains(
+            "Muted; no previous volume to restore"
+        ) == true)
+        XCTAssertTrue(process.muteAccessibility.label?.contains(
+            "Muted; no previous volume to restore"
+        ) == true)
+        XCTAssertEqual(device.muteAccessibility.value, "Muted")
+        XCTAssertEqual(process.muteAccessibility.value, "Muted")
+    }
+
+    func testMixedDeviceCapabilitiesKeepExistingConservativePresentation() {
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.devices[0] = .fixture(
+            volume: .value(0.5, isWritable: false),
+            mute: .value(false, isWritable: true)
+        )
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        let model = AudioDashboardModel(coordinator: coordinator)
+        let readOnlyVolume = AudioDeviceRowPresentation(snapshot.devices[0])
+        XCTAssertEqual(readOnlyVolume.volume, .readOnly(0.5))
+        XCTAssertEqual(
+            readOnlyVolume.mute,
+            .button(isMuted: false, canToggle: true)
+        )
+        XCTAssertTrue(readOnlyVolume.muteAccessibility.isEnabled)
+
+        AudioDashboardControlBindings.toggleDeviceMute(
+            model: model, deviceUID: "BuiltInOutput"
+        )
+        coordinator.update { snapshot in
+            snapshot.devices[0] = .fixture(
+                volume: .value(0.5, isWritable: false),
+                mute: .value(true, isWritable: true)
+            )
+        }
+        AudioDashboardControlBindings.toggleDeviceMute(
+            model: model, deviceUID: "BuiltInOutput"
+        )
+        XCTAssertEqual(coordinator.deviceMutes.map(\.1), [true, false])
+
+        let initialZero = AudioDeviceRowPresentation(.fixture(
+            volume: .value(0, isWritable: false),
+            mute: .value(false, isWritable: true)
+        ))
+        XCTAssertEqual(initialZero.volume, .readOnly(0))
+        XCTAssertEqual(initialZero.mute, .button(isMuted: true, canToggle: false))
+        XCTAssertFalse(initialZero.muteAccessibility.isEnabled)
+
+        let unsupportedMute = AudioDeviceRowPresentation(.fixture(
+            volume: .value(0.5, isWritable: true),
+            mute: .unsupported
+        ))
+        XCTAssertEqual(unsupportedMute.volume, .readOnly(0.5))
+        XCTAssertEqual(unsupportedMute.mute, .unsupported)
+    }
+
+    func testDeviceCapabilityMatrixMatchesAcceptedHelperIntents() {
+        let failure = Self.halFailure
+        let cases: [(
+            name: String,
+            volume: AudioPropertyValue<Double>,
+            mute: AudioPropertyValue<Bool>,
+            expectedVolume: AudioVolumeControlPresentation,
+            expectedMute: AudioMuteControlPresentation,
+            acceptsVolume: Bool,
+            acceptsMute: Bool
+        )] = [
+            (
+                "fully writable",
+                .value(0.5, isWritable: true),
+                .value(false, isWritable: true),
+                .slider(0.5),
+                .button(isMuted: false, canToggle: true),
+                true,
+                true
+            ),
+            (
+                "authorized mute only",
+                .value(0.5, isWritable: false),
+                .value(false, isWritable: true),
+                .readOnly(0.5),
+                .button(isMuted: false, canToggle: true),
+                false,
+                true
+            ),
+            (
+                "writable volume read only mute",
+                .value(0.5, isWritable: true),
+                .value(false, isWritable: false),
+                .readOnly(0.5),
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "writable volume unsupported mute",
+                .value(0.5, isWritable: true),
+                .unsupported,
+                .readOnly(0.5),
+                .unsupported,
+                false,
+                false
+            ),
+            (
+                "unsupported volume writable mute",
+                .unsupported,
+                .value(false, isWritable: true),
+                .unsupported,
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "unavailable volume writable mute",
+                .unavailable,
+                .value(false, isWritable: true),
+                .unavailable,
+                .readOnly(false),
+                false,
+                false
+            ),
+            (
+                "failed volume writable mute",
+                .failed(failure),
+                .value(false, isWritable: true),
+                .failed,
+                .readOnly(false),
+                false,
+                false
+            ),
+        ]
+
+        for entry in cases {
+            var snapshot = AudioControlSnapshot.fixture()
+            snapshot.devices[0] = .fixture(volume: entry.volume, mute: entry.mute)
+            let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+            let model = AudioDashboardModel(coordinator: coordinator)
+            let presentation = AudioDeviceRowPresentation(snapshot.devices[0])
+
+            XCTAssertEqual(presentation.volume, entry.expectedVolume, entry.name)
+            XCTAssertEqual(presentation.mute, entry.expectedMute, entry.name)
+            AudioDashboardControlBindings.deviceVolume(
+                model: model, deviceUID: "BuiltInOutput", fallback: 1
+            ).wrappedValue = 0.8
+            AudioDashboardControlBindings.toggleDeviceMute(
+                model: model, deviceUID: "BuiltInOutput"
+            )
+            XCTAssertEqual(
+                coordinator.deviceVolumes.isEmpty == false,
+                entry.acceptsVolume,
+                entry.name
+            )
+            XCTAssertEqual(
+                coordinator.deviceMutes.isEmpty == false,
+                entry.acceptsMute,
+                entry.name
+            )
+        }
     }
 
     func testMuteFailurePresentationsContainVisibleDeviceNameTextAndRetry() {
@@ -611,9 +998,14 @@ private extension AudioDeviceControlSnapshot {
 }
 
 private extension AudioOutputDeviceSnapshot {
-    static func fixtureDevice(uid: String, volume: Double) -> Self {
-        Self(id: uid, objectID: 1, name: uid,
-             volume: .value(volume, isWritable: true), mute: .value(false, isWritable: true))
+    static func fixtureDevice(uid: String, volume: Double, mute: Bool = false) -> Self {
+        Self(
+            id: uid,
+            objectID: 1,
+            name: uid,
+            volume: .value(volume, isWritable: true),
+            mute: .value(mute, isWritable: true)
+        )
     }
 }
 

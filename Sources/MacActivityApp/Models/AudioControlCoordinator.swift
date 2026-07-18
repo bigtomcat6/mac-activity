@@ -57,6 +57,37 @@ struct AudioProcessControlValues: Equatable, Sendable {
     }
 }
 
+struct AudioEffectiveVolumeState: Equatable, Sendable {
+    let rawVolume: Double
+    let isMuted: Bool
+
+    init(rawVolume: Double, isMuted: Bool) {
+        self.rawVolume = Self.clamped(rawVolume)
+        self.isMuted = isMuted
+    }
+
+    var displayVolume: Double { isMuted || rawVolume == 0 ? 0 : rawVolume }
+    var showsMutedIcon: Bool { displayVolume == 0 }
+    var canRestore: Bool { rawVolume > 0 }
+
+    func settingDisplayVolume(_ value: Double) -> Self {
+        let requested = Self.clamped(value)
+        return requested == 0
+            ? Self(rawVolume: rawVolume, isMuted: true)
+            : Self(rawVolume: requested, isMuted: false)
+    }
+
+    func settingMuted(_ muted: Bool) -> Self? {
+        if muted { return Self(rawVolume: rawVolume, isMuted: true) }
+        guard canRestore else { return nil }
+        return Self(rawVolume: rawVolume, isMuted: false)
+    }
+
+    private static func clamped(_ value: Double) -> Double {
+        min(1, max(0, value.isFinite ? value : 1))
+    }
+}
+
 struct AudioProcessControlSnapshot: Identifiable, Equatable, Sendable {
     var id: AudioObjectID { process.processObjectID }
     let process: AudioProcessEntry
@@ -100,6 +131,16 @@ typealias AudioControlDelay = @Sendable (Duration) async -> Void
 
 @MainActor
 final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject {
+    private enum DeviceControlIntent {
+        case effectiveState(AudioEffectiveVolumeState, debounceVolume: Bool)
+        case muteOnly(Bool)
+    }
+
+    private enum DeviceControlReadback {
+        case volume(Double)
+        case mute(Bool)
+    }
+
     @Published private(set) var snapshot: AudioControlSnapshot = .empty
 
     let supportsProcessControls: Bool
@@ -123,8 +164,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var gainIntentOrdinals: [AudioObjectID: UInt64] = [:]
     private var gainTasks: [AudioObjectID: Task<Void, Never>] = [:]
     private var retiringProcessObjectIDs: Set<AudioObjectID> = []
-    private var deviceVolumeTasks: [String: Task<Void, Never>] = [:]
-    private var deviceMuteTasks: [String: Task<Void, Never>] = [:]
+    private var deviceControlOrdinals: [String: UInt64] = [:]
+    private var deviceControlLifetimes: [String: UInt64] = [:]
+    private var deviceControlTasks: [String: Task<Void, Never>] = [:]
     private var processTasks: [AudioObjectID: Task<Void, Never>] = [:]
     private var trackedTasks: [UInt64: Task<Void, Never>] = [:]
     private var nextTrackedTaskID: UInt64 = 0
@@ -180,8 +222,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     deinit {
-        deviceVolumeTasks.values.forEach { $0.cancel() }
-        deviceMuteTasks.values.forEach { $0.cancel() }
+        deviceControlTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
         trackedTasks.values.forEach { $0.cancel() }
         monitorTask?.cancel()
@@ -235,6 +276,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
               let device = try? deviceProvider.outputDeviceSnapshot(forUID: deviceUID) else {
             return
         }
+        if let previous = confirmedDevices[deviceUID], previous.objectID != device.objectID {
+            invalidateDeviceControlLifetime(deviceUID)
+        }
         confirmedDevices[deviceUID] = device
         updateDevice(deviceUID) { row in
             row.device = device
@@ -243,72 +287,308 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     }
 
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
-        guard acceptsMutations, let confirmed = confirmedDevices[deviceUID] else { return }
         let requested = min(1, max(0, volume.isFinite ? volume : 1))
-        updateDevice(deviceUID) { row in
-            row.device = Self.device(row.device, volume: .value(requested, isWritable: true))
-            row.error = nil
-        }
-        deviceVolumeTasks[deviceUID]?.cancel()
-        deviceVolumeTasks[deviceUID] = trackedTask { @MainActor [weak self] in
-            guard let self else { return }
-            guard Task.isCancelled == false else { return }
-            await delay(.milliseconds(75))
-            guard Task.isCancelled == false else { return }
-            do {
-                let value = try deviceProvider.writeVolume(requested, forUID: deviceUID)
-                let current = confirmedDevices[deviceUID] ?? confirmed
-                let updated = Self.device(current, volume: .value(value, isWritable: true))
-                confirmedDevices[deviceUID] = updated
-                updateDevice(deviceUID) { row in
-                    row.device = updated
-                    row.error = nil
-                }
-            } catch {
-                let rolledBack = confirmedDevices[deviceUID] ?? confirmed
-                updateDevice(deviceUID) { row in
-                    row.device = rolledBack
-                    row.error = .deviceWrite
-                }
-            }
-        }
+        guard acceptsMutations,
+              let device = snapshot.devices.first(where: { $0.id == deviceUID })?.device,
+              let stateSource = requested == 0 ? confirmedDevices[deviceUID] : device,
+              let current = writableDeviceState(stateSource) else { return }
+        submitDeviceState(
+            current.settingDisplayVolume(requested),
+            for: deviceUID,
+            debounceVolume: requested > 0
+        )
     }
 
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {
-        guard acceptsMutations, let confirmed = confirmedDevices[deviceUID] else { return }
-        updateDevice(deviceUID) { row in
-            row.device = Self.device(row.device, mute: .value(isMuted, isWritable: true))
+        guard acceptsMutations,
+              let device = snapshot.devices.first(where: { $0.id == deviceUID })?.device else {
+            return
+        }
+        if let current = writableDeviceState(device),
+           let target = current.settingMuted(isMuted) {
+            submitDeviceState(target, for: deviceUID, debounceVolume: false)
+            return
+        }
+        guard let current = writableMuteOnlyDeviceState(device),
+              current.settingMuted(isMuted) != nil else { return }
+        submitDeviceControl(.muteOnly(isMuted), for: deviceUID)
+    }
+
+    func writableDeviceState(
+        _ device: AudioOutputDeviceSnapshot
+    ) -> AudioEffectiveVolumeState? {
+        guard case .value(let volume, isWritable: true) = device.volume,
+              case .value(let muted, isWritable: true) = device.mute else { return nil }
+        return AudioEffectiveVolumeState(rawVolume: volume, isMuted: muted)
+    }
+
+    private func writableMuteOnlyDeviceState(
+        _ device: AudioOutputDeviceSnapshot
+    ) -> AudioEffectiveVolumeState? {
+        guard case .value(let volume, isWritable: false) = device.volume,
+              case .value(let muted, isWritable: true) = device.mute else { return nil }
+        return AudioEffectiveVolumeState(rawVolume: volume, isMuted: muted)
+    }
+
+    func isCurrentDeviceIntent(_ uid: String, ordinal: UInt64) -> Bool {
+        acceptsMutations && !Task.isCancelled && deviceControlOrdinals[uid] == ordinal
+    }
+
+    private func isCurrentDeviceLifetime(
+        _ uid: String,
+        objectID: AudioObjectID,
+        lifetime: UInt64
+    ) -> Bool {
+        acceptsMutations
+            && deviceControlLifetimes[uid, default: 0] == lifetime
+            && confirmedDevices[uid]?.objectID == objectID
+    }
+
+    private func isCurrentDeviceOperation(
+        _ uid: String,
+        objectID: AudioObjectID,
+        lifetime: UInt64,
+        ordinal: UInt64
+    ) -> Bool {
+        isCurrentDeviceIntent(uid, ordinal: ordinal)
+            && isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime)
+    }
+
+    func submitDeviceState(
+        _ target: AudioEffectiveVolumeState,
+        for uid: String,
+        debounceVolume: Bool
+    ) {
+        submitDeviceControl(
+            .effectiveState(target, debounceVolume: debounceVolume),
+            for: uid
+        )
+    }
+
+    private func submitDeviceControl(_ intent: DeviceControlIntent, for uid: String) {
+        guard let fallback = confirmedDevices[uid],
+              deviceCanAccept(intent, snapshot: fallback) else { return }
+        let objectID = fallback.objectID
+        let lifetime = deviceControlLifetimes[uid, default: 0]
+        let ordinal = (deviceControlOrdinals[uid] ?? 0) &+ 1
+        deviceControlOrdinals[uid] = ordinal
+        let previous = deviceControlTasks[uid]
+        previous?.cancel()
+        updateDevice(uid) { row in
+            switch intent {
+            case .effectiveState(let target, _):
+                row.device = Self.device(row.device, state: target)
+            case .muteOnly(let muted):
+                row.device = Self.device(
+                    row.device,
+                    mute: .value(muted, isWritable: true)
+                )
+            }
             row.error = nil
         }
-        deviceMuteTasks[deviceUID]?.cancel()
-        deviceMuteTasks[deviceUID] = trackedTask { @MainActor [weak self] in
-            guard let self else { return }
-            guard Task.isCancelled == false else { return }
+
+        let task = trackedTask { @MainActor [weak self] in
+            await previous?.value
+            guard let self,
+                  isCurrentDeviceOperation(
+                    uid,
+                    objectID: objectID,
+                    lifetime: lifetime,
+                    ordinal: ordinal
+                  ) else { return }
             do {
-                let value = try deviceProvider.writeMute(isMuted, forUID: deviceUID)
-                let current = confirmedDevices[deviceUID] ?? confirmed
-                let updated = Self.device(current, mute: .value(value, isWritable: true))
-                confirmedDevices[deviceUID] = updated
-                updateDevice(deviceUID) { row in
-                    row.device = updated
-                    row.error = nil
+                guard let confirmed = try await executeDeviceControl(
+                    intent,
+                    uid: uid,
+                    objectID: objectID,
+                    lifetime: lifetime,
+                    ordinal: ordinal
+                ) else { return }
+                updateDevice(uid) { row in
+                    row.device = confirmed
+                    row.error = Self.deviceError(in: confirmed)
                 }
             } catch {
-                let rolledBack = confirmedDevices[deviceUID] ?? confirmed
-                updateDevice(deviceUID) { row in
+                guard isCurrentDeviceOperation(
+                    uid,
+                    objectID: objectID,
+                    lifetime: lifetime,
+                    ordinal: ordinal
+                ) else { return }
+                let rolledBack = confirmedDevices[uid] ?? fallback
+                updateDevice(uid) { row in
                     row.device = rolledBack
                     row.error = .deviceWrite
                 }
             }
+        }
+        deviceControlTasks[uid] = task
+    }
+
+    private func deviceCanAccept(
+        _ intent: DeviceControlIntent,
+        snapshot: AudioOutputDeviceSnapshot
+    ) -> Bool {
+        switch intent {
+        case .effectiveState:
+            return writableDeviceState(snapshot) != nil
+        case .muteOnly(let muted):
+            guard let current = writableMuteOnlyDeviceState(snapshot) else { return false }
+            return current.settingMuted(muted) != nil
+        }
+    }
+
+    private func executeDeviceControl(
+        _ intent: DeviceControlIntent,
+        uid: String,
+        objectID: AudioObjectID,
+        lifetime: UInt64,
+        ordinal: UInt64
+    ) async throws -> AudioOutputDeviceSnapshot? {
+        switch intent {
+        case .effectiveState(let target, let debounceVolume):
+            return try await executeEffectiveDeviceControl(
+                target,
+                uid: uid,
+                objectID: objectID,
+                lifetime: lifetime,
+                ordinal: ordinal,
+                debounceVolume: debounceVolume
+            )
+        case .muteOnly(let targetMuted):
+            guard let latest = confirmedDevices[uid],
+                  case .value(let volume, _) = latest.volume,
+                  case .value(let currentMuted, isWritable: true) = latest.mute,
+                  AudioEffectiveVolumeState(
+                    rawVolume: volume,
+                    isMuted: currentMuted
+                  ).settingMuted(targetMuted) != nil else { return nil }
+            guard currentMuted != targetMuted else { return latest }
+            guard isCurrentDeviceOperation(
+                uid,
+                objectID: objectID,
+                lifetime: lifetime,
+                ordinal: ordinal
+            ) else { return nil }
+            let muted = try deviceProvider.writeMute(targetMuted, forUID: uid)
+            guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
+                  let refreshed = confirmedDevices[uid] else { return nil }
+            let confirmed = mergeSuccessfulDeviceReadback(.mute(muted), into: refreshed)
+            confirmedDevices[uid] = confirmed
+            guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+            return confirmed
+        }
+    }
+
+    private func executeEffectiveDeviceControl(
+        _ target: AudioEffectiveVolumeState,
+        uid: String,
+        objectID: AudioObjectID,
+        lifetime: UInt64,
+        ordinal: UInt64,
+        debounceVolume: Bool
+    ) async throws -> AudioOutputDeviceSnapshot? {
+        guard var confirmed = confirmedDevices[uid],
+              var current = writableDeviceState(confirmed) else { return nil }
+        if current.rawVolume != target.rawVolume {
+            if debounceVolume {
+                await delay(.milliseconds(75))
+                guard isCurrentDeviceOperation(
+                        uid,
+                        objectID: objectID,
+                        lifetime: lifetime,
+                        ordinal: ordinal
+                      ),
+                      let latest = confirmedDevices[uid],
+                      let latestState = writableDeviceState(latest) else { return nil }
+                confirmed = latest
+                current = latestState
+            }
+            if current.rawVolume != target.rawVolume {
+                guard isCurrentDeviceOperation(
+                    uid,
+                    objectID: objectID,
+                    lifetime: lifetime,
+                    ordinal: ordinal
+                ) else { return nil }
+                let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
+                guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
+                      let latest = confirmedDevices[uid] else { return nil }
+                confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
+                confirmedDevices[uid] = confirmed
+                guard let merged = writableDeviceState(confirmed) else {
+                    guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+                    return confirmed
+                }
+                current = merged
+                guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+            }
+        }
+        if current.isMuted != target.isMuted {
+            guard isCurrentDeviceOperation(
+                uid,
+                objectID: objectID,
+                lifetime: lifetime,
+                ordinal: ordinal
+            ) else { return nil }
+            let muted = try deviceProvider.writeMute(target.isMuted, forUID: uid)
+            guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
+                  let latest = confirmedDevices[uid] else { return nil }
+            confirmed = mergeSuccessfulDeviceReadback(.mute(muted), into: latest)
+            confirmedDevices[uid] = confirmed
+            guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+        }
+        return confirmed
+    }
+
+    private func mergeSuccessfulDeviceReadback(
+        _ readback: DeviceControlReadback,
+        into latest: AudioOutputDeviceSnapshot
+    ) -> AudioOutputDeviceSnapshot {
+        switch readback {
+        case .volume(let volume):
+            let isWritable: Bool
+            if case .value(_, let latestWritable) = latest.volume {
+                isWritable = latestWritable
+            } else {
+                isWritable = true
+            }
+            return Self.device(
+                latest,
+                volume: .value(volume, isWritable: isWritable)
+            )
+        case .mute(let muted):
+            let isWritable: Bool
+            if case .value(_, let latestWritable) = latest.mute {
+                isWritable = latestWritable
+            } else {
+                isWritable = true
+            }
+            return Self.device(
+                latest,
+                mute: .value(muted, isWritable: isWritable)
+            )
         }
     }
 
     func setProcessVolume(_ volume: Double, for processObjectID: AudioObjectID) {
-        updateProcessIntent(processObjectID) { $0.volume = min(1, max(0, volume)) }
+        updateProcessIntent(processObjectID) { values in
+            let next = AudioEffectiveVolumeState(
+                rawVolume: values.volume, isMuted: values.isMuted
+            ).settingDisplayVolume(volume)
+            values.volume = next.rawVolume
+            values.isMuted = next.isMuted
+        }
     }
 
     func setProcessMuted(_ isMuted: Bool, for processObjectID: AudioObjectID) {
-        updateProcessIntent(processObjectID) { $0.isMuted = isMuted }
+        updateProcessIntent(processObjectID) { values in
+            guard let next = AudioEffectiveVolumeState(
+                rawVolume: values.volume, isMuted: values.isMuted
+            ).settingMuted(isMuted) else { return }
+            values.volume = next.rawVolume
+            values.isMuted = next.isMuted
+        }
     }
 
     func setProcessRoute(_ route: AudioRouteMode, for processObjectID: AudioObjectID) {
@@ -351,8 +631,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
         requestShutdown()
         didBeginShutdown = true
-        deviceVolumeTasks.values.forEach { $0.cancel() }
-        deviceMuteTasks.values.forEach { $0.cancel() }
+        deviceControlTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
         let workTasks = Array(trackedTasks.values)
         workTasks.forEach { $0.cancel() }
@@ -380,8 +659,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
     }
 
-    func testingWaitForDeviceMute(_ deviceUID: String) async {
-        await deviceMuteTasks[deviceUID]?.value
+    func testingWaitForDeviceControl(_ deviceUID: String) async {
+        await deviceControlTasks[deviceUID]?.value
     }
 
     func testingWaitForProcessTask(_ processObjectID: AudioObjectID) async {
@@ -417,10 +696,38 @@ private extension AudioControlCoordinator {
     }
 
     func refreshDevices() {
-        snapshot.devices = (try? deviceProvider.outputDeviceSnapshots().map {
-            confirmedDevices[$0.id] = $0
-            return AudioDeviceControlSnapshot(device: $0, error: Self.deviceError(in: $0))
-        }) ?? []
+        guard let devices = try? deviceProvider.outputDeviceSnapshots() else {
+            invalidateAllDeviceControlLifetimes()
+            confirmedDevices.removeAll()
+            snapshot.devices = []
+            return
+        }
+        var refreshedDevices: [String: AudioOutputDeviceSnapshot] = [:]
+        let refreshedRows = devices.map { device in
+            refreshedDevices[device.id] = device
+            return AudioDeviceControlSnapshot(
+                device: device,
+                error: Self.deviceError(in: device)
+            )
+        }
+        for (uid, previous) in confirmedDevices
+            where refreshedDevices[uid]?.objectID != previous.objectID {
+            invalidateDeviceControlLifetime(uid)
+        }
+        snapshot.devices = refreshedRows
+        confirmedDevices = refreshedDevices
+    }
+
+    func invalidateDeviceControlLifetime(_ uid: String) {
+        deviceControlLifetimes[uid] = (deviceControlLifetimes[uid] ?? 0) &+ 1
+        deviceControlOrdinals[uid] = (deviceControlOrdinals[uid] ?? 0) &+ 1
+        deviceControlTasks[uid]?.cancel()
+    }
+
+    func invalidateAllDeviceControlLifetimes() {
+        for uid in confirmedDevices.keys {
+            invalidateDeviceControlLifetime(uid)
+        }
     }
 
     func refreshProcesses(resetSessions: Bool = false) {
@@ -586,8 +893,11 @@ private extension AudioControlCoordinator {
             isMuted: row.isMuted,
             route: row.route
         )
+        let originalValues = values
+        let shouldRetryFailedIntent = row.error != nil
         let previousRoute = values.route
         mutate(&values)
+        guard values != originalValues || shouldRetryFailedIntent else { return }
         let routeOptions = values.route == previousRoute
             ? row.routeOptions
             : makeRouteOptions(for: values.route, process: row.process)
@@ -894,6 +1204,17 @@ private extension AudioControlCoordinator {
 
     static func device(
         _ device: AudioOutputDeviceSnapshot,
+        state: AudioEffectiveVolumeState
+    ) -> AudioOutputDeviceSnapshot {
+        Self.device(
+            device,
+            volume: .value(state.rawVolume, isWritable: true),
+            mute: .value(state.isMuted, isWritable: true)
+        )
+    }
+
+    static func device(
+        _ device: AudioOutputDeviceSnapshot,
         volume: AudioPropertyValue<Double>? = nil,
         mute: AudioPropertyValue<Bool>? = nil
     ) -> AudioOutputDeviceSnapshot {
@@ -1067,6 +1388,7 @@ private extension AudioControlCoordinator {
 
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
+            invalidateAllDeviceControlLifetimes()
             if processRuntimeWasStarted {
                 await engine.stopAll()
             }

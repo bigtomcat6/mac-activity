@@ -60,6 +60,195 @@ extension View {
     }
 }
 
+enum AudioVolumeMotion: Equatable {
+    case mute
+    case restore
+    case rollback
+    case external
+}
+
+struct AudioVolumeMotionTrigger: Equatable {
+    let id: UInt64
+    let motion: AudioVolumeMotion
+}
+
+enum AudioVolumeMotionSelection {
+    static func resolve(
+        trigger: AudioVolumeMotionTrigger?,
+        consumedTriggerID: UInt64?,
+        hasWriteFailure: Bool
+    ) -> AudioVolumeMotion {
+        if hasWriteFailure { return .rollback }
+        guard let trigger, trigger.id != consumedTriggerID else { return .external }
+        return trigger.motion
+    }
+}
+
+struct AudioMuteGlyphPresentation: Equatable {
+    let isMuted: Bool
+    let reduceMotion: Bool
+    let motion: AudioVolumeMotion
+
+    var waveOpacity: Double { isMuted ? 0 : 1 }
+    var mutedOpacity: Double { isMuted ? 1 : 0 }
+    var crossfadeDuration: TimeInterval {
+        if reduceMotion { return 0.1 }
+        return motion == .rollback ? 0.16 : 0.14
+    }
+}
+
+struct AudioVolumeMotionPolicy: Equatable {
+    let isEditing: Bool
+    let reduceMotion: Bool
+    let motion: AudioVolumeMotion
+
+    var duration: TimeInterval? {
+        guard !isEditing && !reduceMotion else { return nil }
+        switch motion {
+        case .mute: return 0.2
+        case .restore: return 0.22
+        case .rollback: return 0.16
+        case .external: return 0.14
+        }
+    }
+
+    var usesSpring: Bool { motion == .mute || motion == .restore }
+
+    var animation: Animation? {
+        guard let duration else { return nil }
+        return usesSpring
+            ? .spring(response: duration, dampingFraction: 1)
+            : .easeInOut(duration: duration)
+    }
+}
+
+private struct AudioMuteGlyph: View {
+    let isMuted: Bool
+    let motion: AudioVolumeMotion
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    private var presentation: AudioMuteGlyphPresentation {
+        .init(isMuted: isMuted, reduceMotion: reduceMotion, motion: motion)
+    }
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "speaker.wave.2.fill")
+                .opacity(presentation.waveOpacity)
+            Image(systemName: "speaker.slash.fill")
+                .opacity(presentation.mutedOpacity)
+        }
+        .animation(.easeInOut(duration: presentation.crossfadeDuration), value: isMuted)
+        .frame(width: 20, height: 20)
+    }
+}
+
+private struct AudioMuteButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
+            .opacity(configuration.isPressed ? 0.78 : 1)
+            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+private struct AudioVolumeTrack: View {
+    let value: Double
+
+    private var clampedValue: CGFloat {
+        CGFloat(min(max(value, 0), 1))
+    }
+
+    var body: some View {
+        GeometryReader { geometry in
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(Color.primary.opacity(0.12))
+                Capsule()
+                    .fill(Color.accentColor)
+                    .frame(width: geometry.size.width * clampedValue)
+            }
+        }
+        .frame(height: 4)
+        .accessibilityHidden(true)
+    }
+}
+
+private struct AudioAnimatedVolumeSlider: View {
+    @Binding var value: Double
+    let accessibility: AudioAccessibilityContract
+    let trigger: AudioVolumeMotionTrigger?
+    let hasWriteFailure: Bool
+    @State private var displayedValue: Double
+    @State private var isEditing = false
+    @State private var consumedTriggerID: UInt64?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    init(
+        value: Binding<Double>,
+        accessibility: AudioAccessibilityContract,
+        trigger: AudioVolumeMotionTrigger?,
+        hasWriteFailure: Bool
+    ) {
+        _value = value
+        self.accessibility = accessibility
+        self.trigger = trigger
+        self.hasWriteFailure = hasWriteFailure
+        _displayedValue = State(initialValue: value.wrappedValue)
+    }
+
+    private var motionPolicy: AudioVolumeMotionPolicy {
+        .init(isEditing: isEditing, reduceMotion: reduceMotion, motion: motion)
+    }
+
+    private var motion: AudioVolumeMotion {
+        AudioVolumeMotionSelection.resolve(
+            trigger: trigger,
+            consumedTriggerID: consumedTriggerID,
+            hasWriteFailure: hasWriteFailure
+        )
+    }
+
+    var body: some View {
+        ZStack {
+            AudioVolumeTrack(value: displayedValue)
+                .allowsHitTesting(false)
+
+            Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
+                .opacity(0.01)
+        }
+        .frame(height: 20)
+        .onChange(of: displayedValue) { updatedValue in
+            guard isEditing else { return }
+            value = updatedValue
+        }
+        .onChange(of: value) { updatedValue in
+            synchronizeDisplayedValue(to: updatedValue)
+
+            if let trigger, trigger.id != consumedTriggerID {
+                consumedTriggerID = trigger.id
+            }
+        }
+        .onChange(of: hasWriteFailure) { didFail in
+            guard didFail else { return }
+            synchronizeDisplayedValue(to: value)
+        }
+        .audioAccessibility(accessibility)
+    }
+
+    private func synchronizeDisplayedValue(to updatedValue: Double) {
+        if isEditing {
+            displayedValue = updatedValue
+        } else {
+            withAnimation(motionPolicy.animation) {
+                displayedValue = updatedValue
+            }
+        }
+    }
+}
+
 @MainActor
 enum AudioDashboardControlBindings {
     static func deviceVolume(
@@ -70,12 +259,17 @@ enum AudioDashboardControlBindings {
         Binding(
             get: {
                 guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
-                      case .value(let value, _) = row.device.volume else { return fallback }
-                return value
+                      case .value(let volume, _) = row.device.volume else { return fallback }
+                guard case .value(let muted, _) = row.device.mute else { return volume }
+                return AudioEffectiveVolumeState(
+                    rawVolume: volume,
+                    isMuted: muted
+                ).displayVolume
             },
             set: { value in
                 guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
-                      row.device.volume.isWritable else { return }
+                      case .value(_, isWritable: true) = row.device.volume,
+                      case .value(_, isWritable: true) = row.device.mute else { return }
                 model.setDeviceVolume(value, for: deviceUID)
             }
         )
@@ -88,8 +282,13 @@ enum AudioDashboardControlBindings {
     ) -> Binding<Double> {
         Binding(
             get: {
-                model.snapshot.processes.first(where: { $0.id == processObjectID })?.volume
-                    ?? fallback
+                guard let row = model.snapshot.processes.first(where: {
+                    $0.id == processObjectID
+                }) else { return fallback }
+                return AudioEffectiveVolumeState(
+                    rawVolume: row.volume,
+                    isMuted: row.isMuted
+                ).displayVolume
             },
             set: { value in
                 guard model.snapshot.processes.contains(where: { $0.id == processObjectID }) else {
@@ -128,8 +327,12 @@ enum AudioDashboardControlBindings {
 
     static func toggleDeviceMute(model: AudioDashboardModel, deviceUID: String) {
         guard let row = model.snapshot.devices.first(where: { $0.id == deviceUID }),
-              case .value(let current, isWritable: true) = row.device.mute else { return }
-        model.setDeviceMuted(!current, for: deviceUID)
+              case .value(let volume, _) = row.device.volume,
+              case .value(let muted, isWritable: true) = row.device.mute else { return }
+        let current = AudioEffectiveVolumeState(rawVolume: volume, isMuted: muted)
+        let targetMuted = !current.showsMutedIcon
+        guard current.settingMuted(targetMuted) != nil else { return }
+        model.setDeviceMuted(targetMuted, for: deviceUID)
     }
 
     static func toggleProcessMute(
@@ -138,7 +341,13 @@ enum AudioDashboardControlBindings {
     ) {
         guard let row = model.snapshot.processes.first(where: { $0.id == processObjectID })
         else { return }
-        model.setProcessMuted(!row.isMuted, for: processObjectID)
+        let current = AudioEffectiveVolumeState(
+            rawVolume: row.volume,
+            isMuted: row.isMuted
+        )
+        let targetMuted = !current.showsMutedIcon
+        guard current.settingMuted(targetMuted) != nil else { return }
+        model.setProcessMuted(targetMuted, for: processObjectID)
     }
 }
 
@@ -214,8 +423,12 @@ private struct AudioDashboardSection<Content: View>: View {
 private struct AudioDeviceControlRow: View {
     let presentation: AudioDeviceRowPresentation
     @ObservedObject var model: AudioDashboardModel
+    @State private var muteMotion: AudioVolumeMotionTrigger?
 
     private var snapshot: AudioDeviceControlSnapshot { presentation.snapshot }
+    private var muteVisualMotion: AudioVolumeMotion {
+        snapshot.error == nil ? (muteMotion?.motion ?? .external) : .rollback
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
@@ -226,7 +439,7 @@ private struct AudioDeviceControlRow: View {
 
                 Spacer(minLength: 12)
                 volumeControl
-                    .frame(maxWidth: 150)
+                    .frame(width: 150, height: 20, alignment: .center)
                 muteControl
             }
 
@@ -251,13 +464,14 @@ private struct AudioDeviceControlRow: View {
     private var volumeControl: some View {
         switch presentation.volume {
         case .slider(let value):
-            Slider(
+            AudioAnimatedVolumeSlider(
                 value: AudioDashboardControlBindings.deviceVolume(
                     model: model, deviceUID: snapshot.id, fallback: value
                 ),
-                in: 0...1
+                accessibility: presentation.volumeAccessibility,
+                trigger: muteMotion,
+                hasWriteFailure: snapshot.error != nil
             )
-            .audioAccessibility(presentation.volumeAccessibility)
 
         case .readOnly(let value):
             Text(value, format: .percent.precision(.fractionLength(0)))
@@ -283,20 +497,20 @@ private struct AudioDeviceControlRow: View {
     @ViewBuilder
     private var muteControl: some View {
         switch presentation.mute {
-        case .button(let isMuted):
+        case .button(let isMuted, _):
             Button {
+                recordMuteToggle(from: isMuted)
                 AudioDashboardControlBindings.toggleDeviceMute(
                     model: model, deviceUID: snapshot.id
                 )
             } label: {
-                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .frame(width: 20)
+                AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
             }
-            .buttonStyle(.plain)
+            .buttonStyle(AudioMuteButtonStyle())
             .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
-            Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
+            AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
                 .foregroundStyle(.secondary)
                 .audioAccessibility(presentation.muteAccessibility)
 
@@ -331,13 +545,24 @@ private struct AudioDeviceControlRow: View {
             .font(.caption2)
             .foregroundStyle(.secondary)
     }
+
+    private func recordMuteToggle(from isMuted: Bool) {
+        muteMotion = .init(
+            id: (muteMotion?.id ?? 0) &+ 1,
+            motion: isMuted ? .restore : .mute
+        )
+    }
 }
 
 private struct AudioProcessControlRow: View {
     let presentation: AudioProcessRowPresentation
     @ObservedObject var model: AudioDashboardModel
+    @State private var muteMotion: AudioVolumeMotionTrigger?
 
     private var snapshot: AudioProcessControlSnapshot { presentation.snapshot }
+    private var muteVisualMotion: AudioVolumeMotion {
+        snapshot.error == nil ? (muteMotion?.motion ?? .external) : .rollback
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -348,19 +573,26 @@ private struct AudioProcessControlRow: View {
 
                 Spacer(minLength: 12)
 
-                Slider(value: volumeBinding, in: 0...1)
+                AudioAnimatedVolumeSlider(
+                    value: volumeBinding,
+                    accessibility: presentation.volumeAccessibility,
+                    trigger: muteMotion,
+                    hasWriteFailure: snapshot.error != nil
+                )
                     .frame(maxWidth: 130)
-                    .audioAccessibility(presentation.volumeAccessibility)
 
                 Button {
+                    recordMuteToggle(from: presentation.showsMutedIcon)
                     AudioDashboardControlBindings.toggleProcessMute(
                         model: model, processObjectID: snapshot.id
                     )
                 } label: {
-                    Image(systemName: snapshot.isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                        .frame(width: 20)
+                    AudioMuteGlyph(
+                        isMuted: presentation.showsMutedIcon,
+                        motion: muteVisualMotion
+                    )
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AudioMuteButtonStyle())
                 .audioAccessibility(presentation.muteAccessibility)
 
                 routeMenu
@@ -384,6 +616,13 @@ private struct AudioProcessControlRow: View {
             model: model,
             processObjectID: snapshot.id,
             fallback: snapshot.volume
+        )
+    }
+
+    private func recordMuteToggle(from isMuted: Bool) {
+        muteMotion = .init(
+            id: (muteMotion?.id ?? 0) &+ 1,
+            motion: isMuted ? .restore : .mute
         )
     }
 
@@ -579,7 +818,7 @@ enum AudioVolumeControlPresentation: Equatable {
 }
 
 enum AudioMuteControlPresentation: Equatable {
-    case button(Bool)
+    case button(isMuted: Bool, canToggle: Bool)
     case readOnly(Bool)
     case unsupported
     case unavailable(String)
@@ -662,16 +901,49 @@ struct AudioDeviceRowPresentation: Identifiable {
 
     init(_ snapshot: AudioDeviceControlSnapshot) {
         self.snapshot = snapshot
+        let effective: AudioEffectiveVolumeState?
+        if case .value(let volume, _) = snapshot.device.volume,
+           case .value(let muted, _) = snapshot.device.mute {
+            effective = AudioEffectiveVolumeState(rawVolume: volume, isMuted: muted)
+        } else {
+            effective = nil
+        }
+        let supportsStrongBinding: Bool
+        let supportsMuteOnly: Bool
+        switch (snapshot.device.volume, snapshot.device.mute) {
+        case (.value(_, isWritable: true), .value(_, isWritable: true)):
+            supportsStrongBinding = true
+            supportsMuteOnly = false
+        case (.value(_, isWritable: false), .value(_, isWritable: true)):
+            supportsStrongBinding = false
+            supportsMuteOnly = true
+        default:
+            supportsStrongBinding = false
+            supportsMuteOnly = false
+        }
         switch snapshot.device.volume {
-        case .value(let value, isWritable: true): volume = .slider(value)
-        case .value(let value, isWritable: false): volume = .readOnly(value)
+        case .value(let value, isWritable: true):
+            let displayVolume = effective?.displayVolume ?? value
+            volume = supportsStrongBinding ? .slider(displayVolume) : .readOnly(displayVolume)
+        case .value(let value, isWritable: false):
+            volume = .readOnly(effective?.displayVolume ?? value)
         case .unsupported: volume = .unsupported
         case .unavailable: volume = .unavailable
         case .failed: volume = .failed
         }
         switch snapshot.device.mute {
-        case .value(let value, isWritable: true): mute = .button(value)
-        case .value(let value, isWritable: false): mute = .readOnly(value)
+        case .value(let value, isWritable: true):
+            let isMuted = effective?.showsMutedIcon ?? value
+            if supportsStrongBinding || supportsMuteOnly {
+                mute = .button(
+                    isMuted: isMuted,
+                    canToggle: isMuted ? (effective?.canRestore ?? true) : true
+                )
+            } else {
+                mute = .readOnly(isMuted)
+            }
+        case .value(let value, isWritable: false):
+            mute = .readOnly(effective?.showsMutedIcon ?? value)
         case .unsupported: mute = .unsupported
         case .unavailable:
             mute = .unavailable(
@@ -687,16 +959,23 @@ struct AudioDeviceRowPresentation: Identifiable {
     var muteAccessibility: AudioAccessibilityContract {
         let identifier = "\(accessibilityPrefix).\(mute.identifierSuffix ?? "mute")"
         switch mute {
-        case .button(let isMuted):
-            return AudioAccessibilityContract(
-                identifier: identifier,
-                label: audioTargetLabel(
+        case .button(let isMuted, let canToggle):
+            let label = isMuted && !canToggle
+                ? audioTargetLabel(
+                    AppLocalization.string(.audioMuteRestoreUnavailable),
+                    target: snapshot.device.name
+                )
+                : audioTargetLabel(
                     AppLocalization.string(
                         isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
                         snapshot.device.name
                     ), target: snapshot.device.name
-                ),
-                value: AppLocalization.string(isMuted ? .audioMuted : .audioNotMuted)
+                )
+            return AudioAccessibilityContract(
+                identifier: identifier,
+                label: label,
+                value: AppLocalization.string(isMuted ? .audioMuted : .audioNotMuted),
+                isEnabled: canToggle
             )
         case .readOnly(let isMuted):
             return AudioAccessibilityContract(
@@ -731,28 +1010,41 @@ struct AudioProcessRowPresentation: Identifiable {
     var rowAccessibility: AudioAccessibilityContract {
         AudioAccessibilityContract(identifier: accessibilityPrefix, label: snapshot.process.name)
     }
+    var effectiveVolume: AudioEffectiveVolumeState {
+        AudioEffectiveVolumeState(rawVolume: snapshot.volume, isMuted: snapshot.isMuted)
+    }
+    var showsMutedIcon: Bool { effectiveVolume.showsMutedIcon }
+    var canToggleMute: Bool { showsMutedIcon ? effectiveVolume.canRestore : true }
     var volumeAccessibility: AudioAccessibilityContract {
-        AudioAccessibilityContract(
+        let displayVolume = effectiveVolume.displayVolume
+        return AudioAccessibilityContract(
             identifier: "\(accessibilityPrefix).volume.slider",
             label: audioTargetLabel(
                 AppLocalization.string(
                     .audioVolumeAccessibility, snapshot.process.name,
-                    Int((snapshot.volume * 100).rounded())
+                    Int((displayVolume * 100).rounded())
                 ), target: snapshot.process.name
             ),
-            value: snapshot.volume.formatted(.percent.precision(.fractionLength(0)))
+            value: displayVolume.formatted(.percent.precision(.fractionLength(0)))
         )
     }
     var muteAccessibility: AudioAccessibilityContract {
-        AudioAccessibilityContract(
-            identifier: "\(accessibilityPrefix).mute",
-            label: audioTargetLabel(
+        let label = showsMutedIcon && !canToggleMute
+            ? audioTargetLabel(
+                AppLocalization.string(.audioMuteRestoreUnavailable),
+                target: snapshot.process.name
+            )
+            : audioTargetLabel(
                 AppLocalization.string(
-                    snapshot.isMuted ? .audioUnmuteAccessibility : .audioMuteAccessibility,
+                    showsMutedIcon ? .audioUnmuteAccessibility : .audioMuteAccessibility,
                     snapshot.process.name
                 ), target: snapshot.process.name
-            ),
-            value: AppLocalization.string(snapshot.isMuted ? .audioMuted : .audioNotMuted)
+            )
+        return AudioAccessibilityContract(
+            identifier: "\(accessibilityPrefix).mute",
+            label: label,
+            value: AppLocalization.string(showsMutedIcon ? .audioMuted : .audioNotMuted),
+            isEnabled: canToggleMute
         )
     }
     var routeAccessibility: AudioAccessibilityContract {
