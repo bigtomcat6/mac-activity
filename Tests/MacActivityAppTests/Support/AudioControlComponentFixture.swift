@@ -292,22 +292,11 @@ final class AudioControlComponentFixture {
 }
 
 extension AudioFeatureAvailability {
-    private static let testValidatedPolicy = AudioRouteNativeValidationPolicy(
-        validatedFingerprints: [AudioRouteTopologyFingerprint(
-            osBuild: "test",
-            sourceDeviceUIDs: ["source"],
-            selectedTargetUIDs: ["target"],
-            devices: []
-        )]
-    )
-
     static let unsupported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0),
-        nativeValidationPolicy: testValidatedPolicy
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0)
     )
     static let supported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
-        nativeValidationPolicy: testValidatedPolicy
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0)
     )
 }
 

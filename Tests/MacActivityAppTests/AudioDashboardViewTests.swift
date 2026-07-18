@@ -587,8 +587,7 @@ final class AudioDashboardViewTests: XCTestCase {
             let availability = AudioFeatureAvailability(
                 operatingSystemVersion: .init(
                     majorVersion: version.0, minorVersion: version.1, patchVersion: 0
-                ),
-                nativeValidationPolicy: .allowingAllForTesting
+                )
             )
             let coordinator = AudioViewCoordinatorSpy(
                 supportsProcessControls: availability.supportsProcessControls,
@@ -605,21 +604,20 @@ final class AudioDashboardViewTests: XCTestCase {
         }
     }
 
-    func testProductionConservativePolicyHidesProcessSectionOnMacOS142() {
+    func testMacOS142ShowsProcessSectionWithoutValidatedRouteFingerprint() {
         let availability = AudioFeatureAvailability(
             operatingSystemVersion: .init(
                 majorVersion: 14,
                 minorVersion: 2,
                 patchVersion: 0
-            ),
-            nativeValidationPolicy: .conservative
+            )
         )
         let presentation = AudioDashboardPresentation(
             snapshot: .fixture(),
             supportsProcessControls: availability.supportsProcessControls
         )
 
-        XCTAssertNil(presentation.processSection)
+        XCTAssertNotNil(presentation.processSection)
         XCTAssertEqual(presentation.devices.count, 1)
     }
 

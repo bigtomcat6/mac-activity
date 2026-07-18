@@ -86,11 +86,6 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testDefaultServiceKeepsProcessDiscoveryHiddenUnderConservativePolicy() {
-        XCTAssertEqual(AudioProcessService().audibleOutputProcesses(), [])
-    }
-
-    @MainActor
     func testAudibleOutputProcessesReturnsEmptyWithoutTouchingSnapshotsWhenAvailabilityUnsupported() {
         var didReadSnapshots = false
         let service = AudioProcessService(
@@ -99,8 +94,7 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 1,
                     patchVersion: 0
-                ),
-                nativeValidationPolicy: .allowingAllForTesting
+                )
             ),
             processSnapshotReader: {
                 didReadSnapshots = true
@@ -124,7 +118,7 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
-    func testConservativeProductionPolicySkipsProcessEnumerationOnMacOS142() {
+    func testMacOS142ProcessDiscoveryUsesInjectedSnapshots() {
         var didReadSnapshots = false
         let service = AudioProcessService(
             availability: AudioFeatureAvailability(
@@ -132,21 +126,19 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                ),
-                nativeValidationPolicy: .conservative
+                )
             ),
             processSnapshotReader: {
                 didReadSnapshots = true
                 return []
             },
             appSnapshotReader: {
-                XCTFail("App snapshots must stay untouched while process controls are hidden")
                 return []
             }
         )
 
         XCTAssertEqual(service.audibleOutputProcesses(), [])
-        XCTAssertFalse(didReadSnapshots)
+        XCTAssertTrue(didReadSnapshots)
     }
 
     @MainActor
@@ -157,8 +149,7 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                ),
-                nativeValidationPolicy: .allowingAllForTesting
+                )
             ),
             processSnapshotReader: {
                 [
@@ -377,8 +368,7 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                ),
-                nativeValidationPolicy: .allowingAllForTesting
+                )
             ),
             processSnapshotReader: {
                 [
@@ -438,8 +428,7 @@ final class AudioProcessServiceTests: XCTestCase {
                     majorVersion: 14,
                     minorVersion: 2,
                     patchVersion: 0
-                ),
-                nativeValidationPolicy: .allowingAllForTesting
+                )
             ),
             processSnapshotReader: {
                 [

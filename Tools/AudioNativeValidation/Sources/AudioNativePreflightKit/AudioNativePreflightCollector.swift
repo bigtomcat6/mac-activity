@@ -32,12 +32,8 @@ public struct AudioNativePreflightCollector {
             controlInspectionPolicy: controlInspectionPolicy
         )
 
-        let processPolicy = AudioRouteNativeValidationPolicy(
-            validatedFingerprints: [Self.impossibleReadOnlyFingerprint]
-        )
         let processAvailability = AudioFeatureAvailability(
-            operatingSystemVersion: operatingSystemVersion,
-            nativeValidationPolicy: processPolicy
+            operatingSystemVersion: operatingSystemVersion
         )
         let processObservations: [AudioNativePreflightProcessObservation]
         if #available(macOS 14.2, *) {

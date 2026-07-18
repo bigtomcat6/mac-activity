@@ -31,8 +31,7 @@ func makeNativeValidationRuntime(
     let fingerprint = try AudioRoutePlanner().topologyFingerprint(for: request)
     let policy = AudioRouteNativeValidationPolicy(validatedFingerprints: [fingerprint])
     let availability = AudioFeatureAvailability(
-        operatingSystemVersion: operatingSystemVersion,
-        nativeValidationPolicy: policy
+        operatingSystemVersion: operatingSystemVersion
     )
     let planner = AudioRoutePlanner(policy: policy)
     let plan = try planner.plan(request)

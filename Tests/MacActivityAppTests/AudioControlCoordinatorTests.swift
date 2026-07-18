@@ -39,21 +39,20 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
     }
 
-    func testConservativePolicyOnCapableOSSkipsAllProcessRuntimeWork() async {
+    func testCapableOSStartsProcessRuntimeWorkWithoutValidatedRouteFingerprint() async {
         let availability = AudioFeatureAvailability(
-            operatingSystemVersion: .init(majorVersion: 15, minorVersion: 0, patchVersion: 0),
-            nativeValidationPolicy: .conservative
+            operatingSystemVersion: .init(majorVersion: 15, minorVersion: 0, patchVersion: 0)
         )
         let fixture = CoordinatorFixture(availability: availability)
 
         await fixture.coordinator.start()
 
-        XCTAssertFalse(fixture.coordinator.supportsProcessControls)
-        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
-        XCTAssertEqual(fixture.processProvider.callCount, 0)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
-        XCTAssertFalse(fixture.lifecycle.events.contains("routes.read"))
-        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [])
+        XCTAssertTrue(fixture.coordinator.supportsProcessControls)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.process.processObjectID), [11])
+        XCTAssertTrue(fixture.lifecycle.events.contains("routes.read"))
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
     func testNativeValidationRequiredRemainsDistinctCoordinatorError() {
