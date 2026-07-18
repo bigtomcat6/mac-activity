@@ -70,7 +70,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let rawFailures: [NativeRawFailure]
     let resolvedTeardownProbeFailures: [NativeRawFailure]
     let sessionError: String?
-    let eligibleForPolicyPromotion: Bool
+    let runtimeValidationCompleted: Bool
 }
 
 enum NativeValidationError: Error {
@@ -324,6 +324,13 @@ private func makeRecord(
 ) -> NativeAudioValidationRecord {
     let before = snapshot.callbackCountBeforeObservation
     let after = snapshot.callbackCountAfterObservation
+    let sustainedCallbacks = before != nil && after != nil && before != after
+    let runtimeValidationCompleted = sessionError == nil
+        && sustainedCallbacks
+        && snapshot.rawFailures.isEmpty
+        && snapshot.teardown?.isReleased == true
+        && snapshot.tapMuteBehaviorObservations.map(\.observedState)
+            == [.unmuted, .mutedWhenTapped, .unmuted]
     return NativeAudioValidationRecord(
         processObjectID: environment.processObjectID,
         targetUIDs: environment.targetUIDs,
@@ -337,13 +344,13 @@ private func makeRecord(
         verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
         callbackCountBeforeObservation: before,
         callbackCountAfterObservation: after,
-        sustainedCallbacks: before != nil && after != nil && before != after,
+        sustainedCallbacks: sustainedCallbacks,
         teardown: snapshot.teardown,
         microphoneTCCObservation: environment.microphoneTCCObservation,
         rawFailures: snapshot.rawFailures,
         resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
         sessionError: sessionError,
-        eligibleForPolicyPromotion: false
+        runtimeValidationCompleted: runtimeValidationCompleted
     )
 }
 
@@ -383,7 +390,7 @@ final class NativeAudioTopologyTests: XCTestCase {
         XCTAssertEqual(topology.tapUUIDs, [topology.subTap.tapUUID])
         XCTAssertTrue(topology.subTap.driftMatchesExpected)
         XCTAssertTrue(try XCTUnwrap(record.teardown).isReleased)
-        XCTAssertFalse(record.eligibleForPolicyPromotion)
+        XCTAssertTrue(record.runtimeValidationCompleted)
     }
 
     @MainActor

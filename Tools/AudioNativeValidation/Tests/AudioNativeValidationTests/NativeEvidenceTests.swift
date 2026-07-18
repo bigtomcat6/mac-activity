@@ -33,7 +33,9 @@ final class NativeEvidenceTests: XCTestCase {
         _ = try await persistNativeValidationEvidence(
             environment: environment(outputURL: outputURL),
             fingerprint: fingerprint,
-            recordingSnapshot: hardware.snapshot,
+            recordingSnapshot: {
+                self.completedSnapshot(from: hardware.snapshot())
+            },
             runSession: {
                 let createdTap = try hardware.createTap(
                     processObjectID: 42,
@@ -52,7 +54,7 @@ final class NativeEvidenceTests: XCTestCase {
 
         let record = try decodeRecord(at: outputURL)
         XCTAssertEqual(record.tapMuteBehaviorObservations, expected)
-        XCTAssertFalse(record.eligibleForPolicyPromotion)
+        XCTAssertTrue(record.runtimeValidationCompleted)
     }
 
     @MainActor
@@ -108,7 +110,7 @@ final class NativeEvidenceTests: XCTestCase {
             let record = try decodeRecord(at: outputURL)
             XCTAssertEqual(record.tapMuteBehaviorObservations, [observedInitialState])
             XCTAssertEqual(record.rawFailures, [failure])
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertTrue(record.sessionError?.contains("-32003") == true)
         }
     }
@@ -171,7 +173,7 @@ final class NativeEvidenceTests: XCTestCase {
                 scope: kAudioObjectPropertyScopeGlobal,
                 element: kAudioObjectPropertyElementMain
             )])
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertTrue(record.sessionError?.contains("-32004") == true)
         }
     }
@@ -230,7 +232,7 @@ final class NativeEvidenceTests: XCTestCase {
             XCTFail("Expected retained cleanup failure")
         } catch NativeValidationError.teardownUnproven {
             let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertEqual(record.teardown, teardown)
             XCTAssertEqual(record.rawFailures, [NativeRawFailure(
                 seam: "retainedCleanup.destroyAggregate",
@@ -282,7 +284,7 @@ final class NativeEvidenceTests: XCTestCase {
             XCTFail("Expected teardown timeout")
         } catch NativeValidationError.teardownUnproven {
             let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertEqual(record.teardown, teardown)
             XCTAssertTrue(record.rawFailures.isEmpty)
             XCTAssertTrue(record.sessionError?.contains("timeout") == true)
@@ -790,6 +792,31 @@ final class NativeEvidenceTests: XCTestCase {
             rawFailures: rawFailures,
             resolvedTeardownProbeFailures: resolvedTeardownProbeFailures,
             unresolvedRawFailures: unresolvedRawFailures ?? rawFailures
+        )
+    }
+
+    private func completedSnapshot(
+        from snapshot: NativeRecordingSnapshot
+    ) -> NativeRecordingSnapshot {
+        NativeRecordingSnapshot(
+            taps: snapshot.taps,
+            tapFormats: snapshot.tapFormats,
+            tapMuteBehaviorObservations: snapshot.tapMuteBehaviorObservations,
+            aggregate: snapshot.aggregate,
+            ioProc: snapshot.ioProc,
+            topology: snapshot.topology,
+            verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
+            callbackCountBeforeObservation: 1,
+            callbackCountAfterObservation: 2,
+            teardown: NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .absent,
+                tapIdentities: .absent
+            ),
+            rawFailures: snapshot.rawFailures,
+            resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
+            unresolvedRawFailures: snapshot.unresolvedRawFailures
         )
     }
 

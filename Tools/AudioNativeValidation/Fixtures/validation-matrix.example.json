@@ -5,7 +5,6 @@
   },
   "callbackCountAfterObservation" : 2048,
   "callbackCountBeforeObservation" : 1024,
-  "eligibleForPolicyPromotion" : false,
   "exactFingerprint" : {
     "devices" : [
       {
@@ -65,6 +64,7 @@
   "rawFailures" : [
 
   ],
+  "runtimeValidationCompleted" : true,
   "sustainedCallbacks" : true,
   "teardown" : {
     "aggregateIdentityAbsent" : true,

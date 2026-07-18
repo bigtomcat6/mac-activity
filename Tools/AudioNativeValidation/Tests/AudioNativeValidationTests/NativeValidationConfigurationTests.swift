@@ -195,6 +195,31 @@ final class NativeValidationConfigurationTests: XCTestCase {
         XCTAssertEqual(parsed.microphoneTCCObservation, "No prompt appeared.")
     }
 
+    func testEnvironmentPreservesOrderedTwoTargetSelection() throws {
+        let outputPath = scratchURL.appendingPathComponent("result.json").path
+        let environment = try makeNativeValidationEnvironment(
+            environment: [
+                "MACACTIVITY_AUDIO_PROCESS_OBJECT_ID": "42",
+                "MACACTIVITY_AUDIO_TARGET_UIDS": "BuiltInSpeakerDevice,HDMI-UID",
+                "MACACTIVITY_AUDIO_VALIDATION_OUTPUT": outputPath,
+                "MACACTIVITY_AUDIO_MIC_TCC_OBSERVATION": "No prompt observed",
+                "MACACTIVITY_AUDIO_VALIDATION_SECONDS": "10",
+            ],
+            operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            ),
+            restrictedRoots: [],
+            makeProcessObjectID: { AudioObjectID($0) }
+        )
+
+        XCTAssertEqual(
+            environment.targetUIDs,
+            ["BuiltInSpeakerDevice", "HDMI-UID"]
+        )
+    }
+
     func testAtomicWriterDoesNotFollowTargetSymlinkCreatedAfterValidation() throws {
         let outputURL = scratchURL.appendingPathComponent("result.json")
         let output = try NativeValidationOutputPath.validate(
