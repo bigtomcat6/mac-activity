@@ -4,6 +4,39 @@ import Foundation
 import XCTest
 
 final class NativeEvidenceTests: XCTestCase {
+    func testCompletedExampleFixtureDecodesWithCoherentRuntimeEvidence() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/validation-matrix.example.json")
+        let record = try JSONDecoder().decode(
+            NativeAudioValidationRecord.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+        let before = try XCTUnwrap(record.callbackCountBeforeObservation)
+        let after = try XCTUnwrap(record.callbackCountAfterObservation)
+        let tap = try XCTUnwrap(record.tapResources.first)
+        let runtimeValidationCompleted = record.sessionError == nil
+            && before != after
+            && record.rawFailures.isEmpty
+            && record.teardown?.isReleased == true
+            && record.tapMuteBehaviorObservations.map(\.observedState)
+                == [.unmuted, .mutedWhenTapped, .unmuted]
+
+        XCTAssertEqual(record.sustainedCallbacks, before != after)
+        XCTAssertTrue(record.tapMuteBehaviorObservations.allSatisfy {
+            $0.diagnosticOnlyObjectID == tap.diagnosticOnlyObjectID
+                && $0.uuid == tap.uuid
+        })
+        XCTAssertTrue(record.resolvedTeardownProbeFailures.isEmpty)
+        XCTAssertTrue(runtimeValidationCompleted)
+        XCTAssertEqual(
+            record.runtimeValidationCompleted,
+            runtimeValidationCompleted
+        )
+    }
+
     @MainActor
     func testSuccessEvidenceSerializesOrderedPerTapMuteBehaviorObservations() async throws {
         let outputURL = try makeOutputURL()
