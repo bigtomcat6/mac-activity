@@ -60,6 +60,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation]
     let aggregateResource: NativeAggregateResourceObservation?
     let ioProcResource: NativeIOProcResourceObservation?
+    let stableTopologySnapshot: NativeStableTopologySnapshotObservation?
     let topology: NativeTopologyObservation?
     let verifiedInputStreamUsage: [UInt32]
     let callbackCountBeforeObservation: Int32?
@@ -340,6 +341,7 @@ private func makeRecord(
         tapMuteBehaviorObservations: snapshot.tapMuteBehaviorObservations,
         aggregateResource: snapshot.aggregate,
         ioProcResource: snapshot.ioProc,
+        stableTopologySnapshot: snapshot.stableTopologySnapshot,
         topology: snapshot.topology,
         verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
         callbackCountBeforeObservation: before,

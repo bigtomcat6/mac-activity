@@ -102,8 +102,8 @@ final class NativeValidationConfigurationTests: XCTestCase {
     private var scratchURL: URL!
 
     override func setUpWithError() throws {
-        scratchURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches", isDirectory: true)
+        scratchURL = NativeValidationOutputPath.nestedRepositoryRoot
+            .appendingPathComponent(".build", isDirectory: true)
             .appendingPathComponent("MacActivityNativeValidation-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: scratchURL,

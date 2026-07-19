@@ -2,6 +2,28 @@ import CoreAudio
 import Foundation
 @testable import MacActivityCore
 
+enum NativeTopologyEvidenceStage: String, Codable, Sendable {
+    case recordedContext
+    case layoutResolution
+    case fullSubdeviceList
+    case activeSubdeviceList
+    case aggregateComposition
+    case activeSubdeviceDriftParsing
+    case activeSubTapCardinality
+    case subTapDriftParsing
+    case mainSubdeviceReading
+    case stackedStateParsing
+    case topologyEvidenceConstruction
+}
+
+enum NativeTopologyLocalReason: String, Codable, Sendable {
+    case missingPlanOrTap
+    case missingDSPContext
+    case invalidComposition
+    case unsupportedTopology
+    case unexpected
+}
+
 struct NativeRawFailure: Codable, Equatable, Sendable {
     let seam: String
     let status: OSStatus
@@ -10,6 +32,8 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
     let selector: AudioObjectPropertySelector?
     let scope: AudioObjectPropertyScope?
     let element: AudioObjectPropertyElement?
+    let topologyEvidenceStage: NativeTopologyEvidenceStage?
+    let localReason: NativeTopologyLocalReason?
 
     init(
         seam: String,
@@ -18,7 +42,9 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
         objectID: AudioObjectID? = nil,
         selector: AudioObjectPropertySelector? = nil,
         scope: AudioObjectPropertyScope? = nil,
-        element: AudioObjectPropertyElement? = nil
+        element: AudioObjectPropertyElement? = nil,
+        topologyEvidenceStage: NativeTopologyEvidenceStage? = nil,
+        localReason: NativeTopologyLocalReason? = nil
     ) {
         self.seam = seam
         self.status = status
@@ -27,6 +53,8 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
         self.selector = selector
         self.scope = scope
         self.element = element
+        self.topologyEvidenceStage = topologyEvidenceStage
+        self.localReason = localReason
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -37,6 +65,8 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
         case selector
         case scope
         case element
+        case topologyEvidenceStage
+        case localReason
     }
 
     init(from decoder: any Decoder) throws {
@@ -55,6 +85,14 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
             AudioObjectPropertyElement.self,
             forKey: .element
         )
+        topologyEvidenceStage = try container.decodeIfPresent(
+            NativeTopologyEvidenceStage.self,
+            forKey: .topologyEvidenceStage
+        )
+        localReason = try container.decodeIfPresent(
+            NativeTopologyLocalReason.self,
+            forKey: .localReason
+        )
     }
 
     func encode(to encoder: any Encoder) throws {
@@ -66,6 +104,28 @@ struct NativeRawFailure: Codable, Equatable, Sendable {
         try container.encodeIfPresent(selector, forKey: .selector)
         try container.encodeIfPresent(scope, forKey: .scope)
         try container.encodeIfPresent(element, forKey: .element)
+        try container.encodeIfPresent(topologyEvidenceStage, forKey: .topologyEvidenceStage)
+        try container.encodeIfPresent(localReason, forKey: .localReason)
+    }
+}
+
+struct NativeStableTopologySnapshotObservation: Codable, Equatable, Sendable {
+    let isAlive: Bool
+    let diagnosticOnlyInputStreamIDs: [AudioStreamID]
+    let inputFormats: [ProcessTapAudioFormat]
+    let diagnosticOnlyOutputStreamIDs: [AudioStreamID]
+    let outputFormats: [ProcessTapAudioFormat]
+    let tapUUIDs: [String]
+    let diagnosticOnlyActiveSubTapIDs: [AudioObjectID]
+
+    init(_ snapshot: AudioAggregateTopologySnapshot) {
+        isAlive = snapshot.isAlive
+        diagnosticOnlyInputStreamIDs = snapshot.inputStreamIDs
+        inputFormats = snapshot.inputFormats
+        diagnosticOnlyOutputStreamIDs = snapshot.outputStreamIDs
+        outputFormats = snapshot.outputFormats
+        tapUUIDs = snapshot.tapUUIDs.map(\.uuidString)
+        diagnosticOnlyActiveSubTapIDs = snapshot.activeSubTapIDs
     }
 }
 
@@ -341,6 +401,7 @@ struct NativeRecordingSnapshot: Sendable {
     let tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation]
     let aggregate: NativeAggregateResourceObservation?
     let ioProc: NativeIOProcResourceObservation?
+    let stableTopologySnapshot: NativeStableTopologySnapshotObservation?
     let topology: NativeTopologyObservation?
     let verifiedInputStreamUsage: [UInt32]
     let callbackCountBeforeObservation: Int32?
@@ -387,6 +448,22 @@ func waitForNativeTeardownRelease(
 }
 
 enum NativeTopologyEvidence {
+    struct StageFailure: Error {
+        let stage: NativeTopologyEvidenceStage
+        let underlying: Error
+    }
+
+    static func atStage<Value>(
+        _ stage: NativeTopologyEvidenceStage,
+        _ body: () throws -> Value
+    ) throws -> Value {
+        do {
+            return try body()
+        } catch {
+            throw StageFailure(stage: stage, underlying: error)
+        }
+    }
+
     static func make(
         plan: AudioRoutePlan,
         tap: AudioTapResource,
@@ -483,6 +560,13 @@ enum NativeTopologyEvidence {
     }
 }
 
+typealias NativeTopologyEvidenceCollector = (
+    AudioAggregateResource,
+    AudioRoutePlan,
+    AudioTapResource,
+    AudioAggregateTopologySnapshot
+) throws -> NativeTopologyObservation
+
 final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendable {
     private struct TeardownIdentity: Hashable {
         let objectID: AudioObjectID
@@ -494,6 +578,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     private let hal = AudioHALClient.system
     private let identityProbe: ((AudioObjectID, AudioClassID, String) throws
         -> NativeTeardownIdentityObservation)?
+    private let topologyEvidenceCollector: NativeTopologyEvidenceCollector?
     private let stateLock = NSLock()
     private weak var callbackContextStorage: ProcessTapDSPContext?
 
@@ -502,6 +587,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     private var tapMuteBehaviorObservationsStorage: [NativeTapMuteBehaviorObservation] = []
     private var aggregateStorage: NativeAggregateResourceObservation?
     private var ioProcStorage: NativeIOProcResourceObservation?
+    private var stableTopologySnapshotStorage: NativeStableTopologySnapshotObservation?
     private var topologyStorage: NativeTopologyObservation?
     private var verifiedInputStreamUsageStorage: [UInt32] = []
     private var callbackCountBeforeObservationStorage: Int32?
@@ -517,10 +603,12 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
     init(
         delegate: any AudioTapHardware = CoreAudioTapHardware(hal: .system),
         identityProbe: ((AudioObjectID, AudioClassID, String) throws
-            -> NativeTeardownIdentityObservation)? = nil
+            -> NativeTeardownIdentityObservation)? = nil,
+        topologyEvidenceCollector: NativeTopologyEvidenceCollector? = nil
     ) {
         self.delegate = delegate
         self.identityProbe = identityProbe
+        self.topologyEvidenceCollector = topologyEvidenceCollector
     }
 
     func validateFreshRoutePlan(_ plan: AudioRoutePlan) throws {
@@ -629,50 +717,48 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
             record(error, seam: "waitForStableTopology.delegate")
             throw error
         }
+        locked {
+            stableTopologySnapshotStorage = NativeStableTopologySnapshotObservation(snapshot)
+        }
         do {
-            let recorded = locked { (recordedPlanStorage, recordedTapStorage) }
-            guard let recordedPlan = recorded.0, let recordedTap = recorded.1 else {
-                throw NativeRecordingError.missingPlanOrTap
+            let recorded = try NativeTopologyEvidence.atStage(.recordedContext) {
+                let recorded = locked { (recordedPlanStorage, recordedTapStorage) }
+                guard let recordedPlan = recorded.0, let recordedTap = recorded.1 else {
+                    throw NativeRecordingError.missingPlanOrTap
+                }
+                return (recordedPlan, recordedTap)
             }
-            let layout = try AudioAggregateTopologyResolver.resolve(
-                plan: recordedPlan,
-                tap: recordedTap,
-                snapshot: snapshot
-            )
-            let fullSubdeviceUIDs = try readFullSubdeviceUIDs(aggregate.objectID)
-            let subdeviceIDs = try hal.readArray(
-                AudioObjectID.self,
-                from: aggregate.objectID,
-                address: .init(selector: kAudioAggregateDevicePropertyActiveSubDeviceList)
-            )
-            let composition = try readAggregateComposition(aggregate.objectID)
-            let activeSubdevices = try readActiveSubdeviceDrifts(
-                subdeviceIDs,
-                composition: composition
-            )
-            guard snapshot.activeSubTapIDs.count == 1 else {
-                throw NativeRecordingError.invalidComposition
+            let topology: NativeTopologyObservation
+            if let topologyEvidenceCollector {
+                topology = try topologyEvidenceCollector(
+                    aggregate,
+                    recorded.0,
+                    recorded.1,
+                    snapshot
+                )
+            } else {
+                topology = try collectTopologyEvidence(
+                    aggregate: aggregate,
+                    plan: recorded.0,
+                    tap: recorded.1,
+                    snapshot: snapshot
+                )
             }
-            let subTap = try readSubTapDrift(
-                activeSubTapID: snapshot.activeSubTapIDs[0],
-                tapUUID: recordedTap.uuid.uuidString,
-                composition: composition
-            )
-            let topology = try NativeTopologyEvidence.make(
-                plan: recordedPlan,
-                tap: recordedTap,
-                snapshot: snapshot,
-                layout: layout,
-                fullSubdeviceUIDs: fullSubdeviceUIDs,
-                activeSubdevices: activeSubdevices,
-                actualMainSubdeviceUID: try readMainSubdeviceUID(aggregate.objectID),
-                actualIsStacked: try readIsStacked(composition),
-                subTap: subTap
-            )
             locked { topologyStorage = topology }
             return snapshot
+        } catch let failure as NativeTopologyEvidence.StageFailure {
+            record(
+                failure.underlying,
+                seam: "waitForStableTopology.evidence",
+                topologyEvidenceStage: failure.stage
+            )
+            throw failure.underlying
         } catch {
-            record(error, seam: "waitForStableTopology.evidence")
+            record(
+                error,
+                seam: "waitForStableTopology.evidence",
+                topologyEvidenceStage: .topologyEvidenceConstruction
+            )
             throw error
         }
     }
@@ -828,6 +914,7 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 tapMuteBehaviorObservations: tapMuteBehaviorObservationsStorage,
                 aggregate: aggregateStorage,
                 ioProc: ioProcStorage,
+                stableTopologySnapshot: stableTopologySnapshotStorage,
                 topology: topologyStorage,
                 verifiedInputStreamUsage: verifiedInputStreamUsageStorage,
                 callbackCountBeforeObservation: callbackCountBeforeObservationStorage,
@@ -998,6 +1085,71 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         }
     }
 
+    private func collectTopologyEvidence(
+        aggregate: AudioAggregateResource,
+        plan: AudioRoutePlan,
+        tap: AudioTapResource,
+        snapshot: AudioAggregateTopologySnapshot
+    ) throws -> NativeTopologyObservation {
+        let layout = try NativeTopologyEvidence.atStage(.layoutResolution) {
+            try AudioAggregateTopologyResolver.resolve(
+                plan: plan,
+                tap: tap,
+                snapshot: snapshot
+            )
+        }
+        let fullSubdeviceUIDs = try NativeTopologyEvidence.atStage(.fullSubdeviceList) {
+            try readFullSubdeviceUIDs(aggregate.objectID)
+        }
+        let subdeviceIDs = try NativeTopologyEvidence.atStage(.activeSubdeviceList) {
+            try hal.readArray(
+                AudioObjectID.self,
+                from: aggregate.objectID,
+                address: .init(selector: kAudioAggregateDevicePropertyActiveSubDeviceList)
+            )
+        }
+        let composition = try NativeTopologyEvidence.atStage(.aggregateComposition) {
+            try readAggregateComposition(aggregate.objectID)
+        }
+        let activeSubdevices = try NativeTopologyEvidence.atStage(
+            .activeSubdeviceDriftParsing
+        ) {
+            try readActiveSubdeviceDrifts(subdeviceIDs, composition: composition)
+        }
+        let activeSubTapID = try NativeTopologyEvidence.atStage(.activeSubTapCardinality) {
+            guard snapshot.activeSubTapIDs.count == 1 else {
+                throw NativeRecordingError.invalidComposition
+            }
+            return snapshot.activeSubTapIDs[0]
+        }
+        let subTap = try NativeTopologyEvidence.atStage(.subTapDriftParsing) {
+            try readSubTapDrift(
+                activeSubTapID: activeSubTapID,
+                tapUUID: tap.uuid.uuidString,
+                composition: composition
+            )
+        }
+        let mainSubdeviceUID = try NativeTopologyEvidence.atStage(.mainSubdeviceReading) {
+            try readMainSubdeviceUID(aggregate.objectID)
+        }
+        let isStacked = try NativeTopologyEvidence.atStage(.stackedStateParsing) {
+            try readIsStacked(composition)
+        }
+        return try NativeTopologyEvidence.atStage(.topologyEvidenceConstruction) {
+            try NativeTopologyEvidence.make(
+                plan: plan,
+                tap: tap,
+                snapshot: snapshot,
+                layout: layout,
+                fullSubdeviceUIDs: fullSubdeviceUIDs,
+                activeSubdevices: activeSubdevices,
+                actualMainSubdeviceUID: mainSubdeviceUID,
+                actualIsStacked: isStacked,
+                subTap: subTap
+            )
+        }
+    }
+
     private func readActiveSubdeviceDrifts(
         _ objectIDs: [AudioObjectID],
         composition: NSDictionary
@@ -1068,7 +1220,11 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
         return status
     }
 
-    private func record(_ error: Error, seam: String) {
+    private func record(
+        _ error: Error,
+        seam: String,
+        topologyEvidenceStage: NativeTopologyEvidenceStage? = nil
+    ) {
         if let error = error as? AudioHALError {
             appendFailure(NativeRawFailure(
                 seam: seam,
@@ -1077,11 +1233,34 @@ final class NativeRecordingAudioTapHardware: AudioTapHardware, @unchecked Sendab
                 objectID: error.objectID,
                 selector: error.address?.selector,
                 scope: error.address?.scope,
-                element: error.address?.element
+                element: error.address?.element,
+                topologyEvidenceStage: topologyEvidenceStage
             ))
         } else {
-            appendFailure(NativeRawFailure(seam: seam, status: rawStatus(error)))
+            appendFailure(NativeRawFailure(
+                seam: seam,
+                status: rawStatus(error),
+                topologyEvidenceStage: topologyEvidenceStage,
+                localReason: topologyEvidenceStage == nil ? nil : localReason(for: error)
+            ))
         }
+    }
+
+    private func localReason(for error: Error) -> NativeTopologyLocalReason {
+        if let error = error as? NativeRecordingError {
+            switch error {
+            case .missingPlanOrTap:
+                return .missingPlanOrTap
+            case .missingDSPContext:
+                return .missingDSPContext
+            case .invalidComposition:
+                return .invalidComposition
+            }
+        }
+        if error is AudioAggregateTopologyError {
+            return .unsupportedTopology
+        }
+        return .unexpected
     }
 
     @discardableResult
