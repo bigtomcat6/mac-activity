@@ -139,10 +139,12 @@ private extension AudioNativePreflightCollector {
         client: AudioHALClient,
         controlInspectionPolicy: AudioNativePreflightControlInspectionPolicy
     ) throws -> [AudioNativePreflightDeviceObservation] {
-        let deviceIDs = try client.readArray(
-            AudioDeviceID.self,
-            from: AudioObjectID(kAudioObjectSystemObject),
-            address: devicesAddress
+        let deviceIDs = try AudioNativePreflightHALDiscovery.requireHardwareDeviceInventory(
+            client.readArray(
+                AudioDeviceID.self,
+                from: AudioObjectID(kAudioObjectSystemObject),
+                address: devicesAddress
+            )
         )
         let outputDevices = try AudioNativePreflightHALDiscovery.outputDevices(
             deviceIDs: deviceIDs,
