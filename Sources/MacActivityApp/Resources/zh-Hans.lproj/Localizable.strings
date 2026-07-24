@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
 "preferences.hardwareBatteryPercentage" = "显示硬件电池百分比";
 "preferences.hardwareBatteryPercentageHelp" = "可用时使用 AppleSmartBattery 的原始容量；不可用时回退为系统百分比。";
-"preferences.processApplicationIdentifier" = "在“活跃”进程列表中显示应用 ID";
+"preferences.processApplicationIdentifier" = "在进程列表中显示应用 ID";
 "preferences.diskCleanupScope" = "清理范围";
 "preferences.diskCleanupHelp" = "控制 Actives 磁盘清理会扫描和删除的内容。";
 "preferences.menuBarMetrics" = "菜单栏指标";
@@ -170,7 +170,15 @@
 "diskCleanup.category.singular" = "个分类";
 "diskCleanup.category.plural" = "个分类";
 
-"energyImpact.empty" = "当前没有前台应用报告耗电影响。";
+"energyImpact.title" = "耗电影响";
+"energyImpact.subtitle.current" = "近期 CPU 能耗估算 · 越低越好";
+"energyImpact.column.app" = "应用";
+"energyImpact.column.current" = "当前";
+"energyImpact.collecting" = "采集中";
+"energyImpact.partial" = "部分数据";
+"energyImpact.stale" = "数据已过期";
+"energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
+"energyImpact.empty" = "当前没有普通应用报告能耗估算。";
 "energyImpact.unavailable" = "不可读取";
 
 "process.empty" = "当前没有前台应用报告内存用量。";

@@ -310,35 +310,23 @@ final class LocalizationTests: XCTestCase {
     }
 
     func testEnergyImpactPageStringsAreLocalized() throws {
-        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
-
-        XCTAssertEqual(
-            AppLocalization.string(.dashboardTabEnergyImpact, bundle: english),
-            "Energy"
-        )
-        XCTAssertEqual(
-            AppLocalization.string(.energyImpactEmpty, bundle: english),
-            "No foreground apps are reporting energy impact."
-        )
-        XCTAssertEqual(
-            AppLocalization.string(.energyImpactUnavailable, bundle: english),
-            "Unavailable"
-        )
-
-        let localizedExpectations = [
-            ("de", "Energie", "Keine Vordergrund-Apps melden Energieauswirkungen.", "Nicht verfügbar"),
-            ("fr", "Énergie", "Aucune app au premier plan ne signale d’impact énergétique.", "Indisponible"),
-            ("ja", "エネルギー", "エネルギー影響を報告している前面アプリはありません。", "利用不可"),
-            ("ko", "에너지", "에너지 영향을 보고하는 전면 앱이 없습니다.", "사용할 수 없음"),
-            ("zh-Hans", "耗电影响", "当前没有前台应用报告耗电影响。", "不可读取"),
-            ("zh-Hant", "耗電影響", "目前沒有前景應用程式回報耗電影響。", "無法讀取"),
+        let expectations: [String: [AppLocalization.Key: String]] = [
+            "en": [.energyImpactTitle: "Energy Impact", .energyImpactSubtitleCurrent: "Recent CPU energy estimate · Lower is better", .energyImpactAppColumn: "App", .energyImpactCurrentColumn: "Current", .energyImpactCollecting: "Collecting", .energyImpactPartial: "Partial", .energyImpactStale: "Stale", .energyImpactRowAccessibility: "%1$@, rank %2$lld, %3$@", .energyImpactEmpty: "No regular apps are reporting an energy estimate.", .energyImpactUnavailable: "Unavailable", .preferencesProcessApplicationIdentifier: "Show application ID in process lists"],
+            "de": [.energyImpactTitle: "Energieeinfluss", .energyImpactSubtitleCurrent: "Aktuelle CPU-Energieschätzung · Niedriger ist besser", .energyImpactAppColumn: "App", .energyImpactCurrentColumn: "Aktuell", .energyImpactCollecting: "Wird erfasst", .energyImpactPartial: "Teilweise", .energyImpactStale: "Veraltet", .energyImpactRowAccessibility: "%1$@, Rang %2$lld, %3$@", .energyImpactEmpty: "Keine regulären Apps melden eine Energieschätzung.", .energyImpactUnavailable: "Nicht verfügbar", .preferencesProcessApplicationIdentifier: "App-ID in Prozesslisten anzeigen"],
+            "fr": [.energyImpactTitle: "Impact énergétique", .energyImpactSubtitleCurrent: "Estimation récente de l’énergie CPU · Plus bas est préférable", .energyImpactAppColumn: "App", .energyImpactCurrentColumn: "Actuel", .energyImpactCollecting: "Collecte", .energyImpactPartial: "Partiel", .energyImpactStale: "Obsolète", .energyImpactRowAccessibility: "%1$@, rang %2$lld, %3$@", .energyImpactEmpty: "Aucune app standard ne fournit d’estimation énergétique.", .energyImpactUnavailable: "Indisponible", .preferencesProcessApplicationIdentifier: "Afficher l’identifiant d’app dans les listes de processus"],
+            "ja": [.energyImpactTitle: "エネルギー影響", .energyImpactSubtitleCurrent: "最近のCPUエネルギー推定 · 低いほど良好", .energyImpactAppColumn: "アプリ", .energyImpactCurrentColumn: "現在", .energyImpactCollecting: "収集中", .energyImpactPartial: "一部データ", .energyImpactStale: "古いデータ", .energyImpactRowAccessibility: "%1$@、%2$lld位、%3$@", .energyImpactEmpty: "エネルギー推定を報告している通常のアプリはありません。", .energyImpactUnavailable: "利用不可", .preferencesProcessApplicationIdentifier: "プロセスリストにアプリIDを表示"],
+            "ko": [.energyImpactTitle: "에너지 영향", .energyImpactSubtitleCurrent: "최근 CPU 에너지 추정치 · 낮을수록 좋음", .energyImpactAppColumn: "앱", .energyImpactCurrentColumn: "현재", .energyImpactCollecting: "수집 중", .energyImpactPartial: "일부 데이터", .energyImpactStale: "오래된 데이터", .energyImpactRowAccessibility: "%1$@, %2$lld위, %3$@", .energyImpactEmpty: "에너지 추정치를 보고하는 일반 앱이 없습니다.", .energyImpactUnavailable: "사용할 수 없음", .preferencesProcessApplicationIdentifier: "프로세스 목록에 앱 ID 표시"],
+            "zh-Hans": [.energyImpactTitle: "耗电影响", .energyImpactSubtitleCurrent: "近期 CPU 能耗估算 · 越低越好", .energyImpactAppColumn: "应用", .energyImpactCurrentColumn: "当前", .energyImpactCollecting: "采集中", .energyImpactPartial: "部分数据", .energyImpactStale: "数据已过期", .energyImpactRowAccessibility: "%1$@，第 %2$lld 名，%3$@", .energyImpactEmpty: "当前没有普通应用报告能耗估算。", .energyImpactUnavailable: "不可读取", .preferencesProcessApplicationIdentifier: "在进程列表中显示应用 ID"],
+            "zh-Hant": [.energyImpactTitle: "耗電影響", .energyImpactSubtitleCurrent: "近期 CPU 能耗估算 · 越低越好", .energyImpactAppColumn: "應用程式", .energyImpactCurrentColumn: "目前", .energyImpactCollecting: "收集中", .energyImpactPartial: "部分資料", .energyImpactStale: "資料已過期", .energyImpactRowAccessibility: "%1$@，第 %2$lld 名，%3$@", .energyImpactEmpty: "目前沒有一般應用程式回報能耗估算。", .energyImpactUnavailable: "無法讀取", .preferencesProcessApplicationIdentifier: "在程序列表中顯示應用程式 ID"],
         ]
 
-        for (identifier, title, empty, unavailable) in localizedExpectations {
+        XCTAssertEqual(Set(expectations.keys), Set(AppLocalization.availableLanguageIdentifiers()))
+
+        for (identifier, expectedStrings) in expectations {
             let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: identifier))
-            XCTAssertEqual(AppLocalization.string(.dashboardTabEnergyImpact, bundle: bundle), title)
-            XCTAssertEqual(AppLocalization.string(.energyImpactEmpty, bundle: bundle), empty)
-            XCTAssertEqual(AppLocalization.string(.energyImpactUnavailable, bundle: bundle), unavailable)
+            for (key, expected) in expectedStrings {
+                XCTAssertEqual(AppLocalization.string(key, bundle: bundle), expected, "\(key.rawValue) in \(identifier)")
+            }
         }
     }
 
@@ -472,11 +460,11 @@ final class LocalizationTests: XCTestCase {
         )
         XCTAssertEqual(
             AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: english),
-            "Show application ID in Actives process list"
+            "Show application ID in process lists"
         )
         XCTAssertEqual(
             AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: simplifiedChinese),
-            "在“活跃”进程列表中显示应用 ID"
+            "在进程列表中显示应用 ID"
         )
         XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: english), "Update channel")
         XCTAssertEqual(AppLocalization.string(.preferencesUpdateChannel, bundle: simplifiedChinese), "选择更新频道")

@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "Steuert die Temperaturmetrik in Statusleiste und Dashboard.";
 "preferences.hardwareBatteryPercentage" = "Hardware-Akku-Prozentsatz anzeigen";
 "preferences.hardwareBatteryPercentageHelp" = "Verwendet die Rohkapazität von AppleSmartBattery, falls verfügbar; sonst wird auf den Systemprozentsatz zurückgegriffen.";
-"preferences.processApplicationIdentifier" = "Anwendungs-ID in der aktiven Prozessliste anzeigen";
+"preferences.processApplicationIdentifier" = "App-ID in Prozesslisten anzeigen";
 "preferences.diskCleanupScope" = "Bereinigungsumfang";
 "preferences.diskCleanupHelp" = "Legt fest, welche Elemente die Actives-Datenträgerbereinigung scannt und löscht.";
 "preferences.menuBarMetrics" = "Metriken der Menüleiste";
@@ -109,7 +109,15 @@
 "diskCleanup.category.trash" = "Papierkorb";
 "diskCleanup.category.userLogs" = "Protokolle";
 
-"energyImpact.empty" = "Keine Vordergrund-Apps melden Energieauswirkungen.";
+"energyImpact.title" = "Energieeinfluss";
+"energyImpact.subtitle.current" = "Aktuelle CPU-Energieschätzung · Niedriger ist besser";
+"energyImpact.column.app" = "App";
+"energyImpact.column.current" = "Aktuell";
+"energyImpact.collecting" = "Wird erfasst";
+"energyImpact.partial" = "Teilweise";
+"energyImpact.stale" = "Veraltet";
+"energyImpact.accessibility.row" = "%1$@, Rang %2$lld, %3$@";
+"energyImpact.empty" = "Keine regulären Apps melden eine Energieschätzung.";
 "energyImpact.unavailable" = "Nicht verfügbar";
 
 "memoryRelease.action.release" = "Freigeben";

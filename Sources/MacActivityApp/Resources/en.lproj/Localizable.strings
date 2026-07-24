@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
 "preferences.hardwareBatteryPercentage" = "Show hardware battery percentage";
 "preferences.hardwareBatteryPercentageHelp" = "Uses raw AppleSmartBattery capacity when available; falls back to the system percentage.";
-"preferences.processApplicationIdentifier" = "Show application ID in Actives process list";
+"preferences.processApplicationIdentifier" = "Show application ID in process lists";
 "preferences.diskCleanupScope" = "Cleanup scope";
 "preferences.diskCleanupHelp" = "Controls what Actives Disk Cleanup scans and deletes.";
 "preferences.menuBarMetrics" = "Menu bar metrics";
@@ -170,7 +170,15 @@
 "diskCleanup.category.singular" = "category";
 "diskCleanup.category.plural" = "categories";
 
-"energyImpact.empty" = "No foreground apps are reporting energy impact.";
+"energyImpact.title" = "Energy Impact";
+"energyImpact.subtitle.current" = "Recent CPU energy estimate · Lower is better";
+"energyImpact.column.app" = "App";
+"energyImpact.column.current" = "Current";
+"energyImpact.collecting" = "Collecting";
+"energyImpact.partial" = "Partial";
+"energyImpact.stale" = "Stale";
+"energyImpact.accessibility.row" = "%1$@, rank %2$lld, %3$@";
+"energyImpact.empty" = "No regular apps are reporting an energy estimate.";
 "energyImpact.unavailable" = "Unavailable";
 
 "process.empty" = "No foreground apps are reporting memory usage.";

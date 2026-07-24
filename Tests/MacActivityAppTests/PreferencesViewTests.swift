@@ -149,6 +149,15 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
     }
 
+    func testProcessApplicationIdentifierPreferenceUsesSharedProcessListCopy() {
+        let english = AppLocalization.bundle(forLanguageIdentifier: "en")!
+
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesProcessApplicationIdentifier, bundle: english),
+            "Show application ID in process lists"
+        )
+    }
+
     func testPreferencesWindowControllerHostsPreferencesView() {
         let controller = PreferencesController(
             store: InMemoryPreferencesStore(initial: .default),

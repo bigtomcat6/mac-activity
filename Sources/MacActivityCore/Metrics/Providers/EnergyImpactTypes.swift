@@ -135,47 +135,4 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
     public var displayPowerMicrowatts: Double? {
         currentPowerMicrowatts
     }
-
-    @available(*, deprecated, message: "Use the identity/status initializer")
-    public init(
-        processIdentifier: pid_t,
-        name: String,
-        bundleIdentifier: String?,
-        bundleURL: URL?,
-        impact: Double,
-        isReadable: Bool
-    ) {
-        self.init(
-            identity: EnergyImpactAppIdentity(
-                rootProcessIdentifier: processIdentifier,
-                rootProcessStartAbsoluteTime: nil
-            ),
-            name: name,
-            bundleIdentifier: bundleIdentifier,
-            bundleURL: bundleURL,
-            currentPowerMicrowatts: isReadable ? impact : nil,
-            sustainedPowerMicrowatts: nil,
-            rankingScore: isReadable ? impact : nil,
-            trend: .steady,
-            coverage: isReadable
-                ? EnergyImpactCoverage(
-                    discoveredProcessCount: 1, readableProcessCount: 1,
-                    validProcessSeconds: 0, discoveredProcessSeconds: 0
-                )
-                : .unavailable,
-            status: isReadable ? .stable : .unavailable
-        )
-    }
-
-    @available(*, deprecated, message: "Use currentPowerMicrowatts and status")
-    public var impact: Double { currentPowerMicrowatts ?? 0 }
-
-    @available(*, deprecated, message: "Use status")
-    public var isReadable: Bool { status != .unavailable }
-
-    @available(*, deprecated, message: "Use EnergyImpactPresentation")
-    public var formattedImpact: String {
-        guard let currentPowerMicrowatts else { return "Unavailable" }
-        return String(format: "%.1f", currentPowerMicrowatts)
-    }
 }

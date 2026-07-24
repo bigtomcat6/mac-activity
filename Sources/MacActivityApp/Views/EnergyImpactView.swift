@@ -11,6 +11,22 @@ struct EnergyImpactView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(AppLocalization.string(.energyImpactTitle))
+                    .font(.headline)
+                Text(AppLocalization.string(.energyImpactSubtitleCurrent))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Text(AppLocalization.string(.energyImpactAppColumn))
+                    Spacer()
+                    Text(AppLocalization.string(.energyImpactCurrentColumn))
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+
             if model.entries.isEmpty {
                 Text(Self.emptyMessage(isRefreshing: model.isRefreshing))
                     .font(.caption)
@@ -22,15 +38,11 @@ struct EnergyImpactView: View {
                     )
                     .padding(.horizontal, 12)
             } else {
-                let maximumReadableImpact = model.entries
-                    .filter(\.isReadable)
-                    .map(\.impact)
-                    .max() ?? 0
                 VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
-                    ForEach(model.entries) { entry in
+                    ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                         EnergyImpactRow(
                             entry: entry,
-                            maximumImpact: maximumReadableImpact,
+                            rank: index + 1,
                             showsApplicationIdentifier: showsApplicationIdentifier
                         )
                     }
@@ -60,57 +72,46 @@ struct EnergyImpactView: View {
 }
 
 struct EnergyImpactRow: View {
-    @Environment(\.appearsActive) private var appearsActive
     let entry: EnergyImpactEntry
-    let maximumImpact: Double
+    let rank: Int
     let showsApplicationIdentifier: Bool
-    @State private var isHovered = false
+
+    private var accessibilityLabel: String {
+        EnergyImpactPresentation.accessibilityLabel(entry: entry, rank: rank)
+    }
 
     var body: some View {
-        GeometryReader { proxy in
-            let progressWidth = proxy.size.width * CGFloat(
-                Self.progressFraction(for: entry, maximumImpact: maximumImpact)
-            )
+        HStack(spacing: 10) {
+            icon
+                .accessibilityHidden(true)
 
-            ZStack(alignment: .leading) {
-                Rectangle()
-                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
-                    .frame(width: progressWidth)
-
-                HStack(spacing: 10) {
-                    icon
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(entry.name)
-                            .font(.caption.weight(.semibold))
-                            .lineLimit(1)
-
-                        if let identifier = Self.identifierText(
-                            for: entry,
-                            showsApplicationIdentifier: showsApplicationIdentifier
-                        ) {
-                            Text(identifier)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Spacer(minLength: 8)
-
-                    Text(Self.trailingText(for: entry))
-                        .font(.caption.monospacedDigit())
+            VStack(alignment: .leading, spacing: 2) {
+                Text(entry.name)
+                    .font(.caption.weight(.semibold))
+                    .lineLimit(1)
+                if let identifier = Self.identifierText(
+                    for: entry,
+                    showsApplicationIdentifier: showsApplicationIdentifier
+                ) {
+                    Text(identifier)
+                        .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .frame(width: ActiveProcessMemoryLayout.trailingActionWidth, alignment: .trailing)
                 }
-                .padding(.horizontal, 12)
             }
+
+            Spacer(minLength: 8)
+
+            Text(Self.trailingText(for: entry))
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .frame(minWidth: 72, alignment: .trailing)
         }
+        .padding(.horizontal, 12)
         .frame(height: ActiveProcessMemoryLayout.rowHeight)
-        .background(isHovered ? AnyShapeStyle(.quaternary.opacity(0.5)) : AnyShapeStyle(.clear))
-        .onHover { isHovered = $0 }
-        .clipped()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(accessibilityLabel)
     }
 
     @ViewBuilder
@@ -140,16 +141,12 @@ struct EnergyImpactRow: View {
         return .bundle(bundleURL)
     }
 
-    static func progressFraction(for entry: EnergyImpactEntry, maximumImpact: Double) -> Double {
-        guard entry.isReadable, maximumImpact > 0 else { return 0 }
-        return min(max(entry.impact / maximumImpact, 0), 1)
-    }
-
     static func trailingText(for entry: EnergyImpactEntry, bundle: Bundle? = nil) -> String {
-        guard entry.isReadable else {
-            return AppLocalization.string(.energyImpactUnavailable, bundle: bundle)
-        }
-        return entry.formattedImpact
+        EnergyImpactPresentation.powerText(
+            microwatts: entry.displayPowerMicrowatts,
+            status: entry.status,
+            bundle: bundle
+        )
     }
 
     static func identifierText(
