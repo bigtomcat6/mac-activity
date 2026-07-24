@@ -4,6 +4,89 @@ import XCTest
 
 @MainActor
 final class EnergyImpactProviderTests: XCTestCase {
+    func testEnergyImpactEntryRepresentsCollectingWithoutAFalseZero() {
+        let entry = EnergyImpactEntry(
+            identity: EnergyImpactAppIdentity(
+                rootProcessIdentifier: 101,
+                rootProcessStartAbsoluteTime: 10
+            ),
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: nil,
+            currentPowerMicrowatts: nil,
+            sustainedPowerMicrowatts: nil,
+            rankingScore: nil,
+            trend: .steady,
+            coverage: EnergyImpactCoverage(
+                discoveredProcessCount: 1,
+                readableProcessCount: 1,
+                validProcessSeconds: 0,
+                discoveredProcessSeconds: 0
+            ),
+            status: .collecting
+        )
+
+        XCTAssertNil(entry.displayPowerMicrowatts)
+        XCTAssertEqual(entry.status, .collecting)
+    }
+
+    func testEnergyImpactCoverageUsesValidPIDTime() {
+        let coverage = EnergyImpactCoverage(
+            discoveredProcessCount: 4,
+            readableProcessCount: 3,
+            validProcessSeconds: 9,
+            discoveredProcessSeconds: 12
+        )
+
+        XCTAssertEqual(coverage.fraction, 0.75, accuracy: 0.001)
+    }
+
+    func testEnergyImpactCoverageIsZeroWithoutDiscoveredPIDTime() {
+        let coverage = EnergyImpactCoverage(
+            discoveredProcessCount: 0,
+            readableProcessCount: 0,
+            validProcessSeconds: 0,
+            discoveredProcessSeconds: 0
+        )
+
+        XCTAssertEqual(coverage.fraction, 0)
+    }
+
+    func testEnergyImpactServiceReportsPartialCoverageWhenOneDescendantHasNoValidDelta() throws {
+        let app = EnergyImpactAppSnapshot(
+            processIdentifier: 100,
+            name: "Browser",
+            bundleIdentifier: "com.example.browser",
+            bundleURL: nil
+        )
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(readings: [
+                100: [
+                    .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
+                    .init(energyNanojoules: 2_000, processStartAbsoluteTime: 10),
+                ],
+                101: [
+                    .init(energyNanojoules: 2_000, processStartAbsoluteTime: 11),
+                    .init(energyNanojoules: 3_000, processStartAbsoluteTime: 21),
+                ],
+            ]),
+            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 0),
+            ]),
+            appSnapshotProvider: { [app] },
+            now: dateSequence([100, 101])
+        )
+
+        _ = service.topApps(limit: 1)
+        let entry = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(entry.status, .partial)
+        XCTAssertEqual(entry.coverage.validProcessSeconds, 1)
+        XCTAssertEqual(entry.coverage.discoveredProcessSeconds, 2)
+        XCTAssertEqual(entry.coverage.fraction, 0.5, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
+    }
+
     func testSystemProcessEnergyReaderReadsCurrentProcess() throws {
         let reading = try XCTUnwrap(SystemProcessEnergyReader().reading(for: getpid()))
 
@@ -20,7 +103,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertLessThanOrEqual(entries.count, 1)
     }
 
-    func testEnergyImpactServiceUsesPreviousRefreshSnapshotsForImpact() {
+    func testEnergyImpactServiceUsesPreviousRefreshSnapshotsForImpact() throws {
         let apps = [
             EnergyImpactAppSnapshot(
                 processIdentifier: 101,
@@ -55,16 +138,16 @@ final class EnergyImpactProviderTests: XCTestCase {
         let firstEntries = service.topApps(limit: 2)
         let secondEntries = service.topApps(limit: 2)
 
-        XCTAssertEqual(firstEntries.map(\.impact), [0, 0])
-        XCTAssertTrue(firstEntries.allSatisfy(\.isReadable))
+        XCTAssertTrue(firstEntries.allSatisfy { $0.status == .collecting })
+        XCTAssertTrue(firstEntries.allSatisfy { $0.currentPowerMicrowatts == nil })
         XCTAssertEqual(secondEntries.map(\.name), ["Safari", "Notes"])
-        XCTAssertEqual(secondEntries[0].impact, 2.5, accuracy: 0.001)
-        XCTAssertEqual(secondEntries[1].impact, 0.3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(secondEntries[0].currentPowerMicrowatts), 2.5, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(secondEntries[1].currentPowerMicrowatts), 0.3, accuracy: 0.001)
         XCTAssertEqual(reader.readCount(for: 101), 2)
         XCTAssertEqual(reader.readCount(for: 102), 2)
     }
 
-    func testEnergyImpactServiceNormalizesImpactByElapsedTime() {
+    func testEnergyImpactServiceNormalizesImpactByElapsedTime() throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 101,
             name: "Safari",
@@ -87,10 +170,10 @@ final class EnergyImpactProviderTests: XCTestCase {
         _ = service.topApps(limit: 1)
         let entries = service.topApps(limit: 1)
 
-        XCTAssertEqual(entries.first?.impact ?? 0, 5.0, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(entries.first?.currentPowerMicrowatts), 5.0, accuracy: 0.001)
     }
 
-    func testEnergyImpactServiceAggregatesDescendantEnergyIntoOwningApp() {
+    func testEnergyImpactServiceAggregatesDescendantEnergyIntoOwningApp() throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 100,
             name: "Browser",
@@ -126,7 +209,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         _ = service.topApps(limit: 1)
         let entries = service.topApps(limit: 1)
 
-        XCTAssertEqual(entries.first?.impact ?? 0, 2.5, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(entries.first?.currentPowerMicrowatts), 2.5, accuracy: 0.001)
         XCTAssertEqual(reader.readCount(for: 100), 2)
         XCTAssertEqual(reader.readCount(for: 101), 2)
         XCTAssertEqual(reader.readCount(for: 102), 2)
@@ -156,7 +239,8 @@ final class EnergyImpactProviderTests: XCTestCase {
         _ = service.topApps(limit: 1)
         let entries = service.topApps(limit: 1)
 
-        XCTAssertEqual(entries.first?.impact ?? 0, 0, accuracy: 0.001)
+        XCTAssertEqual(entries.first?.status, .collecting)
+        XCTAssertNil(entries.first?.currentPowerMicrowatts)
     }
 
     func testEnergyImpactServiceKeepsUnreadableAppsAsUnavailableRows() {
@@ -179,27 +263,41 @@ final class EnergyImpactProviderTests: XCTestCase {
 
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries[0].name, "Locked App")
-        XCTAssertEqual(entries[0].impact, 0)
-        XCTAssertFalse(entries[0].isReadable)
+        XCTAssertNil(entries[0].currentPowerMicrowatts)
+        XCTAssertEqual(entries[0].status, .unavailable)
     }
 
     func testEnergyImpactEntriesSortTiesByName() {
         let entries = [
             EnergyImpactEntry(
-                processIdentifier: 101,
+                identity: EnergyImpactAppIdentity(
+                    rootProcessIdentifier: 101,
+                    rootProcessStartAbsoluteTime: 10
+                ),
                 name: "Notes",
                 bundleIdentifier: "com.apple.Notes",
                 bundleURL: nil,
-                impact: 4.2,
-                isReadable: true
+                currentPowerMicrowatts: 4.2,
+                sustainedPowerMicrowatts: nil,
+                rankingScore: 4.2,
+                trend: .steady,
+                coverage: .unavailable,
+                status: .stable
             ),
             EnergyImpactEntry(
-                processIdentifier: 102,
+                identity: EnergyImpactAppIdentity(
+                    rootProcessIdentifier: 102,
+                    rootProcessStartAbsoluteTime: 11
+                ),
                 name: "Calendar",
                 bundleIdentifier: "com.apple.iCal",
                 bundleURL: nil,
-                impact: 4.2,
-                isReadable: true
+                currentPowerMicrowatts: 4.2,
+                sustainedPowerMicrowatts: nil,
+                rankingScore: 4.2,
+                trend: .steady,
+                coverage: .unavailable,
+                status: .stable
             ),
         ]
 

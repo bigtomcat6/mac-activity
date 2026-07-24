@@ -2,54 +2,25 @@ import AppKit
 import Darwin
 import Foundation
 
-public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
-    public let id: pid_t
+public struct EnergyImpactAppSnapshot: Equatable, Sendable {
     public let processIdentifier: pid_t
     public let name: String
     public let bundleIdentifier: String?
     public let bundleURL: URL?
-    public let impact: Double
-    public let isReadable: Bool
+    public let kind: EnergyImpactAppKind
 
     public init(
         processIdentifier: pid_t,
         name: String,
         bundleIdentifier: String?,
         bundleURL: URL?,
-        impact: Double,
-        isReadable: Bool
-    ) {
-        self.id = processIdentifier
-        self.processIdentifier = processIdentifier
-        self.name = name
-        self.bundleIdentifier = bundleIdentifier
-        self.bundleURL = bundleURL
-        self.impact = impact
-        self.isReadable = isReadable
-    }
-
-    public var formattedImpact: String {
-        guard isReadable else { return "Unavailable" }
-        return String(format: "%.1f", impact)
-    }
-}
-
-public struct EnergyImpactAppSnapshot: Equatable, Sendable {
-    public let processIdentifier: pid_t
-    public let name: String
-    public let bundleIdentifier: String?
-    public let bundleURL: URL?
-
-    public init(
-        processIdentifier: pid_t,
-        name: String,
-        bundleIdentifier: String?,
-        bundleURL: URL?
+        kind: EnergyImpactAppKind = .regular
     ) {
         self.processIdentifier = processIdentifier
         self.name = name
         self.bundleIdentifier = bundleIdentifier
         self.bundleURL = bundleURL
+        self.kind = kind
     }
 }
 
@@ -129,55 +100,88 @@ public final class EnergyImpactService {
         )
         var nextReadings: [pid_t: TimedProcessEnergyReading] = [:]
         let entries = apps.map { app -> EnergyImpactEntry in
-            var impact = 0.0
-            var isReadable = false
+            let processIdentifiers = processIdentifiersByRoot[app.processIdentifier] ?? [app.processIdentifier]
+            var rootProcessStartAbsoluteTime: UInt64?
+            var totalPowerMicrowatts = 0.0
+            var readableProcessCount = 0
+            var validDeltaCount = 0
 
-            for processIdentifier in processIdentifiersByRoot[app.processIdentifier] ?? [app.processIdentifier] {
+            for processIdentifier in processIdentifiers {
                 guard let current = reader.reading(for: processIdentifier) else { continue }
-                isReadable = true
+                if processIdentifier == app.processIdentifier {
+                    rootProcessStartAbsoluteTime = current.processStartAbsoluteTime
+                }
+                readableProcessCount += 1
                 nextReadings[processIdentifier] = TimedProcessEnergyReading(
                     reading: current,
                     sampleTime: sampleTime
                 )
-                if let previous = previousReadings[processIdentifier] {
-                    impact += Self.impactRate(from: previous, to: current, sampleTime: sampleTime)
+                if let previous = previousReadings[processIdentifier],
+                   let impactRate = Self.impactRate(from: previous, to: current, sampleTime: sampleTime) {
+                    totalPowerMicrowatts += impactRate
+                    validDeltaCount += 1
                 }
             }
 
-            guard isReadable else {
-                return EnergyImpactEntry(
-                    processIdentifier: app.processIdentifier,
-                    name: app.name,
-                    bundleIdentifier: app.bundleIdentifier,
-                    bundleURL: app.bundleURL,
-                    impact: 0,
-                    isReadable: false
-                )
+            let identity = EnergyImpactAppIdentity(
+                rootProcessIdentifier: app.processIdentifier,
+                rootProcessStartAbsoluteTime: rootProcessStartAbsoluteTime
+            )
+            let coverage = EnergyImpactCoverage(
+                discoveredProcessCount: processIdentifiers.count,
+                readableProcessCount: readableProcessCount,
+                validProcessSeconds: TimeInterval(validDeltaCount),
+                discoveredProcessSeconds: TimeInterval(processIdentifiers.count)
+            )
+            let status: EnergyImpactStatus = if readableProcessCount == 0 {
+                .unavailable
+            } else if validDeltaCount == 0 {
+                .collecting
+            } else if validDeltaCount < processIdentifiers.count {
+                .partial
+            } else {
+                .stable
             }
+            let currentPower = validDeltaCount == 0 ? nil : totalPowerMicrowatts
 
             return EnergyImpactEntry(
-                processIdentifier: app.processIdentifier,
+                identity: identity,
                 name: app.name,
                 bundleIdentifier: app.bundleIdentifier,
                 bundleURL: app.bundleURL,
-                impact: impact,
-                isReadable: true
+                kind: app.kind,
+                currentPowerMicrowatts: currentPower,
+                sustainedPowerMicrowatts: nil,
+                rankingScore: currentPower,
+                trend: .steady,
+                coverage: coverage,
+                status: status
             )
         }
         previousReadings = nextReadings
         return Self.sortedByImpact(entries, limit: limit)
     }
 
-    public nonisolated static func sortedByImpact(_ entries: [EnergyImpactEntry], limit: Int) -> [EnergyImpactEntry] {
-        entries
-            .sorted { lhs, rhs in
-                if lhs.impact == rhs.impact {
-                    return lhs.name.localizedCaseInsensitiveCompare(rhs.name) == .orderedAscending
-                }
-                return lhs.impact > rhs.impact
+    public nonisolated static func sortedByImpact(
+        _ entries: [EnergyImpactEntry],
+        limit: Int
+    ) -> [EnergyImpactEntry] {
+        entries.sorted { lhs, rhs in
+            switch (lhs.rankingScore, rhs.rankingScore) {
+            case let (left?, right?) where left != right:
+                return left > right
+            case (_?, nil):
+                return true
+            case (nil, _?):
+                return false
+            default:
+                let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
+                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
+                return lhs.processIdentifier < rhs.processIdentifier
             }
-            .prefix(max(0, limit))
-            .map { $0 }
+        }
+        .prefix(max(0, limit))
+        .map { $0 }
     }
 
     public nonisolated static func processIdentifiersByRoot(
@@ -205,13 +209,13 @@ public final class EnergyImpactService {
         from previous: TimedProcessEnergyReading,
         to current: ProcessEnergyReading,
         sampleTime: TimeInterval
-    ) -> Double {
+    ) -> Double? {
         guard current.processStartAbsoluteTime == previous.reading.processStartAbsoluteTime,
               current.energyNanojoules >= previous.reading.energyNanojoules else {
-            return 0
+            return nil
         }
         let elapsedSeconds = sampleTime - previous.sampleTime
-        guard elapsedSeconds > 0 else { return 0 }
+        guard elapsedSeconds > 0 else { return nil }
         let deltaMicrojoules = Double(current.energyNanojoules - previous.reading.energyNanojoules) / 1_000.0
         return deltaMicrojoules / elapsedSeconds
     }
