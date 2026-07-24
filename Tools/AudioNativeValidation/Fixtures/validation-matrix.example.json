@@ -5,7 +5,6 @@
   },
   "callbackCountAfterObservation" : 2048,
   "callbackCountBeforeObservation" : 1024,
-  "eligibleForPolicyPromotion" : false,
   "exactFingerprint" : {
     "devices" : [
       {
@@ -65,12 +64,25 @@
   "rawFailures" : [
 
   ],
+  "resolvedTeardownProbeFailures" : [
+
+  ],
+  "runtimeValidationCompleted" : true,
+  "sessionError" : null,
   "sustainedCallbacks" : true,
   "teardown" : {
-    "aggregateIdentityAbsent" : true,
+    "aggregateIdentity" : {
+      "absent" : {
+
+      }
+    },
     "attempts" : 2,
     "callbackContextReleased" : true,
-    "tapIdentitiesAbsent" : true
+    "tapIdentities" : {
+      "absent" : {
+
+      }
+    }
   },
   "tapFormats" : [
     {
@@ -83,6 +95,23 @@
         "interleaving" : "interleaved",
         "sampleRate" : 48000
       }
+    }
+  ],
+  "tapMuteBehaviorObservations" : [
+    {
+      "diagnosticOnlyObjectID" : 8001,
+      "observedState" : "unmuted",
+      "uuid" : "4D414341-0000-4000-8000-000000000001"
+    },
+    {
+      "diagnosticOnlyObjectID" : 8001,
+      "observedState" : "mutedWhenTapped",
+      "uuid" : "4D414341-0000-4000-8000-000000000001"
+    },
+    {
+      "diagnosticOnlyObjectID" : 8001,
+      "observedState" : "unmuted",
+      "uuid" : "4D414341-0000-4000-8000-000000000001"
     }
   ],
   "tapResources" : [

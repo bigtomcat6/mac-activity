@@ -383,10 +383,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesController: PreferencesController
     ) -> AudioControlCoordinator {
         let audioDeviceService = AudioDeviceVolumeService()
-        let nativeValidationPolicy = AudioRouteNativeValidationPolicy.conservative
         let availability = AudioFeatureAvailability(
-            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion,
-            nativeValidationPolicy: nativeValidationPolicy
+            operatingSystemVersion: ProcessInfo.processInfo.operatingSystemVersion
         )
         return AudioControlCoordinator(
             availability: availability,
@@ -394,7 +392,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             processProvider: AudioProcessService(availability: availability),
             routeDeviceProvider: audioDeviceService,
             monitor: AudioSystemMonitor(availability: availability),
-            planner: AudioRoutePlanner(policy: nativeValidationPolicy),
+            planner: AudioRoutePlanner(),
             engine: ProcessTapVolumeEngine(availability: availability),
             preferences: preferencesController
         )

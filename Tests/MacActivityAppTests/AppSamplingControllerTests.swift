@@ -6,7 +6,7 @@ import MacActivityCore
 
 @MainActor
 final class AppSamplingControllerTests: XCTestCase {
-    func testProductionAudioCompositionInjectsOneSharedPolicyAndAvailability() throws {
+    func testProductionAudioCompositionInjectsOneSharedAvailability() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .deletingLastPathComponent()
@@ -14,21 +14,16 @@ final class AppSamplingControllerTests: XCTestCase {
             .appendingPathComponent("Sources/MacActivityApp/AppDelegate.swift")
         let source = try String(contentsOf: sourceURL, encoding: .utf8)
 
-        XCTAssertEqual(
-            source.components(separatedBy:
-                "let nativeValidationPolicy = AudioRouteNativeValidationPolicy.conservative"
-            ).count - 1,
-            1
-        )
+        XCTAssertTrue(source.contains("let availability = AudioFeatureAvailability("))
         for injection in [
-            "nativeValidationPolicy: nativeValidationPolicy",
             "processProvider: AudioProcessService(availability: availability)",
             "monitor: AudioSystemMonitor(availability: availability)",
-            "planner: AudioRoutePlanner(policy: nativeValidationPolicy)",
+            "planner: AudioRoutePlanner()",
             "engine: ProcessTapVolumeEngine(availability: availability)",
         ] {
             XCTAssertTrue(source.contains(injection), injection)
         }
+        XCTAssertFalse(source.contains("AudioRouteNativeValidationPolicy"))
     }
 
     func testHiddenDashboardDefaultsToBackgroundSampling() {
@@ -122,23 +117,13 @@ final class AppSamplingControllerTests: XCTestCase {
             store: AppDelegatePreferencesStore(),
             launchService: NoopLaunchAtLoginService()
         )
-        let preflight = AudioRoutePlanner()
-        let fingerprint = try preflight.topologyFingerprint(for: AudioRouteRequest(
-            processObjectID: 11,
-            processIdentifier: 101,
-            generation: 1,
-            sourceDeviceUIDs: [audioServices.routeDevice.uid],
-            systemDefaultOutputDeviceUID: nil,
-            mode: .followOriginal,
-            devices: [audioServices.routeDevice]
-        ))
         let coordinator = AudioControlCoordinator(
             availability: .supported,
             deviceProvider: audioServices,
             processProvider: audioServices,
             routeDeviceProvider: audioServices,
             monitor: audioMonitor,
-            planner: AudioRoutePlanner(policy: .init(validatedFingerprints: [fingerprint])),
+            planner: AudioRoutePlanner(),
             engine: audioEngine,
             preferences: preferences
         )

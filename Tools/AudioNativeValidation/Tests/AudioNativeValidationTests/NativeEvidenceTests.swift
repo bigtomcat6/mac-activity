@@ -4,6 +4,39 @@ import Foundation
 import XCTest
 
 final class NativeEvidenceTests: XCTestCase {
+    func testCompletedExampleFixtureDecodesWithCoherentRuntimeEvidence() throws {
+        let fixtureURL = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/validation-matrix.example.json")
+        let record = try JSONDecoder().decode(
+            NativeAudioValidationRecord.self,
+            from: Data(contentsOf: fixtureURL)
+        )
+        let before = try XCTUnwrap(record.callbackCountBeforeObservation)
+        let after = try XCTUnwrap(record.callbackCountAfterObservation)
+        let tap = try XCTUnwrap(record.tapResources.first)
+        let runtimeValidationCompleted = record.sessionError == nil
+            && before != after
+            && record.rawFailures.isEmpty
+            && record.teardown?.isReleased == true
+            && record.tapMuteBehaviorObservations.map(\.observedState)
+                == [.unmuted, .mutedWhenTapped, .unmuted]
+
+        XCTAssertEqual(record.sustainedCallbacks, before != after)
+        XCTAssertTrue(record.tapMuteBehaviorObservations.allSatisfy {
+            $0.diagnosticOnlyObjectID == tap.diagnosticOnlyObjectID
+                && $0.uuid == tap.uuid
+        })
+        XCTAssertTrue(record.resolvedTeardownProbeFailures.isEmpty)
+        XCTAssertTrue(runtimeValidationCompleted)
+        XCTAssertEqual(
+            record.runtimeValidationCompleted,
+            runtimeValidationCompleted
+        )
+    }
+
     @MainActor
     func testSuccessEvidenceSerializesOrderedPerTapMuteBehaviorObservations() async throws {
         let outputURL = try makeOutputURL()
@@ -33,7 +66,9 @@ final class NativeEvidenceTests: XCTestCase {
         _ = try await persistNativeValidationEvidence(
             environment: environment(outputURL: outputURL),
             fingerprint: fingerprint,
-            recordingSnapshot: hardware.snapshot,
+            recordingSnapshot: {
+                self.completedSnapshot(from: hardware.snapshot())
+            },
             runSession: {
                 let createdTap = try hardware.createTap(
                     processObjectID: 42,
@@ -52,7 +87,7 @@ final class NativeEvidenceTests: XCTestCase {
 
         let record = try decodeRecord(at: outputURL)
         XCTAssertEqual(record.tapMuteBehaviorObservations, expected)
-        XCTAssertFalse(record.eligibleForPolicyPromotion)
+        XCTAssertTrue(record.runtimeValidationCompleted)
     }
 
     @MainActor
@@ -108,7 +143,7 @@ final class NativeEvidenceTests: XCTestCase {
             let record = try decodeRecord(at: outputURL)
             XCTAssertEqual(record.tapMuteBehaviorObservations, [observedInitialState])
             XCTAssertEqual(record.rawFailures, [failure])
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertTrue(record.sessionError?.contains("-32003") == true)
         }
     }
@@ -171,7 +206,7 @@ final class NativeEvidenceTests: XCTestCase {
                 scope: kAudioObjectPropertyScopeGlobal,
                 element: kAudioObjectPropertyElementMain
             )])
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertTrue(record.sessionError?.contains("-32004") == true)
         }
     }
@@ -230,7 +265,7 @@ final class NativeEvidenceTests: XCTestCase {
             XCTFail("Expected retained cleanup failure")
         } catch NativeValidationError.teardownUnproven {
             let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertEqual(record.teardown, teardown)
             XCTAssertEqual(record.rawFailures, [NativeRawFailure(
                 seam: "retainedCleanup.destroyAggregate",
@@ -282,7 +317,7 @@ final class NativeEvidenceTests: XCTestCase {
             XCTFail("Expected teardown timeout")
         } catch NativeValidationError.teardownUnproven {
             let record = try decodeRecord(at: outputURL)
-            XCTAssertFalse(record.eligibleForPolicyPromotion)
+            XCTAssertFalse(record.runtimeValidationCompleted)
             XCTAssertEqual(record.teardown, teardown)
             XCTAssertTrue(record.rawFailures.isEmpty)
             XCTAssertTrue(record.sessionError?.contains("timeout") == true)
@@ -512,6 +547,109 @@ final class NativeEvidenceTests: XCTestCase {
             scope: kAudioObjectPropertyScopeGlobal,
             element: kAudioObjectPropertyElementMain
         )])
+        XCTAssertNil(hardware.snapshot().rawFailures[0].topologyEvidenceStage)
+        XCTAssertNil(hardware.snapshot().rawFailures[0].localReason)
+    }
+
+    func testEvidenceInvalidCompositionRecordsStageAndPreservesStableSnapshot() throws {
+        let tap = fixtureTap()
+        let aggregate = AudioAggregateResource(objectID: 701, uid: "aggregate")
+        let stableSnapshot = AudioAggregateTopologySnapshot(
+            isAlive: true,
+            inputStreamIDs: [801],
+            inputFormats: [tap.source.expectedFormat],
+            outputStreamIDs: [802],
+            outputFormats: [tap.source.expectedFormat],
+            tapUUIDs: [tap.uuid],
+            activeSubTapIDs: [803]
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeSessionProbeHardware(
+                tap: tap,
+                aggregate: aggregate,
+                waitSnapshot: stableSnapshot
+            ),
+            topologyEvidenceCollector: { _, _, _, _ in
+                try NativeTopologyEvidence.atStage(.aggregateComposition) {
+                    throw NativeRecordingError.invalidComposition
+                }
+            }
+        )
+        let plan = sessionPlan(source: tap.source, aggregateUID: aggregate.uid)
+        _ = try hardware.createAggregate(plan: plan, taps: [tap])
+
+        XCTAssertThrowsError(try hardware.waitForStableTopology(
+            aggregate,
+            deadline: .now() + .seconds(1),
+            isCancelled: { false }
+        ))
+
+        let recording = hardware.snapshot()
+        let failure = try XCTUnwrap(recording.rawFailures.first)
+        XCTAssertEqual(failure.topologyEvidenceStage, .aggregateComposition)
+        XCTAssertEqual(failure.localReason, .invalidComposition)
+        XCTAssertNil(failure.operation)
+        XCTAssertNil(failure.objectID)
+        XCTAssertNil(failure.selector)
+        XCTAssertNil(failure.scope)
+        XCTAssertNil(failure.element)
+        let preserved = try XCTUnwrap(recording.stableTopologySnapshot)
+        XCTAssertEqual(preserved.isAlive, stableSnapshot.isAlive)
+        XCTAssertEqual(preserved.diagnosticOnlyInputStreamIDs, stableSnapshot.inputStreamIDs)
+        XCTAssertEqual(preserved.inputFormats, stableSnapshot.inputFormats)
+        XCTAssertEqual(preserved.diagnosticOnlyOutputStreamIDs, stableSnapshot.outputStreamIDs)
+        XCTAssertEqual(preserved.outputFormats, stableSnapshot.outputFormats)
+        XCTAssertEqual(preserved.tapUUIDs, stableSnapshot.tapUUIDs.map(\.uuidString))
+        XCTAssertEqual(
+            preserved.diagnosticOnlyActiveSubTapIDs,
+            stableSnapshot.activeSubTapIDs
+        )
+    }
+
+    func testResolverUnsupportedTopologyRecordsTypedResolverFailure() throws {
+        let tap = fixtureTap()
+        let aggregate = AudioAggregateResource(objectID: 701, uid: "aggregate")
+        let stableSnapshot = AudioAggregateTopologySnapshot(
+            isAlive: false,
+            inputStreamIDs: [801],
+            inputFormats: [tap.source.expectedFormat],
+            outputStreamIDs: [802],
+            outputFormats: [tap.source.expectedFormat],
+            tapUUIDs: [tap.uuid],
+            activeSubTapIDs: [803]
+        )
+        let hardware = NativeRecordingAudioTapHardware(
+            delegate: NativeSessionProbeHardware(
+                tap: tap,
+                aggregate: aggregate,
+                waitSnapshot: stableSnapshot
+            )
+        )
+        let plan = sessionPlan(source: tap.source, aggregateUID: aggregate.uid)
+        _ = try hardware.createAggregate(plan: plan, taps: [tap])
+
+        XCTAssertThrowsError(try hardware.waitForStableTopology(
+            aggregate,
+            deadline: .now() + .seconds(1),
+            isCancelled: { false }
+        ))
+
+        let failure = try XCTUnwrap(hardware.snapshot().rawFailures.first)
+        XCTAssertEqual(failure.topologyEvidenceStage, .layoutResolution)
+        XCTAssertEqual(failure.localReason, .unsupportedTopology)
+        XCTAssertNil(failure.operation)
+        XCTAssertNil(failure.selector)
+    }
+
+    func testOldRawFailureJSONDecodesWithoutOptionalTopologyDiagnostics() throws {
+        let data = Data(#"{"seam":"waitForStableTopology.evidence","status":-1}"#.utf8)
+
+        let failure = try JSONDecoder().decode(NativeRawFailure.self, from: data)
+
+        XCTAssertEqual(failure.seam, "waitForStableTopology.evidence")
+        XCTAssertEqual(failure.status, -1)
+        XCTAssertNil(failure.topologyEvidenceStage)
+        XCTAssertNil(failure.localReason)
     }
 
     func testTeardownPollingWaitsForDeferredIdentityDisappearance() async throws {
@@ -688,8 +826,7 @@ final class NativeEvidenceTests: XCTestCase {
     }
 
     private func makeOutputURL() throws -> URL {
-        let directory = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches", isDirectory: true)
+        let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
             .appendingPathComponent("MacActivityNativeEvidence-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: directory,
@@ -782,6 +919,7 @@ final class NativeEvidenceTests: XCTestCase {
             tapMuteBehaviorObservations: tapMuteBehaviorObservations,
             aggregate: nil,
             ioProc: nil,
+            stableTopologySnapshot: nil,
             topology: nil,
             verifiedInputStreamUsage: [],
             callbackCountBeforeObservation: nil,
@@ -790,6 +928,32 @@ final class NativeEvidenceTests: XCTestCase {
             rawFailures: rawFailures,
             resolvedTeardownProbeFailures: resolvedTeardownProbeFailures,
             unresolvedRawFailures: unresolvedRawFailures ?? rawFailures
+        )
+    }
+
+    private func completedSnapshot(
+        from snapshot: NativeRecordingSnapshot
+    ) -> NativeRecordingSnapshot {
+        NativeRecordingSnapshot(
+            taps: snapshot.taps,
+            tapFormats: snapshot.tapFormats,
+            tapMuteBehaviorObservations: snapshot.tapMuteBehaviorObservations,
+            aggregate: snapshot.aggregate,
+            ioProc: snapshot.ioProc,
+            stableTopologySnapshot: snapshot.stableTopologySnapshot,
+            topology: snapshot.topology,
+            verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
+            callbackCountBeforeObservation: 1,
+            callbackCountAfterObservation: 2,
+            teardown: NativeTeardownObservation(
+                attempts: 1,
+                callbackContextReleased: true,
+                aggregateIdentity: .absent,
+                tapIdentities: .absent
+            ),
+            rawFailures: snapshot.rawFailures,
+            resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
+            unresolvedRawFailures: snapshot.unresolvedRawFailures
         )
     }
 
@@ -1038,15 +1202,18 @@ private final class NativeSessionProbeHardware: AudioTapHardware, @unchecked Sen
     private let tap: AudioTapResource
     private let aggregate: AudioAggregateResource
     private let waitError: AudioHALError?
+    private let waitSnapshot: AudioAggregateTopologySnapshot?
 
     init(
         tap: AudioTapResource,
         aggregate: AudioAggregateResource,
-        waitError: AudioHALError? = nil
+        waitError: AudioHALError? = nil,
+        waitSnapshot: AudioAggregateTopologySnapshot? = nil
     ) {
         self.tap = tap
         self.aggregate = aggregate
         self.waitError = waitError
+        self.waitSnapshot = waitSnapshot
     }
 
     func validateFreshRoutePlan(_: AudioRoutePlan) throws {}
@@ -1076,6 +1243,7 @@ private final class NativeSessionProbeHardware: AudioTapHardware, @unchecked Sen
         isCancelled _: @escaping @Sendable () -> Bool
     ) throws -> AudioAggregateTopologySnapshot {
         if let waitError { throw waitError }
+        if let waitSnapshot { return waitSnapshot }
         fatalError("unreachable")
     }
 

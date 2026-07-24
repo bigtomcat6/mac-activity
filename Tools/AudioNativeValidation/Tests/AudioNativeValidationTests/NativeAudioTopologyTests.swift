@@ -13,7 +13,6 @@ struct NativeValidationEnvironment {
 
 struct NativeValidationRuntime {
     let fingerprint: AudioRouteTopologyFingerprint
-    let policy: AudioRouteNativeValidationPolicy
     let availability: AudioFeatureAvailability
     let planner: AudioRoutePlanner
     let plan: AudioRoutePlan
@@ -28,13 +27,10 @@ func makeNativeValidationRuntime(
     leaseAcquirer: any AudioProcessOwnershipLeaseAcquiring =
         DarwinAudioProcessOwnershipLeaseAcquirer()
 ) throws -> NativeValidationRuntime {
-    let fingerprint = try AudioRoutePlanner().topologyFingerprint(for: request)
-    let policy = AudioRouteNativeValidationPolicy(validatedFingerprints: [fingerprint])
     let availability = AudioFeatureAvailability(
-        operatingSystemVersion: operatingSystemVersion,
-        nativeValidationPolicy: policy
+        operatingSystemVersion: operatingSystemVersion
     )
-    let planner = AudioRoutePlanner(policy: policy)
+    let planner = AudioRoutePlanner()
     let plan = try planner.plan(request)
     let engine = ProcessTapVolumeEngine(
         hardware: hardware,
@@ -42,8 +38,7 @@ func makeNativeValidationRuntime(
         availability: availability
     )
     return NativeValidationRuntime(
-        fingerprint: fingerprint,
-        policy: policy,
+        fingerprint: plan.topologyFingerprint,
         availability: availability,
         planner: planner,
         plan: plan,
@@ -65,6 +60,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let tapMuteBehaviorObservations: [NativeTapMuteBehaviorObservation]
     let aggregateResource: NativeAggregateResourceObservation?
     let ioProcResource: NativeIOProcResourceObservation?
+    let stableTopologySnapshot: NativeStableTopologySnapshotObservation?
     let topology: NativeTopologyObservation?
     let verifiedInputStreamUsage: [UInt32]
     let callbackCountBeforeObservation: Int32?
@@ -75,7 +71,7 @@ struct NativeAudioValidationRecord: Codable, Sendable {
     let rawFailures: [NativeRawFailure]
     let resolvedTeardownProbeFailures: [NativeRawFailure]
     let sessionError: String?
-    let eligibleForPolicyPromotion: Bool
+    let runtimeValidationCompleted: Bool
 }
 
 enum NativeValidationError: Error {
@@ -329,6 +325,13 @@ private func makeRecord(
 ) -> NativeAudioValidationRecord {
     let before = snapshot.callbackCountBeforeObservation
     let after = snapshot.callbackCountAfterObservation
+    let sustainedCallbacks = before != nil && after != nil && before != after
+    let runtimeValidationCompleted = sessionError == nil
+        && sustainedCallbacks
+        && snapshot.rawFailures.isEmpty
+        && snapshot.teardown?.isReleased == true
+        && snapshot.tapMuteBehaviorObservations.map(\.observedState)
+            == [.unmuted, .mutedWhenTapped, .unmuted]
     return NativeAudioValidationRecord(
         processObjectID: environment.processObjectID,
         targetUIDs: environment.targetUIDs,
@@ -338,17 +341,18 @@ private func makeRecord(
         tapMuteBehaviorObservations: snapshot.tapMuteBehaviorObservations,
         aggregateResource: snapshot.aggregate,
         ioProcResource: snapshot.ioProc,
+        stableTopologySnapshot: snapshot.stableTopologySnapshot,
         topology: snapshot.topology,
         verifiedInputStreamUsage: snapshot.verifiedInputStreamUsage,
         callbackCountBeforeObservation: before,
         callbackCountAfterObservation: after,
-        sustainedCallbacks: before != nil && after != nil && before != after,
+        sustainedCallbacks: sustainedCallbacks,
         teardown: snapshot.teardown,
         microphoneTCCObservation: environment.microphoneTCCObservation,
         rawFailures: snapshot.rawFailures,
         resolvedTeardownProbeFailures: snapshot.resolvedTeardownProbeFailures,
         sessionError: sessionError,
-        eligibleForPolicyPromotion: false
+        runtimeValidationCompleted: runtimeValidationCompleted
     )
 }
 
@@ -388,7 +392,7 @@ final class NativeAudioTopologyTests: XCTestCase {
         XCTAssertEqual(topology.tapUUIDs, [topology.subTap.tapUUID])
         XCTAssertTrue(topology.subTap.driftMatchesExpected)
         XCTAssertTrue(try XCTUnwrap(record.teardown).isReleased)
-        XCTAssertFalse(record.eligibleForPolicyPromotion)
+        XCTAssertTrue(record.runtimeValidationCompleted)
     }
 
     @MainActor

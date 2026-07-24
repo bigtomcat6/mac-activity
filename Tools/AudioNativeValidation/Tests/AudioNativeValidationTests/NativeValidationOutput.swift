@@ -86,9 +86,9 @@ struct NativeValidationOutputPath: Equatable, Sendable {
 
 enum NativeAtomicOutputWriter {
     static func write(_ data: Data, to output: NativeValidationOutputPath) throws {
-        let parent = output.url.deletingLastPathComponent()
+        let parentPath = NSString(string: output.url.path).deletingLastPathComponent
         let targetName = output.url.lastPathComponent
-        let directory = try openDirectoryWithoutFollowingSymlinks(parent)
+        let directory = try openDirectoryWithoutFollowingSymlinks(parentPath)
         defer { close(directory) }
 
         var targetInfo = stat()
@@ -136,10 +136,10 @@ enum NativeAtomicOutputWriter {
         shouldRemoveTemporary = false
     }
 
-    private static func openDirectoryWithoutFollowingSymlinks(_ url: URL) throws -> Int32 {
+    private static func openDirectoryWithoutFollowingSymlinks(_ path: String) throws -> Int32 {
         var directory = open("/", O_RDONLY | O_DIRECTORY | O_CLOEXEC)
         guard directory >= 0 else { throw NativeValidationOutputError.system(errno) }
-        for component in url.standardizedFileURL.pathComponents.dropFirst() {
+        for component in NSString(string: path).pathComponents.dropFirst() {
             let next = openat(
                 directory,
                 component,

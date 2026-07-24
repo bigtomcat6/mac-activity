@@ -7,11 +7,14 @@ struct AudioNativePreflightOutputDevice: Equatable, Sendable {
 }
 
 enum AudioNativePreflightHALDiscoveryError: LocalizedError, Equatable, Sendable {
+    case hardwareInventoryUnavailable
     case missingRequiredProperty(String)
     case malformedRequiredProperty(String)
 
     var errorDescription: String? {
         switch self {
+        case .hardwareInventoryUnavailable:
+            return "Global HAL physical hardware device inventory is unavailable"
         case .missingRequiredProperty(let name):
             return "Required HAL property '\(name)' is unavailable"
         case .malformedRequiredProperty(let name):
@@ -21,6 +24,15 @@ enum AudioNativePreflightHALDiscoveryError: LocalizedError, Equatable, Sendable 
 }
 
 enum AudioNativePreflightHALDiscovery {
+    static func requireHardwareDeviceInventory(
+        _ deviceIDs: [AudioDeviceID]
+    ) throws -> [AudioDeviceID] {
+        guard !deviceIDs.isEmpty else {
+            throw AudioNativePreflightHALDiscoveryError.hardwareInventoryUnavailable
+        }
+        return deviceIDs
+    }
+
     static func aggregateTapUUIDs(
         isAvailableOnPlatform: Bool,
         read: () throws -> [String]

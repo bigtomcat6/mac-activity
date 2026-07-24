@@ -198,6 +198,39 @@ final class AudioRoutePlannerTests: XCTestCase {
         XCTAssertEqual(first.selectedTargetUIDs, ["USB"])
     }
 
+    func testDefaultPlannerAdmitsStructurallyValidSingleAndMultiTargetRoutes() throws {
+        let single = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"]))
+        let multiple = fixtureRequest(
+            mode: .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])
+        )
+        let planner = AudioRoutePlanner(
+            osBuildProvider: { "25A123" },
+            sessionID: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        )
+
+        XCTAssertTrue(planner.permits(single))
+        XCTAssertTrue(planner.permits(multiple))
+        XCTAssertEqual(try planner.plan(single).selectedTargetUIDs, ["USB"])
+        let multiPlan = try planner.plan(multiple)
+        XCTAssertEqual(multiPlan.selectedTargetUIDs, ["BuiltIn", "USB"])
+        XCTAssertTrue(multiPlan.isStacked)
+    }
+
+    func testDefaultPlannerStillRejectsStructurallyUnsupportedRoutes() {
+        let planner = AudioRoutePlanner(
+            osBuildProvider: { "25A123" },
+            sessionID: UUID()
+        )
+        let request = fixtureRequest(
+            mode: .explicit(targetDeviceUIDs: ["Missing"])
+        )
+
+        XCTAssertFalse(planner.permits(request))
+        XCTAssertThrowsError(try planner.plan(request)) { error in
+            XCTAssertEqual(error as? AudioRoutePlanningError, .missingDevice("Missing"))
+        }
+    }
+
     func testExplicitTargetsAreExactOrderedAndDeduplicated() throws {
         let plan = try planner().plan(fixtureRequest(
             systemDefaultOutputDeviceUID: "DefaultThatMustNotAppear",
@@ -915,25 +948,8 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
-    func testExactPublicFingerprintAllowancePermitsPlan() throws {
-        let request = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"]))
-        let preflight = planner()
-        let fingerprint = try preflight.topologyFingerprint(for: request)
-        let exact = AudioRoutePlanner(
-            policy: AudioRouteNativeValidationPolicy(
-                validatedFingerprints: [fingerprint]
-            ),
-            osBuildProvider: { "25A123" }
-        )
-
-        XCTAssertEqual(try exact.plan(request).topologyFingerprint, fingerprint)
-    }
-
-    func testEmptyOSBuildFailsClosedBeforePolicyLookup() {
-        let planner = AudioRoutePlanner(
-            policy: .allowingAllForTesting,
-            osBuildProvider: { "" }
-        )
+    func testEmptyOSBuildFailsClosed() {
+        let planner = AudioRoutePlanner(osBuildProvider: { "" })
         assertPlanningError(
             .unsupportedTopology,
             request: fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"])),
@@ -941,9 +957,8 @@ final class AudioRoutePlannerTests: XCTestCase {
         )
     }
 
-    func testUnreadableOSBuildFailsClosedBeforePolicyLookup() {
+    func testUnreadableOSBuildFailsClosed() {
         let planner = AudioRoutePlanner(
-            policy: .allowingAllForTesting,
             osBuildProvider: { throw AudioRouteOSBuild.ReadError.unavailable }
         )
         assertPlanningError(
@@ -1359,7 +1374,7 @@ final class AudioRoutePlannerTests: XCTestCase {
         ), .disabled)
     }
 
-    func testConservativePolicyDeniesEveryEmpiricalTransportWithExactFingerprint() throws {
+    func testStructurallyValidEmpiricalTransportsReachRuntimeAdmission() throws {
         let cases: [(UInt32?, UInt32?)] = [
             (kAudioDeviceTransportTypeBluetooth, 100),
             (kAudioDeviceTransportTypeBluetoothLE, 100),
@@ -1378,38 +1393,9 @@ final class AudioRoutePlannerTests: XCTestCase {
                 mode: .explicit(targetDeviceUIDs: [target.uid]),
                 devices: fixtureDevices() + [target]
             )
-            let conservative = AudioRoutePlanner()
-            let fingerprint = try conservative.topologyFingerprint(for: request)
-            XCTAssertThrowsError(try conservative.plan(request)) { error in
-                XCTAssertEqual(
-                    error as? AudioRoutePlanningError,
-                    .nativeValidationRequired(fingerprint)
-                )
-            }
-        }
-    }
-
-    func testExactAllowanceDoesNotPermitNearbyFingerprint() throws {
-        let allowedRequest = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["USB"]))
-        let preflight = planner()
-        let allowedFingerprint = try preflight.topologyFingerprint(for: allowedRequest)
-        let exact = AudioRoutePlanner(
-            policy: AudioRouteNativeValidationPolicy(
-                validatedFingerprints: [allowedFingerprint]
-            ),
-            osBuildProvider: { "25A123" }
-        )
-        let nearbyRequest = fixtureRequest(mode: .explicit(targetDeviceUIDs: ["HDMI"]))
-
-        XCTAssertTrue(exact.permits(allowedRequest))
-        XCTAssertFalse(exact.permits(nearbyRequest))
-        XCTAssertNoThrow(try exact.plan(allowedRequest))
-        let nearbyFingerprint = try exact.topologyFingerprint(for: nearbyRequest)
-        XCTAssertThrowsError(try exact.plan(nearbyRequest)) { error in
-            XCTAssertEqual(
-                error as? AudioRoutePlanningError,
-                .nativeValidationRequired(nearbyFingerprint)
-            )
+            let planner = planner()
+            XCTAssertTrue(planner.permits(request))
+            XCTAssertNoThrow(try planner.plan(request))
         }
     }
 
@@ -1603,7 +1589,6 @@ private extension AudioRoutePlannerTests {
 
     func planner(sessionID: UUID = UUID()) -> AudioRoutePlanner {
         AudioRoutePlanner(
-            policy: .allowingAllForTesting,
             osBuildProvider: { "25A123" },
             sessionID: sessionID
         )

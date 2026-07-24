@@ -37,7 +37,7 @@ final class CoordinatorFixture {
             store: store,
             launchService: NoopLaunchAtLoginService()
         )
-        let planner = planner ?? Self.validatedPlanner(devices: deviceProvider.routeDescriptors)
+        let planner = planner ?? AudioRoutePlanner()
         coordinator = AudioControlCoordinator(
             availability: availability,
             deviceProvider: deviceProvider,
@@ -64,31 +64,6 @@ final class CoordinatorFixture {
         )
     }
 
-    private static func validatedPlanner(devices: [AudioRouteDevice]) -> AudioRoutePlanner {
-        let fingerprintPlanner = AudioRoutePlanner()
-        let requests: [([String], AudioRouteMode)] = [
-            (["BuiltIn"], .followOriginal),
-            (["USB"], .followOriginal),
-            (["BuiltIn"], .explicit(targetDeviceUIDs: ["BuiltIn"])),
-            (["BuiltIn"], .explicit(targetDeviceUIDs: ["USB"])),
-            (["BuiltIn"], .explicit(targetDeviceUIDs: ["BuiltIn", "USB"])),
-            (["BuiltIn"], .explicit(targetDeviceUIDs: ["USB", "BuiltIn"])),
-        ]
-        let fingerprints = requests.compactMap { sourceUIDs, mode in
-            try? fingerprintPlanner.topologyFingerprint(for: .init(
-                processObjectID: 11,
-                processIdentifier: 101,
-                generation: 1,
-                sourceDeviceUIDs: sourceUIDs,
-                systemDefaultOutputDeviceUID: nil,
-                mode: mode,
-                devices: devices
-            ))
-        }
-        return AudioRoutePlanner(
-            policy: .init(validatedFingerprints: Set(fingerprints))
-        )
-    }
 }
 
 @MainActor
@@ -179,7 +154,7 @@ final class AudioControlComponentFixture {
             processProvider: processProvider,
             routeDeviceProvider: deviceProvider,
             monitor: monitor,
-            planner: Self.validatedPlanner(devices: routeDevices),
+            planner: AudioRoutePlanner(),
             engine: engine,
             preferences: preferences,
             delay: { _ in }
@@ -262,52 +237,14 @@ final class AudioControlComponentFixture {
         )
     }
 
-    private static func validatedPlanner(devices: [AudioRouteDevice]) -> AudioRoutePlanner {
-        let fingerprintPlanner = AudioRoutePlanner()
-        let uids = devices.map(\.uid)
-        var fingerprints: Set<AudioRouteTopologyFingerprint> = []
-        for sourceUID in uids {
-            let modes: [AudioRouteMode] = [.followOriginal] + (1..<(1 << uids.count)).map { mask in
-                .explicit(targetDeviceUIDs: uids.enumerated().compactMap { index, uid in
-                    mask & (1 << index) == 0 ? nil : uid
-                })
-            }
-            for mode in modes {
-                guard let fingerprint = try? fingerprintPlanner.topologyFingerprint(for: .init(
-                    processObjectID: 11,
-                    processIdentifier: 101,
-                    generation: 1,
-                    sourceDeviceUIDs: [sourceUID],
-                    systemDefaultOutputDeviceUID: nil,
-                    mode: mode,
-                    devices: devices
-                )) else { continue }
-                fingerprints.insert(fingerprint)
-            }
-        }
-        return AudioRoutePlanner(
-            policy: .init(validatedFingerprints: fingerprints)
-        )
-    }
 }
 
 extension AudioFeatureAvailability {
-    private static let testValidatedPolicy = AudioRouteNativeValidationPolicy(
-        validatedFingerprints: [AudioRouteTopologyFingerprint(
-            osBuild: "test",
-            sourceDeviceUIDs: ["source"],
-            selectedTargetUIDs: ["target"],
-            devices: []
-        )]
-    )
-
     static let unsupported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0),
-        nativeValidationPolicy: testValidatedPolicy
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 1, patchVersion: 0)
     )
     static let supported = AudioFeatureAvailability(
-        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0),
-        nativeValidationPolicy: testValidatedPolicy
+        operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0)
     )
 }
 

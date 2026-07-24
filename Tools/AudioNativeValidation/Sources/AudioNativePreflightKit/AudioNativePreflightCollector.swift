@@ -32,12 +32,8 @@ public struct AudioNativePreflightCollector {
             controlInspectionPolicy: controlInspectionPolicy
         )
 
-        let processPolicy = AudioRouteNativeValidationPolicy(
-            validatedFingerprints: [Self.impossibleReadOnlyFingerprint]
-        )
         let processAvailability = AudioFeatureAvailability(
-            operatingSystemVersion: operatingSystemVersion,
-            nativeValidationPolicy: processPolicy
+            operatingSystemVersion: operatingSystemVersion
         )
         let processObservations: [AudioNativePreflightProcessObservation]
         if #available(macOS 14.2, *) {
@@ -143,10 +139,12 @@ private extension AudioNativePreflightCollector {
         client: AudioHALClient,
         controlInspectionPolicy: AudioNativePreflightControlInspectionPolicy
     ) throws -> [AudioNativePreflightDeviceObservation] {
-        let deviceIDs = try client.readArray(
-            AudioDeviceID.self,
-            from: AudioObjectID(kAudioObjectSystemObject),
-            address: devicesAddress
+        let deviceIDs = try AudioNativePreflightHALDiscovery.requireHardwareDeviceInventory(
+            client.readArray(
+                AudioDeviceID.self,
+                from: AudioObjectID(kAudioObjectSystemObject),
+                address: devicesAddress
+            )
         )
         let outputDevices = try AudioNativePreflightHALDiscovery.outputDevices(
             deviceIDs: deviceIDs,

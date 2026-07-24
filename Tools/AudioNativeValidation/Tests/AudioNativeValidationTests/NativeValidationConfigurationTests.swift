@@ -6,7 +6,7 @@ import XCTest
 
 final class NativeValidationConfigurationTests: XCTestCase {
     @MainActor
-    func testExactRuntimePolicyReachesInjectedHardwareInsteadOfAvailabilityRejection() async throws {
+    func testStructurallyAdmittedRuntimeReachesInjectedHardwareInsteadOfAvailabilityRejection() async throws {
         let hardware = NativeRuntimeWiringProbeHardware()
         let request = nativeRuntimeWiringRequest()
 
@@ -22,7 +22,6 @@ final class NativeValidationConfigurationTests: XCTestCase {
         )
         await runtime.engine.shutdown()
 
-        XCTAssertTrue(runtime.policy.permits(runtime.fingerprint))
         XCTAssertTrue(runtime.availability.supportsProcessControls)
         XCTAssertTrue(runtime.planner.permits(request))
         XCTAssertEqual(runtime.plan.topologyFingerprint, runtime.fingerprint)
@@ -103,8 +102,8 @@ final class NativeValidationConfigurationTests: XCTestCase {
     private var scratchURL: URL!
 
     override func setUpWithError() throws {
-        scratchURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent("Library/Caches", isDirectory: true)
+        scratchURL = NativeValidationOutputPath.nestedRepositoryRoot
+            .appendingPathComponent(".build", isDirectory: true)
             .appendingPathComponent("MacActivityNativeValidation-\(UUID().uuidString)")
         try FileManager.default.createDirectory(
             at: scratchURL,
@@ -196,6 +195,31 @@ final class NativeValidationConfigurationTests: XCTestCase {
         XCTAssertEqual(parsed.microphoneTCCObservation, "No prompt appeared.")
     }
 
+    func testEnvironmentPreservesOrderedTwoTargetSelection() throws {
+        let outputPath = scratchURL.appendingPathComponent("result.json").path
+        let environment = try makeNativeValidationEnvironment(
+            environment: [
+                "MACACTIVITY_AUDIO_PROCESS_OBJECT_ID": "42",
+                "MACACTIVITY_AUDIO_TARGET_UIDS": "BuiltInSpeakerDevice,HDMI-UID",
+                "MACACTIVITY_AUDIO_VALIDATION_OUTPUT": outputPath,
+                "MACACTIVITY_AUDIO_MIC_TCC_OBSERVATION": "No prompt observed",
+                "MACACTIVITY_AUDIO_VALIDATION_SECONDS": "10",
+            ],
+            operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            ),
+            restrictedRoots: [],
+            makeProcessObjectID: { AudioObjectID($0) }
+        )
+
+        XCTAssertEqual(
+            environment.targetUIDs,
+            ["BuiltInSpeakerDevice", "HDMI-UID"]
+        )
+    }
+
     func testAtomicWriterDoesNotFollowTargetSymlinkCreatedAfterValidation() throws {
         let outputURL = scratchURL.appendingPathComponent("result.json")
         let output = try NativeValidationOutputPath.validate(
@@ -241,6 +265,32 @@ final class NativeValidationConfigurationTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(
             atPath: replacementParent.appendingPathComponent("result.json").path
         ))
+    }
+
+    func testAtomicWriterPreservesLiteralPrivateTemporaryParentPath() throws {
+        let directory = URL(fileURLWithPath: "/private/tmp", isDirectory: true)
+            .appendingPathComponent(
+                "MacActivityNativeValidation-\(UUID().uuidString)",
+                isDirectory: true
+            )
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: false,
+            attributes: [.posixPermissions: 0o700]
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let outputURL = directory.appendingPathComponent("result.json")
+        let output = try NativeValidationOutputPath.validate(
+            outputURL.path,
+            restrictedRoots: []
+        )
+
+        try NativeAtomicOutputWriter.write(Data("private temporary output".utf8), to: output)
+
+        XCTAssertEqual(
+            try String(contentsOf: outputURL, encoding: .utf8),
+            "private temporary output"
+        )
     }
 
     func testAtomicWriterReplacesRegularFileAtValidatedPath() throws {

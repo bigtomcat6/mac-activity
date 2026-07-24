@@ -312,7 +312,6 @@ public enum AudioRoutePlanningError: Error, Equatable, Sendable {
     case unsupportedFormat(deviceUID: String, streamIndex: UInt)
     case incompatibleTarget(deviceUID: String)
     case unsupportedTopology
-    case nativeValidationRequired(AudioRouteTopologyFingerprint)
 }
 
 @MainActor

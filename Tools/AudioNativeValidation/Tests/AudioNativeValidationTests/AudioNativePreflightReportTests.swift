@@ -102,6 +102,26 @@ final class AudioNativePreflightReportTests: XCTestCase {
         }
     }
 
+    func testGlobalHardwareDeviceInventoryRejectsEmptyDeviceIDs() {
+        XCTAssertThrowsError(
+            try AudioNativePreflightHALDiscovery.requireHardwareDeviceInventory([])
+        ) { error in
+            XCTAssertEqual(
+                error as? AudioNativePreflightHALDiscoveryError,
+                .hardwareInventoryUnavailable
+            )
+        }
+    }
+
+    func testGlobalHardwareDeviceInventoryPreservesNonemptyDeviceIDs() throws {
+        let deviceIDs: [AudioDeviceID] = [303, 101, 202]
+
+        XCTAssertEqual(
+            try AudioNativePreflightHALDiscovery.requireHardwareDeviceInventory(deviceIDs),
+            deviceIDs
+        )
+    }
+
     func testStrictOutputDeviceDiscoveryOmitsOnlyConfirmedEmptyStreamLists() throws {
         let devices = AudioNativePreflightHALDiscovery.outputDevices(
             deviceIDs: [101, 202],
@@ -164,6 +184,12 @@ final class AudioNativePreflightReportTests: XCTestCase {
     }
 
     func testHALDiscoveryErrorsDescribeTheExactProperty() {
+        XCTAssertEqual(
+            AudioNativePreflightHALDiscoveryError
+                .hardwareInventoryUnavailable
+                .localizedDescription,
+            "Global HAL physical hardware device inventory is unavailable"
+        )
         XCTAssertEqual(
             AudioNativePreflightHALDiscoveryError
                 .missingRequiredProperty("FullSubDeviceList")

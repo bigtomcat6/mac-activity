@@ -5,22 +5,18 @@ public struct AudioRoutePlanner: Sendable {
     public static let ownedUIDPrefix = "com.how.macactivity.audio."
     public static let aggregateUIDPrefix = "com.how.macactivity.audio.aggregate."
 
-    private let policy: AudioRouteNativeValidationPolicy
     private let osBuildProvider: @Sendable () throws -> String
     private let sessionID: UUID
 
-    public init(policy: AudioRouteNativeValidationPolicy = .conservative) {
-        self.policy = policy
+    public init() {
         self.osBuildProvider = AudioRouteOSBuild.current
         self.sessionID = UUID()
     }
 
     init(
-        policy: AudioRouteNativeValidationPolicy,
         osBuildProvider: @escaping @Sendable () throws -> String,
         sessionID: UUID = UUID()
     ) {
-        self.policy = policy
         self.osBuildProvider = osBuildProvider
         self.sessionID = sessionID
     }
@@ -32,18 +28,11 @@ public struct AudioRoutePlanner: Sendable {
     }
 
     public func permits(_ request: AudioRouteRequest) -> Bool {
-        guard let fingerprint = try? topologyFingerprint(for: request) else { return false }
-        return policy.permits(fingerprint)
+        (try? candidate(for: request)) != nil
     }
 
     public func plan(_ request: AudioRouteRequest) throws -> AudioRoutePlan {
         let candidate = try candidate(for: request)
-        guard policy.permits(candidate.topologyFingerprint) else {
-            throw AudioRoutePlanningError.nativeValidationRequired(
-                candidate.topologyFingerprint
-            )
-        }
-
         return AudioRoutePlan(
             processObjectID: request.processObjectID,
             processIdentifier: request.processIdentifier,
@@ -98,7 +87,6 @@ public struct AudioRoutePlanner: Sendable {
             devices: devices
         )
         let planner = AudioRoutePlanner(
-            policy: .allowingAllForTesting,
             osBuildProvider: { plan.topologyFingerprint.osBuild },
             sessionID: UUID()
         )
