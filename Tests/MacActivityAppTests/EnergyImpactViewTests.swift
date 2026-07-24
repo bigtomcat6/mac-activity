@@ -63,11 +63,23 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertNotNil(renderer.nsImage)
     }
 
-    func testRenderedEnergyImpactViewShowsEnglishAndSimplifiedChineseRowsAtFourHundredTwentyPoints() async {
-        defer { AppLocalization.setPreferredLanguageIdentifier(nil) }
+    func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
+        let initialPreferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
+        defer { AppLocalization.setPreferredLanguageIdentifier(initialPreferredLanguageIdentifier) }
+
+        AppLocalization.setPreferredLanguageIdentifier("fr")
+        await assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints()
+
+        XCTAssertEqual(AppLocalization.explicitPreferredLanguageIdentifier(), "fr")
+    }
+
+    private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
+        let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
+        defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
         var sleepCount = 0
+        let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[], [entry(power: 1_840)], []]),
+            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
             samplingDelayNanoseconds: 1,
             sleep: { _ in
                 sleepCount += 1
@@ -76,8 +88,39 @@ final class EnergyImpactViewTests: XCTestCase {
         )
         await model.refresh()
 
-        for localeIdentifier in ["en", "zh-Hans"] {
-            AppLocalization.setPreferredLanguageIdentifier(localeIdentifier)
+        let expectations: [(
+            languageIdentifier: String,
+            title: String,
+            subtitle: String,
+            currentLabel: String,
+            accessibilityLabel: String
+        )] = [
+            (
+                "en",
+                "Energy Impact",
+                "Recent CPU energy estimate · Lower is better",
+                "Current",
+                "Safari, rank 1, 1.8 mW"
+            ),
+            (
+                "zh-Hans",
+                "耗电影响",
+                "近期 CPU 能耗估算 · 越低越好",
+                "当前",
+                "Safari，第 1 名，1.8 mW"
+            )
+        ]
+
+        for expectation in expectations {
+            AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
+            XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleCurrent), expectation.subtitle)
+            XCTAssertEqual(AppLocalization.string(.energyImpactCurrentColumn), expectation.currentLabel)
+            XCTAssertEqual(
+                EnergyImpactPresentation.accessibilityLabel(entry: renderedEntry, rank: 1),
+                expectation.accessibilityLabel
+            )
+
             let renderer = ImageRenderer(
                 content: EnergyImpactView(
                     model: model,
@@ -88,7 +131,7 @@ final class EnergyImpactViewTests: XCTestCase {
             )
             renderer.scale = 1
 
-            XCTAssertNotNil(renderer.nsImage, localeIdentifier)
+            XCTAssertNotNil(renderer.nsImage, expectation.languageIdentifier)
         }
     }
 
