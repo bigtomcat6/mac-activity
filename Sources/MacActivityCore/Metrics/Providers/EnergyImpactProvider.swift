@@ -65,7 +65,7 @@ public final class EnergyImpactService {
     private let processSnapshotReader: any ProcessMemorySnapshotReading
     private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
     private let now: () -> Date
-    private var previousReadings: [pid_t: TimedProcessEnergyReading] = [:]
+    private var previousReadings: [EnergyImpactProcessIdentity: TimedProcessEnergyReading] = [:]
 
     public init(
         workspace: NSWorkspace = .shared,
@@ -98,7 +98,7 @@ public final class EnergyImpactService {
             rootProcessIdentifiers: apps.map(\.processIdentifier),
             snapshots: processSnapshotReader.snapshots()
         )
-        var nextReadings: [pid_t: TimedProcessEnergyReading] = [:]
+        var nextReadings: [EnergyImpactProcessIdentity: TimedProcessEnergyReading] = [:]
         let entries = apps.map { app -> EnergyImpactEntry in
             let processIdentifiers = processIdentifiersByRoot[app.processIdentifier] ?? [app.processIdentifier]
             var rootProcessStartAbsoluteTime: UInt64?
@@ -112,11 +112,15 @@ public final class EnergyImpactService {
                     rootProcessStartAbsoluteTime = current.processStartAbsoluteTime
                 }
                 readableProcessCount += 1
-                nextReadings[processIdentifier] = TimedProcessEnergyReading(
+                let identity = EnergyImpactProcessIdentity(
+                    processIdentifier: processIdentifier,
+                    processStartAbsoluteTime: current.processStartAbsoluteTime
+                )
+                nextReadings[identity] = TimedProcessEnergyReading(
                     reading: current,
                     sampleTime: sampleTime
                 )
-                if let previous = previousReadings[processIdentifier],
+                if let previous = previousReadings[identity],
                    let impactRate = Self.impactRate(from: previous, to: current, sampleTime: sampleTime) {
                     totalPowerMicrowatts += impactRate
                     validDeltaCount += 1
