@@ -46,7 +46,7 @@ final class EnergyImpactViewTests: XCTestCase {
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            samplingDelayNanoseconds: 1,
+            initialWindowNanoseconds: 1,
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -80,7 +80,7 @@ final class EnergyImpactViewTests: XCTestCase {
         let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
-            samplingDelayNanoseconds: 1,
+            initialWindowNanoseconds: 1,
             sleep: { _ in
                 sleepCount += 1
                 guard sleepCount == 1 else { throw CancellationError() }
