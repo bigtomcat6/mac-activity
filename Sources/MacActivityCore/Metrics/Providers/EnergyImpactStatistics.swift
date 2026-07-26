@@ -112,13 +112,11 @@ public struct StableEnergyImpactRanker: Sendable {
             }
         }
 
-        var activePairs = Set<ChallengerPair>()
         if currentOrder.count > 1 {
             for index in 1..<currentOrder.count {
                 let incumbent = currentOrder[index - 1]
                 let challenger = currentOrder[index]
                 let pair = ChallengerPair(challenger: challenger, incumbent: incumbent)
-                activePairs.insert(pair)
                 let ratio = leadRatio(
                     challenger: challenger,
                     incumbent: incumbent,
@@ -137,6 +135,12 @@ public struct StableEnergyImpactRanker: Sendable {
             }
         }
 
+        let activePairs = Set(currentOrder.indices.dropFirst().map { index in
+            ChallengerPair(
+                challenger: currentOrder[index],
+                incumbent: currentOrder[index - 1]
+            )
+        })
         leadCounts = leadCounts.filter { activePairs.contains($0.key) }
         let stateful = currentOrder.compactMap { statefulByGeneration[$0] }
         let ephemeral = current

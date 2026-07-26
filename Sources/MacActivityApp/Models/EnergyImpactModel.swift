@@ -78,7 +78,10 @@ final class EnergyImpactModel: ObservableObject {
         guard publicationTime.isFinite else {
             resetStatistics()
             entries = Array(
-                ranker.rank(candidates.map(Self.nonnumericUnavailable), atPublicationBoundary: true)
+                ranker.rank(
+                    candidates.map(Self.sanitizedForInvalidClock),
+                    atPublicationBoundary: true
+                )
                     .prefix(max(0, limit))
             )
             return
@@ -112,19 +115,20 @@ final class EnergyImpactModel: ObservableObject {
         _ candidate: EnergyImpactEntry,
         at publicationTime: TimeInterval
     ) -> EnergyImpactEntry {
-        guard candidate.status == .stable || candidate.status == .partial else {
-            return candidate
+        let sanitized = Self.sanitizingInvalidNumerics(candidate)
+        guard sanitized.status == .stable || sanitized.status == .partial else {
+            return sanitized
         }
-        guard let currentPower = candidate.currentPowerMicrowatts,
-              let rankingScore = candidate.rankingScore,
+        guard let currentPower = sanitized.currentPowerMicrowatts,
+              let rankingScore = sanitized.rankingScore,
               currentPower.isFinite,
               currentPower >= 0,
               rankingScore.isFinite,
               rankingScore >= 0 else {
-            return Self.nonnumericUnavailable(candidate)
+            return Self.nonnumericUnavailable(sanitized)
         }
-        guard let generation = candidate.identity.generation else {
-            return candidate
+        guard let generation = sanitized.identity.generation else {
+            return sanitized
         }
 
         let elapsedSeconds: TimeInterval
@@ -134,7 +138,7 @@ final class EnergyImpactModel: ObservableObject {
             elapsedSeconds = configuration.publicationIntervalSeconds
         }
         guard elapsedSeconds.isFinite, elapsedSeconds > 0 else {
-            return Self.nonnumericUnavailable(candidate)
+            return Self.nonnumericUnavailable(sanitized)
         }
 
         if elapsedSeconds > configuration.maximumGapSeconds {
@@ -149,10 +153,10 @@ final class EnergyImpactModel: ObservableObject {
             value: currentPower,
             elapsedSeconds: smoothingElapsed
         ) else {
-            return Self.nonnumericUnavailable(candidate)
+            return Self.nonnumericUnavailable(sanitized)
         }
         lastValidObservationTimes[generation] = publicationTime
-        return Self.replacingCurrentPower(in: candidate, with: smoothed)
+        return Self.replacingCurrentPower(in: sanitized, with: smoothed)
     }
 
     private func resetStatistics() {
@@ -182,6 +186,35 @@ final class EnergyImpactModel: ObservableObject {
     }
 
     private static func nonnumericUnavailable(_ entry: EnergyImpactEntry) -> EnergyImpactEntry {
+        nonnumeric(entry, status: .unavailable)
+    }
+
+    private static func sanitizedForInvalidClock(_ entry: EnergyImpactEntry) -> EnergyImpactEntry {
+        let sanitized = sanitizingInvalidNumerics(entry)
+        if sanitized.status == .stable || sanitized.status == .partial {
+            return nonnumericUnavailable(sanitized)
+        }
+        return sanitized
+    }
+
+    private static func sanitizingInvalidNumerics(_ entry: EnergyImpactEntry) -> EnergyImpactEntry {
+        let numericValues = [
+            entry.currentPowerMicrowatts,
+            entry.sustainedPowerMicrowatts,
+            entry.rankingScore,
+        ].compactMap { $0 }
+        guard numericValues.contains(where: { $0.isFinite == false || $0 < 0 }) else {
+            return entry
+        }
+        let status: EnergyImpactStatus =
+            entry.status == .stable || entry.status == .partial ? .unavailable : entry.status
+        return nonnumeric(entry, status: status)
+    }
+
+    private static func nonnumeric(
+        _ entry: EnergyImpactEntry,
+        status: EnergyImpactStatus
+    ) -> EnergyImpactEntry {
         EnergyImpactEntry(
             identity: entry.identity,
             name: entry.name,
@@ -193,7 +226,7 @@ final class EnergyImpactModel: ObservableObject {
             rankingScore: nil,
             trend: entry.trend,
             coverage: entry.coverage,
-            status: .unavailable
+            status: status
         )
     }
 }

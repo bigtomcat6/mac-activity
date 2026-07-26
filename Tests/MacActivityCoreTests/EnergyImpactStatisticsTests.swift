@@ -94,6 +94,56 @@ final class EnergyImpactStatisticsTests: XCTestCase {
         )
     }
 
+    func testDisplacedPairDoesNotRetainConfirmationWhenItBecomesAdjacentAgain() {
+        var ranker = StableEnergyImpactRanker()
+
+        XCTAssertEqual(
+            ranker.rank(
+                [
+                    fixtureEntry(pid: 1, score: 100),
+                    fixtureEntry(pid: 2, score: 90),
+                    fixtureEntry(pid: 3, score: 80),
+                ],
+                atPublicationBoundary: true
+            ).map(\.processIdentifier),
+            [1, 2, 3]
+        )
+        XCTAssertEqual(
+            ranker.rank(
+                [
+                    fixtureEntry(pid: 1, score: 100),
+                    fixtureEntry(pid: 2, score: 90),
+                    fixtureEntry(pid: 3, score: 100),
+                ],
+                atPublicationBoundary: true
+            ).map(\.processIdentifier),
+            [1, 2, 3]
+        )
+        XCTAssertEqual(
+            ranker.rank(
+                [
+                    fixtureEntry(pid: 1, score: 100),
+                    fixtureEntry(pid: 2, score: 112),
+                    fixtureEntry(pid: 3, score: 126),
+                ],
+                atPublicationBoundary: true
+            ).map(\.processIdentifier),
+            [1, 3, 2]
+        )
+
+        XCTAssertEqual(
+            ranker.rank(
+                [
+                    fixtureEntry(pid: 1, score: 100),
+                    fixtureEntry(pid: 2, score: 112),
+                    fixtureEntry(pid: 3, score: 80),
+                ],
+                atPublicationBoundary: true
+            ).map(\.processIdentifier),
+            [1, 2, 3]
+        )
+    }
+
     func testNilGenerationEntriesUseNameThenPIDTieBreaks() {
         var ranker = StableEnergyImpactRanker()
         let stateful = fixtureEntry(pid: 4, score: 1, name: "Last")

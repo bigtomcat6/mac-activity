@@ -306,6 +306,58 @@ final class EnergyImpactModelTests: XCTestCase {
             accuracy: 0.000_001
         )
     }
+
+    func testInvalidStaleNumericsAreStrippedWithoutChangingStaleStatus() async throws {
+        let clock = EnergyImpactTestClock()
+        let provider = EnergyImpactProviderStub(
+            responses: [
+                [entry(power: 0)],
+                [entry(power: .nan, status: .stale)]
+            ]
+        )
+        let model = EnergyImpactModel(
+            provider: provider,
+            clock: clock,
+            sleep: { _ in clock.advance(seconds: 3) }
+        )
+
+        await model.refresh()
+
+        let stale = try XCTUnwrap(model.entries.first)
+        XCTAssertEqual(stale.status, .stale)
+        XCTAssertNil(stale.currentPowerMicrowatts)
+        XCTAssertNil(stale.sustainedPowerMicrowatts)
+        XCTAssertNil(stale.rankingScore)
+    }
+
+    func testNonfiniteClockPreservesCollectingStaleAndUnavailableStates() async throws {
+        let clock = EnergyImpactTestClock(value: .nan)
+        let provider = EnergyImpactProviderStub(
+            responses: [
+                [],
+                [
+                    entry(pid: 1, power: nil, status: .collecting),
+                    entry(pid: 2, power: 100, status: .stale),
+                    entry(pid: 3, power: nil, status: .unavailable),
+                ],
+            ]
+        )
+        let model = EnergyImpactModel(
+            provider: provider,
+            clock: clock,
+            sleep: { _ in }
+        )
+
+        await model.refresh()
+
+        let byPID = Dictionary(uniqueKeysWithValues: model.entries.map {
+            ($0.processIdentifier, $0)
+        })
+        XCTAssertEqual(try XCTUnwrap(byPID[1]).status, .collecting)
+        XCTAssertEqual(try XCTUnwrap(byPID[2]).status, .stale)
+        XCTAssertEqual(try XCTUnwrap(byPID[2]).currentPowerMicrowatts, 100)
+        XCTAssertEqual(try XCTUnwrap(byPID[3]).status, .unavailable)
+    }
 }
 
 private func entry(
@@ -353,7 +405,11 @@ private final class EnergyImpactProviderStub: EnergyImpactProviding {
 }
 
 private final class EnergyImpactTestClock: EnergyImpactClock, @unchecked Sendable {
-    private var value: TimeInterval = 0
+    private var value: TimeInterval
+
+    init(value: TimeInterval = 0) {
+        self.value = value
+    }
 
     func nowSeconds() -> TimeInterval {
         value
