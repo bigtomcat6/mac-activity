@@ -64,7 +64,7 @@ public final class EnergyImpactService {
     private let reader: any ProcessEnergyReadingProvider
     private let processSnapshotReader: any ProcessMemorySnapshotReading
     private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
-    private let now: () -> Date
+    private let clock: any EnergyImpactClock
     private var previousReadings: [EnergyImpactProcessIdentity: TimedProcessEnergyReading] = [:]
 
     public init(
@@ -72,11 +72,11 @@ public final class EnergyImpactService {
         reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
         processSnapshotReader: any ProcessMemorySnapshotReading = SystemProcessMemorySnapshotReader(),
         appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil,
-        now: @escaping () -> Date = { Date() }
+        clock: any EnergyImpactClock = SystemEnergyImpactClock()
     ) {
         self.reader = reader
         self.processSnapshotReader = processSnapshotReader
-        self.now = now
+        self.clock = clock
         self.appSnapshotProvider = appSnapshotProvider ?? {
             workspace.runningApplications
                 .filter { $0.activationPolicy == .regular }
@@ -93,7 +93,7 @@ public final class EnergyImpactService {
 
     public func topApps(limit: Int = 20) -> [EnergyImpactEntry] {
         let apps = appSnapshotProvider()
-        let sampleTime = now().timeIntervalSinceReferenceDate
+        let sampleTime = clock.nowSeconds()
         let processIdentifiersByRoot = Self.processIdentifiersByRoot(
             rootProcessIdentifiers: apps.map(\.processIdentifier),
             snapshots: processSnapshotReader.snapshots()
@@ -121,7 +121,12 @@ public final class EnergyImpactService {
                     sampleTime: sampleTime
                 )
                 if let previous = previousReadings[identity],
-                   let impactRate = Self.impactRate(from: previous, to: current, sampleTime: sampleTime) {
+                   let impactRate = Self.impactRate(
+                       from: previous,
+                       to: current,
+                       sampleTime: sampleTime,
+                       maximumGapSeconds: EnergyImpactConfiguration.production.maximumGapSeconds
+                   ) {
                     totalPowerMicrowatts += impactRate
                     validDeltaCount += 1
                 }
@@ -212,14 +217,15 @@ public final class EnergyImpactService {
     private nonisolated static func impactRate(
         from previous: TimedProcessEnergyReading,
         to current: ProcessEnergyReading,
-        sampleTime: TimeInterval
+        sampleTime: TimeInterval,
+        maximumGapSeconds: TimeInterval
     ) -> Double? {
         guard current.processStartAbsoluteTime == previous.reading.processStartAbsoluteTime,
               current.energyNanojoules >= previous.reading.energyNanojoules else {
             return nil
         }
         let elapsedSeconds = sampleTime - previous.sampleTime
-        guard elapsedSeconds > 0 else { return nil }
+        guard elapsedSeconds > 0, elapsedSeconds <= maximumGapSeconds else { return nil }
         let deltaMicrojoules = Double(current.energyNanojoules - previous.reading.energyNanojoules) / 1_000.0
         return deltaMicrojoules / elapsedSeconds
     }

@@ -74,7 +74,7 @@ final class EnergyImpactProviderTests: XCTestCase {
                 .init(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 0),
             ]),
             appSnapshotProvider: { [app] },
-            now: dateSequence([100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
         _ = service.topApps(limit: 1)
@@ -91,6 +91,14 @@ final class EnergyImpactProviderTests: XCTestCase {
         let reading = try XCTUnwrap(SystemProcessEnergyReader().reading(for: getpid()))
 
         XCTAssertGreaterThan(reading.processStartAbsoluteTime, 0)
+    }
+
+    func testSystemEnergyImpactClockProvidesMonotonicSeconds() {
+        let clock = SystemEnergyImpactClock()
+        let first = clock.nowSeconds()
+
+        XCTAssertGreaterThan(first, 0)
+        XCTAssertGreaterThanOrEqual(clock.nowSeconds(), first)
     }
 
     func testDefaultWorkspaceSnapshotProviderBuildsEntriesFromRunningApplications() {
@@ -132,7 +140,7 @@ final class EnergyImpactProviderTests: XCTestCase {
             reader: reader,
             processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { apps },
-            now: dateSequence([100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
         let firstEntries = service.topApps(limit: 2)
@@ -164,7 +172,7 @@ final class EnergyImpactProviderTests: XCTestCase {
             reader: reader,
             processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
-            now: dateSequence([100, 100.5])
+            clock: EnergyImpactClockStub(times: [100, 100.5])
         )
 
         _ = service.topApps(limit: 1)
@@ -203,7 +211,7 @@ final class EnergyImpactProviderTests: XCTestCase {
                 ProcessMemorySnapshot(processIdentifier: 999, parentProcessIdentifier: 1, residentMemoryBytes: 0),
             ]),
             appSnapshotProvider: { [app] },
-            now: dateSequence([100, 102])
+            clock: EnergyImpactClockStub(times: [100, 102])
         )
 
         _ = service.topApps(limit: 1)
@@ -233,7 +241,7 @@ final class EnergyImpactProviderTests: XCTestCase {
             reader: reader,
             processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
-            now: dateSequence([100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
         _ = service.topApps(limit: 1)
@@ -241,6 +249,54 @@ final class EnergyImpactProviderTests: XCTestCase {
 
         XCTAssertEqual(entries.first?.status, .collecting)
         XCTAssertNil(entries.first?.currentPowerMicrowatts)
+    }
+
+    func testLongGapRebaselinesInsteadOfPublishingADilutedValue() {
+        let clock = EnergyImpactClockStub(times: [0, 3, 20])
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(readings: [
+                101: [
+                    .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
+                    .init(energyNanojoules: 4_000, processStartAbsoluteTime: 10),
+                    .init(energyNanojoules: 10_000, processStartAbsoluteTime: 10),
+                ],
+            ]),
+            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: clock
+        )
+
+        _ = service.topApps(limit: 1)
+        XCTAssertEqual(service.topApps(limit: 1).first?.currentPowerMicrowatts ?? -1, 1)
+        let afterGap = service.topApps(limit: 1).first
+
+        XCTAssertNil(afterGap?.currentPowerMicrowatts)
+        XCTAssertEqual(afterGap?.status, .collecting)
+    }
+
+    func testClockRollbackCannotProduceANegativeOrInfinitePower() {
+        let clock = EnergyImpactClockStub(times: [3, 2])
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(readings: [
+                101: [
+                    .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
+                    .init(energyNanojoules: 5_000, processStartAbsoluteTime: 10),
+                ],
+            ]),
+            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: clock
+        )
+
+        _ = service.topApps(limit: 1)
+        let entry = service.topApps(limit: 1).first
+
+        XCTAssertNil(entry?.currentPowerMicrowatts)
+        XCTAssertEqual(entry?.status, .collecting)
     }
 
     func testEnergyImpactServiceKeepsUnreadableAppsAsUnavailableRows() {
@@ -305,11 +361,17 @@ final class EnergyImpactProviderTests: XCTestCase {
     }
 }
 
-private func dateSequence(_ offsets: [TimeInterval]) -> () -> Date {
-    var remainingOffsets = offsets
-    return {
-        let offset = remainingOffsets.isEmpty ? offsets.last ?? 0 : remainingOffsets.removeFirst()
-        return Date(timeIntervalSinceReferenceDate: offset)
+private final class EnergyImpactClockStub: EnergyImpactClock, @unchecked Sendable {
+    private let lock = NSLock()
+    private var times: [TimeInterval]
+
+    init(times: [TimeInterval]) { self.times = times }
+
+    func nowSeconds() -> TimeInterval {
+        lock.lock()
+        defer { lock.unlock() }
+        precondition(times.isEmpty == false, "Clock fixture exhausted")
+        return times.removeFirst()
     }
 }
 

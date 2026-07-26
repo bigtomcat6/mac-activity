@@ -136,3 +136,49 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
         currentPowerMicrowatts
     }
 }
+
+public protocol EnergyImpactClock: Sendable {
+    func nowSeconds() -> TimeInterval
+}
+
+public struct SystemEnergyImpactClock: EnergyImpactClock {
+    private static let timebase: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
+    public init() {}
+
+    public func nowSeconds() -> TimeInterval {
+        let ticks = mach_continuous_time()
+        let nanoseconds = Double(ticks)
+            * Double(Self.timebase.numer)
+            / Double(Self.timebase.denom)
+        return nanoseconds / 1_000_000_000
+    }
+}
+
+public struct EnergyImpactConfiguration: Equatable, Sendable {
+    public let sampleIntervalSeconds: TimeInterval
+    public let publicationIntervalSeconds: TimeInterval
+    public let maximumGapSeconds: TimeInterval
+    public let fastHalfLifeSeconds: TimeInterval
+    public let sustainedWindowSeconds: TimeInterval
+
+    public init(
+        sampleIntervalSeconds: TimeInterval = 1,
+        publicationIntervalSeconds: TimeInterval = 3,
+        maximumGapSeconds: TimeInterval = 10,
+        fastHalfLifeSeconds: TimeInterval = 4,
+        sustainedWindowSeconds: TimeInterval = 30
+    ) {
+        self.sampleIntervalSeconds = sampleIntervalSeconds
+        self.publicationIntervalSeconds = publicationIntervalSeconds
+        self.maximumGapSeconds = maximumGapSeconds
+        self.fastHalfLifeSeconds = fastHalfLifeSeconds
+        self.sustainedWindowSeconds = sustainedWindowSeconds
+    }
+
+    public static let production = EnergyImpactConfiguration()
+}
