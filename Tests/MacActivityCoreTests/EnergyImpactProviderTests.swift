@@ -4,6 +4,113 @@ import XCTest
 
 @MainActor
 final class EnergyImpactProviderTests: XCTestCase {
+    private func reading(
+        energy: UInt64,
+        start: UInt64 = 10,
+        userCPU: UInt64 = 0,
+        systemCPU: UInt64 = 0
+    ) -> ProcessEnergyReading {
+        ProcessEnergyReading(
+            energyNanojoules: energy,
+            processStartAbsoluteTime: start,
+            userCPUTime: userCPU,
+            systemCPUTime: systemCPU
+        )
+    }
+
+    private func makeService(
+        results: [ProcessEnergyReadResult],
+        times: [TimeInterval]
+    ) -> EnergyImpactService {
+        EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [101: results]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: times)
+        )
+    }
+
+    private func makeTwoProcessService(
+        rootResults: [ProcessEnergyReadResult],
+        helperResults: [ProcessEnergyReadResult],
+        times: [TimeInterval]
+    ) -> EnergyImpactService {
+        EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: rootResults,
+                101: helperResults,
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 101, parentProcessIdentifier: 100),
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: times)
+        )
+    }
+
+    private func makeReparentingService(
+        ownersBySample: [pid_t],
+        energies: [UInt64],
+        times: [TimeInterval]
+    ) -> EnergyImpactService {
+        EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: ownersBySample.map { _ in .failure(.permissionDenied) },
+                200: ownersBySample.map { _ in .failure(.permissionDenied) },
+                300: energies.map { .success(reading(energy: $0, start: 30)) },
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(
+                snapshotsByCall: ownersBySample.map { owner in
+                    [.init(processIdentifier: 300, parentProcessIdentifier: owner)]
+                }
+            ),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "First", bundleIdentifier: nil, bundleURL: nil),
+                .init(processIdentifier: 200, name: "Second", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: times)
+        )
+    }
+
+    private func makeMixedGapService(
+        rootEnergies: [UInt64],
+        helperResults: [ProcessEnergyReadResult],
+        times: [TimeInterval]
+    ) -> EnergyImpactService {
+        makeTwoProcessService(
+            rootResults: rootEnergies.map { .success(reading(energy: $0, start: 10)) },
+            helperResults: helperResults,
+            times: times
+        )
+    }
+
+    private func entry(
+        processIdentifier: pid_t,
+        name: String,
+        power: Double?,
+        status: EnergyImpactStatus
+    ) -> EnergyImpactEntry {
+        EnergyImpactEntry(
+            identity: EnergyImpactAppIdentity(
+                rootProcessIdentifier: processIdentifier,
+                rootProcessStartAbsoluteTime: UInt64(processIdentifier)
+            ),
+            name: name,
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            currentPowerMicrowatts: power,
+            sustainedPowerMicrowatts: nil,
+            rankingScore: power,
+            trend: .steady,
+            coverage: .unavailable,
+            status: status
+        )
+    }
+
     func testEnergyImpactEntryRepresentsCollectingWithoutAFalseZero() {
         let entry = EnergyImpactEntry(
             identity: EnergyImpactAppIdentity(
@@ -376,6 +483,291 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(entries[0].status, .unavailable)
     }
 
+    // Production break caught: an unreadable helper is collapsed into a false full-coverage value.
+    func testOneUnreadableHelperProducesPartialCoverageWithoutAFalseZero() throws {
+        let service = makeTwoProcessService(
+            rootResults: [
+                .success(reading(energy: 1_000)),
+                .success(reading(energy: 4_000)),
+            ],
+            helperResults: [
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+            ],
+            times: [0, 3]
+        )
+
+        _ = service.topApps(limit: 1)
+        let entry = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(entry.status, .partial)
+        XCTAssertEqual(try XCTUnwrap(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.readableProcessCount, 1)
+        XCTAssertEqual(entry.coverage.discoveredProcessCount, 2)
+        XCTAssertEqual(entry.coverage.validProcessSeconds, 3, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.fraction, 0.5, accuracy: 0.001)
+    }
+
+    // Production break caught: a temporary read failure deletes the generation baseline needed for recovery.
+    func testTemporaryFailureKeepsBaselineAndRecoveryUsesTheBoundedInterval() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000)),
+                .failure(.exited),
+                .success(reading(energy: 7_000)),
+            ],
+            times: [0, 3, 6]
+        )
+
+        _ = service.topApps(limit: 1)
+        let failed = try XCTUnwrap(service.topApps(limit: 1).first)
+        let recovered = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertNotEqual(failed.status, .stable)
+        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.status, .stable)
+    }
+
+    // Production break caught: a baseline older than the ten-second bound still emits a diluted recovery value.
+    func testFailurePastTenSecondsExpiresTheBaseline() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 20_000)),
+            ],
+            times: [0, 3, 14]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let entry = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertNil(entry.currentPowerMicrowatts)
+        XCTAssertEqual(entry.status, .collecting)
+    }
+
+    // Production break caught: an unsupported zero-only counter is published forever as a confirmed zero.
+    func testZeroEnergyCounterWithAdvancingCPUBecomesUnsupportedAfterTenSeconds() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 0, userCPU: 1_000, systemCPU: 100)),
+                .success(reading(energy: 0, userCPU: 2_000, systemCPU: 100)),
+                .success(reading(energy: 0, userCPU: 3_000, systemCPU: 100)),
+                .success(reading(energy: 0, userCPU: 4_000, systemCPU: 100)),
+                .success(reading(energy: 0, userCPU: 5_000, systemCPU: 100)),
+            ],
+            times: [0, 3, 6, 9, 12]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let confirmedZero = try XCTUnwrap(service.topApps(limit: 1).first)
+        let entry = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(try XCTUnwrap(confirmedZero.currentPowerMicrowatts), 0, accuracy: 0.001)
+        XCTAssertEqual(confirmedZero.status, .stable)
+        XCTAssertNil(entry.currentPowerMicrowatts)
+        XCTAssertNil(entry.rankingScore)
+        XCTAssertEqual(entry.status, .unavailable)
+        XCTAssertEqual(entry.coverage.discoveredProcessCount, 1)
+        XCTAssertEqual(entry.coverage.readableProcessCount, 0)
+    }
+
+    // Production break caught: a rollback interval advances zero-counter evidence from an older retained baseline.
+    func testClockRollbackAfterFailureRebaselinesZeroCounterEvidence() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 0, userCPU: 1_000)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 0, userCPU: 2_000)),
+                .success(reading(energy: 0, userCPU: 3_000)),
+            ],
+            times: [0, 3, 2, 11]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let rebaselined = try XCTUnwrap(service.topApps(limit: 1).first)
+        let validInterval = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(rebaselined.status, .collecting)
+        XCTAssertNil(rebaselined.currentPowerMicrowatts)
+        XCTAssertEqual(validInterval.status, .stable)
+        XCTAssertEqual(try XCTUnwrap(validInterval.currentPowerMicrowatts), 0, accuracy: 0.001)
+    }
+
+    // Production break caught: a helper delta spanning an owner change is assigned to the new root.
+    func testOwnerChangeDiscardsTheTransitionInterval() {
+        let service = makeReparentingService(
+            ownersBySample: [100, 200],
+            energies: [1_000, 9_000],
+            times: [0, 3]
+        )
+
+        _ = service.topApps(limit: 2)
+        let entries = service.topApps(limit: 2)
+
+        XCTAssertTrue(entries.allSatisfy { $0.currentPowerMicrowatts == nil })
+        XCTAssertTrue(entries.allSatisfy { $0.status != .stable })
+    }
+
+    // Production break caught: recovered helper energy uses six seconds of numerator against three seconds of PID-time.
+    func testRootAndRecoveredHelperUseMatchingIntervalEnergyAndCoverage() throws {
+        let service = makeMixedGapService(
+            rootEnergies: [1_000, 4_000, 7_000],
+            helperResults: [
+                .success(reading(energy: 1_000, start: 11)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 7_000, start: 11)),
+            ],
+            times: [0, 3, 6]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let recovered = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 2, accuracy: 0.001)
+        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.coverage.validProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+    }
+
+    // Production break caught: stale output loses the confirmed root generation or refreshes its own grace window.
+    func testStableFailureRecoverySequencePreservesFullIdentityWithoutConfirmingStale() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000, start: 10)),
+                .success(reading(energy: 4_000, start: 10)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 10_000, start: 10)),
+            ],
+            times: [0, 3, 6, 9]
+        )
+
+        let collecting = try XCTUnwrap(service.topApps(limit: 1).first)
+        let stable = try XCTUnwrap(service.topApps(limit: 1).first)
+        let stale = try XCTUnwrap(service.topApps(limit: 1).first)
+        let recovered = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(collecting.status, .collecting)
+        XCTAssertEqual(stable.status, .stable)
+        XCTAssertEqual(stable.currentPowerMicrowatts, 1)
+        XCTAssertEqual(stale.status, .stale)
+        XCTAssertEqual(stale.identity, stable.identity)
+        XCTAssertEqual(stale.currentPowerMicrowatts, stable.currentPowerMicrowatts)
+        XCTAssertEqual(stale.coverage, stable.coverage)
+        XCTAssertNil(stale.rankingScore)
+        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.identity, stable.identity)
+        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+    }
+
+    // Production break caught: publishing stale repeatedly extends a three-second observation past ten seconds.
+    func testStalePublicationDoesNotExtendItsOwnGrace() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000)),
+                .success(reading(energy: 4_000)),
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+            ],
+            times: [0, 3, 6, 12, 14]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        XCTAssertEqual(service.topApps(limit: 1).first?.status, .stale)
+        XCTAssertEqual(service.topApps(limit: 1).first?.status, .stale)
+        let expired = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(expired.status, .unavailable)
+        XCTAssertNil(expired.currentPowerMicrowatts)
+    }
+
+    // Production break caught: a successful root generation change reuses the prior generation's stale display.
+    func testRootGenerationChangeImmediatelyDiscardsOldDisplay() throws {
+        let service = makeTwoProcessService(
+            rootResults: [
+                .success(reading(energy: 1_000, start: 10)),
+                .success(reading(energy: 4_000, start: 10)),
+                .success(reading(energy: 1_000, start: 20)),
+                .failure(.permissionDenied),
+            ],
+            helperResults: [
+                .success(reading(energy: 1_000, start: 11)),
+                .success(reading(energy: 4_000, start: 11)),
+                .success(reading(energy: 7_000, start: 11)),
+                .failure(.permissionDenied),
+            ],
+            times: [0, 3, 6, 9]
+        )
+
+        _ = service.topApps(limit: 1)
+        let old = try XCTUnwrap(service.topApps(limit: 1).first)
+        let changed = try XCTUnwrap(service.topApps(limit: 1).first)
+        let stale = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(old.status, .stable)
+        XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(changed.identity.rootProcessStartAbsoluteTime, 20)
+        XCTAssertEqual(changed.status, .partial)
+        XCTAssertEqual(changed.currentPowerMicrowatts, 1)
+        XCTAssertEqual(stale.status, .stale)
+        XCTAssertEqual(stale.identity.rootProcessStartAbsoluteTime, 20)
+        XCTAssertEqual(stale.currentPowerMicrowatts, 1)
+    }
+
+    // Production break caught: stale wins when only some PIDs are unsupported, or survives when all are unsupported.
+    func testAllExplicitlyUnsupportedProcessesOverrideBoundedStaleDisplay() throws {
+        let service = makeTwoProcessService(
+            rootResults: [
+                .success(reading(energy: 1_000)),
+                .success(reading(energy: 4_000)),
+                .failure(.unsupported),
+                .failure(.unsupported),
+            ],
+            helperResults: [
+                .success(reading(energy: 1_000, start: 11)),
+                .success(reading(energy: 4_000, start: 11)),
+                .failure(.permissionDenied),
+                .failure(.unsupported),
+            ],
+            times: [0, 3, 6, 9]
+        )
+
+        _ = service.topApps(limit: 1)
+        XCTAssertEqual(service.topApps(limit: 1).first?.status, .stable)
+        let mixed = try XCTUnwrap(service.topApps(limit: 1).first)
+        let unsupported = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(mixed.status, .stale)
+        XCTAssertEqual(mixed.currentPowerMicrowatts, 2)
+        XCTAssertEqual(unsupported.status, .unavailable)
+        XCTAssertNil(unsupported.currentPowerMicrowatts)
+        XCTAssertNil(unsupported.rankingScore)
+    }
+
+    // Production break caught: a large stale numeric value outranks fresh stable or partial rows.
+    func testEnergyImpactEntriesSortByStatusBucketBeforeNumericValue() {
+        let entries = [
+            entry(processIdentifier: 1, name: "Unavailable", power: nil, status: .unavailable),
+            entry(processIdentifier: 2, name: "Stale", power: 1_000, status: .stale),
+            entry(processIdentifier: 3, name: "Collecting", power: nil, status: .collecting),
+            entry(processIdentifier: 4, name: "Partial", power: 1, status: .partial),
+            entry(processIdentifier: 5, name: "Stable", power: 2, status: .stable),
+        ]
+
+        XCTAssertEqual(
+            EnergyImpactService.sortedByImpact(entries, limit: 5).map(\.name),
+            ["Stable", "Partial", "Stale", "Collecting", "Unavailable"]
+        )
+    }
+
     func testEnergyImpactEntriesSortTiesByName() {
         let entries = [
             EnergyImpactEntry(
@@ -429,21 +821,25 @@ private final class EnergyImpactClockStub: EnergyImpactClock, @unchecked Sendabl
 }
 
 private final class ProcessEnergyReadingProviderStub: ProcessEnergyReadingProvider, @unchecked Sendable {
-    private var readings: [pid_t: [ProcessEnergyReading]]
+    private var results: [pid_t: [ProcessEnergyReadResult]]
     private var readCounts: [pid_t: Int] = [:]
 
     init(readings: [pid_t: [ProcessEnergyReading]]) {
-        self.readings = readings
+        results = readings.mapValues { $0.map(ProcessEnergyReadResult.success) }
+    }
+
+    init(results: [pid_t: [ProcessEnergyReadResult]]) {
+        self.results = results
     }
 
     func reading(for processIdentifier: pid_t) -> ProcessEnergyReadResult {
         readCounts[processIdentifier, default: 0] += 1
-        guard var values = readings[processIdentifier], values.isEmpty == false else {
+        guard var values = results[processIdentifier], values.isEmpty == false else {
             return .failure(.other(0))
         }
         let value = values.removeFirst()
-        readings[processIdentifier] = values
-        return .success(value)
+        results[processIdentifier] = values
+        return value
     }
 
     func readCount(for processIdentifier: pid_t) -> Int {
@@ -460,5 +856,21 @@ private struct ProcessParentSnapshotReaderStub: ProcessParentSnapshotReading {
 
     func snapshots() -> [ProcessParentSnapshot] {
         snapshotValues
+    }
+}
+
+private final class SequencedProcessParentSnapshotReaderStub: ProcessParentSnapshotReading, @unchecked Sendable {
+    private let lock = NSLock()
+    private var snapshotValuesByCall: [[ProcessParentSnapshot]]
+
+    init(snapshotsByCall: [[ProcessParentSnapshot]]) {
+        snapshotValuesByCall = snapshotsByCall
+    }
+
+    func snapshots() -> [ProcessParentSnapshot] {
+        lock.lock()
+        defer { lock.unlock() }
+        precondition(snapshotValuesByCall.isEmpty == false, "Process snapshot fixture exhausted")
+        return snapshotValuesByCall.removeFirst()
     }
 }

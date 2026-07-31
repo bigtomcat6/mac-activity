@@ -32,6 +32,30 @@ public struct EnergyImpactProcessIdentity: Hashable, Sendable {
     }
 }
 
+public struct ProcessEnergyContribution: Equatable, Sendable {
+    public let processIdentity: EnergyImpactProcessIdentity
+    public let ownerRootProcessIdentifier: pid_t
+    public let startTimeSeconds: TimeInterval
+    public let endTimeSeconds: TimeInterval
+    public let energyMicrojoules: Double
+
+    public var durationSeconds: TimeInterval { endTimeSeconds - startTimeSeconds }
+
+    public func clipped(to interval: Range<TimeInterval>) -> ProcessEnergyContribution? {
+        let start = max(startTimeSeconds, interval.lowerBound)
+        let end = min(endTimeSeconds, interval.upperBound)
+        guard durationSeconds > 0, end > start else { return nil }
+        let fraction = (end - start) / durationSeconds
+        return ProcessEnergyContribution(
+            processIdentity: processIdentity,
+            ownerRootProcessIdentifier: ownerRootProcessIdentifier,
+            startTimeSeconds: start,
+            endTimeSeconds: end,
+            energyMicrojoules: energyMicrojoules * fraction
+        )
+    }
+}
+
 public enum EnergyImpactAppKind: String, Equatable, Codable, Sendable {
     case regular
     case accessory
