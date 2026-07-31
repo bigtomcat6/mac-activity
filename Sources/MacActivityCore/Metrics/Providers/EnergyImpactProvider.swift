@@ -107,10 +107,16 @@ public final class EnergyImpactService {
             baselines.removeAll()
             identityByProcessIdentifier.removeAll()
         }
+        pruneState(at: sampleTime)
 
+        let processSnapshots = processSnapshotReader.snapshots()
         let owners = EnergyImpactOwnership.nearestRootOwners(
             rootProcessIdentifiers: apps.map(\.processIdentifier),
-            snapshots: processSnapshotReader.snapshots()
+            snapshots: processSnapshots
+        )
+        invalidateObservedOwnerTransitions(
+            snapshots: processSnapshots,
+            owners: owners
         )
         let processIdentifiersByRoot = Dictionary(
             grouping: owners.keys,
@@ -131,7 +137,7 @@ public final class EnergyImpactService {
                 if let identity = identityByProcessIdentifier[processIdentifier],
                    let baseline = baselines[identity],
                    baseline.ownerRootProcessIdentifier != app.processIdentifier {
-                    baselines.removeValue(forKey: identity)
+                    removeBaseline(for: identity)
                 }
                 switch reader.reading(for: processIdentifier) {
                 case let .failure(failure):
@@ -152,7 +158,7 @@ public final class EnergyImpactService {
                     )
                     if let oldIdentity = identityByProcessIdentifier[processIdentifier],
                        oldIdentity != identity {
-                        baselines.removeValue(forKey: oldIdentity)
+                        removeBaseline(for: oldIdentity)
                     }
                     identityByProcessIdentifier[processIdentifier] = identity
 
@@ -354,15 +360,41 @@ public final class EnergyImpactService {
             return age > configuration.maximumGapSeconds ? identity : nil
         }
         for identity in expiredIdentities {
-            baselines.removeValue(forKey: identity)
-            if identityByProcessIdentifier[identity.processIdentifier] == identity {
-                identityByProcessIdentifier.removeValue(forKey: identity.processIdentifier)
-            }
+            removeBaseline(for: identity)
         }
 
         displayByIdentity = displayByIdentity.filter { _, display in
             let age = sampleTime - display.sampleTime
             return age >= 0 && age <= configuration.maximumGapSeconds
+        }
+        identityByProcessIdentifier = identityByProcessIdentifier.filter {
+            baselines[$0.value] != nil
+        }
+        currentIdentityByRootProcessIdentifier = currentIdentityByRootProcessIdentifier.filter {
+            _, identity in
+            let hasGenerationBaseline = identity.generation.map { baselines[$0] != nil } == true
+            return hasGenerationBaseline || displayByIdentity[identity] != nil
+        }
+    }
+
+    private func invalidateObservedOwnerTransitions(
+        snapshots: [ProcessParentSnapshot],
+        owners: [pid_t: pid_t]
+    ) {
+        for processIdentifier in Set(snapshots.map(\.processIdentifier)) {
+            guard let identity = identityByProcessIdentifier[processIdentifier],
+                  let baseline = baselines[identity],
+                  owners[processIdentifier] != baseline.ownerRootProcessIdentifier else {
+                continue
+            }
+            removeBaseline(for: identity)
+        }
+    }
+
+    private func removeBaseline(for identity: EnergyImpactProcessIdentity) {
+        baselines.removeValue(forKey: identity)
+        if identityByProcessIdentifier[identity.processIdentifier] == identity {
+            identityByProcessIdentifier.removeValue(forKey: identity.processIdentifier)
         }
     }
 }

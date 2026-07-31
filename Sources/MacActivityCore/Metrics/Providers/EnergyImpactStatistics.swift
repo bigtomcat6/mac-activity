@@ -170,9 +170,11 @@ public struct StableEnergyImpactRanker: Sendable {
     }
 
     private static func statusBucket(_ entry: EnergyImpactEntry) -> Int {
+        if entry.status == .stale, entry.currentPowerMicrowatts != nil {
+            return 1
+        }
         if entry.rankingScore != nil {
             if entry.status == .stable || entry.status == .partial { return 0 }
-            if entry.status == .stale { return 1 }
         }
         switch entry.status {
         case .collecting: return 2
@@ -184,8 +186,10 @@ public struct StableEnergyImpactRanker: Sendable {
         _ lhs: EnergyImpactEntry,
         _ rhs: EnergyImpactEntry
     ) -> Bool {
-        if lhs.rankingScore != rhs.rankingScore {
-            return (lhs.rankingScore ?? -.infinity) > (rhs.rankingScore ?? -.infinity)
+        let lhsScore = lhs.rankingScore ?? lhs.currentPowerMicrowatts ?? -.infinity
+        let rhsScore = rhs.rankingScore ?? rhs.currentPowerMicrowatts ?? -.infinity
+        if lhsScore != rhsScore {
+            return lhsScore > rhsScore
         }
         let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
         if nameOrder != .orderedSame { return nameOrder == .orderedAscending }

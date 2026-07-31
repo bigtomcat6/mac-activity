@@ -204,6 +204,45 @@ final class EnergyImpactModelTests: XCTestCase {
         )
     }
 
+    func testNumericStaleEntryRemainsInTopTwentyAheadOfCollectingEntries() async throws {
+        let stale = EnergyImpactEntry(
+            identity: EnergyImpactAppIdentity(
+                rootProcessIdentifier: 101,
+                rootProcessStartAbsoluteTime: 1
+            ),
+            name: "Stale",
+            bundleIdentifier: "com.example.stale",
+            bundleURL: nil,
+            currentPowerMicrowatts: 100,
+            sustainedPowerMicrowatts: nil,
+            rankingScore: nil,
+            trend: .steady,
+            coverage: EnergyImpactCoverage(
+                discoveredProcessCount: 1,
+                readableProcessCount: 1,
+                validProcessSeconds: 3,
+                discoveredProcessSeconds: 3
+            ),
+            status: .stale
+        )
+        let collecting = (1...20).map {
+            entry(pid: pid_t(200 + $0), power: nil, status: .collecting)
+        }
+        let provider = EnergyImpactProviderStub(responses: [[], collecting + [stale]])
+        let model = EnergyImpactModel(provider: provider, limit: 20, sleep: { _ in })
+
+        await model.refresh()
+
+        XCTAssertEqual(model.entries.count, 20)
+        let publishedStale = try XCTUnwrap(
+            model.entries.first { $0.processIdentifier == stale.processIdentifier }
+        )
+        XCTAssertEqual(model.entries.first?.processIdentifier, stale.processIdentifier)
+        XCTAssertEqual(publishedStale.status, .stale)
+        XCTAssertEqual(publishedStale.currentPowerMicrowatts, 100)
+        XCTAssertNil(publishedStale.rankingScore)
+    }
+
     func testAllCandidatesAreSmoothedBeforeTopLimitIsApplied() async throws {
         let clock = EnergyImpactTestClock()
         let steady = (1...20).map { entry(pid: pid_t($0), power: 50) }

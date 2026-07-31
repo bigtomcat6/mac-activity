@@ -678,6 +678,41 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(returnedOwner.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
     }
 
+    // Production break caught: an observed helper temporarily outside every regular root reconnects to its old baseline.
+    func testObservedUnownedHelperBreaksRecoveredContinuity() throws {
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                ],
+                300: [
+                    .success(reading(energy: 1_000, start: 30)),
+                    .success(reading(energy: 7_000, start: 30)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 999)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let returned = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(returned.status, .collecting)
+        XCTAssertNil(returned.currentPowerMicrowatts)
+        XCTAssertEqual(returned.coverage.validProcessSeconds, 0, accuracy: 0.001)
+        XCTAssertEqual(returned.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+    }
+
     // Production break caught: recovered helper energy uses six seconds of numerator against three seconds of PID-time.
     func testRootAndRecoveredHelperUseMatchingIntervalEnergyAndCoverage() throws {
         let service = makeMixedGapService(
@@ -784,6 +819,53 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(stale.status, .stale)
         XCTAssertEqual(stale.identity.rootProcessStartAbsoluteTime, 20)
         XCTAssertEqual(stale.currentPowerMicrowatts, 1)
+    }
+
+    // Production break caught: an expired root locator assigns helper-only data to a reused PID's old generation.
+    func testExpiredRootLocatorDoesNotLabelReusedPIDHelperDataWithOldGeneration() throws {
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 1_000, start: 10)),
+                    .success(reading(energy: 4_000, start: 10)),
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                    .success(reading(energy: 1_000, start: 20)),
+                ],
+                300: [
+                    .success(reading(energy: 1_000, start: 30)),
+                    .success(reading(energy: 4_000, start: 30)),
+                    .success(reading(energy: 7_000, start: 30)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [],
+                [],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "Reused", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3, 14, 17, 20])
+        )
+
+        _ = service.topApps(limit: 1)
+        let old = try XCTUnwrap(service.topApps(limit: 1).first)
+        let expired = try XCTUnwrap(service.topApps(limit: 1).first)
+        let helperOnly = try XCTUnwrap(service.topApps(limit: 1).first)
+        let established = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(old.status, .stable)
+        XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(expired.status, .collecting)
+        XCTAssertNil(expired.identity.rootProcessStartAbsoluteTime)
+        XCTAssertEqual(helperOnly.status, .partial)
+        XCTAssertEqual(helperOnly.currentPowerMicrowatts, 1)
+        XCTAssertNil(helperOnly.identity.rootProcessStartAbsoluteTime)
+        XCTAssertEqual(established.status, .partial)
+        XCTAssertEqual(established.identity.rootProcessStartAbsoluteTime, 20)
     }
 
     // Production break caught: stale wins when only some PIDs are unsupported, or survives when all are unsupported.

@@ -63,6 +63,29 @@ final class EnergyImpactStatisticsTests: XCTestCase {
         )
     }
 
+    func testNumericStaleEntriesUseDisplayPowerForDeterministicOrdering() {
+        var ranker = StableEnergyImpactRanker()
+        let low = fixtureEntry(
+            pid: 1,
+            score: 1,
+            status: .stale,
+            hasRankingScore: false,
+            name: "Alpha"
+        )
+        let high = fixtureEntry(
+            pid: 2,
+            score: 100,
+            status: .stale,
+            hasRankingScore: false,
+            name: "Zulu"
+        )
+
+        let ranked = ranker.rank([low, high], atPublicationBoundary: true)
+
+        XCTAssertEqual(ranked.map(\.processIdentifier), [2, 1])
+        XCTAssertTrue(ranked.allSatisfy { $0.rankingScore == nil })
+    }
+
     func testChallengerLosesConfirmationWhenItStopsBeingAdjacent() {
         var ranker = StableEnergyImpactRanker()
         let incumbent = fixtureEntry(pid: 1, score: 100)
@@ -178,6 +201,7 @@ private func fixtureEntry(
     pid: pid_t,
     score: Double,
     status: EnergyImpactStatus = .stable,
+    hasRankingScore: Bool = true,
     startTime: UInt64? = nil,
     hasGeneration: Bool = true,
     name: String? = nil
@@ -193,7 +217,7 @@ private func fixtureEntry(
         bundleURL: nil,
         currentPowerMicrowatts: score,
         sustainedPowerMicrowatts: nil,
-        rankingScore: score,
+        rankingScore: hasRankingScore ? score : nil,
         trend: .steady,
         coverage: EnergyImpactCoverage(
             discoveredProcessCount: 1,
