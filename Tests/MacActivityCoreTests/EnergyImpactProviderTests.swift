@@ -599,6 +599,27 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(validInterval.currentPowerMicrowatts), 0, accuracy: 0.001)
     }
 
+    // Production break caught: a failed rollback leaves a future baseline connected to the next clock epoch.
+    func testFailedRollbackInvalidatesRetainedBaselineContinuity() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 4_000)),
+            ],
+            times: [10, 5, 12]
+        )
+
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let afterRollback = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(afterRollback.status, .collecting)
+        XCTAssertNil(afterRollback.currentPowerMicrowatts)
+        XCTAssertEqual(afterRollback.coverage.validProcessSeconds, 0, accuracy: 0.001)
+        XCTAssertEqual(afterRollback.coverage.discoveredProcessSeconds, 7, accuracy: 0.001)
+    }
+
     // Production break caught: a helper delta spanning an owner change is assigned to the new root.
     func testOwnerChangeDiscardsTheTransitionInterval() {
         let service = makeReparentingService(
@@ -612,6 +633,49 @@ final class EnergyImpactProviderTests: XCTestCase {
 
         XCTAssertTrue(entries.allSatisfy { $0.currentPowerMicrowatts == nil })
         XCTAssertTrue(entries.allSatisfy { $0.status != .stable })
+    }
+
+    // Production break caught: a failed owner excursion is erased when the helper returns to its old root.
+    func testUnreadableOwnerExcursionBreaksRecoveredHelperContinuity() throws {
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                ],
+                200: [
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                ],
+                300: [
+                    .success(reading(energy: 1_000, start: 30)),
+                    .failure(.permissionDenied),
+                    .success(reading(energy: 7_000, start: 30)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 200)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "First", bundleIdentifier: nil, bundleURL: nil),
+                .init(processIdentifier: 200, name: "Second", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+
+        _ = service.topApps(limit: 2)
+        _ = service.topApps(limit: 2)
+        let entries = service.topApps(limit: 2)
+        let returnedOwner = try XCTUnwrap(entries.first { $0.processIdentifier == 100 })
+
+        XCTAssertEqual(returnedOwner.status, .collecting)
+        XCTAssertNil(returnedOwner.currentPowerMicrowatts)
+        XCTAssertEqual(returnedOwner.coverage.validProcessSeconds, 0, accuracy: 0.001)
+        XCTAssertEqual(returnedOwner.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
     }
 
     // Production break caught: recovered helper energy uses six seconds of numerator against three seconds of PID-time.

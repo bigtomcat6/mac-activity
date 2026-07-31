@@ -91,15 +91,22 @@ public final class EnergyImpactService {
         let apps = appSnapshotProvider()
         let sampleTime = clock.nowSeconds()
         let observationInterval: Range<TimeInterval>?
+        let breaksBaselineContinuity: Bool
         if let previousSampleTime {
             let elapsed = sampleTime - previousSampleTime
             observationInterval = elapsed > 0 && elapsed <= configuration.maximumGapSeconds
                 ? previousSampleTime..<sampleTime
                 : nil
+            breaksBaselineContinuity = observationInterval == nil
         } else {
             observationInterval = nil
+            breaksBaselineContinuity = false
         }
         self.previousSampleTime = sampleTime
+        if breaksBaselineContinuity {
+            baselines.removeAll()
+            identityByProcessIdentifier.removeAll()
+        }
 
         let owners = EnergyImpactOwnership.nearestRootOwners(
             rootProcessIdentifiers: apps.map(\.processIdentifier),
@@ -121,6 +128,11 @@ public final class EnergyImpactService {
             var unsupportedProcessCount = 0
 
             for processIdentifier in processIdentifiers {
+                if let identity = identityByProcessIdentifier[processIdentifier],
+                   let baseline = baselines[identity],
+                   baseline.ownerRootProcessIdentifier != app.processIdentifier {
+                    baselines.removeValue(forKey: identity)
+                }
                 switch reader.reading(for: processIdentifier) {
                 case let .failure(failure):
                     let baseline = identityByProcessIdentifier[processIdentifier].flatMap { baselines[$0] }
