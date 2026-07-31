@@ -27,42 +27,26 @@ public struct EnergyImpactAppSnapshot: Equatable, Sendable {
 public struct ProcessEnergyReading: Equatable, Sendable {
     public let energyNanojoules: UInt64
     public let processStartAbsoluteTime: UInt64
+    public let userCPUTime: UInt64
+    public let systemCPUTime: UInt64
 
     public init(
         energyNanojoules: UInt64,
-        processStartAbsoluteTime: UInt64 = 0
+        processStartAbsoluteTime: UInt64 = 0,
+        userCPUTime: UInt64 = 0,
+        systemCPUTime: UInt64 = 0
     ) {
         self.energyNanojoules = energyNanojoules
         self.processStartAbsoluteTime = processStartAbsoluteTime
-    }
-}
-
-public protocol ProcessEnergyReadingProvider: Sendable {
-    func reading(for processIdentifier: pid_t) -> ProcessEnergyReading?
-}
-
-public struct SystemProcessEnergyReader: ProcessEnergyReadingProvider {
-    public init() {}
-
-    public func reading(for processIdentifier: pid_t) -> ProcessEnergyReading? {
-        var info = rusage_info_v6()
-        let result = withUnsafeMutablePointer(to: &info) { pointer in
-            pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { reboundPointer in
-                proc_pid_rusage(processIdentifier, RUSAGE_INFO_V6, reboundPointer)
-            }
-        }
-        guard result == 0 else { return nil }
-        return ProcessEnergyReading(
-            energyNanojoules: info.ri_energy_nj,
-            processStartAbsoluteTime: info.ri_proc_start_abstime
-        )
+        self.userCPUTime = userCPUTime
+        self.systemCPUTime = systemCPUTime
     }
 }
 
 @MainActor
 public final class EnergyImpactService {
     private let reader: any ProcessEnergyReadingProvider
-    private let processSnapshotReader: any ProcessMemorySnapshotReading
+    private let processSnapshotReader: any ProcessParentSnapshotReading
     private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
     private let clock: any EnergyImpactClock
     private var previousReadings: [EnergyImpactProcessIdentity: TimedProcessEnergyReading] = [:]
@@ -70,7 +54,7 @@ public final class EnergyImpactService {
     public init(
         workspace: NSWorkspace = .shared,
         reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
-        processSnapshotReader: any ProcessMemorySnapshotReading = SystemProcessMemorySnapshotReader(),
+        processSnapshotReader: any ProcessParentSnapshotReading = SystemProcessParentSnapshotReader(),
         appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil,
         clock: any EnergyImpactClock = SystemEnergyImpactClock()
     ) {
@@ -94,9 +78,13 @@ public final class EnergyImpactService {
     public func topApps(limit: Int = 20) -> [EnergyImpactEntry] {
         let apps = appSnapshotProvider()
         let sampleTime = clock.nowSeconds()
-        let processIdentifiersByRoot = Self.processIdentifiersByRoot(
+        let owners = EnergyImpactOwnership.nearestRootOwners(
             rootProcessIdentifiers: apps.map(\.processIdentifier),
             snapshots: processSnapshotReader.snapshots()
+        )
+        let processIdentifiersByRoot = Dictionary(
+            grouping: owners.keys,
+            by: { owners[$0]! }
         )
         var nextReadings: [EnergyImpactProcessIdentity: TimedProcessEnergyReading] = [:]
         let entries = apps.map { app -> EnergyImpactEntry in
@@ -107,7 +95,7 @@ public final class EnergyImpactService {
             var validDeltaCount = 0
 
             for processIdentifier in processIdentifiers {
-                guard let current = reader.reading(for: processIdentifier) else { continue }
+                guard case let .success(current) = reader.reading(for: processIdentifier) else { continue }
                 if processIdentifier == app.processIdentifier {
                     rootProcessStartAbsoluteTime = current.processStartAbsoluteTime
                 }
@@ -191,27 +179,6 @@ public final class EnergyImpactService {
         }
         .prefix(max(0, limit))
         .map { $0 }
-    }
-
-    public nonisolated static func processIdentifiersByRoot(
-        rootProcessIdentifiers: [pid_t],
-        snapshots: [ProcessMemorySnapshot]
-    ) -> [pid_t: [pid_t]] {
-        let childrenByParent = Dictionary(grouping: snapshots, by: \.parentProcessIdentifier)
-
-        return Dictionary(uniqueKeysWithValues: rootProcessIdentifiers.map { rootProcessIdentifier in
-            var identifiers = [rootProcessIdentifier]
-            var visited = Set<pid_t>([rootProcessIdentifier])
-            var stack = childrenByParent[rootProcessIdentifier] ?? []
-
-            while let child = stack.popLast() {
-                guard visited.insert(child.processIdentifier).inserted else { continue }
-                identifiers.append(child.processIdentifier)
-                stack.append(contentsOf: childrenByParent[child.processIdentifier] ?? [])
-            }
-
-            return (rootProcessIdentifier, identifiers)
-        })
     }
 
     private nonisolated static func impactRate(

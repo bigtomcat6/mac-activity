@@ -70,8 +70,8 @@ final class EnergyImpactProviderTests: XCTestCase {
                     .init(energyNanojoules: 3_000, processStartAbsoluteTime: 21),
                 ],
             ]),
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 0),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 101, parentProcessIdentifier: 100),
             ]),
             appSnapshotProvider: { [app] },
             clock: EnergyImpactClockStub(times: [100, 101])
@@ -87,12 +87,6 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
 
-    func testSystemProcessEnergyReaderReadsCurrentProcess() throws {
-        let reading = try XCTUnwrap(SystemProcessEnergyReader().reading(for: getpid()))
-
-        XCTAssertGreaterThan(reading.processStartAbsoluteTime, 0)
-    }
-
     func testSystemEnergyImpactClockProvidesMonotonicSeconds() {
         let clock = SystemEnergyImpactClock()
         let first = clock.nowSeconds()
@@ -104,7 +98,7 @@ final class EnergyImpactProviderTests: XCTestCase {
     func testDefaultWorkspaceSnapshotProviderBuildsEntriesFromRunningApplications() {
         let service = EnergyImpactService(
             reader: ProcessEnergyReadingProviderStub(readings: [:]),
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: [])
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [])
         )
         let entries = service.topApps(limit: 1)
 
@@ -138,7 +132,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         ])
         let service = EnergyImpactService(
             reader: reader,
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { apps },
             clock: EnergyImpactClockStub(times: [100, 101])
         )
@@ -170,7 +164,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         ])
         let service = EnergyImpactService(
             reader: reader,
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
             clock: EnergyImpactClockStub(times: [100, 100.5])
         )
@@ -204,11 +198,11 @@ final class EnergyImpactProviderTests: XCTestCase {
         ])
         let service = EnergyImpactService(
             reader: reader,
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: [
-                ProcessMemorySnapshot(processIdentifier: 100, parentProcessIdentifier: 1, residentMemoryBytes: 0),
-                ProcessMemorySnapshot(processIdentifier: 101, parentProcessIdentifier: 100, residentMemoryBytes: 0),
-                ProcessMemorySnapshot(processIdentifier: 102, parentProcessIdentifier: 101, residentMemoryBytes: 0),
-                ProcessMemorySnapshot(processIdentifier: 999, parentProcessIdentifier: 1, residentMemoryBytes: 0),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                ProcessParentSnapshot(processIdentifier: 100, parentProcessIdentifier: 1),
+                ProcessParentSnapshot(processIdentifier: 101, parentProcessIdentifier: 100),
+                ProcessParentSnapshot(processIdentifier: 102, parentProcessIdentifier: 101),
+                ProcessParentSnapshot(processIdentifier: 999, parentProcessIdentifier: 1),
             ]),
             appSnapshotProvider: { [app] },
             clock: EnergyImpactClockStub(times: [100, 102])
@@ -222,6 +216,65 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(reader.readCount(for: 101), 2)
         XCTAssertEqual(reader.readCount(for: 102), 2)
         XCTAssertEqual(reader.readCount(for: 999), 0)
+    }
+
+    func testEnergyImpactServiceAssignsNestedRegularRootProcessesToNearestRootExactlyOnce() throws {
+        let apps = [
+            EnergyImpactAppSnapshot(
+                processIdentifier: 100,
+                name: "Browser",
+                bundleIdentifier: "com.example.browser",
+                bundleURL: nil
+            ),
+            EnergyImpactAppSnapshot(
+                processIdentifier: 200,
+                name: "Nested App",
+                bundleIdentifier: "com.example.nested",
+                bundleURL: nil
+            ),
+        ]
+        let reader = ProcessEnergyReadingProviderStub(readings: [
+            100: [
+                .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
+                .init(energyNanojoules: 2_000, processStartAbsoluteTime: 10),
+            ],
+            150: [
+                .init(energyNanojoules: 1_000, processStartAbsoluteTime: 15),
+                .init(energyNanojoules: 3_000, processStartAbsoluteTime: 15),
+            ],
+            200: [
+                .init(energyNanojoules: 1_000, processStartAbsoluteTime: 20),
+                .init(energyNanojoules: 4_000, processStartAbsoluteTime: 20),
+            ],
+            250: [
+                .init(energyNanojoules: 1_000, processStartAbsoluteTime: 25),
+                .init(energyNanojoules: 5_000, processStartAbsoluteTime: 25),
+            ],
+        ])
+        let service = EnergyImpactService(
+            reader: reader,
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                .init(processIdentifier: 150, parentProcessIdentifier: 100),
+                .init(processIdentifier: 200, parentProcessIdentifier: 150),
+                .init(processIdentifier: 250, parentProcessIdentifier: 200),
+            ]),
+            appSnapshotProvider: { apps },
+            clock: EnergyImpactClockStub(times: [100, 101])
+        )
+
+        _ = service.topApps(limit: 2)
+        let entries = service.topApps(limit: 2)
+        let powerByProcess = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.processIdentifier, $0.currentPowerMicrowatts)
+        })
+
+        XCTAssertEqual(try XCTUnwrap(powerByProcess[100] ?? nil), 3, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(powerByProcess[200] ?? nil), 7, accuracy: 0.001)
+        XCTAssertEqual(reader.readCount(for: 100), 2)
+        XCTAssertEqual(reader.readCount(for: 150), 2)
+        XCTAssertEqual(reader.readCount(for: 200), 2)
+        XCTAssertEqual(reader.readCount(for: 250), 2)
     }
 
     func testEnergyImpactServiceRejectsDeltasWhenPIDIsReused() {
@@ -239,7 +292,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         ])
         let service = EnergyImpactService(
             reader: reader,
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
             clock: EnergyImpactClockStub(times: [100, 101])
         )
@@ -261,7 +314,7 @@ final class EnergyImpactProviderTests: XCTestCase {
                     .init(energyNanojoules: 10_000, processStartAbsoluteTime: 10),
                 ],
             ]),
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [
                 .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
@@ -285,7 +338,7 @@ final class EnergyImpactProviderTests: XCTestCase {
                     .init(energyNanojoules: 5_000, processStartAbsoluteTime: 10),
                 ],
             ]),
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [
                 .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
@@ -303,7 +356,7 @@ final class EnergyImpactProviderTests: XCTestCase {
         let reader = ProcessEnergyReadingProviderStub(readings: [:])
         let service = EnergyImpactService(
             reader: reader,
-            processSnapshotReader: ProcessMemorySnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: {
                 [
                     EnergyImpactAppSnapshot(
@@ -383,14 +436,14 @@ private final class ProcessEnergyReadingProviderStub: ProcessEnergyReadingProvid
         self.readings = readings
     }
 
-    func reading(for processIdentifier: pid_t) -> ProcessEnergyReading? {
+    func reading(for processIdentifier: pid_t) -> ProcessEnergyReadResult {
         readCounts[processIdentifier, default: 0] += 1
         guard var values = readings[processIdentifier], values.isEmpty == false else {
-            return nil
+            return .failure(.other(0))
         }
         let value = values.removeFirst()
         readings[processIdentifier] = values
-        return value
+        return .success(value)
     }
 
     func readCount(for processIdentifier: pid_t) -> Int {
@@ -398,14 +451,14 @@ private final class ProcessEnergyReadingProviderStub: ProcessEnergyReadingProvid
     }
 }
 
-private struct ProcessMemorySnapshotReaderStub: ProcessMemorySnapshotReading {
-    let snapshotValues: [ProcessMemorySnapshot]
+private struct ProcessParentSnapshotReaderStub: ProcessParentSnapshotReading {
+    let snapshotValues: [ProcessParentSnapshot]
 
-    init(snapshots: [ProcessMemorySnapshot]) {
+    init(snapshots: [ProcessParentSnapshot]) {
         self.snapshotValues = snapshots
     }
 
-    func snapshots() -> [ProcessMemorySnapshot] {
+    func snapshots() -> [ProcessParentSnapshot] {
         snapshotValues
     }
 }
