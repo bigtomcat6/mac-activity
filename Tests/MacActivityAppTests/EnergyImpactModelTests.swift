@@ -383,6 +383,28 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertNil(unavailable.rankingScore)
     }
 
+    func testSmoothingFailurePublishesNonnumericUnavailable() async throws {
+        let clock = EnergyImpactTestClock()
+        let model = EnergyImpactModel(
+            provider: EnergyImpactProviderStub(
+                responses: [
+                    [],
+                    [entry(power: 100)],
+                ]
+            ),
+            clock: clock,
+            smoothingOverrideForTesting: { _, _, _ in nil },
+            sleep: { _ in clock.advance(seconds: 3) }
+        )
+
+        await model.refresh()
+
+        let unavailable = try XCTUnwrap(model.entries.first)
+        XCTAssertEqual(unavailable.status, .unavailable)
+        XCTAssertNil(unavailable.currentPowerMicrowatts)
+        XCTAssertNil(unavailable.rankingScore)
+    }
+
     func testDuplicateGenerationInOnePublicationMarksSecondEntryUnavailable() async throws {
         let clock = EnergyImpactTestClock()
         let model = EnergyImpactModel(

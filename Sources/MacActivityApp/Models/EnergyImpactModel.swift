@@ -19,6 +19,11 @@ final class EnergyImpactModel: ObservableObject {
     private let initialWindowNanoseconds: UInt64
     private let clock: any EnergyImpactClock
     private let sleep: (UInt64) async throws -> Void
+    private let smoothingOverrideForTesting: ((
+        EnergyImpactProcessIdentity,
+        Double,
+        TimeInterval
+    ) -> Double?)?
     private let configuration = EnergyImpactConfiguration.production
 
     private var smoother = EnergyImpactSmoother(
@@ -33,6 +38,7 @@ final class EnergyImpactModel: ObservableObject {
         limit: Int = 20,
         initialWindowNanoseconds: UInt64 = 3_000_000_000,
         clock: any EnergyImpactClock = SystemEnergyImpactClock(),
+        smoothingOverrideForTesting: ((EnergyImpactProcessIdentity, Double, TimeInterval) -> Double?)? = nil,
         sleep: @escaping (UInt64) async throws -> Void = {
             try await Task.sleep(nanoseconds: $0)
         }
@@ -42,6 +48,7 @@ final class EnergyImpactModel: ObservableObject {
         self.initialWindowNanoseconds = initialWindowNanoseconds
         self.clock = clock
         self.sleep = sleep
+        self.smoothingOverrideForTesting = smoothingOverrideForTesting
     }
 
     func refresh() async {
@@ -148,16 +155,22 @@ final class EnergyImpactModel: ObservableObject {
             lastValidObservationTimes[generation] = nil
         }
         let smoothingElapsed = min(elapsedSeconds, configuration.maximumGapSeconds)
-        // Inputs above satisfy EnergyImpactSmoother's nil-return preconditions; retain the
-        // defensive fallback in case that contract changes.
-        guard let smoothed = smoother.update(
-            identity: generation,
-            value: currentPower,
-            elapsedSeconds: smoothingElapsed
-        ) else {
-            // codecov:ignore start
+        let smoothed: Double?
+        if let smoothingOverrideForTesting {
+            smoothed = smoothingOverrideForTesting(
+                generation,
+                currentPower,
+                smoothingElapsed
+            )
+        } else {
+            smoothed = smoother.update(
+                identity: generation,
+                value: currentPower,
+                elapsedSeconds: smoothingElapsed
+            )
+        }
+        guard let smoothed else {
             return Self.nonnumericUnavailable(sanitized)
-            // codecov:ignore end
         }
         lastValidObservationTimes[generation] = publicationTime
         return Self.replacingCurrentPower(in: sanitized, with: smoothed)
