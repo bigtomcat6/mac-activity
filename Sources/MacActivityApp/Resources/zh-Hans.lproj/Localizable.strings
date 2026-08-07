@@ -177,6 +177,7 @@
 "energyImpact.collecting" = "采集中";
 "energyImpact.partial" = "部分数据";
 "energyImpact.stale" = "数据已过期";
+"energyImpact.staleWithValue" = "数据已过期 · %1$@";
 "energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
 "energyImpact.empty" = "当前没有普通应用报告能耗估算。";
 "energyImpact.unavailable" = "不可读取";

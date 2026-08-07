@@ -148,12 +148,16 @@ final class EnergyImpactModel: ObservableObject {
             lastValidObservationTimes[generation] = nil
         }
         let smoothingElapsed = min(elapsedSeconds, configuration.maximumGapSeconds)
+        // Inputs above satisfy EnergyImpactSmoother's nil-return preconditions; retain the
+        // defensive fallback in case that contract changes.
         guard let smoothed = smoother.update(
             identity: generation,
             value: currentPower,
             elapsedSeconds: smoothingElapsed
         ) else {
+            // codecov:ignore start
             return Self.nonnumericUnavailable(sanitized)
+            // codecov:ignore end
         }
         lastValidObservationTimes[generation] = publicationTime
         return Self.replacingCurrentPower(in: sanitized, with: smoothed)

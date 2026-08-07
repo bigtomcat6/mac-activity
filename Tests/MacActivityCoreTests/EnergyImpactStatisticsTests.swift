@@ -52,6 +52,25 @@ final class EnergyImpactStatisticsTests: XCTestCase {
         XCTAssertEqual(ranker.rank([immediate, nearLead], atPublicationBoundary: true).map(\.processIdentifier), [1, 2])
     }
 
+    func testPositiveChallengerImmediatelyPassesZeroIncumbent() {
+        var ranker = StableEnergyImpactRanker()
+        let incumbent = fixtureEntry(pid: 1, score: 0)
+        let zeroChallenger = fixtureEntry(pid: 2, score: 0)
+
+        XCTAssertEqual(
+            ranker.rank([incumbent, zeroChallenger], atPublicationBoundary: true)
+                .map(\.processIdentifier),
+            [1, 2]
+        )
+
+        let positiveChallenger = fixtureEntry(pid: 2, score: 1)
+        XCTAssertEqual(
+            ranker.rank([incumbent, positiveChallenger], atPublicationBoundary: true)
+                .map(\.processIdentifier),
+            [2, 1]
+        )
+    }
+
     func testStableEntryRanksAheadOfHigherScoringStaleEntry() {
         var ranker = StableEnergyImpactRanker()
         let stable = fixtureEntry(pid: 1, score: 1, status: .stable)

@@ -436,6 +436,71 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(afterGap?.status, .collecting)
     }
 
+    func testEnergyCounterRegressionRebaselinesBeforePublishingSubsequentDelta() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 4_000)),
+                .success(reading(energy: 1_000)),
+                .success(reading(energy: 4_000)),
+            ],
+            times: [0, 3, 6]
+        )
+
+        _ = service.topApps(limit: 1)
+        let regression = try XCTUnwrap(service.topApps(limit: 1).first)
+        let recovered = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(regression.status, .collecting)
+        XCTAssertNil(regression.currentPowerMicrowatts)
+        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.currentPowerMicrowatts, 1)
+    }
+
+    func testNewRegularRootWithoutSnapshotCannotReuseFormerOwnerBaseline() throws {
+        let root = EnergyImpactAppSnapshot(
+            processIdentifier: 100,
+            name: "Root",
+            bundleIdentifier: nil,
+            bundleURL: nil
+        )
+        let promotedHelper = EnergyImpactAppSnapshot(
+            processIdentifier: 200,
+            name: "Promoted",
+            bundleIdentifier: nil,
+            bundleURL: nil
+        )
+        var appSnapshots = [
+            [root],
+            [root, promotedHelper],
+        ]
+        let service = EnergyImpactService(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 4_000)),
+                ],
+                200: [
+                    .success(reading(energy: 1_000, start: 20)),
+                    .success(reading(energy: 4_000, start: 20)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 200, parentProcessIdentifier: 100)],
+                [],
+            ]),
+            appSnapshotProvider: { appSnapshots.removeFirst() },
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+
+        _ = service.topApps(limit: 2)
+        let promoted = try XCTUnwrap(
+            service.topApps(limit: 2).first { $0.processIdentifier == 200 }
+        )
+
+        XCTAssertEqual(promoted.status, .collecting)
+        XCTAssertNil(promoted.currentPowerMicrowatts)
+    }
+
     func testClockRollbackCannotProduceANegativeOrInfinitePower() {
         let clock = EnergyImpactClockStub(times: [3, 2])
         let service = EnergyImpactService(
@@ -788,6 +853,27 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertNil(expired.currentPowerMicrowatts)
     }
 
+    func testRootGenerationRemainsConfirmedAtMaximumGapBoundary() throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 1_000)),
+                .success(reading(energy: 4_000)),
+                .failure(.permissionDenied),
+            ],
+            times: [0, 3, 13]
+        )
+
+        _ = service.topApps(limit: 1)
+        let stable = try XCTUnwrap(service.topApps(limit: 1).first)
+        let atBoundary = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(stable.status, .stable)
+        XCTAssertEqual(stable.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(atBoundary.status, .stale)
+        XCTAssertEqual(atBoundary.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(atBoundary.currentPowerMicrowatts, 1)
+    }
+
     // Production break caught: a successful root generation change reuses the prior generation's stale display.
     func testRootGenerationChangeImmediatelyDiscardsOldDisplay() throws {
         let service = makeTwoProcessService(
@@ -819,6 +905,47 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertEqual(stale.status, .stale)
         XCTAssertEqual(stale.identity.rootProcessStartAbsoluteTime, 20)
         XCTAssertEqual(stale.currentPowerMicrowatts, 1)
+    }
+
+    // Production break caught: helper-only partial samples renew an expired root generation.
+    func testPartialDescendantSamplesDoNotExtendRootGenerationPastConfirmationGap() throws {
+        let service = makeTwoProcessService(
+            rootResults: [
+                .success(reading(energy: 1_000, start: 10)),
+                .success(reading(energy: 4_000, start: 10)),
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+                .failure(.permissionDenied),
+            ],
+            helperResults: [
+                .success(reading(energy: 1_000, start: 11)),
+                .success(reading(energy: 4_000, start: 11)),
+                .success(reading(energy: 7_000, start: 11)),
+                .success(reading(energy: 10_000, start: 11)),
+                .success(reading(energy: 13_000, start: 11)),
+                .success(reading(energy: 16_000, start: 11)),
+            ],
+            times: [0, 3, 6, 9, 12, 15]
+        )
+
+        _ = service.topApps(limit: 1)
+        let confirmed = try XCTUnwrap(service.topApps(limit: 1).first)
+        _ = service.topApps(limit: 1)
+        _ = service.topApps(limit: 1)
+        let withinConfirmationGap = try XCTUnwrap(service.topApps(limit: 1).first)
+        let expired = try XCTUnwrap(service.topApps(limit: 1).first)
+
+        XCTAssertEqual(confirmed.status, .stable)
+        XCTAssertEqual(confirmed.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(withinConfirmationGap.status, .partial)
+        XCTAssertEqual(withinConfirmationGap.identity.rootProcessStartAbsoluteTime, 10)
+        XCTAssertEqual(withinConfirmationGap.currentPowerMicrowatts, 1)
+        XCTAssertEqual(expired.status, .partial)
+        XCTAssertNil(expired.identity.rootProcessStartAbsoluteTime)
+        XCTAssertEqual(expired.currentPowerMicrowatts, 1)
+        XCTAssertEqual(expired.coverage.validProcessSeconds, 3)
+        XCTAssertEqual(expired.coverage.discoveredProcessSeconds, 6)
     }
 
     // Production break caught: an expired root locator assigns helper-only data to a reused PID's old generation.
@@ -949,6 +1076,44 @@ final class EnergyImpactProviderTests: XCTestCase {
         ]
 
         XCTAssertEqual(EnergyImpactService.sortedByImpact(entries, limit: 2).map(\.name), ["Calendar", "Notes"])
+    }
+
+    func testUnavailableNumericEntrySortsBeforeNonnumericRegardlessOfInputOrder() {
+        let numeric = entry(
+            processIdentifier: 1,
+            name: "Numeric",
+            power: 1,
+            status: .unavailable
+        )
+        let nonnumeric = entry(
+            processIdentifier: 2,
+            name: "Nonnumeric",
+            power: nil,
+            status: .unavailable
+        )
+
+        XCTAssertEqual(
+            EnergyImpactService.sortedByImpact([numeric, nonnumeric], limit: 2)
+                .map(\.processIdentifier),
+            [1, 2]
+        )
+        XCTAssertEqual(
+            EnergyImpactService.sortedByImpact([nonnumeric, numeric], limit: 2)
+                .map(\.processIdentifier),
+            [1, 2]
+        )
+    }
+
+    func testSameNameSameScoreSortsByProcessIdentifier() {
+        let entries = [
+            entry(processIdentifier: 2, name: "Same", power: 4.2, status: .stable),
+            entry(processIdentifier: 1, name: "Same", power: 4.2, status: .stable),
+        ]
+
+        XCTAssertEqual(
+            EnergyImpactService.sortedByImpact(entries, limit: 2).map(\.processIdentifier),
+            [1, 2]
+        )
     }
 }
 

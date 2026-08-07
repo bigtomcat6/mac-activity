@@ -180,6 +180,7 @@ enum AppLocalization {
         case energyImpactCollecting = "energyImpact.collecting"
         case energyImpactPartial = "energyImpact.partial"
         case energyImpactStale = "energyImpact.stale"
+        case energyImpactStaleWithValue = "energyImpact.staleWithValue"
         case energyImpactRowAccessibility = "energyImpact.accessibility.row"
         case processEmpty = "process.empty"
         case processFallbackName = "process.fallbackName"

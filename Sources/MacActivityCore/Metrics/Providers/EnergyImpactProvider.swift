@@ -372,8 +372,7 @@ public final class EnergyImpactService {
         }
         currentIdentityByRootProcessIdentifier = currentIdentityByRootProcessIdentifier.filter {
             _, identity in
-            let hasGenerationBaseline = identity.generation.map { baselines[$0] != nil } == true
-            return hasGenerationBaseline || displayByIdentity[identity] != nil
+            identity.generation.map { baselines[$0] != nil } == true
         }
     }
 

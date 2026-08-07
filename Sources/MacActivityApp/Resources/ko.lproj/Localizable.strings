@@ -116,6 +116,7 @@
 "energyImpact.collecting" = "수집 중";
 "energyImpact.partial" = "일부 데이터";
 "energyImpact.stale" = "오래된 데이터";
+"energyImpact.staleWithValue" = "오래된 데이터 · %1$@";
 "energyImpact.accessibility.row" = "%1$@, %2$lld위, %3$@";
 "energyImpact.empty" = "에너지 추정치를 보고하는 일반 앱이 없습니다.";
 "energyImpact.unavailable" = "사용할 수 없음";

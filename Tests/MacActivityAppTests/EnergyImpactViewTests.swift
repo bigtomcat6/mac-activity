@@ -194,6 +194,23 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
+    func testNumericStaleRowMarksRetainedPowerInVisibleAndAccessibilityText() {
+        let stale = entry(name: "Safari", power: 1_840, status: .stale)
+
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(for: stale, bundle: Self.englishBundle),
+            "Stale · 1.8 mW"
+        )
+        XCTAssertEqual(
+            EnergyImpactPresentation.accessibilityLabel(
+                entry: stale,
+                rank: 2,
+                bundle: Self.englishBundle
+            ),
+            "Safari, rank 2, Stale · 1.8 mW"
+        )
+    }
+
     private func entry(
         processIdentifier: pid_t = 101,
         name: String = "Safari",

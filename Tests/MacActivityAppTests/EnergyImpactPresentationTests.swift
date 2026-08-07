@@ -54,4 +54,25 @@ final class EnergyImpactPresentationTests: XCTestCase {
             XCTAssertEqual(text, "Unavailable")
         }
     }
+
+    func testNumericStalePowerTextPreservesValueAndMarksItStale() {
+        let englishBundle = AppLocalization.bundle(forLanguageIdentifier: "en")
+
+        XCTAssertEqual(
+            EnergyImpactPresentation.powerText(
+                microwatts: 1_840,
+                status: .stale,
+                bundle: englishBundle
+            ),
+            "Stale · 1.8 mW"
+        )
+        XCTAssertEqual(
+            EnergyImpactPresentation.powerText(
+                microwatts: nil,
+                status: .stale,
+                bundle: englishBundle
+            ),
+            "Stale"
+        )
+    }
 }

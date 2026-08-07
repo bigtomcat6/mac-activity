@@ -116,6 +116,7 @@
 "energyImpact.collecting" = "収集中";
 "energyImpact.partial" = "一部データ";
 "energyImpact.stale" = "古いデータ";
+"energyImpact.staleWithValue" = "古いデータ · %1$@";
 "energyImpact.accessibility.row" = "%1$@、%2$lld位、%3$@";
 "energyImpact.empty" = "エネルギー推定を報告している通常のアプリはありません。";
 "energyImpact.unavailable" = "利用不可";

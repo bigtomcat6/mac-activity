@@ -4,6 +4,22 @@ import MacActivityCore
 
 @MainActor
 final class EnergyImpactModelTests: XCTestCase {
+    func testRefreshUsesDefaultSleepImplementation() async throws {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactProviderStub(
+                responses: [
+                    [],
+                    [entry(power: 1)],
+                ]
+            ),
+            initialWindowNanoseconds: 0
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(try XCTUnwrap(model.entries.first?.currentPowerMicrowatts), 1)
+    }
+
     func testRefreshWhileVisibleWaitsFullWindowAndSmoothsEveryPublishedSample() async throws {
         let clock = EnergyImpactTestClock()
         let provider = EnergyImpactProviderStub(
@@ -346,6 +362,52 @@ final class EnergyImpactModelTests: XCTestCase {
         )
     }
 
+    func testStableEntryWithMissingNumericFieldsPublishesUnavailable() async throws {
+        let clock = EnergyImpactTestClock()
+        let model = EnergyImpactModel(
+            provider: EnergyImpactProviderStub(
+                responses: [
+                    [],
+                    [entry(power: nil, status: .stable)],
+                ]
+            ),
+            clock: clock,
+            sleep: { _ in clock.advance(seconds: 3) }
+        )
+
+        await model.refresh()
+
+        let unavailable = try XCTUnwrap(model.entries.first)
+        XCTAssertEqual(unavailable.status, .unavailable)
+        XCTAssertNil(unavailable.currentPowerMicrowatts)
+        XCTAssertNil(unavailable.rankingScore)
+    }
+
+    func testDuplicateGenerationInOnePublicationMarksSecondEntryUnavailable() async throws {
+        let clock = EnergyImpactTestClock()
+        let model = EnergyImpactModel(
+            provider: EnergyImpactProviderStub(
+                responses: [
+                    [],
+                    [
+                        entry(pid: 101, power: 10, startTime: 10),
+                        entry(pid: 101, power: 20, startTime: 10),
+                    ],
+                ]
+            ),
+            clock: clock,
+            sleep: { _ in clock.advance(seconds: 3) }
+        )
+
+        await model.refresh()
+
+        XCTAssertEqual(model.entries.count, 2)
+        XCTAssertEqual(model.entries.filter { $0.status == .stable }.count, 1)
+        let unavailable = try XCTUnwrap(model.entries.first { $0.status == .unavailable })
+        XCTAssertNil(unavailable.currentPowerMicrowatts)
+        XCTAssertNil(unavailable.rankingScore)
+    }
+
     func testInvalidStaleNumericsAreStrippedWithoutChangingStaleStatus() async throws {
         let clock = EnergyImpactTestClock()
         let provider = EnergyImpactProviderStub(
@@ -378,6 +440,8 @@ final class EnergyImpactModelTests: XCTestCase {
                     entry(pid: 1, power: nil, status: .collecting),
                     entry(pid: 2, power: 100, status: .stale),
                     entry(pid: 3, power: nil, status: .unavailable),
+                    entry(pid: 4, power: 100, status: .stable),
+                    entry(pid: 5, power: 100, status: .partial),
                 ],
             ]
         )
@@ -396,6 +460,39 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(byPID[2]).status, .stale)
         XCTAssertEqual(try XCTUnwrap(byPID[2]).currentPowerMicrowatts, 100)
         XCTAssertEqual(try XCTUnwrap(byPID[3]).status, .unavailable)
+        XCTAssertEqual(try XCTUnwrap(byPID[4]).status, .unavailable)
+        XCTAssertNil(try XCTUnwrap(byPID[4]).currentPowerMicrowatts)
+        XCTAssertEqual(try XCTUnwrap(byPID[5]).status, .unavailable)
+        XCTAssertNil(try XCTUnwrap(byPID[5]).currentPowerMicrowatts)
+    }
+
+    func testRecoveryAfterStaleSeriesBeyondMaximumGapStartsFreshEMA() async throws {
+        let clock = EnergyImpactTestClock()
+        let provider = EnergyImpactProviderStub(
+            responses: [
+                [],
+                [entry(power: 100)],
+                [entry(power: 100, status: .stale)],
+                [entry(power: 100, status: .stale)],
+                [entry(power: 100, status: .stale)],
+                [entry(power: 0)],
+            ]
+        )
+        var sleepCount = 0
+        let model = EnergyImpactModel(
+            provider: provider,
+            clock: clock,
+            sleep: { _ in
+                sleepCount += 1
+                guard sleepCount < 6 else { throw CancellationError() }
+                clock.advance(seconds: 3)
+            }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(try XCTUnwrap(model.entries.first?.status), .stable)
+        XCTAssertEqual(try XCTUnwrap(model.entries.first?.currentPowerMicrowatts), 0)
     }
 }
 

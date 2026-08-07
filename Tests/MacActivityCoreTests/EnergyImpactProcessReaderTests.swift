@@ -36,4 +36,8 @@ final class EnergyImpactProcessReaderTests: XCTestCase {
         XCTAssertEqual(SystemProcessEnergyReader.failure(for: ENOTSUP), .unsupported)
         XCTAssertEqual(SystemProcessEnergyReader.failure(for: EINVAL), .unsupported)
     }
+
+    func testUnknownErrorMapsToOtherPreservingCode() {
+        XCTAssertEqual(SystemProcessEnergyReader.failure(for: 12_345), .other(12_345))
+    }
 }

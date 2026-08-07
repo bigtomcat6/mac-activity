@@ -116,6 +116,7 @@
 "energyImpact.collecting" = "收集中";
 "energyImpact.partial" = "部分資料";
 "energyImpact.stale" = "資料已過期";
+"energyImpact.staleWithValue" = "資料已過期 · %1$@";
 "energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
 "energyImpact.empty" = "目前沒有一般應用程式回報能耗估算。";
 "energyImpact.unavailable" = "無法讀取";

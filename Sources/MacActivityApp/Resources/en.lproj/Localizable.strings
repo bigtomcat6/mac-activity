@@ -177,6 +177,7 @@
 "energyImpact.collecting" = "Collecting";
 "energyImpact.partial" = "Partial";
 "energyImpact.stale" = "Stale";
+"energyImpact.staleWithValue" = "Stale · %1$@";
 "energyImpact.accessibility.row" = "%1$@, rank %2$lld, %3$@";
 "energyImpact.empty" = "No regular apps are reporting an energy estimate.";
 "energyImpact.unavailable" = "Unavailable";

@@ -116,6 +116,7 @@
 "energyImpact.collecting" = "Wird erfasst";
 "energyImpact.partial" = "Teilweise";
 "energyImpact.stale" = "Veraltet";
+"energyImpact.staleWithValue" = "Veraltet · %1$@";
 "energyImpact.accessibility.row" = "%1$@, Rang %2$lld, %3$@";
 "energyImpact.empty" = "Keine regulären Apps melden eine Energieschätzung.";
 "energyImpact.unavailable" = "Nicht verfügbar";

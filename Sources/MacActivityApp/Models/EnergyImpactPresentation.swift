@@ -21,6 +21,19 @@ enum EnergyImpactPresentation {
         status: EnergyImpactStatus,
         bundle: Bundle? = nil
     ) -> String {
+        if status == .stale {
+            guard let microwatts, microwatts.isFinite, microwatts >= 0 else {
+                return AppLocalization.string(.energyImpactStale, bundle: bundle)
+            }
+            return AppLocalization.string(
+                .energyImpactStaleWithValue,
+                powerText(
+                    microwatts: microwatts,
+                    locale: AppLocalization.currentLocale(bundle: bundle)
+                ),
+                bundle: bundle
+            )
+        }
         guard let microwatts, microwatts.isFinite, microwatts >= 0 else {
             let key: AppLocalization.Key = switch status {
             case .collecting: .energyImpactCollecting

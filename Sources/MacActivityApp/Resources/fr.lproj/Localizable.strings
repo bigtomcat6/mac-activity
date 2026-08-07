@@ -116,6 +116,7 @@
 "energyImpact.collecting" = "Collecte";
 "energyImpact.partial" = "Partiel";
 "energyImpact.stale" = "Obsolète";
+"energyImpact.staleWithValue" = "Obsolète · %1$@";
 "energyImpact.accessibility.row" = "%1$@, rang %2$lld, %3$@";
 "energyImpact.empty" = "Aucune app standard ne fournit d’estimation énergétique.";
 "energyImpact.unavailable" = "Indisponible";
