@@ -10,27 +10,32 @@ final class EnergyImpactViewTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
-    func testEnergyImpactRowShowsFormattedImpact() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 101,
-            name: "Safari",
-            bundleIdentifier: "com.apple.Safari",
-            bundleURL: nil,
-            impact: 7.4,
-            isReadable: true
+    func testEnergyImpactRowShowsLocalizedPowerText() {
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(for: entry(power: 1_840), bundle: Self.englishBundle),
+            "1.8 mW"
         )
-
-        XCTAssertEqual(EnergyImpactRow.trailingText(for: entry, bundle: Self.englishBundle), "7.4")
     }
 
-    func testEnergyImpactViewShowsCollectingMessageWhileRefreshingWithoutRows() {
+    func testEnergyImpactRowDoesNotRenderCollectingOrUnavailableAsZero() {
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(for: entry(power: nil, status: .collecting), bundle: Self.englishBundle),
+            "Collecting"
+        )
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(for: entry(power: nil, status: .unavailable), bundle: Self.englishBundle),
+            "Unavailable"
+        )
+    }
+
+    func testEnergyImpactViewShowsLocalizedEmptyMessage() {
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: true, bundle: Self.englishBundle),
             "Waiting for the first sample"
         )
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: false, bundle: Self.englishBundle),
-            "No foreground apps are reporting energy impact."
+            "No regular apps are reporting an energy estimate."
         )
     }
 
@@ -38,10 +43,10 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertEqual(EnergyImpactView.visibleRefreshIntervalNanoseconds, 3_000_000_000)
     }
 
-    func testRenderedEnergyImpactViewShowsEmptyState() {
+    func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            samplingDelayNanoseconds: 1,
+            initialWindowNanoseconds: 1,
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -50,111 +55,112 @@ final class EnergyImpactViewTests: XCTestCase {
                 refreshTrigger: 0,
                 showsApplicationIdentifier: true
             )
-            .frame(width: 360, height: 80)
+            .environment(\.locale, Locale(identifier: "en"))
+            .frame(width: 420, height: 120)
         )
         renderer.scale = 1
 
         XCTAssertNotNil(renderer.nsImage)
     }
 
-    func testRenderedEnergyImpactViewShowsEnergyRows() async {
-        let readableEntry = EnergyImpactEntry(
-            processIdentifier: 201,
-            name: "Safari",
-            bundleIdentifier: "com.apple.Safari",
-            bundleURL: nil,
-            impact: 8.4,
-            isReadable: true
-        )
-        let unreadableEntry = EnergyImpactEntry(
-            processIdentifier: 202,
-            name: "Protected App",
-            bundleIdentifier: nil,
-            bundleURL: nil,
-            impact: 0,
-            isReadable: false
-        )
+    func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
+        let initialPreferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
+        defer { AppLocalization.setPreferredLanguageIdentifier(initialPreferredLanguageIdentifier) }
+
+        AppLocalization.setPreferredLanguageIdentifier("fr")
+        await assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints()
+
+        XCTAssertEqual(AppLocalization.explicitPreferredLanguageIdentifier(), "fr")
+    }
+
+    private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
+        let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
+        defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
         var sleepCount = 0
+        let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[readableEntry], [readableEntry, unreadableEntry]]),
-            samplingDelayNanoseconds: 1,
+            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
+            initialWindowNanoseconds: 1,
             sleep: { _ in
                 sleepCount += 1
                 guard sleepCount == 1 else { throw CancellationError() }
             }
         )
-
         await model.refresh()
 
-        let renderer = ImageRenderer(
-            content: EnergyImpactView(
-                model: model,
-                refreshTrigger: 0,
-                showsApplicationIdentifier: true
+        let expectations: [(
+            languageIdentifier: String,
+            title: String,
+            subtitle: String,
+            currentLabel: String,
+            accessibilityLabel: String
+        )] = [
+            (
+                "en",
+                "Energy Impact",
+                "Recent CPU energy estimate · Lower is better",
+                "Current",
+                "Safari, rank 1, 1.8 mW"
+            ),
+            (
+                "zh-Hans",
+                "耗电影响",
+                "近期 CPU 能耗估算 · 越低越好",
+                "当前",
+                "Safari，第 1 名，1.8 mW"
             )
-            .frame(width: 360, height: 120)
-        )
-        renderer.scale = 1
+        ]
 
-        XCTAssertNotNil(renderer.nsImage)
+        for expectation in expectations {
+            AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
+            XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleCurrent), expectation.subtitle)
+            XCTAssertEqual(AppLocalization.string(.energyImpactCurrentColumn), expectation.currentLabel)
+            XCTAssertEqual(
+                EnergyImpactPresentation.accessibilityLabel(entry: renderedEntry, rank: 1),
+                expectation.accessibilityLabel
+            )
+
+            let renderer = ImageRenderer(
+                content: EnergyImpactView(
+                    model: model,
+                    refreshTrigger: 0,
+                    showsApplicationIdentifier: true
+                )
+                .frame(width: 420, height: 160)
+            )
+            renderer.scale = 1
+
+            XCTAssertNotNil(renderer.nsImage, expectation.languageIdentifier)
+        }
     }
 
-    func testRenderedEnergyImpactRowUsesBundleIcon() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 203,
-            name: "Test Host",
-            bundleIdentifier: Bundle.main.bundleIdentifier,
-            bundleURL: Bundle.main.bundleURL,
-            impact: 2.5,
-            isReadable: true
-        )
+    func testRenderedEnergyImpactRowPreservesBundleIconAndApplicationIdentifier() {
         let renderer = ImageRenderer(
             content: EnergyImpactRow(
-                entry: entry,
-                maximumImpact: 5,
+                entry: entry(bundleURL: Bundle.main.bundleURL),
+                rank: 1,
                 showsApplicationIdentifier: true
             )
-            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .frame(width: 420, height: ActiveProcessMemoryLayout.rowHeight)
         )
         renderer.scale = 1
 
         XCTAssertNotNil(renderer.nsImage)
-    }
-
-    func testEnergyImpactRowShowsUnavailableWhenUnreadable() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 102,
-            name: "Protected App",
-            bundleIdentifier: nil,
-            bundleURL: nil,
-            impact: 0,
-            isReadable: false
-        )
-
-        XCTAssertEqual(EnergyImpactRow.trailingText(for: entry, bundle: Self.englishBundle), "Unavailable")
     }
 
     func testEnergyImpactRowIdentifierCanBeHidden() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 103,
-            name: "Notes",
-            bundleIdentifier: "com.apple.Notes",
-            bundleURL: nil,
-            impact: 1,
-            isReadable: true
-        )
-
         XCTAssertEqual(
             EnergyImpactRow.identifierText(
-                for: entry,
+                for: entry(),
                 showsApplicationIdentifier: true,
                 bundle: Self.englishBundle
             ),
-            "com.apple.Notes"
+            "com.apple.Safari"
         )
         XCTAssertNil(
             EnergyImpactRow.identifierText(
-                for: entry,
+                for: entry(),
                 showsApplicationIdentifier: false,
                 bundle: Self.englishBundle
             )
@@ -163,87 +169,70 @@ final class EnergyImpactViewTests: XCTestCase {
 
     func testEnergyImpactRowUsesBundleIconWhenBundleExists() {
         let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
-        let entry = EnergyImpactEntry(
-            processIdentifier: 104,
-            name: "Safari",
-            bundleIdentifier: "com.apple.Safari",
-            bundleURL: bundleURL,
-            impact: 3.1,
-            isReadable: true
-        )
 
         XCTAssertEqual(
-            EnergyImpactRow.iconSource(for: entry, fileExists: { _ in true }),
+            EnergyImpactRow.iconSource(for: entry(bundleURL: bundleURL), fileExists: { _ in true }),
             .bundle(bundleURL)
         )
     }
 
     func testEnergyImpactRowFallsBackToSystemIconWhenBundleMissing() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 105,
-            name: "Unknown",
-            bundleIdentifier: nil,
-            bundleURL: URL(fileURLWithPath: "/Applications/Missing.app"),
-            impact: 0.2,
-            isReadable: true
-        )
-
         XCTAssertEqual(
-            EnergyImpactRow.iconSource(for: entry, fileExists: { _ in false }),
+            EnergyImpactRow.iconSource(for: entry(bundleURL: URL(fileURLWithPath: "/Applications/Missing.app")), fileExists: { _ in false }),
             .fallbackSystemSymbol
         )
     }
 
-    func testEnergyImpactRowProgressFractionUsesReadableMaximumImpact() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 106,
-            name: "Safari",
-            bundleIdentifier: "com.apple.Safari",
-            bundleURL: nil,
-            impact: 3,
-            isReadable: true
+    func testEnergyImpactRowAccessibilityIncludesOneBasedRankAndPowerText() {
+        XCTAssertEqual(
+            EnergyImpactPresentation.accessibilityLabel(
+                entry: entry(name: "Safari", power: 860),
+                rank: 2,
+                bundle: Self.englishBundle
+            ),
+            "Safari, rank 2, 860 µW"
         )
+    }
+
+    func testNumericStaleRowMarksRetainedPowerInVisibleAndAccessibilityText() {
+        let stale = entry(name: "Safari", power: 1_840, status: .stale)
 
         XCTAssertEqual(
-            EnergyImpactRow.progressFraction(for: entry, maximumImpact: 6),
-            0.5,
-            accuracy: 0.001
+            EnergyImpactRow.trailingText(for: stale, bundle: Self.englishBundle),
+            "Stale · 1.8 mW"
+        )
+        XCTAssertEqual(
+            EnergyImpactPresentation.accessibilityLabel(
+                entry: stale,
+                rank: 2,
+                bundle: Self.englishBundle
+            ),
+            "Safari, rank 2, Stale · 1.8 mW"
         )
     }
 
-    func testEnergyImpactRowProgressFractionIsZeroForUnreadableOrZeroMaximum() {
-        let unreadableEntry = EnergyImpactEntry(
-            processIdentifier: 107,
-            name: "Protected App",
-            bundleIdentifier: nil,
-            bundleURL: nil,
-            impact: 8,
-            isReadable: false
+    private func entry(
+        processIdentifier: pid_t = 101,
+        name: String = "Safari",
+        bundleURL: URL? = nil,
+        power: Double? = 860,
+        status: EnergyImpactStatus = .stable
+    ) -> EnergyImpactEntry {
+        EnergyImpactEntry(
+            identity: EnergyImpactAppIdentity(
+                rootProcessIdentifier: processIdentifier,
+                rootProcessStartAbsoluteTime: 1
+            ),
+            name: name,
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL,
+            currentPowerMicrowatts: power,
+            sustainedPowerMicrowatts: power,
+            rankingScore: power,
+            trend: .steady,
+            coverage: .unavailable,
+            status: status
         )
-        let readableEntry = EnergyImpactEntry(
-            processIdentifier: 108,
-            name: "Notes",
-            bundleIdentifier: "com.apple.Notes",
-            bundleURL: nil,
-            impact: 4,
-            isReadable: true
-        )
-
-        XCTAssertEqual(EnergyImpactRow.progressFraction(for: unreadableEntry, maximumImpact: 8), 0)
-        XCTAssertEqual(EnergyImpactRow.progressFraction(for: readableEntry, maximumImpact: 0), 0)
-    }
-
-    func testEnergyImpactRowProgressFractionClampsAtOne() {
-        let entry = EnergyImpactEntry(
-            processIdentifier: 109,
-            name: "Xcode",
-            bundleIdentifier: "com.apple.dt.Xcode",
-            bundleURL: nil,
-            impact: 12,
-            isReadable: true
-        )
-
-        XCTAssertEqual(EnergyImpactRow.progressFraction(for: entry, maximumImpact: 6), 1)
     }
 }
 

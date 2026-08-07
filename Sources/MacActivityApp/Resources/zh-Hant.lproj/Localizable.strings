@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "控制選單列與儀表板的溫度指標。";
 "preferences.hardwareBatteryPercentage" = "顯示硬體電池百分比";
 "preferences.hardwareBatteryPercentageHelp" = "可用時使用 AppleSmartBattery 的原始容量；無法使用時改用系統百分比。";
-"preferences.processApplicationIdentifier" = "在「活躍」程序清單中顯示應用程式 ID";
+"preferences.processApplicationIdentifier" = "在程序列表中顯示應用程式 ID";
 "preferences.diskCleanupScope" = "清理範圍";
 "preferences.diskCleanupHelp" = "控制 Actives 磁碟清理要掃描並刪除的項目。";
 "preferences.menuBarMetrics" = "選單列指標";
@@ -109,7 +109,16 @@
 "diskCleanup.category.trash" = "垃圾桶";
 "diskCleanup.category.userLogs" = "日誌";
 
-"energyImpact.empty" = "目前沒有前景應用程式回報耗電影響。";
+"energyImpact.title" = "耗電影響";
+"energyImpact.subtitle.current" = "近期 CPU 能耗估算 · 越低越好";
+"energyImpact.column.app" = "應用程式";
+"energyImpact.column.current" = "目前";
+"energyImpact.collecting" = "收集中";
+"energyImpact.partial" = "部分資料";
+"energyImpact.stale" = "資料已過期";
+"energyImpact.staleWithValue" = "資料已過期 · %1$@";
+"energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
+"energyImpact.empty" = "目前沒有一般應用程式回報能耗估算。";
 "energyImpact.unavailable" = "無法讀取";
 
 "memoryRelease.action.release" = "釋放";

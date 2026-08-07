@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "상태 막대와 대시보드의 온도 지표를 제어합니다.";
 "preferences.hardwareBatteryPercentage" = "하드웨어 배터리 퍼센트 표시";
 "preferences.hardwareBatteryPercentageHelp" = "가능하면 AppleSmartBattery의 실제 용량을 사용하고, 없으면 시스템 퍼센트로 대체합니다.";
-"preferences.processApplicationIdentifier" = "활성 프로세스 목록에 앱 ID 표시";
+"preferences.processApplicationIdentifier" = "프로세스 목록에 앱 ID 표시";
 "preferences.diskCleanupScope" = "정리 범위";
 "preferences.diskCleanupHelp" = "활성 디스크 정리에서 스캔/삭제할 항목을 제어합니다.";
 "preferences.menuBarMetrics" = "메뉴 막대 지표";
@@ -109,7 +109,16 @@
 "diskCleanup.category.trash" = "휴지통";
 "diskCleanup.category.userLogs" = "로그";
 
-"energyImpact.empty" = "에너지 영향을 보고하는 전면 앱이 없습니다.";
+"energyImpact.title" = "에너지 영향";
+"energyImpact.subtitle.current" = "최근 CPU 에너지 추정치 · 낮을수록 좋음";
+"energyImpact.column.app" = "앱";
+"energyImpact.column.current" = "현재";
+"energyImpact.collecting" = "수집 중";
+"energyImpact.partial" = "일부 데이터";
+"energyImpact.stale" = "오래된 데이터";
+"energyImpact.staleWithValue" = "오래된 데이터 · %1$@";
+"energyImpact.accessibility.row" = "%1$@, %2$lld위, %3$@";
+"energyImpact.empty" = "에너지 추정치를 보고하는 일반 앱이 없습니다.";
 "energyImpact.unavailable" = "사용할 수 없음";
 
 "memoryRelease.action.release" = "해제";

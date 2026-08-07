@@ -94,7 +94,7 @@
 "preferences.temperatureHelp" = "ステータスバーとダッシュボードの温度メトリックを制御します。";
 "preferences.hardwareBatteryPercentage" = "ハードウェアバッテリー残量を表示";
 "preferences.hardwareBatteryPercentageHelp" = "利用可能な場合は AppleSmartBattery の実容量を使用し、利用できない場合はシステムの残量を使用します。";
-"preferences.processApplicationIdentifier" = "アクティブプロセス一覧にアプリ ID を表示";
+"preferences.processApplicationIdentifier" = "プロセスリストにアプリIDを表示";
 "preferences.diskCleanupScope" = "クリーンアップ範囲";
 "preferences.diskCleanupHelp" = "アクティブのディスククリーンアップでスキャンと削除を行う対象を制御します。";
 "preferences.menuBarMetrics" = "メニューバー指標";
@@ -109,7 +109,16 @@
 "diskCleanup.category.trash" = "ゴミ箱";
 "diskCleanup.category.userLogs" = "ログ";
 
-"energyImpact.empty" = "エネルギー影響を報告している前面アプリはありません。";
+"energyImpact.title" = "エネルギー影響";
+"energyImpact.subtitle.current" = "最近のCPUエネルギー推定 · 低いほど良好";
+"energyImpact.column.app" = "アプリ";
+"energyImpact.column.current" = "現在";
+"energyImpact.collecting" = "収集中";
+"energyImpact.partial" = "一部データ";
+"energyImpact.stale" = "古いデータ";
+"energyImpact.staleWithValue" = "古いデータ · %1$@";
+"energyImpact.accessibility.row" = "%1$@、%2$lld位、%3$@";
+"energyImpact.empty" = "エネルギー推定を報告している通常のアプリはありません。";
 "energyImpact.unavailable" = "利用不可";
 
 "memoryRelease.action.release" = "解放";
