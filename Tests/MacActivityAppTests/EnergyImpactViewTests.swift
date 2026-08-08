@@ -42,7 +42,8 @@ final class EnergyImpactViewTests: XCTestCase {
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            initialWindowNanoseconds: 1,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -59,6 +60,33 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertNotNil(renderer.nsImage)
     }
 
+    func testRenderedEnergyImpactViewStartsVisibleLifecycleThroughModel() async {
+        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 120)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+        for _ in 0..<100 where provider.beginCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(provider.beginCount, 1)
+        XCTAssertEqual(provider.observeCount, 1)
+        XCTAssertEqual(provider.endCount, 1)
+    }
+
     func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
         let initialPreferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(initialPreferredLanguageIdentifier) }
@@ -72,17 +100,14 @@ final class EnergyImpactViewTests: XCTestCase {
     private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
         let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
-        var sleepCount = 0
         let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
-            initialWindowNanoseconds: 1,
-            sleep: { _ in
-                sleepCount += 1
-                guard sleepCount == 1 else { throw CancellationError() }
-            }
+            provider: EnergyImpactViewProviderStub(responses: [[renderedEntry]]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
         )
-        await model.refresh()
+        await model.refreshWhileVisible()
 
         let expectations: [(
             languageIdentifier: String,
@@ -236,12 +261,16 @@ final class EnergyImpactViewTests: XCTestCase {
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
     private var responses: [[EnergyImpactEntry]]
     private var nextGeneration: UInt64 = 0
+    private(set) var beginCount = 0
+    private(set) var observeCount = 0
+    private(set) var endCount = 0
 
     init(responses: [[EnergyImpactEntry]]) {
         self.responses = responses
     }
 
     func beginSession() async -> EnergyImpactSamplingLease? {
+        beginCount += 1
         nextGeneration += 1
         return EnergyImpactSamplingLease(requestGeneration: nextGeneration)
     }
@@ -251,8 +280,11 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
         limit: Int,
         scope: EnergyImpactAppScope
     ) async -> [EnergyImpactEntry]? {
+        observeCount += 1
         return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
     }
 
-    func endSession(_ lease: EnergyImpactSamplingLease) async {}
+    func endSession(_ lease: EnergyImpactSamplingLease) async {
+        endCount += 1
+    }
 }

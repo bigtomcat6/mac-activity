@@ -24,127 +24,107 @@ final class EnergyImpactModel: ObservableObject {
 
     private let provider: any EnergyImpactProviding
     private let limit: Int
-    private let initialWindowNanoseconds: UInt64
+    private let observationIntervalNanoseconds: UInt64
+    private let nowNanoseconds: () -> UInt64
     private let sleep: (UInt64) async throws -> Void
     private var activeRunID: UUID?
 
     init(
         provider: any EnergyImpactProviding = EnergyImpactService(),
         limit: Int = 20,
-        initialWindowNanoseconds: UInt64 = 3_000_000_000,
+        observationIntervalNanoseconds: UInt64 = 3_000_000_000,
+        nowNanoseconds: @escaping () -> UInt64 = {
+            DispatchTime.now().uptimeNanoseconds
+        },
         sleep: @escaping (UInt64) async throws -> Void = {
             try await Task.sleep(nanoseconds: $0)
         }
     ) {
         self.provider = provider
         self.limit = limit
-        self.initialWindowNanoseconds = initialWindowNanoseconds
+        self.observationIntervalNanoseconds = observationIntervalNanoseconds
+        self.nowNanoseconds = nowNanoseconds
         self.sleep = sleep
     }
 
-    func refresh() async {
-        let runID = beginRun()
-        guard canContinue(runID) else {
-            finishIfCurrent(runID)
-            return
-        }
-        await performRun(runID, refreshIntervalNanoseconds: nil)
-    }
-
     func refreshWhileVisible(
-        refreshIntervalNanoseconds: UInt64 = 3_000_000_000
+        scope: EnergyImpactAppScope = .regularOnly
     ) async {
-        let runID = beginRun()
-        guard canContinue(runID) else {
-            finishIfCurrent(runID)
-            return
-        }
-        await performRun(
-            runID,
-            refreshIntervalNanoseconds: refreshIntervalNanoseconds
-        )
-    }
-
-    private func beginRun() -> UUID {
         let runID = UUID()
         activeRunID = runID
         isRefreshing = true
-        return runID
-    }
 
-    private func performRun(
-        _ runID: UUID,
-        refreshIntervalNanoseconds: UInt64?
-    ) async {
-        let lease = await provider.beginSession()
-        guard canContinue(runID), let lease else {
-            if let lease {
-                await provider.endSession(lease)
-            }
-            finishIfCurrent(runID)
+        guard Task.isCancelled == false else {
+            finishRun(runID)
+            return
+        }
+        guard let lease = await provider.beginSession() else {
+            finishRun(runID)
             return
         }
 
-        var remainsActive = await observeAndPublish(
-            lease: lease,
-            runID: runID
-        )
-        if remainsActive {
-            remainsActive = await sleepAndObserve(
-                initialWindowNanoseconds,
-                lease: lease,
-                runID: runID
-            )
-        }
-
-        if let refreshIntervalNanoseconds {
-            while remainsActive {
-                remainsActive = await sleepAndObserve(
-                    refreshIntervalNanoseconds,
+        var deadline = nowNanoseconds()
+        do {
+            while Task.isCancelled == false, activeRunID == runID {
+                let now = nowNanoseconds()
+                if deadline > now {
+                    try await sleep(deadline - now)
+                }
+                guard Task.isCancelled == false,
+                      activeRunID == runID else {
+                    break
+                }
+                guard let observed = await provider.observe(
                     lease: lease,
-                    runID: runID
+                    limit: limit,
+                    scope: scope
+                ) else {
+                    break
+                }
+                guard Task.isCancelled == false,
+                      activeRunID == runID else {
+                    break
+                }
+
+                entries = observed
+                isRefreshing = false
+                deadline = Self.firstFutureDeadline(
+                    after: deadline,
+                    now: nowNanoseconds(),
+                    interval: observationIntervalNanoseconds
                 )
             }
+        } catch is CancellationError {
+            // Normal hidden-page exit; cleanup below still runs.
+        } catch {
+            // Preserve the last honest rows; a future visible run retries.
         }
 
         await provider.endSession(lease)
-        finishIfCurrent(runID)
+        finishRun(runID)
     }
 
-    private func sleepAndObserve(
-        _ duration: UInt64,
-        lease: EnergyImpactSamplingLease,
-        runID: UUID
-    ) async -> Bool {
-        do {
-            try await sleep(duration)
-        } catch {
-            return false
-        }
-        guard canContinue(runID) else { return false }
-        return await observeAndPublish(lease: lease, runID: runID)
+    private static func firstFutureDeadline(
+        after previousDeadline: UInt64,
+        now: UInt64,
+        interval rawInterval: UInt64
+    ) -> UInt64 {
+        let interval = max(1, rawInterval)
+        let (first, firstOverflow) =
+            previousDeadline.addingReportingOverflow(interval)
+        guard firstOverflow == false else { return .max }
+        guard first <= now else { return first }
+
+        let missed = (now - first) / interval + 1
+        let (jump, jumpOverflow) =
+            interval.multipliedReportingOverflow(by: missed)
+        guard jumpOverflow == false else { return .max }
+        let (advanced, advancedOverflow) =
+            first.addingReportingOverflow(jump)
+        return advancedOverflow ? .max : advanced
     }
 
-    private func observeAndPublish(
-        lease: EnergyImpactSamplingLease,
-        runID: UUID
-    ) async -> Bool {
-        let observed = await provider.observe(
-            lease: lease,
-            limit: limit,
-            scope: .regularOnly
-        )
-        guard canContinue(runID), let observed else { return false }
-        guard canContinue(runID) else { return false }
-        entries = observed
-        return true
-    }
-
-    private func canContinue(_ runID: UUID) -> Bool {
-        Task.isCancelled == false && activeRunID == runID
-    }
-
-    private func finishIfCurrent(_ runID: UUID) {
+    private func finishRun(_ runID: UUID) {
         guard activeRunID == runID else { return }
         activeRunID = nil
         isRefreshing = false
