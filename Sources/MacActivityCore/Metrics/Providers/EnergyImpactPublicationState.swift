@@ -126,7 +126,7 @@ public struct EnergyImpactPublicationState: Sendable {
         if let lastValidObservationTime = lastValidObservationTimes[generation] {
             elapsedSeconds = publicationTime - lastValidObservationTime
         } else {
-            elapsedSeconds = configuration.publicationIntervalSeconds
+            elapsedSeconds = configuration.observationIntervalSeconds
         }
         guard elapsedSeconds.isFinite, elapsedSeconds > 0 else {
             return Self.nonnumericUnavailable(sanitized)

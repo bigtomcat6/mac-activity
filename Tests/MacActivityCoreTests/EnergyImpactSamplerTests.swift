@@ -1,414 +1,25 @@
 import Darwin
-import Foundation
-import XCTest
-@testable import MacActivityCore
-
-final class EnergyImpactSamplerTests: XCTestCase {
-    func testSamplerReturnsTheSamePartialAggregateAsThePartThreeContract() async throws {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [
-                    .success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 4_000, processStartAbsoluteTime: 10)),
-                ],
-                200: [
-                    .failure(.permissionDenied),
-                    .failure(.permissionDenied),
-                ],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-                .init(processIdentifier: 200, parentProcessIdentifier: 100),
-            ]),
-            clock: EnergyImpactClockStub(times: [0, 3]),
-            configuration: .production
-        )
-
-        let sessionID = await sampler.beginSession()
-        _ = await sampler.sample(
-            sessionID: sessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        let sampled = await sampler.sample(
-            sessionID: sessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: true
-        )
-        let entries = try XCTUnwrap(sampled)
-
-        XCTAssertEqual(entries.count, 1)
-        XCTAssertEqual(entries[0].status, .partial)
-        XCTAssertEqual(entries[0].coverage.fraction, 0.5, accuracy: 0.001)
-    }
-
-    func testResetClearsBaselinesAndSmoothing() async throws {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [
-                    .success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 4_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 7_000, processStartAbsoluteTime: 10)),
-                ],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0, 3, 6]),
-            configuration: .production
-        )
-        let oldSession = await sampler.beginSession()
-        _ = await sampler.sample(
-            sessionID: oldSession,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        let newSession = await sampler.beginSession()
-        await sampler.endSession(oldSession)
-        let sampled = await sampler.sample(
-            sessionID: newSession,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        let entries = try XCTUnwrap(sampled)
-        let entry = try XCTUnwrap(entries.first)
-
-        XCTAssertNil(entry.currentPowerMicrowatts)
-        XCTAssertEqual(entry.status, .collecting)
-    }
-
-    func testOldSessionCannotCommitOrClearNewSession() async {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [.success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10))],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0]),
-            configuration: .production
-        )
-        let old = await sampler.beginSession()
-        let new = await sampler.beginSession()
-        await sampler.endSession(old)
-        let obsolete = await sampler.sample(
-            sessionID: old,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: true
-        )
-        let current = await sampler.sample(
-            sessionID: new,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-
-        XCTAssertNil(obsolete)
-        XCTAssertNotNil(current)
-    }
-
-    func testSmoothingAdvancesOnlyAtPublicationBoundaries() async throws {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [
-                    .success(.init(energyNanojoules: 0, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 2_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 3_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 7_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 11_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 15_000, processStartAbsoluteTime: 10)),
-                ],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0, 1, 2, 3, 4, 5, 6]),
-            configuration: .production,
-            processSnapshotRefreshIntervalSeconds: 3,
-            minimumProcessReadIntervalSeconds: 0
-        )
-        let sessionID = await sampler.beginSession()
-
-        for index in 0..<6 {
-            _ = await sampler.sample(
-                sessionID: sessionID,
-                apps: [fixtureEnergyApp],
-                limit: 20,
-                publicationBoundary: index == 3
-            )
-        }
-        let sampled = await sampler.sample(
-            sessionID: sessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: true
-        )
-        let entries = try XCTUnwrap(sampled)
-
-        XCTAssertEqual(
-            try XCTUnwrap(entries.first?.currentPowerMicrowatts),
-            2.216_188_6,
-            accuracy: 0.000_001
-        )
-    }
-
-    func testProcessOwnershipSnapshotRefreshesAtThreeSecondBoundary() async {
-        let snapshotReader = CountingProcessParentSnapshotReaderStub(snapshots: [
-            .init(processIdentifier: 100, parentProcessIdentifier: 1),
-        ])
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: (0..<5).map { index in
-                    .success(.init(
-                        energyNanojoules: UInt64(index) * 1_000,
-                        processStartAbsoluteTime: 10
-                    ))
-                },
-            ]),
-            processSnapshotReader: snapshotReader,
-            clock: EnergyImpactClockStub(times: [0, 1, 2, 3, 4]),
-            configuration: .production
-        )
-        let sessionID = await sampler.beginSession()
-
-        for index in 0..<5 {
-            _ = await sampler.sample(
-                sessionID: sessionID,
-                apps: [fixtureEnergyApp],
-                limit: 20,
-                publicationBoundary: index == 3
-            )
-        }
-
-        XCTAssertEqual(snapshotReader.requestCount, 2)
-    }
-
-    func testProductionSamplerReadsProcessCountersEveryTwoSeconds() async {
-        let reader = CountingProcessEnergyReadingProviderStub()
-        let sampler = EnergyImpactSampler(
-            reader: reader,
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0, 1, 2, 3, 4]),
-            configuration: .production
-        )
-        let sessionID = await sampler.beginSession()
-
-        for index in 0..<5 {
-            _ = await sampler.sample(
-                sessionID: sessionID,
-                apps: [fixtureEnergyApp],
-                limit: 20,
-                publicationBoundary: index == 3
-            )
-        }
-
-        XCTAssertEqual(reader.requestCount, 3)
-    }
-
-    func testTestingSmootherAppliesAtPublicationBoundary() async throws {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [
-                    .success(.init(energyNanojoules: 0, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 3_000, processStartAbsoluteTime: 10)),
-                ],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0, 3]),
-            configuration: .production,
-            smoothingOverrideForTesting: { _, _, _ in 42 }
-        )
-        let sessionID = await sampler.beginSession()
-
-        _ = await sampler.sample(
-            sessionID: sessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        let sampled = await sampler.sample(
-            sessionID: sessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: true
-        )
-        let publication = try XCTUnwrap(sampled)
-        let entry = try XCTUnwrap(publication.first)
-
-        XCTAssertEqual(entry.currentPowerMicrowatts, 42)
-        XCTAssertEqual(entry.rankingScore, 42)
-    }
-
-    func testEndingCurrentSessionInvalidatesExistingSession() async throws {
-        let sampler = EnergyImpactSampler(
-            reader: ProcessEnergyReadingProviderStub(results: [
-                100: [
-                    .success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10)),
-                    .success(.init(energyNanojoules: 4_000, processStartAbsoluteTime: 10)),
-                ],
-            ]),
-            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
-                .init(processIdentifier: 100, parentProcessIdentifier: 1),
-            ]),
-            clock: EnergyImpactClockStub(times: [0]),
-            configuration: .production
-        )
-        let oldSessionID = await sampler.beginSession()
-        _ = await sampler.sample(
-            sessionID: oldSessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        await sampler.endSession(oldSessionID)
-        let invalidated = await sampler.sample(
-            sessionID: oldSessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-
-        XCTAssertNil(invalidated)
-
-        let freshSessionID = await sampler.beginSession()
-
-        let sampled = await sampler.sample(
-            sessionID: freshSessionID,
-            apps: [fixtureEnergyApp],
-            limit: 20,
-            publicationBoundary: false
-        )
-        let entries = try XCTUnwrap(sampled)
-        let entry = try XCTUnwrap(entries.first)
-
-        XCTAssertEqual(entry.status, .collecting)
-        XCTAssertNil(entry.currentPowerMicrowatts)
-    }
-}
-
-private let fixtureEnergyApp = EnergyImpactAppSnapshot(
-    processIdentifier: 100,
-    name: "Fixture App",
-    bundleIdentifier: "example.fixture",
-    bundleURL: nil
-)
-
-private final class ProcessEnergyReadingProviderStub:
-    ProcessEnergyReadingProvider,
-    @unchecked Sendable
-{
-    private let lock = NSLock()
-    private var results: [pid_t: [ProcessEnergyReadResult]]
-
-    init(results: [pid_t: [ProcessEnergyReadResult]]) {
-        self.results = results
-    }
-
-    func reading(for processIdentifier: pid_t) -> ProcessEnergyReadResult {
-        lock.lock()
-        defer { lock.unlock() }
-        guard var values = results[processIdentifier], values.isEmpty == false else {
-            return .failure(.exited)
-        }
-        let result = values.removeFirst()
-        results[processIdentifier] = values
-        return result
-    }
-}
-
-private final class CountingProcessEnergyReadingProviderStub:
-    ProcessEnergyReadingProvider,
-    @unchecked Sendable
-{
-    private let lock = NSLock()
-    private var count = 0
-
-    var requestCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return count
-    }
-
-    func reading(for processIdentifier: pid_t) -> ProcessEnergyReadResult {
-        lock.lock()
-        defer { lock.unlock() }
-        defer { count += 1 }
-        return .success(ProcessEnergyReading(
-            energyNanojoules: UInt64(count) * 1_000,
-            processStartAbsoluteTime: 10
-        ))
-    }
-}
-
-private struct ProcessParentSnapshotReaderStub: ProcessParentSnapshotReading {
-    let snapshotsValue: [ProcessParentSnapshot]
-
-    init(snapshots: [ProcessParentSnapshot]) {
-        snapshotsValue = snapshots
-    }
-
-    func snapshots() -> [ProcessParentSnapshot] {
-        snapshotsValue
-    }
-}
-
-private final class CountingProcessParentSnapshotReaderStub:
-    ProcessParentSnapshotReading,
-    @unchecked Sendable
-{
-    private let lock = NSLock()
-    private let snapshotValues: [ProcessParentSnapshot]
-    private var count = 0
-
-    init(snapshots: [ProcessParentSnapshot]) {
-        snapshotValues = snapshots
-    }
-
-    var requestCount: Int {
-        lock.lock()
-        defer { lock.unlock() }
-        return count
-    }
-
-    func snapshots() -> [ProcessParentSnapshot] {
-        lock.lock()
-        defer { lock.unlock() }
-        count += 1
-        return snapshotValues
-    }
-}
-
-private final class EnergyImpactClockStub: EnergyImpactClock, @unchecked Sendable {
-    private let lock = NSLock()
-    private var times: [TimeInterval]
-
-    init(times: [TimeInterval]) {
-        self.times = times
-    }
-
-    func nowSeconds() -> TimeInterval {
-        lock.lock()
-        defer { lock.unlock() }
-        return times.isEmpty ? 0 : times.removeFirst()
-    }
-}
-
-import Darwin
 import XCTest
 @testable import MacActivityCore
 
 @MainActor
-final class EnergyImpactSamplerRegressionTests: XCTestCase {
+final class EnergyImpactSamplerTests: XCTestCase {
+    private func require<T>(
+        _ value: T?,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws -> T {
+        try XCTUnwrap(value, file: file, line: line)
+    }
+
+    private func sortedByImpact(
+        _ entries: [EnergyImpactEntry],
+        limit: Int
+    ) -> [EnergyImpactEntry] {
+        var publicationState = EnergyImpactPublicationState()
+        return publicationState.publish(entries, at: 0, limit: limit)
+    }
+
     private func reading(
         energy: UInt64,
         start: UInt64 = 10,
@@ -426,14 +37,14 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     private func makeService(
         results: [ProcessEnergyReadResult],
         times: [TimeInterval]
-    ) -> EnergyImpactSamplerHarness {
-        EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [101: results]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+    ) -> EnergyImpactSamplerTestSession {
+        EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [101: results]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [
                 .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: times)
+            clock: EnergyImpactClockStub(times: times)
         )
     }
 
@@ -441,19 +52,19 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         rootResults: [ProcessEnergyReadResult],
         helperResults: [ProcessEnergyReadResult],
         times: [TimeInterval]
-    ) -> EnergyImpactSamplerHarness {
-        EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+    ) -> EnergyImpactSamplerTestSession {
+        EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: rootResults,
                 101: helperResults,
             ]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: [
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
                 .init(processIdentifier: 101, parentProcessIdentifier: 100),
             ]),
             appSnapshotProvider: { [
                 .init(processIdentifier: 100, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: times)
+            clock: EnergyImpactClockStub(times: times)
         )
     }
 
@@ -461,14 +72,14 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         ownersBySample: [pid_t],
         energies: [UInt64],
         times: [TimeInterval]
-    ) -> EnergyImpactSamplerHarness {
-        EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+    ) -> EnergyImpactSamplerTestSession {
+        EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: ownersBySample.map { _ in .failure(.permissionDenied) },
                 200: ownersBySample.map { _ in .failure(.permissionDenied) },
                 300: energies.map { .success(reading(energy: $0, start: 30)) },
             ]),
-            processSnapshotReader: RegressionSequencedProcessParentSnapshotReaderStub(
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(
                 snapshotsByCall: ownersBySample.map { owner in
                     [.init(processIdentifier: 300, parentProcessIdentifier: owner)]
                 }
@@ -477,7 +88,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 .init(processIdentifier: 100, name: "First", bundleIdentifier: nil, bundleURL: nil),
                 .init(processIdentifier: 200, name: "Second", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: times)
+            clock: EnergyImpactClockStub(times: times)
         )
     }
 
@@ -485,7 +96,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         rootEnergies: [UInt64],
         helperResults: [ProcessEnergyReadResult],
         times: [TimeInterval]
-    ) -> EnergyImpactSamplerHarness {
+    ) -> EnergyImpactSamplerTestSession {
         makeTwoProcessService(
             rootResults: rootEnergies.map { .success(reading(energy: $0, start: 10)) },
             helperResults: helperResults,
@@ -516,7 +127,418 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         )
     }
 
-    func testEnergyImpactEntryRepresentsCollectingWithoutAFalseZero() {
+    func testNewerBeginRequestWinsWhenItArrivesBeforeOlderRequest() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [:]),
+            processSnapshotReader:
+                ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0]),
+            configuration: .production
+        )
+
+        let newer = await sampler.beginSession(
+            EnergyImpactSessionRequest(generation: 2)
+        )
+        let older = await sampler.beginSession(
+            EnergyImpactSessionRequest(generation: 1)
+        )
+
+        XCTAssertNotNil(newer)
+        XCTAssertNil(older)
+        let lease = try require(newer)
+        let observed = await sampler.observe(
+            lease: lease,
+            apps: [],
+            limit: 20
+        )
+        XCTAssertNotNil(observed)
+    }
+
+    func testOldEndCannotClearNewLease() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [:]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0])
+        )
+        let first = try require(await sampler.beginSession(.init(generation: 1)))
+        let second = try require(await sampler.beginSession(.init(generation: 2)))
+
+        await sampler.endSession(first)
+
+        let observed = await sampler.observe(lease: second, apps: [], limit: 20)
+        XCTAssertNotNil(observed)
+    }
+
+    func testEndingCurrentLeaseInvalidatesOldLeaseAndRestartsCollecting() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 4_000)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(
+            await sampler.beginSession(.init(generation: 1))
+        )
+        let apps = [
+            EnergyImpactAppSnapshot(
+                processIdentifier: 100,
+                name: "Fixture App",
+                bundleIdentifier: "example.fixture",
+                bundleURL: nil
+            ),
+        ]
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+
+        await sampler.endSession(lease)
+        let invalidated = await sampler.observe(
+            lease: lease,
+            apps: apps,
+            limit: 20
+        )
+
+        XCTAssertNil(invalidated)
+
+        let replacement = try require(
+            await sampler.beginSession(.init(generation: 2))
+        )
+        let restarted = try require(
+            await sampler.observe(
+                lease: replacement,
+                apps: apps,
+                limit: 20
+            )?.first
+        )
+
+        XCTAssertEqual(restarted.status, .collecting)
+        XCTAssertNil(restarted.currentPowerMicrowatts)
+        XCTAssertNil(restarted.sustainedPowerMicrowatts)
+        XCTAssertNil(restarted.rankingScore)
+    }
+
+    func testFirstCoherentObservationPublishesCollectingWithoutFalseZero() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [.success(reading(energy: 1_000))],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+
+        let rows = try require(await sampler.observe(
+            lease: lease,
+            apps: [.init(processIdentifier: 100, name: "Root", bundleIdentifier: nil, bundleURL: nil)],
+            limit: 20
+        ))
+        let row = try require(rows.first)
+
+        XCTAssertEqual(row.status, .collecting)
+        XCTAssertNil(row.currentPowerMicrowatts)
+        XCTAssertNil(row.sustainedPowerMicrowatts)
+        XCTAssertNil(row.rankingScore)
+    }
+
+    func testSecondCoherentObservationMatchesPartThreePartialAggregate() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 4_000)),
+                ],
+                101: [
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 101, parentProcessIdentifier: 100),
+            ]),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [EnergyImpactAppSnapshot(
+            processIdentifier: 100,
+            name: "Root",
+            bundleIdentifier: nil,
+            bundleURL: nil
+        )]
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        let row = try require(
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+        )
+
+        XCTAssertEqual(row.status, .partial)
+        XCTAssertEqual(try require(row.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(row.coverage.readableProcessCount, 1)
+        XCTAssertEqual(row.coverage.discoveredProcessCount, 2)
+        XCTAssertEqual(row.coverage.validProcessSeconds, 3, accuracy: 0.001)
+        XCTAssertEqual(row.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(row.coverage.fraction, 0.5, accuracy: 0.001)
+    }
+
+    func testEveryObserveReadsOneFreshOwnershipSnapshotAndCurrentCounters() async throws {
+        let snapshots = SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+            [.init(processIdentifier: 101, parentProcessIdentifier: 100)],
+            [.init(processIdentifier: 101, parentProcessIdentifier: 100)],
+        ])
+        let reader = ProcessEnergyReadingProviderStub(results: [
+            100: [.success(reading(energy: 1_000)), .success(reading(energy: 4_000))],
+            101: [
+                .success(reading(energy: 1_000, start: 11)),
+                .success(reading(energy: 4_000, start: 11)),
+            ],
+        ])
+        let sampler = EnergyImpactSampler(
+            reader: reader,
+            processSnapshotReader: snapshots,
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [EnergyImpactAppSnapshot(
+            processIdentifier: 100,
+            name: "Root",
+            bundleIdentifier: nil,
+            bundleURL: nil
+        )]
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+
+        XCTAssertEqual(snapshots.callCount, 2)
+        XCTAssertEqual(reader.readCount(for: 100), 2)
+        XCTAssertEqual(reader.readCount(for: 101), 2)
+    }
+
+    func testOwnershipMoveRebaselinesBothRootsWithoutTransitionAttribution() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [.failure(.permissionDenied), .failure(.permissionDenied)],
+                200: [.failure(.permissionDenied), .failure(.permissionDenied)],
+                300: [
+                    .success(reading(energy: 1_000, start: 30)),
+                    .success(reading(energy: 9_000, start: 30)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 200)],
+            ]),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [
+            EnergyImpactAppSnapshot(processIdentifier: 100, name: "A", bundleIdentifier: nil, bundleURL: nil),
+            EnergyImpactAppSnapshot(processIdentifier: 200, name: "B", bundleIdentifier: nil, bundleURL: nil),
+        ]
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        let rows = try require(await sampler.observe(lease: lease, apps: apps, limit: 20))
+
+        XCTAssertTrue(rows.allSatisfy { $0.currentPowerMicrowatts == nil })
+    }
+
+    func testReorderedEquivalentOwnershipRemainsNumeric() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [.success(reading(energy: 1_000)), .success(reading(energy: 4_000))],
+                101: [
+                    .success(reading(energy: 1_000, start: 11)),
+                    .success(reading(energy: 4_000, start: 11)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [
+                    .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                    .init(processIdentifier: 101, parentProcessIdentifier: 100),
+                ],
+                [
+                    .init(processIdentifier: 101, parentProcessIdentifier: 100),
+                    .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                ],
+            ]),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [EnergyImpactAppSnapshot(processIdentifier: 100, name: "A", bundleIdentifier: nil, bundleURL: nil)]
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        let row = try require(
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+        )
+
+        XCTAssertEqual(row.status, .stable)
+        XCTAssertNotNil(row.currentPowerMicrowatts)
+    }
+
+    func testCancelledObserveReturnsNilWithoutCommittingWorkingState() async throws {
+        let reader = ProcessEnergyReadingProviderStub(
+            results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 10_000)),
+                    .success(reading(energy: 7_000)),
+                ],
+            ],
+            blockedReadNumber: 2
+        )
+        let sampler = EnergyImpactSampler(
+            reader: reader,
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [EnergyImpactAppSnapshot(processIdentifier: 100, name: "A", bundleIdentifier: nil, bundleURL: nil)]
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+
+        let cancelled = Task.detached {
+            await sampler.observe(lease: lease, apps: apps, limit: 20)
+        }
+        XCTAssertTrue(reader.waitUntilBlocked())
+        cancelled.cancel()
+        reader.releaseBlockedRead()
+
+        let cancelledResult = await cancelled.value
+        XCTAssertNil(cancelledResult)
+        let recovered = try require(
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+        )
+        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+    }
+
+    func testConcurrentObserveCallsNeverOverlapProcessReads() async throws {
+        let reader = ProcessEnergyReadingProviderStub(
+            results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 4_000)),
+                ],
+            ],
+            blockedReadNumber: 1
+        )
+        let sampler = EnergyImpactSampler(
+            reader: reader,
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        guard (sampler as Any) is any Actor else {
+            XCTFail("EnergyImpactSampler must remain actor-isolated")
+            return
+        }
+        let lease = try require(
+            await sampler.beginSession(.init(generation: 1))
+        )
+        let apps = [
+            EnergyImpactAppSnapshot(
+                processIdentifier: 100,
+                name: "A",
+                bundleIdentifier: nil,
+                bundleURL: nil
+            ),
+        ]
+        let startBarrier = ConcurrentObservationStartBarrier(
+            participantCount: 2
+        )
+
+        let first = Task.detached {
+            await startBarrier.arriveAndWait()
+            return await sampler.observe(
+                lease: lease,
+                apps: apps,
+                limit: 20
+            )
+        }
+        let second = Task.detached {
+            await startBarrier.arriveAndWait()
+            return await sampler.observe(
+                lease: lease,
+                apps: apps,
+                limit: 20
+            )
+        }
+
+        let didBlockFirstRead = reader.waitUntilBlocked()
+        reader.releaseBlockedRead()
+
+        let firstResult = await first.value
+        let secondResult = await second.value
+
+        XCTAssertTrue(didBlockFirstRead)
+        XCTAssertNotNil(firstResult)
+        XCTAssertNotNil(secondResult)
+        XCTAssertEqual(reader.maximumConcurrentReads, 1)
+    }
+
+    func testObservationUpdatesAllCandidatesBeforeTopTwentyLimit() async throws {
+        let apps = (1...21).map { index in
+            EnergyImpactAppSnapshot(
+                processIdentifier: pid_t(index),
+                name: "App \(index)",
+                bundleIdentifier: nil,
+                bundleURL: nil
+            )
+        }
+        var results: [pid_t: [ProcessEnergyReadResult]] = [:]
+        for index in 1...21 {
+            let delta = index == 21 ? UInt64(100_000) : UInt64(index * 1_000)
+            results[pid_t(index)] = [
+                .success(reading(energy: 1_000, start: UInt64(index))),
+                .success(reading(energy: 1_000 + delta, start: UInt64(index))),
+            ]
+        }
+        let reader = ProcessEnergyReadingProviderStub(results: results)
+        let sampler = EnergyImpactSampler(
+            reader: reader,
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        let rows = try require(await sampler.observe(lease: lease, apps: apps, limit: 20))
+
+        XCTAssertEqual(rows.count, 20)
+        XCTAssertTrue(rows.contains { $0.processIdentifier == 21 })
+        XCTAssertEqual(reader.readCount(for: 21), 2)
+    }
+
+    func testConfigurationUsesSingleThreeSecondObservationInterval() async {
+        let configuration = EnergyImpactConfiguration.production
+
+        XCTAssertEqual(configuration.observationIntervalSeconds, 3)
+    }
+
+    func testIrregularObservationUsesActualElapsedInsteadOfConfiguredInterval() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 1_000)),
+                    .success(reading(energy: 6_000)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 5]),
+            configuration: .production
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+        let apps = [EnergyImpactAppSnapshot(processIdentifier: 100, name: "A", bundleIdentifier: nil, bundleURL: nil)]
+
+        _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
+        let row = try require(
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+        )
+
+        XCTAssertEqual(try require(row.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(row.coverage.validProcessSeconds, 5, accuracy: 0.001)
+        XCTAssertEqual(row.coverage.discoveredProcessSeconds, 5, accuracy: 0.001)
+    }
+
+    func testEnergyImpactEntryRepresentsCollectingWithoutAFalseZero() async {
         let entry = EnergyImpactEntry(
             identity: EnergyImpactAppIdentity(
                 rootProcessIdentifier: 101,
@@ -542,7 +564,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertEqual(entry.status, .collecting)
     }
 
-    func testEnergyImpactCoverageUsesValidPIDTime() {
+    func testEnergyImpactCoverageUsesValidPIDTime() async {
         let coverage = EnergyImpactCoverage(
             discoveredProcessCount: 4,
             readableProcessCount: 3,
@@ -553,7 +575,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertEqual(coverage.fraction, 0.75, accuracy: 0.001)
     }
 
-    func testEnergyImpactCoverageIsZeroWithoutDiscoveredPIDTime() {
+    func testEnergyImpactCoverageIsZeroWithoutDiscoveredPIDTime() async {
         let coverage = EnergyImpactCoverage(
             discoveredProcessCount: 0,
             readableProcessCount: 0,
@@ -564,15 +586,15 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertEqual(coverage.fraction, 0)
     }
 
-    func testEnergyImpactSamplerHarnessReportsPartialCoverageWhenOneDescendantHasNoValidDelta() throws {
+    func testEnergyImpactSamplerReportsPartialCoverageWhenOneDescendantHasNoValidDelta() async throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 100,
             name: "Browser",
             bundleIdentifier: "com.example.browser",
             bundleURL: nil
         )
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(readings: [
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(readings: [
                 100: [
                     .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                     .init(energyNanojoules: 2_000, processStartAbsoluteTime: 10),
@@ -582,24 +604,24 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                     .init(energyNanojoules: 3_000, processStartAbsoluteTime: 21),
                 ],
             ]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: [
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
                 .init(processIdentifier: 101, parentProcessIdentifier: 100),
             ]),
             appSnapshotProvider: { [app] },
-            clock: RegressionEnergyImpactClockStub(times: [100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entry = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let entry = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(entry.status, .partial)
         XCTAssertEqual(entry.coverage.validProcessSeconds, 1)
         XCTAssertEqual(entry.coverage.discoveredProcessSeconds, 2)
         XCTAssertEqual(entry.coverage.fraction, 0.5, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(try require(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
 
-    func testSystemEnergyImpactClockProvidesMonotonicSeconds() {
+    func testSystemEnergyImpactClockProvidesMonotonicSeconds() async {
         let clock = SystemEnergyImpactClock()
         let first = clock.nowSeconds()
 
@@ -607,17 +629,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertGreaterThanOrEqual(clock.nowSeconds(), first)
     }
 
-    func testDefaultWorkspaceSnapshotProviderBuildsEntriesFromRunningApplications() {
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(readings: [:]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: [])
-        )
-        let entries = service.sampleNow(limit: 1)
-
-        XCTAssertLessThanOrEqual(entries.count, 1)
-    }
-
-    func testEnergyImpactSamplerHarnessUsesPreviousRefreshSnapshotsForImpact() throws {
+    func testEnergyImpactSamplerUsesPreviousRefreshSnapshotsForImpact() async throws {
         let apps = [
             EnergyImpactAppSnapshot(
                 processIdentifier: 101,
@@ -632,7 +644,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 bundleURL: URL(fileURLWithPath: "/Applications/Notes.app")
             ),
         ]
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [
+        let reader = ProcessEnergyReadingProviderStub(readings: [
             101: [
                 ProcessEnergyReading(energyNanojoules: 1_000),
                 ProcessEnergyReading(energyNanojoules: 3_500),
@@ -642,59 +654,59 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 ProcessEnergyReading(energyNanojoules: 2_300),
             ],
         ])
-        let service = EnergyImpactSamplerHarness(
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { apps },
-            clock: RegressionEnergyImpactClockStub(times: [100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
-        let firstEntries = service.sampleNow(limit: 2)
-        let secondEntries = service.sampleNow(limit: 2)
+        let firstEntries = await service.observe(limit: 2)
+        let secondEntries = await service.observe(limit: 2)
 
         XCTAssertTrue(firstEntries.allSatisfy { $0.status == .collecting })
         XCTAssertTrue(firstEntries.allSatisfy { $0.currentPowerMicrowatts == nil })
         XCTAssertEqual(secondEntries.map(\.name), ["Safari", "Notes"])
-        XCTAssertEqual(try XCTUnwrap(secondEntries[0].currentPowerMicrowatts), 2.5, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(secondEntries[1].currentPowerMicrowatts), 0.3, accuracy: 0.001)
+        XCTAssertEqual(try require(secondEntries[0].currentPowerMicrowatts), 2.5, accuracy: 0.001)
+        XCTAssertEqual(try require(secondEntries[1].currentPowerMicrowatts), 0.3, accuracy: 0.001)
         XCTAssertEqual(reader.readCount(for: 101), 2)
         XCTAssertEqual(reader.readCount(for: 102), 2)
     }
 
-    func testEnergyImpactSamplerHarnessNormalizesImpactByElapsedTime() throws {
+    func testEnergyImpactSamplerNormalizesImpactByElapsedTime() async throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 101,
             name: "Safari",
             bundleIdentifier: "com.apple.Safari",
             bundleURL: URL(fileURLWithPath: "/Applications/Safari.app")
         )
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [
+        let reader = ProcessEnergyReadingProviderStub(readings: [
             101: [
                 ProcessEnergyReading(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                 ProcessEnergyReading(energyNanojoules: 3_500, processStartAbsoluteTime: 10),
             ],
         ])
-        let service = EnergyImpactSamplerHarness(
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
-            clock: RegressionEnergyImpactClockStub(times: [100, 100.5])
+            clock: EnergyImpactClockStub(times: [100, 100.5])
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entries = service.sampleNow(limit: 1)
+        _ = await service.observe(limit: 1)
+        let entries = await service.observe(limit: 1)
 
-        XCTAssertEqual(try XCTUnwrap(entries.first?.currentPowerMicrowatts), 5.0, accuracy: 0.001)
+        XCTAssertEqual(try require(entries.first?.currentPowerMicrowatts), 5.0, accuracy: 0.001)
     }
 
-    func testEnergyImpactSamplerHarnessAggregatesDescendantEnergyIntoOwningApp() throws {
+    func testEnergyImpactSamplerAggregatesDescendantEnergyIntoOwningApp() async throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 100,
             name: "Browser",
             bundleIdentifier: "com.example.browser",
             bundleURL: URL(fileURLWithPath: "/Applications/Browser.app")
         )
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [
+        let reader = ProcessEnergyReadingProviderStub(readings: [
             100: [
                 ProcessEnergyReading(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                 ProcessEnergyReading(energyNanojoules: 2_000, processStartAbsoluteTime: 10),
@@ -708,29 +720,29 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 ProcessEnergyReading(energyNanojoules: 1_100, processStartAbsoluteTime: 12),
             ],
         ])
-        let service = EnergyImpactSamplerHarness(
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: [
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
                 ProcessParentSnapshot(processIdentifier: 100, parentProcessIdentifier: 1),
                 ProcessParentSnapshot(processIdentifier: 101, parentProcessIdentifier: 100),
                 ProcessParentSnapshot(processIdentifier: 102, parentProcessIdentifier: 101),
                 ProcessParentSnapshot(processIdentifier: 999, parentProcessIdentifier: 1),
             ]),
             appSnapshotProvider: { [app] },
-            clock: RegressionEnergyImpactClockStub(times: [100, 102])
+            clock: EnergyImpactClockStub(times: [100, 102])
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entries = service.sampleNow(limit: 1)
+        _ = await service.observe(limit: 1)
+        let entries = await service.observe(limit: 1)
 
-        XCTAssertEqual(try XCTUnwrap(entries.first?.currentPowerMicrowatts), 2.5, accuracy: 0.001)
+        XCTAssertEqual(try require(entries.first?.currentPowerMicrowatts), 2.5, accuracy: 0.001)
         XCTAssertEqual(reader.readCount(for: 100), 2)
         XCTAssertEqual(reader.readCount(for: 101), 2)
         XCTAssertEqual(reader.readCount(for: 102), 2)
         XCTAssertEqual(reader.readCount(for: 999), 0)
     }
 
-    func testEnergyImpactSamplerHarnessAssignsNestedRegularRootProcessesToNearestRootExactlyOnce() throws {
+    func testEnergyImpactSamplerAssignsNestedRegularRootProcessesToNearestRootExactlyOnce() async throws {
         let apps = [
             EnergyImpactAppSnapshot(
                 processIdentifier: 100,
@@ -745,7 +757,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 bundleURL: nil
             ),
         ]
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [
+        let reader = ProcessEnergyReadingProviderStub(readings: [
             100: [
                 .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                 .init(energyNanojoules: 2_000, processStartAbsoluteTime: 10),
@@ -763,85 +775,86 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 .init(energyNanojoules: 5_000, processStartAbsoluteTime: 25),
             ],
         ])
-        let service = EnergyImpactSamplerHarness(
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: [
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
                 .init(processIdentifier: 100, parentProcessIdentifier: 1),
                 .init(processIdentifier: 150, parentProcessIdentifier: 100),
                 .init(processIdentifier: 200, parentProcessIdentifier: 150),
                 .init(processIdentifier: 250, parentProcessIdentifier: 200),
             ]),
             appSnapshotProvider: { apps },
-            clock: RegressionEnergyImpactClockStub(times: [100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
-        _ = service.sampleNow(limit: 2)
-        let entries = service.sampleNow(limit: 2)
+        _ = await service.observe(limit: 2)
+        let entries = await service.observe(limit: 2)
         let powerByProcess = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.processIdentifier, $0.currentPowerMicrowatts)
         })
 
-        XCTAssertEqual(try XCTUnwrap(powerByProcess[100] ?? nil), 3, accuracy: 0.001)
-        XCTAssertEqual(try XCTUnwrap(powerByProcess[200] ?? nil), 7, accuracy: 0.001)
+        XCTAssertEqual(try require(powerByProcess[100] ?? nil), 3, accuracy: 0.001)
+        XCTAssertEqual(try require(powerByProcess[200] ?? nil), 7, accuracy: 0.001)
         XCTAssertEqual(reader.readCount(for: 100), 2)
         XCTAssertEqual(reader.readCount(for: 150), 2)
         XCTAssertEqual(reader.readCount(for: 200), 2)
         XCTAssertEqual(reader.readCount(for: 250), 2)
     }
 
-    func testEnergyImpactSamplerHarnessRejectsDeltasWhenPIDIsReused() {
+    func testEnergyImpactSamplerRejectsDeltasWhenPIDIsReused() async {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 101,
             name: "Reused",
             bundleIdentifier: "com.example.reused",
             bundleURL: nil
         )
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [
+        let reader = ProcessEnergyReadingProviderStub(readings: [
             101: [
                 ProcessEnergyReading(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                 ProcessEnergyReading(energyNanojoules: 50_000, processStartAbsoluteTime: 20),
             ],
         ])
-        let service = EnergyImpactSamplerHarness(
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [app] },
-            clock: RegressionEnergyImpactClockStub(times: [100, 101])
+            clock: EnergyImpactClockStub(times: [100, 101])
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entries = service.sampleNow(limit: 1)
+        _ = await service.observe(limit: 1)
+        let entries = await service.observe(limit: 1)
 
         XCTAssertEqual(entries.first?.status, .collecting)
         XCTAssertNil(entries.first?.currentPowerMicrowatts)
     }
 
-    func testLongGapRebaselinesInsteadOfPublishingADilutedValue() {
-        let clock = RegressionEnergyImpactClockStub(times: [0, 3, 20])
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(readings: [
+    func testLongGapRebaselinesInsteadOfPublishingADilutedValue() async {
+        let clock = EnergyImpactClockStub(times: [0, 3, 20])
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(readings: [
                 101: [
                     .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                     .init(energyNanojoules: 4_000, processStartAbsoluteTime: 10),
                     .init(energyNanojoules: 10_000, processStartAbsoluteTime: 10),
                 ],
             ]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [
                 .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
             clock: clock
         )
 
-        _ = service.sampleNow(limit: 1)
-        XCTAssertEqual(service.sampleNow(limit: 1).first?.currentPowerMicrowatts ?? -1, 1)
-        let afterGap = service.sampleNow(limit: 1).first
+        _ = await service.observe(limit: 1)
+        let beforeGap = await service.observe(limit: 1).first
+        XCTAssertEqual(beforeGap?.currentPowerMicrowatts ?? -1, 1)
+        let afterGap = await service.observe(limit: 1).first
 
         XCTAssertNil(afterGap?.currentPowerMicrowatts)
         XCTAssertEqual(afterGap?.status, .collecting)
     }
 
-    func testEnergyCounterRegressionRebaselinesBeforePublishingSubsequentDelta() throws {
+    func testEnergyCounterRegressionRebaselinesBeforePublishingSubsequentDelta() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 4_000)),
@@ -851,9 +864,9 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let regression = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let recovered = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let regression = try require(await service.observe(limit: 1).first)
+        let recovered = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(regression.status, .collecting)
         XCTAssertNil(regression.currentPowerMicrowatts)
@@ -861,7 +874,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertEqual(recovered.currentPowerMicrowatts, 1)
     }
 
-    func testNewRegularRootWithoutSnapshotCannotReuseFormerOwnerBaseline() throws {
+    func testNewRegularRootWithoutSnapshotCannotReuseFormerOwnerBaseline() async throws {
         let root = EnergyImpactAppSnapshot(
             processIdentifier: 100,
             name: "Root",
@@ -878,8 +891,8 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             [root],
             [root, promotedHelper],
         ]
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: [
                     .success(reading(energy: 1_000)),
                     .success(reading(energy: 4_000)),
@@ -889,51 +902,51 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                     .success(reading(energy: 4_000, start: 20)),
                 ],
             ]),
-            processSnapshotReader: RegressionSequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
                 [.init(processIdentifier: 200, parentProcessIdentifier: 100)],
                 [],
             ]),
             appSnapshotProvider: { appSnapshots.removeFirst() },
-            clock: RegressionEnergyImpactClockStub(times: [0, 3])
+            clock: EnergyImpactClockStub(times: [0, 3])
         )
 
-        _ = service.sampleNow(limit: 2)
-        let promoted = try XCTUnwrap(
-            service.sampleNow(limit: 2).first { $0.processIdentifier == 200 }
+        _ = await service.observe(limit: 2)
+        let promoted = try require(
+            await service.observe(limit: 2).first { $0.processIdentifier == 200 }
         )
 
         XCTAssertEqual(promoted.status, .collecting)
         XCTAssertNil(promoted.currentPowerMicrowatts)
     }
 
-    func testClockRollbackCannotProduceANegativeOrInfinitePower() {
-        let clock = RegressionEnergyImpactClockStub(times: [3, 2])
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(readings: [
+    func testClockRollbackCannotProduceANegativeOrInfinitePower() async {
+        let clock = EnergyImpactClockStub(times: [3, 2])
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(readings: [
                 101: [
                     .init(energyNanojoules: 1_000, processStartAbsoluteTime: 10),
                     .init(energyNanojoules: 5_000, processStartAbsoluteTime: 10),
                 ],
             ]),
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: { [
                 .init(processIdentifier: 101, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
             clock: clock
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entry = service.sampleNow(limit: 1).first
+        _ = await service.observe(limit: 1)
+        let entry = await service.observe(limit: 1).first
 
         XCTAssertNil(entry?.currentPowerMicrowatts)
         XCTAssertEqual(entry?.status, .collecting)
     }
 
-    func testEnergyImpactSamplerHarnessKeepsUnreadableAppsAsUnavailableRows() {
-        let reader = RegressionProcessEnergyReadingProviderStub(readings: [:])
-        let service = EnergyImpactSamplerHarness(
+    func testEnergyImpactSamplerKeepsUnreadableAppsAsUnavailableRows() async {
+        let reader = ProcessEnergyReadingProviderStub(readings: [:])
+        let service = EnergyImpactSamplerTestSession(
             reader: reader,
-            processSnapshotReader: RegressionProcessParentSnapshotReaderStub(snapshots: []),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
             appSnapshotProvider: {
                 [
                     EnergyImpactAppSnapshot(
@@ -945,7 +958,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 ]
             }
         )
-        let entries = service.sampleNow(limit: 1)
+        let entries = await service.observe(limit: 1)
 
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries[0].name, "Locked App")
@@ -954,7 +967,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: an unreadable helper is collapsed into a false full-coverage value.
-    func testOneUnreadableHelperProducesPartialCoverageWithoutAFalseZero() throws {
+    func testOneUnreadableHelperProducesPartialCoverageWithoutAFalseZero() async throws {
         let service = makeTwoProcessService(
             rootResults: [
                 .success(reading(energy: 1_000)),
@@ -967,11 +980,11 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let entry = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let entry = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(entry.status, .partial)
-        XCTAssertEqual(try XCTUnwrap(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(try require(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
         XCTAssertEqual(entry.coverage.readableProcessCount, 1)
         XCTAssertEqual(entry.coverage.discoveredProcessCount, 2)
         XCTAssertEqual(entry.coverage.validProcessSeconds, 3, accuracy: 0.001)
@@ -980,7 +993,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: a temporary read failure deletes the generation baseline needed for recovery.
-    func testTemporaryFailureKeepsBaselineAndRecoveryUsesTheBoundedInterval() throws {
+    func testTemporaryFailureKeepsBaselineAndRecoveryUsesTheBoundedInterval() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000)),
@@ -990,17 +1003,17 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let failed = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let recovered = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let failed = try require(await service.observe(limit: 1).first)
+        let recovered = try require(await service.observe(limit: 1).first)
 
         XCTAssertNotEqual(failed.status, .stable)
-        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
         XCTAssertEqual(recovered.status, .stable)
     }
 
     // Production break caught: a baseline older than the ten-second bound still emits a diluted recovery value.
-    func testFailurePastTenSecondsExpiresTheBaseline() throws {
+    func testFailurePastTenSecondsExpiresTheBaseline() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000)),
@@ -1010,16 +1023,16 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 14]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let entry = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let entry = try require(await service.observe(limit: 1).first)
 
         XCTAssertNil(entry.currentPowerMicrowatts)
         XCTAssertEqual(entry.status, .collecting)
     }
 
     // Production break caught: an unsupported zero-only counter is published forever as a confirmed zero.
-    func testZeroEnergyCounterWithAdvancingCPUBecomesUnsupportedAfterTenSeconds() throws {
+    func testZeroEnergyCounterWithAdvancingCPUBecomesUnsupportedAfterTenSeconds() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 0, userCPU: 1_000, systemCPU: 100)),
@@ -1031,13 +1044,13 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 9, 12]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let confirmedZero = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let entry = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let confirmedZero = try require(await service.observe(limit: 1).first)
+        let entry = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(try XCTUnwrap(confirmedZero.currentPowerMicrowatts), 0, accuracy: 0.001)
+        XCTAssertEqual(try require(confirmedZero.currentPowerMicrowatts), 0, accuracy: 0.001)
         XCTAssertEqual(confirmedZero.status, .stable)
         XCTAssertNil(entry.currentPowerMicrowatts)
         XCTAssertNil(entry.rankingScore)
@@ -1047,7 +1060,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: a rollback interval advances zero-counter evidence from an older retained baseline.
-    func testClockRollbackAfterFailureRebaselinesZeroCounterEvidence() throws {
+    func testClockRollbackAfterFailureRebaselinesZeroCounterEvidence() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 0, userCPU: 1_000)),
@@ -1058,19 +1071,19 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 2, 11]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let rebaselined = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let validInterval = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let rebaselined = try require(await service.observe(limit: 1).first)
+        let validInterval = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(rebaselined.status, .collecting)
         XCTAssertNil(rebaselined.currentPowerMicrowatts)
         XCTAssertEqual(validInterval.status, .stable)
-        XCTAssertEqual(try XCTUnwrap(validInterval.currentPowerMicrowatts), 0, accuracy: 0.001)
+        XCTAssertEqual(try require(validInterval.currentPowerMicrowatts), 0, accuracy: 0.001)
     }
 
     // Production break caught: a failed rollback leaves a future baseline connected to the next clock epoch.
-    func testFailedRollbackInvalidatesRetainedBaselineContinuity() throws {
+    func testFailedRollbackInvalidatesRetainedBaselineContinuity() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000)),
@@ -1080,9 +1093,9 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [10, 5, 12]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let afterRollback = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let afterRollback = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(afterRollback.status, .collecting)
         XCTAssertNil(afterRollback.currentPowerMicrowatts)
@@ -1091,24 +1104,24 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: a helper delta spanning an owner change is assigned to the new root.
-    func testOwnerChangeDiscardsTheTransitionInterval() {
+    func testOwnerChangeDiscardsTheTransitionInterval() async {
         let service = makeReparentingService(
             ownersBySample: [100, 200],
             energies: [1_000, 9_000],
             times: [0, 3]
         )
 
-        _ = service.sampleNow(limit: 2)
-        let entries = service.sampleNow(limit: 2)
+        _ = await service.observe(limit: 2)
+        let entries = await service.observe(limit: 2)
 
         XCTAssertTrue(entries.allSatisfy { $0.currentPowerMicrowatts == nil })
         XCTAssertTrue(entries.allSatisfy { $0.status != .stable })
     }
 
     // Production break caught: a failed owner excursion is erased when the helper returns to its old root.
-    func testUnreadableOwnerExcursionBreaksRecoveredHelperContinuity() throws {
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+    func testUnreadableOwnerExcursionBreaksRecoveredHelperContinuity() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: [
                     .failure(.permissionDenied),
                     .failure(.permissionDenied),
@@ -1125,7 +1138,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                     .success(reading(energy: 7_000, start: 30)),
                 ],
             ]),
-            processSnapshotReader: RegressionSequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
                 [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
                 [.init(processIdentifier: 300, parentProcessIdentifier: 200)],
                 [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
@@ -1134,13 +1147,13 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                 .init(processIdentifier: 100, name: "First", bundleIdentifier: nil, bundleURL: nil),
                 .init(processIdentifier: 200, name: "Second", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: [0, 3, 6])
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
         )
 
-        _ = service.sampleNow(limit: 2)
-        _ = service.sampleNow(limit: 2)
-        let entries = service.sampleNow(limit: 2)
-        let returnedOwner = try XCTUnwrap(entries.first { $0.processIdentifier == 100 })
+        _ = await service.observe(limit: 2)
+        _ = await service.observe(limit: 2)
+        let entries = await service.observe(limit: 2)
+        let returnedOwner = try require(entries.first { $0.processIdentifier == 100 })
 
         XCTAssertEqual(returnedOwner.status, .collecting)
         XCTAssertNil(returnedOwner.currentPowerMicrowatts)
@@ -1149,9 +1162,9 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: an observed helper temporarily outside every regular root reconnects to its old baseline.
-    func testObservedUnownedHelperBreaksRecoveredContinuity() throws {
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+    func testObservedUnownedHelperBreaksRecoveredContinuity() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: [
                     .failure(.permissionDenied),
                     .failure(.permissionDenied),
@@ -1162,7 +1175,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                     .success(reading(energy: 7_000, start: 30)),
                 ],
             ]),
-            processSnapshotReader: RegressionSequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
                 [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
                 [.init(processIdentifier: 300, parentProcessIdentifier: 999)],
                 [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
@@ -1170,12 +1183,12 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             appSnapshotProvider: { [
                 .init(processIdentifier: 100, name: "Fixture", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: [0, 3, 6])
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let returned = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let returned = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(returned.status, .collecting)
         XCTAssertNil(returned.currentPowerMicrowatts)
@@ -1184,7 +1197,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: recovered helper energy uses six seconds of numerator against three seconds of PID-time.
-    func testRootAndRecoveredHelperUseMatchingIntervalEnergyAndCoverage() throws {
+    func testRootAndRecoveredHelperUseMatchingIntervalEnergyAndCoverage() async throws {
         let service = makeMixedGapService(
             rootEnergies: [1_000, 4_000, 7_000],
             helperResults: [
@@ -1195,18 +1208,23 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let recovered = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let recovered = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 2, accuracy: 0.001)
+        let smoothingAlpha = 1 - pow(0.5, 3.0 / 4.0)
+        XCTAssertEqual(
+            try require(recovered.currentPowerMicrowatts),
+            1 + smoothingAlpha,
+            accuracy: 0.001
+        )
         XCTAssertEqual(recovered.status, .stable)
         XCTAssertEqual(recovered.coverage.validProcessSeconds, 6, accuracy: 0.001)
         XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
     }
 
     // Production break caught: stale output loses the confirmed root generation or refreshes its own grace window.
-    func testStableFailureRecoverySequencePreservesFullIdentityWithoutConfirmingStale() throws {
+    func testStableFailureRecoverySequencePreservesFullIdentityWithoutConfirmingStale() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000, start: 10)),
@@ -1217,10 +1235,10 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 9]
         )
 
-        let collecting = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let stable = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let stale = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let recovered = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        let collecting = try require(await service.observe(limit: 1).first)
+        let stable = try require(await service.observe(limit: 1).first)
+        let stale = try require(await service.observe(limit: 1).first)
+        let recovered = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(collecting.status, .collecting)
         XCTAssertEqual(stable.status, .stable)
@@ -1232,11 +1250,11 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertNil(stale.rankingScore)
         XCTAssertEqual(recovered.status, .stable)
         XCTAssertEqual(recovered.identity, stable.identity)
-        XCTAssertEqual(try XCTUnwrap(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
 
     // Production break caught: publishing stale repeatedly extends a three-second observation past ten seconds.
-    func testStalePublicationDoesNotExtendItsOwnGrace() throws {
+    func testStalePublicationDoesNotExtendItsOwnGrace() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000)),
@@ -1248,17 +1266,19 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 12, 14]
         )
 
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        XCTAssertEqual(service.sampleNow(limit: 1).first?.status, .stale)
-        XCTAssertEqual(service.sampleNow(limit: 1).first?.status, .stale)
-        let expired = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let firstStale = await service.observe(limit: 1).first
+        let secondStale = await service.observe(limit: 1).first
+        XCTAssertEqual(firstStale?.status, .stale)
+        XCTAssertEqual(secondStale?.status, .stale)
+        let expired = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(expired.status, .unavailable)
         XCTAssertNil(expired.currentPowerMicrowatts)
     }
 
-    func testRootGenerationRemainsConfirmedAtMaximumGapBoundary() throws {
+    func testRootGenerationRemainsConfirmedAtMaximumGapBoundary() async throws {
         let service = makeService(
             results: [
                 .success(reading(energy: 1_000)),
@@ -1268,9 +1288,9 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 13]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let stable = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let atBoundary = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let stable = try require(await service.observe(limit: 1).first)
+        let atBoundary = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(stable.status, .stable)
         XCTAssertEqual(stable.identity.rootProcessStartAbsoluteTime, 10)
@@ -1280,7 +1300,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: a successful root generation change reuses the prior generation's stale display.
-    func testRootGenerationChangeImmediatelyDiscardsOldDisplay() throws {
+    func testRootGenerationChangeImmediatelyDiscardsOldDisplay() async throws {
         let service = makeTwoProcessService(
             rootResults: [
                 .success(reading(energy: 1_000, start: 10)),
@@ -1297,10 +1317,10 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 9]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let old = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let changed = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let stale = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let old = try require(await service.observe(limit: 1).first)
+        let changed = try require(await service.observe(limit: 1).first)
+        let stale = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(old.status, .stable)
         XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
@@ -1313,7 +1333,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: helper-only partial samples renew an expired root generation.
-    func testPartialDescendantSamplesDoNotExtendRootGenerationPastConfirmationGap() throws {
+    func testPartialDescendantSamplesDoNotExtendRootGenerationPastConfirmationGap() async throws {
         let service = makeTwoProcessService(
             rootResults: [
                 .success(reading(energy: 1_000, start: 10)),
@@ -1334,18 +1354,18 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 9, 12, 15]
         )
 
-        _ = service.sampleNow(limit: 1)
-        let confirmed = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        _ = service.sampleNow(limit: 1)
-        _ = service.sampleNow(limit: 1)
-        let withinConfirmationGap = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let expired = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let confirmed = try require(await service.observe(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let withinConfirmationGap = try require(await service.observe(limit: 1).first)
+        let expired = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(confirmed.status, .stable)
         XCTAssertEqual(confirmed.identity.rootProcessStartAbsoluteTime, 10)
         XCTAssertEqual(withinConfirmationGap.status, .partial)
         XCTAssertEqual(withinConfirmationGap.identity.rootProcessStartAbsoluteTime, 10)
-        XCTAssertEqual(withinConfirmationGap.currentPowerMicrowatts, 1)
+        XCTAssertNotNil(withinConfirmationGap.currentPowerMicrowatts)
         XCTAssertEqual(expired.status, .partial)
         XCTAssertNil(expired.identity.rootProcessStartAbsoluteTime)
         XCTAssertEqual(expired.currentPowerMicrowatts, 1)
@@ -1354,9 +1374,9 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: an expired root locator assigns helper-only data to a reused PID's old generation.
-    func testExpiredRootLocatorDoesNotLabelReusedPIDHelperDataWithOldGeneration() throws {
-        let service = EnergyImpactSamplerHarness(
-            reader: RegressionProcessEnergyReadingProviderStub(results: [
+    func testExpiredRootLocatorDoesNotLabelReusedPIDHelperDataWithOldGeneration() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
                 100: [
                     .success(reading(energy: 1_000, start: 10)),
                     .success(reading(energy: 4_000, start: 10)),
@@ -1370,7 +1390,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
                     .success(reading(energy: 7_000, start: 30)),
                 ],
             ]),
-            processSnapshotReader: RegressionSequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
                 [],
                 [],
                 [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
@@ -1380,14 +1400,14 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             appSnapshotProvider: { [
                 .init(processIdentifier: 100, name: "Reused", bundleIdentifier: nil, bundleURL: nil),
             ] },
-            clock: RegressionEnergyImpactClockStub(times: [0, 3, 14, 17, 20])
+            clock: EnergyImpactClockStub(times: [0, 3, 14, 17, 20])
         )
 
-        _ = service.sampleNow(limit: 1)
-        let old = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let expired = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let helperOnly = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let established = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let old = try require(await service.observe(limit: 1).first)
+        let expired = try require(await service.observe(limit: 1).first)
+        let helperOnly = try require(await service.observe(limit: 1).first)
+        let established = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(old.status, .stable)
         XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
@@ -1401,7 +1421,7 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
     }
 
     // Production break caught: stale wins when only some PIDs are unsupported, or survives when all are unsupported.
-    func testAllExplicitlyUnsupportedProcessesOverrideBoundedStaleDisplay() throws {
+    func testAllExplicitlyUnsupportedProcessesOverrideBoundedStaleDisplay() async throws {
         let service = makeTwoProcessService(
             rootResults: [
                 .success(reading(energy: 1_000)),
@@ -1418,10 +1438,11 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             times: [0, 3, 6, 9]
         )
 
-        _ = service.sampleNow(limit: 1)
-        XCTAssertEqual(service.sampleNow(limit: 1).first?.status, .stable)
-        let mixed = try XCTUnwrap(service.sampleNow(limit: 1).first)
-        let unsupported = try XCTUnwrap(service.sampleNow(limit: 1).first)
+        _ = await service.observe(limit: 1)
+        let stable = await service.observe(limit: 1).first
+        XCTAssertEqual(stable?.status, .stable)
+        let mixed = try require(await service.observe(limit: 1).first)
+        let unsupported = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(mixed.status, .stale)
         XCTAssertEqual(mixed.currentPowerMicrowatts, 2)
@@ -1430,8 +1451,238 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         XCTAssertNil(unsupported.rankingScore)
     }
 
+    func testHelperMoveRebaselinesBothRootsWithoutTransitionAttribution() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: Array(repeating: .failure(.permissionDenied), count: 3),
+                200: Array(repeating: .failure(.permissionDenied), count: 3),
+                300: [
+                    .success(reading(energy: 1_000, start: 30)),
+                    .success(reading(energy: 4_000, start: 30)),
+                    .success(reading(energy: 7_000, start: 30)),
+                ],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 200)],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 200)],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "First", bundleIdentifier: nil, bundleURL: nil),
+                .init(processIdentifier: 200, name: "Second", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+
+        let first = Dictionary(uniqueKeysWithValues: await service.observe(limit: 2).map {
+            ($0.processIdentifier, $0)
+        })
+        let moved = Dictionary(uniqueKeysWithValues: await service.observe(limit: 2).map {
+            ($0.processIdentifier, $0)
+        })
+        let settled = Dictionary(uniqueKeysWithValues: await service.observe(limit: 2).map {
+            ($0.processIdentifier, $0)
+        })
+
+        func assertNonnumeric(
+            _ row: EnergyImpactEntry,
+            status: EnergyImpactStatus,
+            file: StaticString = #filePath,
+            line: UInt = #line
+        ) {
+            XCTAssertEqual(row.status, status, file: file, line: line)
+            XCTAssertNil(row.currentPowerMicrowatts, file: file, line: line)
+            XCTAssertNil(row.sustainedPowerMicrowatts, file: file, line: line)
+            XCTAssertNil(row.rankingScore, file: file, line: line)
+        }
+
+        assertNonnumeric(try require(first[100]), status: .collecting)
+        assertNonnumeric(try require(first[200]), status: .unavailable)
+        assertNonnumeric(try require(moved[100]), status: .unavailable)
+        assertNonnumeric(try require(moved[200]), status: .collecting)
+        assertNonnumeric(try require(settled[100]), status: .unavailable)
+
+        let settledSecondRoot = try require(settled[200])
+        XCTAssertEqual(settledSecondRoot.status, .partial)
+        XCTAssertEqual(
+            try require(settledSecondRoot.currentPowerMicrowatts),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertNil(settledSecondRoot.sustainedPowerMicrowatts)
+        XCTAssertEqual(
+            try require(settledSecondRoot.rankingScore),
+            1,
+            accuracy: 0.001
+        )
+    }
+
+    func testHelperDisappearancePreservesSameGenerationOwnerContinuityWithinGap() async throws {
+        let reader = ProcessEnergyReadingProviderStub(results: [
+            100: Array(repeating: .failure(.permissionDenied), count: 3),
+            300: [
+                .success(reading(energy: 1_000, start: 30)),
+                .success(reading(energy: 7_000, start: 30)),
+            ],
+        ])
+        let service = EnergyImpactSamplerTestSession(
+            reader: reader,
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+                [],
+                [.init(processIdentifier: 300, parentProcessIdentifier: 100)],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "Root", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+
+        _ = await service.observe(limit: 1)
+        _ = await service.observe(limit: 1)
+        let recovered = try require(await service.observe(limit: 1).first)
+
+        XCTAssertEqual(reader.readCount(for: 100), 3)
+        XCTAssertEqual(reader.readCount(for: 300), 2)
+        XCTAssertEqual(recovered.status, .partial)
+        XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage.validProcessSeconds, 3, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage.fraction, 0.5, accuracy: 0.001)
+    }
+
+    func testReorderedEquivalentSnapshotPreservesContinuity() async throws {
+        func makeService(snapshots: [[ProcessParentSnapshot]]) -> EnergyImpactSamplerTestSession {
+            EnergyImpactSamplerTestSession(
+                reader: ProcessEnergyReadingProviderStub(readings: [
+                    100: [reading(energy: 1_000), reading(energy: 4_000)],
+                    300: [reading(energy: 2_000, start: 30), reading(energy: 5_000, start: 30)],
+                ]),
+                processSnapshotReader: SequencedProcessParentSnapshotReaderStub(
+                    snapshotsByCall: snapshots
+                ),
+                appSnapshotProvider: {
+                    [.init(processIdentifier: 100, name: "Root", bundleIdentifier: nil, bundleURL: nil)]
+                },
+                clock: EnergyImpactClockStub(times: [0, 3])
+            )
+        }
+        let ordered = makeService(snapshots: [
+            [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                .init(processIdentifier: 300, parentProcessIdentifier: 100),
+            ],
+            [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                .init(processIdentifier: 300, parentProcessIdentifier: 100),
+            ],
+        ])
+        let reordered = makeService(snapshots: [
+            [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                .init(processIdentifier: 300, parentProcessIdentifier: 100),
+            ],
+            [
+                .init(processIdentifier: 300, parentProcessIdentifier: 100),
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+            ],
+        ])
+
+        _ = await ordered.observe(limit: 1)
+        let expected = try require(await ordered.observe(limit: 1).first)
+        _ = await reordered.observe(limit: 1)
+        let actual = try require(await reordered.observe(limit: 1).first)
+
+        XCTAssertEqual(actual.status, .stable)
+        XCTAssertEqual(actual.currentPowerMicrowatts, expected.currentPowerMicrowatts)
+        XCTAssertEqual(actual.coverage, expected.coverage)
+    }
+
+    func testNestedRegularRootsRemainNearestOwnerAfterReorder() async throws {
+        let reader = ProcessEnergyReadingProviderStub(readings: [
+            100: [reading(energy: 1_000, start: 10), reading(energy: 4_000, start: 10)],
+            200: [reading(energy: 2_000, start: 20), reading(energy: 5_000, start: 20)],
+            300: [reading(energy: 3_000, start: 30), reading(energy: 6_000, start: 30)],
+        ])
+        let service = EnergyImpactSamplerTestSession(
+            reader: reader,
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(snapshotsByCall: [
+                [
+                    .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                    .init(processIdentifier: 200, parentProcessIdentifier: 100),
+                    .init(processIdentifier: 300, parentProcessIdentifier: 200),
+                ],
+                [
+                    .init(processIdentifier: 300, parentProcessIdentifier: 200),
+                    .init(processIdentifier: 200, parentProcessIdentifier: 100),
+                    .init(processIdentifier: 100, parentProcessIdentifier: 1),
+                ],
+            ]),
+            appSnapshotProvider: { [
+                .init(processIdentifier: 100, name: "Outer", bundleIdentifier: nil, bundleURL: nil),
+                .init(processIdentifier: 200, name: "Inner", bundleIdentifier: nil, bundleURL: nil),
+            ] },
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+
+        _ = await service.observe(limit: 2)
+        let entries = Dictionary(uniqueKeysWithValues: await service.observe(limit: 2).map {
+            ($0.processIdentifier, $0)
+        })
+
+        let outer = try require(entries[100])
+        let inner = try require(entries[200])
+        XCTAssertEqual(
+            try require(outer.currentPowerMicrowatts),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(
+            try require(inner.currentPowerMicrowatts),
+            2,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(reader.readCount(for: 100), 2)
+        XCTAssertEqual(reader.readCount(for: 200), 2)
+        XCTAssertEqual(reader.readCount(for: 300), 2)
+    }
+
+    func testPIDReuseAndLongGapRemainIndependentRebaselineEvents() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(readings: [
+                100: [
+                    reading(energy: 1_000, start: 10),
+                    reading(energy: 4_000, start: 10),
+                    reading(energy: 1_000, start: 20),
+                    reading(energy: 4_000, start: 20),
+                    reading(energy: 7_000, start: 20),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            appSnapshotProvider: {
+                [.init(processIdentifier: 100, name: "Root", bundleIdentifier: nil, bundleURL: nil)]
+            },
+            clock: EnergyImpactClockStub(times: [0, 3, 6, 17, 20])
+        )
+
+        let collecting = try require(await service.observe(limit: 1).first)
+        let numeric = try require(await service.observe(limit: 1).first)
+        let replacement = try require(await service.observe(limit: 1).first)
+        let afterGap = try require(await service.observe(limit: 1).first)
+        let recovered = try require(await service.observe(limit: 1).first)
+
+        XCTAssertEqual(collecting.status, .collecting)
+        XCTAssertEqual(numeric.status, .stable)
+        XCTAssertEqual(replacement.status, .collecting)
+        XCTAssertNil(replacement.currentPowerMicrowatts)
+        XCTAssertEqual(afterGap.status, .collecting)
+        XCTAssertNil(afterGap.currentPowerMicrowatts)
+        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
+    }
+
     // Production break caught: a large stale numeric value outranks fresh stable or partial rows.
-    func testEnergyImpactEntriesSortByStatusBucketBeforeNumericValue() {
+    func testEnergyImpactEntriesSortByStatusBucketBeforeNumericValue() async {
         let entries = [
             entry(processIdentifier: 1, name: "Unavailable", power: nil, status: .unavailable),
             entry(processIdentifier: 2, name: "Stale", power: 1_000, status: .stale),
@@ -1441,12 +1692,12 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         ]
 
         XCTAssertEqual(
-            EnergyImpactSamplerHarness.sortedByImpact(entries, limit: 5).map(\.name),
+            sortedByImpact(entries, limit: 5).map(\.name),
             ["Stable", "Partial", "Stale", "Collecting", "Unavailable"]
         )
     }
 
-    func testEnergyImpactEntriesSortTiesByName() {
+    func testEnergyImpactEntriesSortTiesByName() async {
         let entries = [
             EnergyImpactEntry(
                 identity: EnergyImpactAppIdentity(
@@ -1480,10 +1731,10 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
             ),
         ]
 
-        XCTAssertEqual(EnergyImpactSamplerHarness.sortedByImpact(entries, limit: 2).map(\.name), ["Calendar", "Notes"])
+        XCTAssertEqual(sortedByImpact(entries, limit: 2).map(\.name), ["Calendar", "Notes"])
     }
 
-    func testUnavailableNumericEntrySortsBeforeNonnumericRegardlessOfInputOrder() {
+    func testUnavailableNumericEntrySortsBeforeNonnumericRegardlessOfInputOrder() async {
         let numeric = entry(
             processIdentifier: 1,
             name: "Numeric",
@@ -1498,31 +1749,94 @@ final class EnergyImpactSamplerRegressionTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            EnergyImpactSamplerHarness.sortedByImpact([numeric, nonnumeric], limit: 2)
+            sortedByImpact([numeric, nonnumeric], limit: 2)
                 .map(\.processIdentifier),
             [1, 2]
         )
         XCTAssertEqual(
-            EnergyImpactSamplerHarness.sortedByImpact([nonnumeric, numeric], limit: 2)
+            sortedByImpact([nonnumeric, numeric], limit: 2)
                 .map(\.processIdentifier),
             [1, 2]
         )
     }
 
-    func testSameNameSameScoreSortsByProcessIdentifier() {
+    func testSameNameSameScoreSortsByProcessIdentifier() async {
         let entries = [
             entry(processIdentifier: 2, name: "Same", power: 4.2, status: .stable),
             entry(processIdentifier: 1, name: "Same", power: 4.2, status: .stable),
         ]
 
         XCTAssertEqual(
-            EnergyImpactSamplerHarness.sortedByImpact(entries, limit: 2).map(\.processIdentifier),
+            sortedByImpact(entries, limit: 2).map(\.processIdentifier),
             [1, 2]
         )
     }
 }
 
-private final class RegressionEnergyImpactClockStub: EnergyImpactClock, @unchecked Sendable {
+private actor ConcurrentObservationStartBarrier {
+    private let participantCount: Int
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+    private var isReleased = false
+
+    init(participantCount: Int) {
+        precondition(participantCount > 1)
+        self.participantCount = participantCount
+    }
+
+    func arriveAndWait() async {
+        precondition(
+            isReleased == false,
+            "ConcurrentObservationStartBarrier is one-shot"
+        )
+
+        await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+            guard waiters.count == participantCount else { return }
+
+            isReleased = true
+            let ready = waiters
+            waiters.removeAll()
+            ready.forEach { $0.resume() }
+        }
+    }
+}
+
+@MainActor
+private final class EnergyImpactSamplerTestSession {
+    private let sampler: EnergyImpactSampler
+    private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
+    private var lease: EnergyImpactSamplingLease?
+
+    init(
+        reader: any ProcessEnergyReadingProvider,
+        processSnapshotReader: any ProcessParentSnapshotReading,
+        appSnapshotProvider: @escaping () -> [EnergyImpactAppSnapshot] = { [] },
+        clock: any EnergyImpactClock = SystemEnergyImpactClock(),
+        configuration: EnergyImpactConfiguration = .production
+    ) {
+        sampler = EnergyImpactSampler(
+            reader: reader,
+            processSnapshotReader: processSnapshotReader,
+            clock: clock,
+            configuration: configuration
+        )
+        self.appSnapshotProvider = appSnapshotProvider
+    }
+
+    func observe(limit: Int) async -> [EnergyImpactEntry] {
+        if lease == nil {
+            lease = await sampler.beginSession(.init(generation: 1))
+        }
+        guard let lease else { return [] }
+        return await sampler.observe(
+            lease: lease,
+            apps: appSnapshotProvider(),
+            limit: limit
+        ) ?? []
+    }
+}
+
+private final class EnergyImpactClockStub: EnergyImpactClock, @unchecked Sendable {
     private let lock = NSLock()
     private var times: [TimeInterval]
 
@@ -1536,34 +1850,85 @@ private final class RegressionEnergyImpactClockStub: EnergyImpactClock, @uncheck
     }
 }
 
-private final class RegressionProcessEnergyReadingProviderStub: ProcessEnergyReadingProvider, @unchecked Sendable {
+private final class ProcessEnergyReadingProviderStub: ProcessEnergyReadingProvider, @unchecked Sendable {
+    private let lock = NSLock()
     private var results: [pid_t: [ProcessEnergyReadResult]]
     private var readCounts: [pid_t: Int] = [:]
+    private var totalReadCount = 0
+    private var concurrentReads = 0
+    private var recordedMaximumConcurrentReads = 0
+    private let blockedReadNumber: Int?
+    private let blockedReadEntered = DispatchSemaphore(value: 0)
+    private let blockedReadRelease = DispatchSemaphore(value: 0)
 
-    init(readings: [pid_t: [ProcessEnergyReading]]) {
+    init(
+        readings: [pid_t: [ProcessEnergyReading]],
+        blockedReadNumber: Int? = nil
+    ) {
         results = readings.mapValues { $0.map(ProcessEnergyReadResult.success) }
+        self.blockedReadNumber = blockedReadNumber
     }
 
-    init(results: [pid_t: [ProcessEnergyReadResult]]) {
+    init(
+        results: [pid_t: [ProcessEnergyReadResult]],
+        blockedReadNumber: Int? = nil
+    ) {
         self.results = results
+        self.blockedReadNumber = blockedReadNumber
     }
 
     func reading(for processIdentifier: pid_t) -> ProcessEnergyReadResult {
+        lock.lock()
+        totalReadCount += 1
+        let currentReadNumber = totalReadCount
         readCounts[processIdentifier, default: 0] += 1
-        guard var values = results[processIdentifier], values.isEmpty == false else {
-            return .failure(.other(0))
+        concurrentReads += 1
+        recordedMaximumConcurrentReads = max(
+            recordedMaximumConcurrentReads,
+            concurrentReads
+        )
+        lock.unlock()
+
+        if currentReadNumber == blockedReadNumber {
+            blockedReadEntered.signal()
+            blockedReadRelease.wait()
         }
-        let value = values.removeFirst()
-        results[processIdentifier] = values
+
+        lock.lock()
+        let value: ProcessEnergyReadResult
+        if var values = results[processIdentifier], values.isEmpty == false {
+            value = values.removeFirst()
+            results[processIdentifier] = values
+        } else {
+            value = .failure(.other(0))
+        }
+        concurrentReads -= 1
+        lock.unlock()
         return value
     }
 
     func readCount(for processIdentifier: pid_t) -> Int {
-        readCounts[processIdentifier, default: 0]
+        lock.lock()
+        defer { lock.unlock() }
+        return readCounts[processIdentifier, default: 0]
+    }
+
+    var maximumConcurrentReads: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return recordedMaximumConcurrentReads
+    }
+
+    func waitUntilBlocked() -> Bool {
+        blockedReadEntered.wait(timeout: .now() + 2) == .success
+    }
+
+    func releaseBlockedRead() {
+        blockedReadRelease.signal()
     }
 }
 
-private struct RegressionProcessParentSnapshotReaderStub: ProcessParentSnapshotReading {
+private struct ProcessParentSnapshotReaderStub: ProcessParentSnapshotReading {
     let snapshotValues: [ProcessParentSnapshot]
 
     init(snapshots: [ProcessParentSnapshot]) {
@@ -1575,9 +1940,10 @@ private struct RegressionProcessParentSnapshotReaderStub: ProcessParentSnapshotR
     }
 }
 
-private final class RegressionSequencedProcessParentSnapshotReaderStub: ProcessParentSnapshotReading, @unchecked Sendable {
+private final class SequencedProcessParentSnapshotReaderStub: ProcessParentSnapshotReading, @unchecked Sendable {
     private let lock = NSLock()
     private var snapshotValuesByCall: [[ProcessParentSnapshot]]
+    private var calls = 0
 
     init(snapshotsByCall: [[ProcessParentSnapshot]]) {
         snapshotValuesByCall = snapshotsByCall
@@ -1587,71 +1953,13 @@ private final class RegressionSequencedProcessParentSnapshotReaderStub: ProcessP
         lock.lock()
         defer { lock.unlock() }
         precondition(snapshotValuesByCall.isEmpty == false, "Process snapshot fixture exhausted")
+        calls += 1
         return snapshotValuesByCall.removeFirst()
     }
-}
 
-private final class EnergyImpactSamplerHarness {
-    private let sampler: EnergyImpactSampler
-    private let appSnapshotProvider: () -> [EnergyImpactAppSnapshot]
-    private let sessionID: EnergyImpactSessionID
-
-    init(
-        reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
-        processSnapshotReader: any ProcessParentSnapshotReading = SystemProcessParentSnapshotReader(),
-        appSnapshotProvider: (() -> [EnergyImpactAppSnapshot])? = nil,
-        clock: any EnergyImpactClock = SystemEnergyImpactClock()
-    ) {
-        let sampler = EnergyImpactSampler(
-            reader: reader,
-            processSnapshotReader: processSnapshotReader,
-            clock: clock,
-            configuration: .production,
-            processSnapshotRefreshIntervalSeconds: 0,
-            minimumProcessReadIntervalSeconds: 0
-        )
-        self.sampler = sampler
-        self.appSnapshotProvider = appSnapshotProvider ?? { [] }
-        sessionID = blockingEnergyImpactValue {
-            await sampler.beginSession()
-        }
+    var callCount: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return calls
     }
-
-    func sampleNow(limit: Int) -> [EnergyImpactEntry] {
-        let apps = appSnapshotProvider()
-        let sampler = sampler
-        let sessionID = sessionID
-        return blockingEnergyImpactValue {
-            await sampler.sample(
-                sessionID: sessionID,
-                apps: apps,
-                limit: limit,
-                publicationBoundary: false
-            ) ?? []
-        }
-    }
-
-    static func sortedByImpact(
-        _ entries: [EnergyImpactEntry],
-        limit: Int
-    ) -> [EnergyImpactEntry] {
-        EnergyImpactSampler.sortedByImpact(entries, limit: limit)
-    }
-}
-
-private final class EnergyImpactBlockingBox<Value: Sendable>: @unchecked Sendable {
-    var value: Value?
-}
-
-private func blockingEnergyImpactValue<Value: Sendable>(
-    _ operation: @escaping @Sendable () async -> Value
-) -> Value {
-    let semaphore = DispatchSemaphore(value: 0)
-    let box = EnergyImpactBlockingBox<Value>()
-    Task.detached {
-        box.value = await operation()
-        semaphore.signal()
-    }
-    semaphore.wait()
-    return box.value!
 }

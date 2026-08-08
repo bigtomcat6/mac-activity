@@ -1,6 +1,25 @@
 import Darwin
 import Foundation
 
+public struct ProcessEnergyReading: Equatable, Sendable {
+    public let energyNanojoules: UInt64
+    public let processStartAbsoluteTime: UInt64
+    public let userCPUTime: UInt64
+    public let systemCPUTime: UInt64
+
+    public init(
+        energyNanojoules: UInt64,
+        processStartAbsoluteTime: UInt64 = 0,
+        userCPUTime: UInt64 = 0,
+        systemCPUTime: UInt64 = 0
+    ) {
+        self.energyNanojoules = energyNanojoules
+        self.processStartAbsoluteTime = processStartAbsoluteTime
+        self.userCPUTime = userCPUTime
+        self.systemCPUTime = systemCPUTime
+    }
+}
+
 public enum ProcessEnergyReadFailure: Equatable, Sendable {
     case exited
     case permissionDenied

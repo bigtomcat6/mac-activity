@@ -13,13 +13,16 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
         }
 
         let service = EnergyImpactService()
-        let sessionID = await service.beginSession()
+        guard let lease = await service.beginSession() else {
+            XCTFail("Native validation could not begin a sampler lease")
+            return
+        }
         do {
             let metrics = try await measureVisibleFacade(
                 service: service,
-                sessionID: sessionID
+                lease: lease
             )
-            await service.endSession(sessionID)
+            await service.endSession(lease)
 
             print(String(
                 format: "ENERGY_NATIVE_METRICS samples=%d p50_ms=%.3f p95_ms=%.3f cpu_percent=%.4f wall_seconds=%.3f",
@@ -32,28 +35,27 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
             XCTAssertLessThan(metrics.cpuPercent, 0.5)
             XCTAssertLessThan(metrics.p95, 0.100)
         } catch {
-            await service.endSession(sessionID)
+            await service.endSession(lease)
             throw error
         }
     }
 
     private func measureVisibleFacade(
         service: EnergyImpactService,
-        sessionID: EnergyImpactSessionID
+        lease: EnergyImpactSamplingLease
     ) async throws -> NativeMetrics {
         let startCPU = processCPUSeconds()
         let startWall = ProcessInfo.processInfo.systemUptime
         var latencies = [TimeInterval]()
         latencies.reserveCapacity(60)
 
-        for index in 1...60 {
+        for _ in 1...60 {
             try Task.checkCancellation()
             let started = ProcessInfo.processInfo.systemUptime
-            _ = await service.sample(
-                sessionID: sessionID,
+            _ = await service.observe(
+                lease: lease,
                 limit: 20,
-                scope: .regularOnly,
-                publicationBoundary: index.isMultiple(of: 3)
+                scope: .regularOnly
             )
             try Task.checkCancellation()
             latencies.append(ProcessInfo.processInfo.systemUptime - started)

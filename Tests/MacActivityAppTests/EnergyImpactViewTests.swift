@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-import MacActivityCore
+@testable import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
@@ -42,8 +42,7 @@ final class EnergyImpactViewTests: XCTestCase {
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            sampleIntervalNanoseconds: 1,
-            publicationIntervalNanoseconds: 3,
+            initialWindowNanoseconds: 1,
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -76,15 +75,14 @@ final class EnergyImpactViewTests: XCTestCase {
         var sleepCount = 0
         let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry]]),
-            sampleIntervalNanoseconds: 1,
-            publicationIntervalNanoseconds: 1,
+            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
+            initialWindowNanoseconds: 1,
             sleep: { _ in
                 sleepCount += 1
                 guard sleepCount == 1 else { throw CancellationError() }
             }
         )
-        await model.refreshWhileVisible()
+        await model.refresh()
 
         let expectations: [(
             languageIdentifier: String,
@@ -237,30 +235,24 @@ final class EnergyImpactViewTests: XCTestCase {
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
     private var responses: [[EnergyImpactEntry]]
-    private var activeSessionID: EnergyImpactSessionID?
+    private var nextGeneration: UInt64 = 0
 
     init(responses: [[EnergyImpactEntry]]) {
         self.responses = responses
     }
 
-    func beginSession() async -> EnergyImpactSessionID {
-        let sessionID = EnergyImpactSessionID()
-        activeSessionID = sessionID
-        return sessionID
+    func beginSession() async -> EnergyImpactSamplingLease? {
+        nextGeneration += 1
+        return EnergyImpactSamplingLease(requestGeneration: nextGeneration)
     }
 
-    func sample(
-        sessionID: EnergyImpactSessionID,
+    func observe(
+        lease: EnergyImpactSamplingLease,
         limit: Int,
-        scope: EnergyImpactAppScope,
-        publicationBoundary: Bool
+        scope: EnergyImpactAppScope
     ) async -> [EnergyImpactEntry]? {
-        guard sessionID == activeSessionID else { return nil }
         return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
     }
 
-    func endSession(_ sessionID: EnergyImpactSessionID) async {
-        guard sessionID == activeSessionID else { return }
-        activeSessionID = nil
-    }
+    func endSession(_ lease: EnergyImpactSamplingLease) async {}
 }

@@ -1,44 +1,20 @@
 import Darwin
 import Foundation
 
-public struct EnergyImpactSessionID: Hashable, Sendable {
-    private let value: UUID
-
-    public init() {
-        value = UUID()
-    }
-}
-
-public protocol EnergyImpactSampling: Sendable {
-    func beginSession() async -> EnergyImpactSessionID
-    func sample(
-        sessionID: EnergyImpactSessionID,
-        apps: [EnergyImpactAppSnapshot],
-        limit: Int,
-        publicationBoundary: Bool
-    ) async -> [EnergyImpactEntry]?
-    func endSession(_ sessionID: EnergyImpactSessionID) async
-}
-
-public actor EnergyImpactSampler: EnergyImpactSampling {
+actor EnergyImpactSampler: EnergyImpactSampling {
     private let reader: any ProcessEnergyReadingProvider
     private let processSnapshotReader: any ProcessParentSnapshotReading
     private let clock: any EnergyImpactClock
     private let configuration: EnergyImpactConfiguration
-    private let processSnapshotRefreshIntervalSeconds: TimeInterval
-    private let minimumProcessReadIntervalSeconds: TimeInterval
-    private let smoothingOverrideForTesting: (@Sendable (
-        EnergyImpactProcessIdentity,
-        Double,
-        TimeInterval
-    ) -> Double?)?
-
-    private var activeSessionID: EnergyImpactSessionID?
+    private var highestSeenRequestGeneration: UInt64 = 0
+    private var activeLease: EnergyImpactSamplingLease?
     private var state: EnergyImpactSamplerState
 
-    public init(
-        reader: any ProcessEnergyReadingProvider = SystemProcessEnergyReader(),
-        processSnapshotReader: any ProcessParentSnapshotReading = SystemProcessParentSnapshotReader(),
+    init(
+        reader: any ProcessEnergyReadingProvider =
+            SystemProcessEnergyReader(),
+        processSnapshotReader: any ProcessParentSnapshotReading =
+            SystemProcessParentSnapshotReader(),
         clock: any EnergyImpactClock = SystemEnergyImpactClock(),
         configuration: EnergyImpactConfiguration = .production
     ) {
@@ -46,166 +22,156 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
         self.processSnapshotReader = processSnapshotReader
         self.clock = clock
         self.configuration = configuration
-        processSnapshotRefreshIntervalSeconds = configuration.publicationIntervalSeconds
-        minimumProcessReadIntervalSeconds = configuration.sampleIntervalSeconds * 2
-        smoothingOverrideForTesting = nil
-        state = EnergyImpactSamplerState(configuration: configuration)
+        self.state = EnergyImpactSamplerState(configuration: configuration)
     }
 
-    init(
-        reader: any ProcessEnergyReadingProvider,
-        processSnapshotReader: any ProcessParentSnapshotReading,
-        clock: any EnergyImpactClock,
-        configuration: EnergyImpactConfiguration,
-        processSnapshotRefreshIntervalSeconds: TimeInterval,
-        minimumProcessReadIntervalSeconds: TimeInterval
-    ) {
-        self.reader = reader
-        self.processSnapshotReader = processSnapshotReader
-        self.clock = clock
-        self.configuration = configuration
-        self.processSnapshotRefreshIntervalSeconds = processSnapshotRefreshIntervalSeconds
-        self.minimumProcessReadIntervalSeconds = minimumProcessReadIntervalSeconds
-        smoothingOverrideForTesting = nil
-        state = EnergyImpactSamplerState(configuration: configuration)
-    }
-
-    init(
-        reader: any ProcessEnergyReadingProvider,
-        processSnapshotReader: any ProcessParentSnapshotReading,
-        clock: any EnergyImpactClock,
-        configuration: EnergyImpactConfiguration,
-        smoothingOverrideForTesting: @escaping @Sendable (
-            EnergyImpactProcessIdentity,
-            Double,
-            TimeInterval
-        ) -> Double?
-    ) {
-        self.reader = reader
-        self.processSnapshotReader = processSnapshotReader
-        self.clock = clock
-        self.configuration = configuration
-        processSnapshotRefreshIntervalSeconds = configuration.publicationIntervalSeconds
-        minimumProcessReadIntervalSeconds = configuration.sampleIntervalSeconds * 2
-        self.smoothingOverrideForTesting = smoothingOverrideForTesting
-        state = EnergyImpactSamplerState(configuration: configuration)
-    }
-
-    public func beginSession() async -> EnergyImpactSessionID {
-        let sessionID = EnergyImpactSessionID()
-        activeSessionID = sessionID
-        state = EnergyImpactSamplerState(configuration: configuration)
-        return sessionID
-    }
-
-    public func sample(
-        sessionID: EnergyImpactSessionID,
-        apps: [EnergyImpactAppSnapshot],
-        limit: Int,
-        publicationBoundary: Bool
-    ) async -> [EnergyImpactEntry]? {
-        guard canContinue(sessionID) else { return nil }
-
-        var localState = state
-        let sampleTime = clock.nowSeconds()
-        let rootProcessIdentifiers = apps.map(\.processIdentifier)
-        let rootProcessIdentifierSet = Set(rootProcessIdentifiers)
-        let shouldReadProcesses = localState.shouldReadProcesses(
-            at: sampleTime,
-            rootProcessIdentifiers: rootProcessIdentifierSet,
-            minimumIntervalSeconds: minimumProcessReadIntervalSeconds
+    func beginSession(
+        _ request: EnergyImpactSessionRequest
+    ) -> EnergyImpactSamplingLease? {
+        guard request.generation > highestSeenRequestGeneration else {
+            return nil
+        }
+        highestSeenRequestGeneration = request.generation
+        let lease = EnergyImpactSamplingLease(
+            requestGeneration: request.generation
         )
-        if shouldReadProcesses == false, publicationBoundary == false {
-            guard let cached = localState.cachedRawEntries,
-                  canContinue(sessionID) else { return nil }
-            return Self.sortedByImpact(
-                Self.updatingMetadata(in: cached, from: apps),
-                limit: limit
+        activeLease = lease
+        state = EnergyImpactSamplerState(configuration: configuration)
+        return lease
+    }
+
+    func observe(
+        lease: EnergyImpactSamplingLease,
+        apps: [EnergyImpactAppSnapshot],
+        limit: Int
+    ) -> [EnergyImpactEntry]? {
+        guard canContinue(lease) else { return nil }
+        var working = state
+        let capturedAt = clock.nowSeconds()
+        guard canContinue(lease) else { return nil }
+
+        let processSnapshots = processSnapshotReader.snapshots()
+        guard canContinue(lease) else { return nil }
+        let owners = EnergyImpactOwnership.nearestRootOwners(
+            rootProcessIdentifiers: apps.map(\.processIdentifier),
+            snapshots: processSnapshots
+        )
+        let processIdentifiers = Set(owners.keys)
+            .union(apps.map(\.processIdentifier))
+            .filter { $0 > 0 }
+            .sorted()
+        var readingsByProcessIdentifier: [pid_t: ProcessEnergyReadResult] = [:]
+        readingsByProcessIdentifier.reserveCapacity(processIdentifiers.count)
+        for processIdentifier in processIdentifiers {
+            guard canContinue(lease) else { return nil }
+            readingsByProcessIdentifier[processIdentifier] = reader.reading(
+                for: processIdentifier
             )
         }
+        guard canContinue(lease) else { return nil }
 
-        let observationInterval = shouldReadProcesses
-            ? localState.prepareForSample(at: sampleTime, configuration: configuration)
-            : nil
-        guard canContinue(sessionID) else { return nil }
-        let processIdentifiersByRoot: [pid_t: [pid_t]]
-        if localState.shouldRefreshProcessSnapshots(
-            at: sampleTime,
-            rootProcessIdentifiers: rootProcessIdentifierSet,
-            publicationBoundary: publicationBoundary,
-            refreshIntervalSeconds: processSnapshotRefreshIntervalSeconds
-        ) {
-            let processSnapshots = processSnapshotReader.snapshots()
-            guard canContinue(sessionID) else { return nil }
-            let owners = EnergyImpactOwnership.nearestRootOwners(
-                rootProcessIdentifiers: rootProcessIdentifiers,
-                snapshots: processSnapshots
-            )
-            localState.invalidateObservedOwnerTransitions(
-                snapshots: processSnapshots,
-                owners: owners
-            )
-            processIdentifiersByRoot = Dictionary(
-                grouping: owners.keys,
-                by: { owners[$0]! }
-            )
-            localState.storeProcessOwnership(
-                snapshots: processSnapshots,
-                processIdentifiersByRoot: processIdentifiersByRoot,
-                rootProcessIdentifiers: rootProcessIdentifierSet,
-                at: sampleTime
-            )
+        let observation = EnergyImpactObservation(
+            sequence: working.sequence &+ 1,
+            capturedAt: capturedAt,
+            apps: apps,
+            processSnapshots: processSnapshots,
+            owners: owners,
+            readingsByProcessIdentifier: readingsByProcessIdentifier
+        )
+        guard let candidates = buildCandidates(
+            from: observation,
+            lease: lease,
+            working: &working
+        ) else {
+            return nil
+        }
+        let published = working.publicationState.publish(
+            candidates,
+            at: observation.capturedAt,
+            limit: limit
+        )
+        guard canContinue(lease) else { return nil }
+        working.sequence = observation.sequence
+        state = working
+        return published
+    }
+
+    func endSession(_ lease: EnergyImpactSamplingLease) {
+        guard activeLease == lease else { return }
+        activeLease = nil
+        state = EnergyImpactSamplerState(configuration: configuration)
+    }
+
+    private func buildCandidates(
+        from observation: EnergyImpactObservation,
+        lease: EnergyImpactSamplingLease,
+        working: inout EnergyImpactSamplerState
+    ) -> [EnergyImpactEntry]? {
+        let observationInterval: Range<TimeInterval>?
+        let breaksBaselineContinuity: Bool
+        if let previousObservationTime = working.previousObservationTime {
+            let elapsed = observation.capturedAt - previousObservationTime
+            observationInterval = elapsed > 0
+                && elapsed <= configuration.maximumGapSeconds
+                ? previousObservationTime..<observation.capturedAt
+                : nil
+            breaksBaselineContinuity = observationInterval == nil
         } else {
-            processIdentifiersByRoot = localState.cachedProcessIdentifiersByRoot
+            observationInterval = nil
+            breaksBaselineContinuity = false
         }
-        guard canContinue(sessionID) else { return nil }
-        if shouldReadProcesses == false {
-            guard let cached = localState.cachedRawEntries else { return nil }
-            let entries = Self.updatingMetadata(in: cached, from: apps)
-            let result = localState.publish(
-                entries,
-                at: sampleTime,
-                limit: limit,
-                smoothingOverrideForTesting: smoothingOverrideForTesting
-            )
-            guard canContinue(sessionID) else { return nil }
-            state = localState
-            return result
+        working.previousObservationTime = observation.capturedAt
+        if breaksBaselineContinuity {
+            working.baselines.removeAll()
+            working.identityByProcessIdentifier.removeAll()
         }
-        var entries = [EnergyImpactEntry]()
-        entries.reserveCapacity(apps.count)
+        working.prune(at: observation.capturedAt, configuration: configuration)
+        working.invalidateObservedOwnerTransitions(
+            snapshots: observation.processSnapshots,
+            owners: observation.owners
+        )
 
-        for app in apps {
-            guard canContinue(sessionID) else { return nil }
-            let processIdentifiers = (
-                processIdentifiersByRoot[app.processIdentifier] ?? [app.processIdentifier]
-            ).sorted { lhs, rhs in
+        let processIdentifiersByRoot = Dictionary(
+            grouping: observation.owners.keys,
+            by: { observation.owners[$0]! }
+        )
+        var candidates: [EnergyImpactEntry] = []
+        candidates.reserveCapacity(observation.apps.count)
+        for app in observation.apps {
+            guard canContinue(lease) else { return nil }
+            let processIdentifiers = Set(
+                processIdentifiersByRoot[app.processIdentifier] ?? []
+            )
+            .union([app.processIdentifier])
+            .sorted { lhs, rhs in
                 if lhs == app.processIdentifier { return true }
                 if rhs == app.processIdentifier { return false }
                 return lhs < rhs
             }
-            var contributions = [ProcessEnergyContribution]()
+            var contributions: [ProcessEnergyContribution] = []
             var readableProcessCount = 0
             var unsupportedProcessCount = 0
 
             for processIdentifier in processIdentifiers {
-                guard canContinue(sessionID) else { return nil }
-                if let identity = localState.identityByProcessIdentifier[processIdentifier],
-                   let baseline = localState.baselines[identity],
+                guard canContinue(lease) else { return nil }
+                if let identity = working.identityByProcessIdentifier[processIdentifier],
+                   let baseline = working.baselines[identity],
                    baseline.ownerRootProcessIdentifier != app.processIdentifier {
-                    localState.removeBaseline(for: identity)
+                    working.removeBaseline(for: identity)
                 }
-
-                switch reader.reading(for: processIdentifier) {
+                guard let result = observation.readingsByProcessIdentifier[processIdentifier] else {
+                    continue
+                }
+                switch result {
                 case let .failure(failure):
-                    let baseline = localState.identityByProcessIdentifier[processIdentifier]
-                        .flatMap { localState.baselines[$0] }
+                    let baseline = working.identityByProcessIdentifier[processIdentifier]
+                        .flatMap { working.baselines[$0] }
                     if failure == .unsupported || baseline?.counterUnsupported == true {
                         unsupportedProcessCount += 1
                         if failure == .unsupported,
-                           let identity = localState.identityByProcessIdentifier[processIdentifier],
-                           let existing = localState.baselines[identity] {
-                            localState.baselines[identity] = existing.markingCounterUnsupported()
+                           let identity = working.identityByProcessIdentifier[processIdentifier],
+                           let existing = working.baselines[identity] {
+                            working.baselines[identity] = existing.markingCounterUnsupported()
                         }
                     }
 
@@ -214,27 +180,28 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                         processIdentifier: processIdentifier,
                         processStartAbsoluteTime: current.processStartAbsoluteTime
                     )
-                    if let oldIdentity = localState.identityByProcessIdentifier[processIdentifier],
+                    if let oldIdentity = working.identityByProcessIdentifier[processIdentifier],
                        oldIdentity != identity {
-                        localState.removeBaseline(for: oldIdentity)
+                        working.removeBaseline(for: oldIdentity)
                     }
-                    localState.identityByProcessIdentifier[processIdentifier] = identity
+                    working.identityByProcessIdentifier[processIdentifier] = identity
 
                     if processIdentifier == app.processIdentifier {
                         let appIdentity = EnergyImpactAppIdentity(
                             rootProcessIdentifier: processIdentifier,
                             rootProcessStartAbsoluteTime: current.processStartAbsoluteTime
                         )
-                        if let oldIdentity = localState.currentIdentityByRootProcessIdentifier[
-                            processIdentifier
-                        ], oldIdentity != appIdentity {
-                            localState.displayByIdentity.removeValue(forKey: oldIdentity)
+                        if let oldIdentity = working.currentIdentityByRootProcessIdentifier[processIdentifier],
+                           oldIdentity != appIdentity {
+                            working.displayByIdentity.removeValue(forKey: oldIdentity)
                         }
-                        localState.currentIdentityByRootProcessIdentifier[processIdentifier] = appIdentity
+                        working.currentIdentityByRootProcessIdentifier[processIdentifier] = appIdentity
                     }
 
-                    let previous = localState.baselines[identity]
-                    let elapsed = previous.map { sampleTime - $0.sampleTime }
+                    let previous = working.baselines[identity]
+                    let elapsed = previous.map {
+                        observation.capturedAt - $0.sampleTime
+                    }
                     let canUsePrevious = observationInterval != nil
                         && previous?.ownerRootProcessIdentifier == app.processIdentifier
                         && elapsed.map {
@@ -254,8 +221,8 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                             counterUnsupported = false
                         } else if current.energyNanojoules == 0,
                                   previous.reading.energyNanojoules == 0,
-                                  current.userCPUTime > previous.reading.userCPUTime
-                                    || current.systemCPUTime > previous.reading.systemCPUTime {
+                                  (current.userCPUTime > previous.reading.userCPUTime
+                                      || current.systemCPUTime > previous.reading.systemCPUTime) {
                             zeroEnergyWithCPUActivitySeconds += elapsed
                             if zeroEnergyWithCPUActivitySeconds >= configuration.maximumGapSeconds {
                                 counterUnsupported = true
@@ -267,7 +234,7 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                                 processIdentity: identity,
                                 ownerRootProcessIdentifier: app.processIdentifier,
                                 startTimeSeconds: previous.sampleTime,
-                                endTimeSeconds: sampleTime,
+                                endTimeSeconds: observation.capturedAt,
                                 energyMicrojoules: Double(
                                     current.energyNanojoules - previous.reading.energyNanojoules
                                 ) / 1_000.0
@@ -278,10 +245,10 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                         counterUnsupported = false
                     }
 
-                    localState.baselines[identity] = ProcessEnergyBaseline(
+                    working.baselines[identity] = ProcessEnergyBaseline(
                         reading: current,
-                        sampleTime: sampleTime,
-                        lastObservedAt: sampleTime,
+                        sampleTime: observation.capturedAt,
+                        lastObservedAt: observation.capturedAt,
                         ownerRootProcessIdentifier: app.processIdentifier,
                         zeroEnergyWithCPUActivitySeconds: zeroEnergyWithCPUActivitySeconds,
                         counterUnsupported: counterUnsupported
@@ -294,8 +261,7 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                 }
             }
 
-            guard canContinue(sessionID) else { return nil }
-            let identity = localState.currentIdentityByRootProcessIdentifier[app.processIdentifier]
+            let identity = working.currentIdentityByRootProcessIdentifier[app.processIdentifier]
                 ?? EnergyImpactAppIdentity(
                     rootProcessIdentifier: app.processIdentifier,
                     rootProcessStartAbsoluteTime: nil
@@ -308,8 +274,10 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
             let observationDuration = observationInterval.map {
                 $0.upperBound - $0.lowerBound
             } ?? 0
-            let discoveredProcessSeconds = Double(processIdentifiers.count) * observationDuration
-            let currentPowerMicrowatts = validProcessSeconds > 0 && observationDuration > 0
+            let discoveredProcessSeconds = Double(processIdentifiers.count)
+                * observationDuration
+            let currentPowerMicrowatts = validProcessSeconds > 0
+                && observationDuration > 0
                 ? energyMicrojoules / observationDuration
                 : nil
             let currentCoverage = EnergyImpactCoverage(
@@ -318,8 +286,10 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                 validProcessSeconds: validProcessSeconds,
                 discoveredProcessSeconds: discoveredProcessSeconds
             )
-            let previousDisplay = localState.displayByIdentity[identity]
-            let displayAge = previousDisplay.map { sampleTime - $0.sampleTime }
+            let previousDisplay = working.displayByIdentity[identity]
+            let displayAge = previousDisplay.map {
+                observation.capturedAt - $0.sampleTime
+            }
             let canPublishStale = displayAge.map {
                 $0 >= 0 && $0 <= configuration.maximumGapSeconds
             } == true
@@ -342,10 +312,14 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                 status = .unavailable
             }
 
-            let publishedIdentity = status == .stale ? previousDisplay!.entry.identity : identity
+            let publishedIdentity = status == .stale
+                ? previousDisplay!.entry.identity
+                : identity
             let publishedPower = status == .stale
                 ? previousDisplay!.entry.currentPowerMicrowatts
-                : (status == .stable || status == .partial ? currentPowerMicrowatts : nil)
+                : (status == .stable || status == .partial
+                    ? currentPowerMicrowatts
+                    : nil)
             let publishedCoverage = status == .stale
                 ? previousDisplay!.entry.coverage
                 : currentCoverage
@@ -357,115 +331,44 @@ public actor EnergyImpactSampler: EnergyImpactSampling {
                 kind: app.kind,
                 currentPowerMicrowatts: publishedPower,
                 sustainedPowerMicrowatts: nil,
-                rankingScore: status == .stable || status == .partial ? publishedPower : nil,
+                rankingScore: status == .stable || status == .partial
+                    ? publishedPower
+                    : nil,
                 trend: .steady,
                 coverage: publishedCoverage,
                 status: status
             )
 
-            if (status == .stable || status == .partial), publishedIdentity.generation != nil {
-                localState.displayByIdentity[publishedIdentity] = EnergyImpactDisplayState(
+            if (status == .stable || status == .partial),
+               publishedIdentity.generation != nil {
+                working.displayByIdentity[publishedIdentity] = EnergyImpactDisplayState(
                     entry: entry,
-                    sampleTime: sampleTime
+                    sampleTime: observation.capturedAt
                 )
             } else if allProcessesUnsupported {
-                localState.displayByIdentity.removeValue(forKey: identity)
+                working.displayByIdentity.removeValue(forKey: identity)
             }
-            entries.append(entry)
+            candidates.append(entry)
         }
 
-        guard canContinue(sessionID) else { return nil }
-        localState.prune(at: sampleTime, configuration: configuration)
-        localState.storeRawEntries(entries, rootProcessIdentifiers: rootProcessIdentifierSet)
-        let result = publicationBoundary
-            ? localState.publish(
-                entries,
-                at: sampleTime,
-                limit: limit,
-                smoothingOverrideForTesting: smoothingOverrideForTesting
-            )
-            : Self.sortedByImpact(entries, limit: limit)
-
-        guard canContinue(sessionID) else { return nil }
-        state = localState
-        return result
+        working.prune(at: observation.capturedAt, configuration: configuration)
+        return candidates
     }
 
-    public func endSession(_ sessionID: EnergyImpactSessionID) async {
-        guard sessionID == activeSessionID else { return }
-        activeSessionID = nil
-        state = EnergyImpactSamplerState(configuration: configuration)
+    private func canContinue(
+        _ lease: EnergyImpactSamplingLease
+    ) -> Bool {
+        Task.isCancelled == false && activeLease == lease
     }
+}
 
-    public nonisolated static func sortedByImpact(
-        _ entries: [EnergyImpactEntry],
-        limit: Int
-    ) -> [EnergyImpactEntry] {
-        entries.sorted { lhs, rhs in
-            let leftBucket = statusSortBucket(for: lhs)
-            let rightBucket = statusSortBucket(for: rhs)
-            if leftBucket != rightBucket { return leftBucket < rightBucket }
-
-            let leftScore = lhs.rankingScore ?? lhs.currentPowerMicrowatts
-            let rightScore = rhs.rankingScore ?? rhs.currentPowerMicrowatts
-            switch (leftScore, rightScore) {
-            case let (left?, right?) where left != right:
-                return left > right
-            case (_?, nil):
-                return true
-            case (nil, _?):
-                return false
-            default:
-                let nameOrder = lhs.name.localizedCaseInsensitiveCompare(rhs.name)
-                if nameOrder != .orderedSame { return nameOrder == .orderedAscending }
-                return lhs.processIdentifier < rhs.processIdentifier
-            }
-        }
-        .prefix(max(0, limit))
-        .map { $0 }
-    }
-
-    private func canContinue(_ sessionID: EnergyImpactSessionID) -> Bool {
-        Task.isCancelled == false && sessionID == activeSessionID
-    }
-
-    private nonisolated static func updatingMetadata(
-        in entries: [EnergyImpactEntry],
-        from apps: [EnergyImpactAppSnapshot]
-    ) -> [EnergyImpactEntry] {
-        let appByProcessIdentifier = Dictionary(
-            apps.map { ($0.processIdentifier, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        return entries.map { entry in
-            guard let app = appByProcessIdentifier[entry.processIdentifier] else {
-                return entry
-            }
-            return EnergyImpactEntry(
-                identity: entry.identity,
-                name: app.name,
-                bundleIdentifier: app.bundleIdentifier,
-                bundleURL: app.bundleURL,
-                kind: app.kind,
-                currentPowerMicrowatts: entry.currentPowerMicrowatts,
-                sustainedPowerMicrowatts: entry.sustainedPowerMicrowatts,
-                rankingScore: entry.rankingScore,
-                trend: entry.trend,
-                coverage: entry.coverage,
-                status: entry.status
-            )
-        }
-    }
-
-    private nonisolated static func statusSortBucket(for entry: EnergyImpactEntry) -> Int {
-        switch (entry.status, entry.currentPowerMicrowatts) {
-        case (.stable, .some), (.partial, .some): 0
-        case (.stale, .some): 1
-        case (.collecting, _): 2
-        case (.unavailable, _): 3
-        default: 3
-        }
-    }
+private struct EnergyImpactObservation: Sendable {
+    let sequence: UInt64
+    let capturedAt: TimeInterval
+    let apps: [EnergyImpactAppSnapshot]
+    let processSnapshots: [ProcessParentSnapshot]
+    let owners: [pid_t: pid_t]
+    let readingsByProcessIdentifier: [pid_t: ProcessEnergyReadResult]
 }
 
 private struct EnergyImpactSamplerState: Sendable {
@@ -473,72 +376,20 @@ private struct EnergyImpactSamplerState: Sendable {
     var identityByProcessIdentifier: [pid_t: EnergyImpactProcessIdentity] = [:]
     var currentIdentityByRootProcessIdentifier: [pid_t: EnergyImpactAppIdentity] = [:]
     var displayByIdentity: [EnergyImpactAppIdentity: EnergyImpactDisplayState] = [:]
-    var previousSampleTime: TimeInterval?
+    var previousObservationTime: TimeInterval?
     var publicationState: EnergyImpactPublicationState
-    var cachedProcessSnapshots: [ProcessParentSnapshot]?
-    var lastProcessSnapshotTime: TimeInterval?
-    var cachedRootProcessIdentifiers: Set<pid_t>?
-    var cachedProcessIdentifiersByRoot: [pid_t: [pid_t]] = [:]
-    var cachedRawEntries: [EnergyImpactEntry]?
-    var cachedRawRootProcessIdentifiers: Set<pid_t>?
+    var sequence: UInt64 = 0
 
     init(configuration: EnergyImpactConfiguration) {
         publicationState = EnergyImpactPublicationState(configuration: configuration)
     }
 
-    mutating func prepareForSample(
-        at sampleTime: TimeInterval,
-        configuration: EnergyImpactConfiguration
-    ) -> Range<TimeInterval>? {
-        let observationInterval: Range<TimeInterval>?
-        if let previousSampleTime {
-            let elapsed = sampleTime - previousSampleTime
-            observationInterval = elapsed > 0 && elapsed <= configuration.maximumGapSeconds
-                ? previousSampleTime..<sampleTime
-                : nil
-            if observationInterval == nil {
-                baselines.removeAll()
-                identityByProcessIdentifier.removeAll()
-            }
-        } else {
-            observationInterval = nil
-        }
-        previousSampleTime = sampleTime
-        prune(at: sampleTime, configuration: configuration)
-        return observationInterval
-    }
-
-    func shouldReadProcesses(
-        at sampleTime: TimeInterval,
-        rootProcessIdentifiers: Set<pid_t>,
-        minimumIntervalSeconds: TimeInterval
-    ) -> Bool {
-        guard cachedRawEntries != nil,
-              cachedRawRootProcessIdentifiers == rootProcessIdentifiers,
-              let previousSampleTime,
-              minimumIntervalSeconds > 0,
-              sampleTime.isFinite,
-              previousSampleTime.isFinite else {
-            return true
-        }
-        let age = sampleTime - previousSampleTime
-        return age < 0 || age >= minimumIntervalSeconds
-    }
-
-    mutating func storeRawEntries(
-        _ entries: [EnergyImpactEntry],
-        rootProcessIdentifiers: Set<pid_t>
-    ) {
-        cachedRawEntries = entries
-        cachedRawRootProcessIdentifiers = rootProcessIdentifiers
-    }
-
     mutating func prune(
-        at sampleTime: TimeInterval,
+        at observationTime: TimeInterval,
         configuration: EnergyImpactConfiguration
     ) {
         let expiredIdentities = baselines.compactMap { identity, baseline in
-            let age = sampleTime - baseline.lastObservedAt
+            let age = observationTime - baseline.lastObservedAt
             return age > configuration.maximumGapSeconds ? identity : nil
         }
         for identity in expiredIdentities {
@@ -546,46 +397,16 @@ private struct EnergyImpactSamplerState: Sendable {
         }
 
         displayByIdentity = displayByIdentity.filter { _, display in
-            let age = sampleTime - display.sampleTime
+            let age = observationTime - display.sampleTime
             return age >= 0 && age <= configuration.maximumGapSeconds
         }
         identityByProcessIdentifier = identityByProcessIdentifier.filter {
             baselines[$0.value] != nil
         }
-        currentIdentityByRootProcessIdentifier = currentIdentityByRootProcessIdentifier.filter {
-            _, identity in
-            identity.generation.map { baselines[$0] != nil } == true
-        }
-    }
-
-    func shouldRefreshProcessSnapshots(
-        at sampleTime: TimeInterval,
-        rootProcessIdentifiers: Set<pid_t>,
-        publicationBoundary: Bool,
-        refreshIntervalSeconds: TimeInterval
-    ) -> Bool {
-        guard cachedProcessSnapshots != nil,
-              let lastProcessSnapshotTime,
-              cachedRootProcessIdentifiers == rootProcessIdentifiers,
-              refreshIntervalSeconds > 0,
-              sampleTime.isFinite,
-              lastProcessSnapshotTime.isFinite else {
-            return true
-        }
-        let age = sampleTime - lastProcessSnapshotTime
-        return publicationBoundary || age < 0 || age >= refreshIntervalSeconds
-    }
-
-    mutating func storeProcessOwnership(
-        snapshots: [ProcessParentSnapshot],
-        processIdentifiersByRoot: [pid_t: [pid_t]],
-        rootProcessIdentifiers: Set<pid_t>,
-        at sampleTime: TimeInterval
-    ) {
-        cachedProcessSnapshots = snapshots
-        cachedProcessIdentifiersByRoot = processIdentifiersByRoot
-        cachedRootProcessIdentifiers = rootProcessIdentifiers
-        lastProcessSnapshotTime = sampleTime
+        currentIdentityByRootProcessIdentifier =
+            currentIdentityByRootProcessIdentifier.filter { _, identity in
+                identity.generation.map { baselines[$0] != nil } == true
+            }
     }
 
     mutating func invalidateObservedOwnerTransitions(
@@ -607,31 +428,6 @@ private struct EnergyImpactSamplerState: Sendable {
         if identityByProcessIdentifier[identity.processIdentifier] == identity {
             identityByProcessIdentifier.removeValue(forKey: identity.processIdentifier)
         }
-    }
-
-    mutating func publish(
-        _ candidates: [EnergyImpactEntry],
-        at publicationTime: TimeInterval,
-        limit: Int,
-        smoothingOverrideForTesting: (@Sendable (
-            EnergyImpactProcessIdentity,
-            Double,
-            TimeInterval
-        ) -> Double?)?
-    ) -> [EnergyImpactEntry] {
-        if let smoothingOverrideForTesting {
-            return publicationState.publish(
-                candidates,
-                at: publicationTime,
-                limit: limit,
-                smoothingOverrideForTesting: smoothingOverrideForTesting
-            )
-        }
-        return publicationState.publish(
-            candidates,
-            at: publicationTime,
-            limit: limit
-        )
     }
 }
 
