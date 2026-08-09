@@ -1,5 +1,103 @@
 import Foundation
 
+public struct EnergyIntervalSample: Equatable, Sendable {
+    public let endTimeSeconds: TimeInterval
+    public let durationSeconds: TimeInterval
+    public let contributions: [ProcessEnergyContribution]
+    public let discoveredProcessSeconds: TimeInterval
+
+    public init(
+        endTimeSeconds: TimeInterval,
+        durationSeconds: TimeInterval,
+        contributions: [ProcessEnergyContribution],
+        discoveredProcessSeconds: TimeInterval
+    ) {
+        self.endTimeSeconds = endTimeSeconds
+        self.durationSeconds = durationSeconds
+        self.contributions = contributions
+        self.discoveredProcessSeconds = discoveredProcessSeconds
+    }
+
+    public var isValid: Bool {
+        endTimeSeconds.isFinite
+            && durationSeconds.isFinite && durationSeconds > 0
+            && discoveredProcessSeconds.isFinite && discoveredProcessSeconds >= 0
+            && contributions.allSatisfy {
+                $0.startTimeSeconds.isFinite && $0.endTimeSeconds.isFinite
+                    && $0.durationSeconds.isFinite && $0.durationSeconds > 0
+                    && $0.energyMicrojoules.isFinite && $0.energyMicrojoules >= 0
+            }
+    }
+}
+
+public struct TimeWeightedEnergyWindow: Equatable, Sendable {
+    public let windowSeconds: TimeInterval
+    private var samples: [EnergyIntervalSample] = []
+
+    public init(windowSeconds: TimeInterval) {
+        precondition(windowSeconds.isFinite && windowSeconds > 0)
+        self.windowSeconds = windowSeconds
+    }
+
+    @discardableResult
+    public mutating func append(_ sample: EnergyIntervalSample) -> Bool {
+        guard sample.isValid else { return false }
+        if let lastSample = samples.last,
+           sample.endTimeSeconds <= lastSample.endTimeSeconds {
+            return false
+        }
+
+        samples.append(sample)
+        trim(at: sample.endTimeSeconds)
+        return true
+    }
+
+    private mutating func trim(at now: TimeInterval) {
+        let cutoff = now - windowSeconds
+        samples = samples.compactMap { sample in
+            let start = sample.endTimeSeconds - sample.durationSeconds
+            guard sample.endTimeSeconds > cutoff else { return nil }
+            let keptStart = max(start, cutoff)
+            let keptDuration = sample.endTimeSeconds - keptStart
+            return EnergyIntervalSample(
+                endTimeSeconds: sample.endTimeSeconds,
+                durationSeconds: keptDuration,
+                contributions: sample.contributions.compactMap {
+                    $0.clipped(to: cutoff..<now)
+                },
+                discoveredProcessSeconds: sample.discoveredProcessSeconds
+                    * (keptDuration / sample.durationSeconds)
+            )
+        }
+    }
+
+    public var totalEnergyMicrojoules: Double {
+        samples.flatMap(\.contributions).reduce(0) { $0 + $1.energyMicrojoules }
+    }
+
+    public var totalDurationSeconds: TimeInterval {
+        samples.reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    public var validProcessSeconds: TimeInterval {
+        samples.flatMap(\.contributions).reduce(0) { $0 + $1.durationSeconds }
+    }
+
+    public var discoveredDurationSeconds: TimeInterval {
+        samples.reduce(0) { $0 + $1.discoveredProcessSeconds }
+    }
+
+    public var powerMicrowatts: Double? {
+        guard totalDurationSeconds > 0, validProcessSeconds > 0 else { return nil }
+        return totalEnergyMicrojoules / totalDurationSeconds
+    }
+
+    public var coverage: Double {
+        guard discoveredDurationSeconds > 0 else { return 0 }
+        return min(max(validProcessSeconds / discoveredDurationSeconds, 0), 1)
+    }
+}
+
 public struct TimeAwareEnergyEMA: Equatable, Sendable {
     public let halfLifeSeconds: TimeInterval
     private var value: Double?
