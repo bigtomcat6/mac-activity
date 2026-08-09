@@ -39,14 +39,11 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
-    func testEnergyImpactViewVisibleRefreshIntervalIsThreeSeconds() {
-        XCTAssertEqual(EnergyImpactView.visibleRefreshIntervalNanoseconds, 3_000_000_000)
-    }
-
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            initialWindowNanoseconds: 1,
+            sampleIntervalNanoseconds: 1,
+            publicationIntervalNanoseconds: 3,
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -79,14 +76,15 @@ final class EnergyImpactViewTests: XCTestCase {
         var sleepCount = 0
         let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry], []]),
-            initialWindowNanoseconds: 1,
+            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry]]),
+            sampleIntervalNanoseconds: 1,
+            publicationIntervalNanoseconds: 1,
             sleep: { _ in
                 sleepCount += 1
                 guard sleepCount == 1 else { throw CancellationError() }
             }
         )
-        await model.refresh()
+        await model.refreshWhileVisible()
 
         let expectations: [(
             languageIdentifier: String,
@@ -239,12 +237,30 @@ final class EnergyImpactViewTests: XCTestCase {
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
     private var responses: [[EnergyImpactEntry]]
+    private var activeSessionID: EnergyImpactSessionID?
 
     init(responses: [[EnergyImpactEntry]]) {
         self.responses = responses
     }
 
-    func topApps(limit: Int) -> [EnergyImpactEntry] {
-        responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
+    func beginSession() async -> EnergyImpactSessionID {
+        let sessionID = EnergyImpactSessionID()
+        activeSessionID = sessionID
+        return sessionID
+    }
+
+    func sample(
+        sessionID: EnergyImpactSessionID,
+        limit: Int,
+        scope: EnergyImpactAppScope,
+        publicationBoundary: Bool
+    ) async -> [EnergyImpactEntry]? {
+        guard sessionID == activeSessionID else { return nil }
+        return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
+    }
+
+    func endSession(_ sessionID: EnergyImpactSessionID) async {
+        guard sessionID == activeSessionID else { return }
+        activeSessionID = nil
     }
 }
