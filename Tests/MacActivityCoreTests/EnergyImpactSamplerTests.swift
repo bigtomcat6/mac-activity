@@ -212,6 +212,88 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         XCTAssertEqual(reader.requestCount, 3)
     }
+
+    func testTestingSmootherAppliesAtPublicationBoundary() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(.init(energyNanojoules: 0, processStartAbsoluteTime: 10)),
+                    .success(.init(energyNanojoules: 3_000, processStartAbsoluteTime: 10)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+            ]),
+            clock: EnergyImpactClockStub(times: [0, 3]),
+            configuration: .production,
+            smoothingOverrideForTesting: { _, _, _ in 42 }
+        )
+        let sessionID = await sampler.beginSession()
+
+        _ = await sampler.sample(
+            sessionID: sessionID,
+            apps: [fixtureEnergyApp],
+            limit: 20,
+            publicationBoundary: false
+        )
+        let sampled = await sampler.sample(
+            sessionID: sessionID,
+            apps: [fixtureEnergyApp],
+            limit: 20,
+            publicationBoundary: true
+        )
+        let publication = try XCTUnwrap(sampled)
+        let entry = try XCTUnwrap(publication.first)
+
+        XCTAssertEqual(entry.currentPowerMicrowatts, 42)
+        XCTAssertEqual(entry.rankingScore, 42)
+    }
+
+    func testEndingCurrentSessionInvalidatesExistingSession() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(.init(energyNanojoules: 1_000, processStartAbsoluteTime: 10)),
+                    .success(.init(energyNanojoules: 4_000, processStartAbsoluteTime: 10)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 100, parentProcessIdentifier: 1),
+            ]),
+            clock: EnergyImpactClockStub(times: [0]),
+            configuration: .production
+        )
+        let oldSessionID = await sampler.beginSession()
+        _ = await sampler.sample(
+            sessionID: oldSessionID,
+            apps: [fixtureEnergyApp],
+            limit: 20,
+            publicationBoundary: false
+        )
+        await sampler.endSession(oldSessionID)
+        let invalidated = await sampler.sample(
+            sessionID: oldSessionID,
+            apps: [fixtureEnergyApp],
+            limit: 20,
+            publicationBoundary: false
+        )
+
+        XCTAssertNil(invalidated)
+
+        let freshSessionID = await sampler.beginSession()
+
+        let sampled = await sampler.sample(
+            sessionID: freshSessionID,
+            apps: [fixtureEnergyApp],
+            limit: 20,
+            publicationBoundary: false
+        )
+        let entries = try XCTUnwrap(sampled)
+        let entry = try XCTUnwrap(entries.first)
+
+        XCTAssertEqual(entry.status, .collecting)
+        XCTAssertNil(entry.currentPowerMicrowatts)
+    }
 }
 
 private let fixtureEnergyApp = EnergyImpactAppSnapshot(
