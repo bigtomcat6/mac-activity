@@ -3,6 +3,31 @@ import MacActivityCore
 @testable import MacActivityApp
 
 final class DashboardTrendLocalizationTests: XCTestCase {
+    func testFormattedTimeRangeUsesLocalizedEndpointsWithoutAverageLabel() {
+        let start = Date(timeIntervalSinceReferenceDate: 1_000)
+        let end = start.addingTimeInterval(30)
+        let expectedStart = AppLocalization.formattedTime(start, includesSeconds: true)
+        let expectedEnd = AppLocalization.formattedTime(end, includesSeconds: true)
+
+        let value = AppLocalization.formattedTimeRange(
+            start...end,
+            includesSeconds: true
+        )
+
+        XCTAssertEqual(value, "\(expectedStart)–\(expectedEnd)")
+        XCTAssertFalse(value.localizedCaseInsensitiveContains("avg"))
+        XCTAssertFalse(value.contains("平均"))
+    }
+
+    func testFormattedTimeRangeCollapsesMatchingEndpoints() {
+        let date = Date(timeIntervalSinceReferenceDate: 1_000)
+
+        XCTAssertEqual(
+            AppLocalization.formattedTimeRange(date...date, includesSeconds: true),
+            AppLocalization.formattedTime(date, includesSeconds: true)
+        )
+    }
+
     func testNetworkReadoutsUseDirectionalArrows() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
         let sample = DashboardTrendSample(

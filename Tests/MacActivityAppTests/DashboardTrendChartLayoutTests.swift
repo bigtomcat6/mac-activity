@@ -884,26 +884,38 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
-    func testHoverSelectionUsesChartLocalCoordinates() {
+    func testHoverSelectionUsesAveragedBucketCoordinatesAndRange() throws {
         let start = Date(timeIntervalSinceReferenceDate: 1_000)
         let middle = start.addingTimeInterval(60)
         let end = start.addingTimeInterval(120)
-        let samples = [
-            DashboardTrendSample(timestamp: start, primaryValue: 10),
-            DashboardTrendSample(timestamp: middle, primaryValue: 40),
-            DashboardTrendSample(timestamp: end, primaryValue: 20)
-        ]
+        let bucketBase = start.addingTimeInterval(-5)
+        let display = DashboardTrendDisplay(
+            segments: [
+                DashboardTrendDisplaySegment(
+                    id: bucketBase,
+                    buckets: [
+                        displayBucket(base: bucketBase, offset: 0, primary: 10, secondary: nil),
+                        displayBucket(base: bucketBase, offset: 60, primary: 40, secondary: nil),
+                        displayBucket(base: bucketBase, offset: 120, primary: 20, secondary: nil),
+                    ]
+                )
+            ]
+        )
         let plotFrame = CGRect(x: 42, y: 4, width: 236, height: 38)
 
         let selection = DashboardTrendChartLayout.hoverSelection(
             localX: plotFrame.width / 2,
-            samples: samples,
+            samples: display.samples,
             xDomain: start...end,
             yDomain: 0...100,
             plotFrame: plotFrame
         )
 
-        XCTAssertEqual(selection?.sampleIndex, 1)
+        let selectedIndex = try XCTUnwrap(selection?.sampleIndex)
+        let selectedBucket = display.buckets[selectedIndex]
+        XCTAssertEqual(selectedIndex, 1)
+        XCTAssertEqual(selectedBucket.startDate, middle.addingTimeInterval(-5))
+        XCTAssertEqual(selectedBucket.endDate, middle.addingTimeInterval(5))
         XCTAssertEqual(
             selection?.location.x ?? 0,
             DashboardTrendChartLayout.xPosition(
@@ -913,14 +925,11 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             ),
             accuracy: 0.001
         )
-        XCTAssertEqual(
-            selection?.location.y ?? 0,
-            DashboardTrendChartLayout.yPosition(
-                for: 40,
-                domain: 0...100,
-                plotFrame: plotFrame
-            ),
-            accuracy: 0.001
+        XCTAssertFalse(
+            AppLocalization.formattedTimeRange(
+                selectedBucket.startDate...selectedBucket.endDate,
+                includesSeconds: true
+            ).localizedCaseInsensitiveContains("avg")
         )
     }
 

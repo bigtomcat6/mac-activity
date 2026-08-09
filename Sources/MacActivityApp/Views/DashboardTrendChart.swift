@@ -116,7 +116,8 @@ struct DashboardTrendChart: View {
                 }
             }
 
-            if let selectedSample {
+            if let selectedBucket {
+                let selectedSample = selectedBucket.sample
                 let annotationAnchor = hoverLocation ?? CGPoint(
                     x: DashboardTrendChartLayout.xPosition(
                         for: selectedSample.timestamp,
@@ -133,15 +134,16 @@ struct DashboardTrendChart: View {
                     )
                 )
                 let annotationSize = annotationSize(
-                    for: selectedSample,
+                    for: selectedBucket,
                     isCompact: isCompactHoverLayout
                 )
 
-                annotationView(
-                    sample: selectedSample,
-                    isCompact: isCompactHoverLayout
+                annotationView(bucket: selectedBucket, isCompact: isCompactHoverLayout)
+                .frame(
+                    width: annotationSize.width,
+                    height: annotationSize.height,
+                    alignment: .leading
                 )
-                .frame(width: annotationSize.width, height: annotationSize.height, alignment: .leading)
                 .position(
                     DashboardTrendChartLayout.annotationPosition(
                         pointer: annotationAnchor,
@@ -378,7 +380,7 @@ struct DashboardTrendChart: View {
                 }
                 .stroke(Color.secondary.opacity(0.14), lineWidth: 1)
 
-                Text(timestampLabel(for: date))
+                Text(AppLocalization.formattedTime(date))
                     .font(.caption2.monospacedDigit())
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -536,10 +538,11 @@ struct DashboardTrendChart: View {
     }
 
     private func annotationView(
-        sample: DashboardTrendSample,
+        bucket: DashboardTrendDisplayBucket,
         isCompact: Bool
     ) -> some View {
-        VStack(alignment: .leading, spacing: isCompact ? 1 : 2) {
+        let sample = bucket.sample
+        return VStack(alignment: .leading, spacing: isCompact ? 1 : 2) {
             Text(primaryReadout(for: sample))
                 .font(
                     isCompact
@@ -557,11 +560,16 @@ struct DashboardTrendChart: View {
                     .minimumScaleFactor(0.72)
             }
 
-            Text(timestampLabel(for: sample.timestamp))
-                .font(.caption2.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
+            Text(
+                AppLocalization.formattedTimeRange(
+                    bucket.startDate...bucket.endDate,
+                    includesSeconds: true
+                )
+            )
+            .font(.caption2.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.72)
         }
         .padding(.horizontal, isCompact ? 6 : 8)
         .padding(.vertical, isCompact ? 4 : 6)
@@ -573,14 +581,18 @@ struct DashboardTrendChart: View {
     }
 
     private func annotationSize(
-        for sample: DashboardTrendSample,
+        for bucket: DashboardTrendDisplayBucket,
         isCompact: Bool
     ) -> CGSize {
-        if secondaryReadout(for: sample) != nil {
-            return isCompact ? CGSize(width: 118, height: 44) : CGSize(width: 132, height: 54)
+        if secondaryReadout(for: bucket.sample) != nil {
+            return isCompact
+                ? CGSize(width: 142, height: 44)
+                : CGSize(width: 156, height: 54)
         }
 
-        return isCompact ? CGSize(width: 88, height: 34) : CGSize(width: 104, height: 44)
+        return isCompact
+            ? CGSize(width: 122, height: 34)
+            : CGSize(width: 138, height: 44)
     }
 
     private func hoveredBucket(
@@ -629,14 +641,6 @@ struct DashboardTrendChart: View {
 
     private func secondaryReadout(for sample: DashboardTrendSample) -> String? {
         AppLocalization.chartSecondaryReadout(for: metric.kind, sample: sample)
-    }
-
-    private func timestampLabel(for date: Date?) -> String {
-        guard let date else {
-            return "--:--"
-        }
-
-        return AppLocalization.formattedTime(date)
     }
 
 }
