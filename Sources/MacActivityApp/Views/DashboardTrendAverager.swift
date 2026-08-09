@@ -173,8 +173,7 @@ struct DashboardTrendAverager {
             return rawDisplay(for: sourceSegments)
         }
 
-        var segments = sourceSegments.compactMap {
-            samples -> DashboardTrendDisplaySegment? in
+        var segments = sourceSegments.compactMap { samples -> DashboardTrendDisplaySegment? in
             let buckets = buckets(
                 for: samples,
                 duration: duration,
