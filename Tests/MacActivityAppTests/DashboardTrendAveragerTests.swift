@@ -165,6 +165,30 @@ final class DashboardTrendAveragerTests: XCTestCase {
         XCTAssertEqual(normalized[0].sampleWeight, 4)
     }
 
+    func testNormalizationMergesThreeDuplicatesWithIndependentOrderInvariantWeights() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let first = sample(base, 0, primary: 10, secondary: 100, weight: 1)
+        let invalidSecondary = sample(base, 0, primary: 20, secondary: .infinity, weight: 100)
+        let last = sample(base, 0, primary: 30, secondary: 300, weight: 3)
+        let orderings = [
+            [first, invalidSecondary, last],
+            [first, last, invalidSecondary],
+            [invalidSecondary, first, last],
+            [invalidSecondary, last, first],
+            [last, first, invalidSecondary],
+            [last, invalidSecondary, first],
+        ]
+
+        let normalized = orderings.map(DashboardTrendAverager.normalizedSamples)
+        let expected = try XCTUnwrap(normalized.first?.first)
+
+        XCTAssertTrue(normalized.allSatisfy { $0.count == 1 })
+        XCTAssertTrue(normalized.allSatisfy { $0.first == expected })
+        XCTAssertEqual(expected.primaryValue, 2_100.0 / 104.0, accuracy: 0.001)
+        XCTAssertEqual(try XCTUnwrap(expected.secondaryValue), 250, accuracy: 0.001)
+        XCTAssertEqual(expected.sampleWeight, 104)
+    }
+
     func testCurrentBucketBlendsFromPreviousAverageByElapsedProgress() throws {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let samples = [
@@ -265,6 +289,41 @@ final class DashboardTrendAveragerTests: XCTestCase {
 
         XCTAssertEqual(display.segments.count, 2)
         XCTAssertEqual(display.segments.map { $0.buckets.count }, [2, 2])
+    }
+
+    func testThreeSampleSparseHistoryPreservesMaterialSamplingGap() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 1, primary: 20),
+            sample(base, 300, primary: 30),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(300)
+        )
+
+        XCTAssertEqual(display.segments.count, 2)
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [2, 1])
+    }
+
+    func testTwoSampleSparseHistoryPreservesMaterialSamplingGap() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 300, primary: 20),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(300)
+        )
+
+        XCTAssertEqual(display.segments.count, 2)
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [1, 1])
     }
 
     private func sample(

@@ -110,20 +110,30 @@ struct DashboardTrendAverager {
                 sampleWeight: sample.sampleWeight
             )
         }
-        .sorted { $0.timestamp < $1.timestamp }
 
-        var merged: [DashboardTrendSample] = []
-        for sample in valid {
-            if let previous = merged.last, previous.timestamp == sample.timestamp {
-                merged[merged.index(before: merged.endIndex)] = averagedSample(
-                    [previous, sample],
-                    timestamp: sample.timestamp
-                )
-            } else {
-                merged.append(sample)
+        let grouped = Dictionary(grouping: valid, by: \.timestamp)
+        return grouped.keys.sorted().compactMap { timestamp in
+            guard let samples = grouped[timestamp] else { return nil }
+            let ordered = samples.sorted { lhs, rhs in
+                if lhs.primaryValue != rhs.primaryValue {
+                    return lhs.primaryValue < rhs.primaryValue
+                }
+                if lhs.secondaryValue != rhs.secondaryValue {
+                    switch (lhs.secondaryValue, rhs.secondaryValue) {
+                    case (nil, .some):
+                        return true
+                    case (.some, nil):
+                        return false
+                    case let (.some(lhs), .some(rhs)):
+                        return lhs < rhs
+                    case (nil, nil):
+                        break
+                    }
+                }
+                return lhs.sampleWeight < rhs.sampleWeight
             }
+            return averagedSample(ordered, timestamp: timestamp)
         }
-        return merged
     }
 
     static func display(
@@ -188,8 +198,14 @@ struct DashboardTrendAverager {
             .map { $1.timestamp.timeIntervalSince($0.timestamp) }
             .filter { $0 > 0 }
             .sorted()
-        let medianCadence = intervals.isEmpty ? bucketDuration : intervals[intervals.count / 2]
-        let gapThreshold = max(bucketDuration * 2, medianCadence * 3)
+        let cadenceIntervals = intervals.dropLast()
+        let gapThreshold: TimeInterval
+        if cadenceIntervals.isEmpty {
+            gapThreshold = bucketDuration * 2
+        } else {
+            let medianCadence = cadenceIntervals[(cadenceIntervals.count - 1) / 2]
+            gapThreshold = max(bucketDuration * 2, medianCadence * 3)
+        }
 
         var segments = [[first]]
         for sample in samples.dropFirst() {
