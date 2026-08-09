@@ -96,74 +96,196 @@ struct DashboardTrendAverager {
         return duration
     }
 
+    static func normalizedSamples(
+        _ samples: [DashboardTrendSample]
+    ) -> [DashboardTrendSample] {
+        let valid = samples.compactMap { sample -> DashboardTrendSample? in
+            let timestamp = sample.timestamp.timeIntervalSinceReferenceDate
+            guard timestamp.isFinite, sample.primaryValue.isFinite else { return nil }
+            let secondary = sample.secondaryValue.flatMap { $0.isFinite ? $0 : nil }
+            return DashboardTrendSample(
+                timestamp: sample.timestamp,
+                primaryValue: sample.primaryValue,
+                secondaryValue: secondary,
+                sampleWeight: sample.sampleWeight
+            )
+        }
+        .sorted { $0.timestamp < $1.timestamp }
+
+        var merged: [DashboardTrendSample] = []
+        for sample in valid {
+            if let previous = merged.last, previous.timestamp == sample.timestamp {
+                merged[merged.index(before: merged.endIndex)] = averagedSample(
+                    [previous, sample],
+                    timestamp: sample.timestamp
+                )
+            } else {
+                merged.append(sample)
+            }
+        }
+        return merged
+    }
+
     static func display(
         samples: [DashboardTrendSample],
         plotWidth: CGFloat,
         referenceDate: Date
     ) -> DashboardTrendDisplay {
         guard preferredBucketCount(for: plotWidth) > 0 else { return .empty }
-        let ordered = samples.sorted { $0.timestamp < $1.timestamp }
+        let ordered = normalizedSamples(samples)
         guard ordered.count >= 2 else { return .empty }
 
+        let duration = bucketDuration(for: ordered, plotWidth: plotWidth)
+        let sourceSegments = continuousSegments(ordered, bucketDuration: duration)
         if ordered.count < 6 {
-            return rawDisplay(for: ordered)
+            return rawDisplay(for: sourceSegments)
         }
 
-        let duration = bucketDuration(for: ordered, plotWidth: plotWidth)
-        let grouped = Dictionary(grouping: ordered) {
+        var segments = sourceSegments.compactMap {
+            samples -> DashboardTrendDisplaySegment? in
+            let buckets = buckets(
+                for: samples,
+                duration: duration,
+                referenceDate: referenceDate
+            )
+            guard let firstBucket = buckets.first else { return nil }
+            return DashboardTrendDisplaySegment(id: firstBucket.startDate, buckets: buckets)
+        }
+
+        stabilizeCurrentBucket(
+            in: &segments,
+            duration: duration,
+            referenceDate: referenceDate
+        )
+        return DashboardTrendDisplay(segments: segments)
+    }
+
+    private static func rawDisplay(
+        for sourceSegments: [[DashboardTrendSample]]
+    ) -> DashboardTrendDisplay {
+        DashboardTrendDisplay(
+            segments: sourceSegments.compactMap { samples in
+                guard let first = samples.first else { return nil }
+                let buckets = samples.map { sample in
+                    DashboardTrendDisplayBucket(
+                        startDate: sample.timestamp,
+                        endDate: sample.timestamp,
+                        timestamp: sample.timestamp,
+                        sample: sample
+                    )
+                }
+                return DashboardTrendDisplaySegment(id: first.timestamp, buckets: buckets)
+            }
+        )
+    }
+
+    private static func continuousSegments(
+        _ samples: [DashboardTrendSample],
+        bucketDuration: TimeInterval
+    ) -> [[DashboardTrendSample]] {
+        guard let first = samples.first else { return [] }
+        let intervals = zip(samples, samples.dropFirst())
+            .map { $1.timestamp.timeIntervalSince($0.timestamp) }
+            .filter { $0 > 0 }
+            .sorted()
+        let medianCadence = intervals.isEmpty ? bucketDuration : intervals[intervals.count / 2]
+        let gapThreshold = max(bucketDuration * 2, medianCadence * 3)
+
+        var segments = [[first]]
+        for sample in samples.dropFirst() {
+            let previous = segments[segments.index(before: segments.endIndex)].last!
+            if sample.timestamp.timeIntervalSince(previous.timestamp) > gapThreshold {
+                segments.append([sample])
+            } else {
+                segments[segments.index(before: segments.endIndex)].append(sample)
+            }
+        }
+        return segments
+    }
+
+    private static func buckets(
+        for samples: [DashboardTrendSample],
+        duration: TimeInterval,
+        referenceDate: Date
+    ) -> [DashboardTrendDisplayBucket] {
+        let grouped = Dictionary(grouping: samples) {
             alignedStart(for: $0.timestamp, duration: duration)
         }
-        let effectiveReferenceDate = max(referenceDate, ordered.last!.timestamp)
-        var buckets = grouped.keys.sorted().compactMap { startDate -> DashboardTrendDisplayBucket? in
+        let effectiveReferenceDate = max(referenceDate, samples.last!.timestamp)
+        var result = grouped.keys.sorted().compactMap { startDate -> DashboardTrendDisplayBucket? in
             guard let groupedSamples = grouped[startDate] else { return nil }
             let intervalEnd = startDate.addingTimeInterval(duration)
             let endDate = min(intervalEnd, effectiveReferenceDate)
             let timestamp = startDate.addingTimeInterval(
                 endDate.timeIntervalSince(startDate) / 2
             )
-            let sample = averagedSample(groupedSamples, timestamp: timestamp)
-
             return DashboardTrendDisplayBucket(
                 startDate: startDate,
                 endDate: endDate,
                 timestamp: timestamp,
-                sample: sample
+                sample: averagedSample(groupedSamples, timestamp: timestamp)
             )
         }
 
-        if let firstTimestamp = ordered.first?.timestamp, !buckets.isEmpty {
-            buckets[0] = buckets[0].replacing(timestamp: firstTimestamp)
+        if let firstTimestamp = samples.first?.timestamp, !result.isEmpty {
+            result[0] = result[0].replacing(timestamp: firstTimestamp)
         }
-        if let lastTimestamp = ordered.last?.timestamp, !buckets.isEmpty {
-            let lastIndex = buckets.index(before: buckets.endIndex)
-            buckets[lastIndex] = buckets[lastIndex].replacing(timestamp: lastTimestamp)
+        if let lastTimestamp = samples.last?.timestamp, !result.isEmpty {
+            let lastIndex = result.index(before: result.endIndex)
+            result[lastIndex] = result[lastIndex].replacing(timestamp: lastTimestamp)
         }
-
-        guard let firstBucket = buckets.first else { return .empty }
-        return DashboardTrendDisplay(
-            segments: [
-                DashboardTrendDisplaySegment(
-                    id: firstBucket.startDate,
-                    buckets: buckets
-                )
-            ]
-        )
+        return result
     }
 
-    private static func rawDisplay(
-        for samples: [DashboardTrendSample]
-    ) -> DashboardTrendDisplay {
-        guard let first = samples.first else { return .empty }
-        let buckets = samples.map { sample in
-            DashboardTrendDisplayBucket(
-                startDate: sample.timestamp,
-                endDate: sample.timestamp,
-                timestamp: sample.timestamp,
-                sample: sample
-            )
+    private static func stabilizeCurrentBucket(
+        in segments: inout [DashboardTrendDisplaySegment],
+        duration: TimeInterval,
+        referenceDate: Date
+    ) {
+        guard let segmentIndex = segments.indices.last,
+              segments[segmentIndex].buckets.count >= 2 else {
+            return
         }
-        return DashboardTrendDisplay(
-            segments: [DashboardTrendDisplaySegment(id: first.timestamp, buckets: buckets)]
+
+        var buckets = segments[segmentIndex].buckets
+        let currentIndex = buckets.index(before: buckets.endIndex)
+        let previousIndex = buckets.index(before: currentIndex)
+        let current = buckets[currentIndex]
+        let intervalEnd = current.startDate.addingTimeInterval(duration)
+        guard referenceDate >= current.startDate, referenceDate < intervalEnd else {
+            return
+        }
+
+        let progress = min(
+            max(referenceDate.timeIntervalSince(current.startDate) / duration, 0),
+            1
+        )
+        let previous = buckets[previousIndex].sample
+        let primary = previous.primaryValue
+            + (current.sample.primaryValue - previous.primaryValue) * progress
+        let secondary: Double?
+        if let previousSecondary = previous.secondaryValue,
+           let currentSecondary = current.sample.secondaryValue {
+            secondary = previousSecondary + (currentSecondary - previousSecondary) * progress
+        } else {
+            secondary = current.sample.secondaryValue
+        }
+        let blended = DashboardTrendSample(
+            timestamp: current.timestamp,
+            primaryValue: primary,
+            secondaryValue: secondary,
+            sampleWeight: current.sample.sampleWeight
+        )
+
+        buckets[currentIndex] = DashboardTrendDisplayBucket(
+            startDate: current.startDate,
+            endDate: referenceDate,
+            timestamp: current.timestamp,
+            sample: blended
+        )
+        segments[segmentIndex] = DashboardTrendDisplaySegment(
+            id: segments[segmentIndex].id,
+            buckets: buckets
         )
     }
 
