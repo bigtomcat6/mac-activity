@@ -73,6 +73,59 @@ final class DashboardTrendAveragerTests: XCTestCase {
         XCTAssertFalse(display.samples.contains { $0.primaryValue == 100 })
     }
 
+    func testDisplayNeverExceedsMaximumBucketCountAcrossAlignedBoundaries() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = (0...192).map { index in
+            sample(
+                base,
+                0.1 + Double(index) / 3,
+                primary: Double(index)
+            )
+        }
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 600,
+            referenceDate: samples.last!.timestamp
+        )
+
+        XCTAssertLessThanOrEqual(
+            display.buckets.count,
+            DashboardTrendAverager.maximumDisplayBucketCount
+        )
+    }
+
+    func testSingleAlignedBucketSplitsIntoAveragedSourceEndpoints() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = (1...6).map { index in
+            sample(
+                base,
+                Double(index) / 10,
+                primary: Double(index * 10)
+            )
+        }
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: samples.last!.timestamp
+        )
+
+        XCTAssertEqual(display.samples.map(\.timestamp), [
+            samples.first!.timestamp,
+            samples.last!.timestamp,
+        ])
+        XCTAssertEqual(display.samples.map(\.primaryValue), [25, 55])
+        XCTAssertEqual(display.buckets.map(\.id), [
+            base,
+            base.addingTimeInterval(0.5),
+        ])
+        XCTAssertFalse(display.samples.contains { sample in
+            sample.primaryValue == samples.first!.primaryValue
+                || sample.primaryValue == samples.last!.primaryValue
+        })
+    }
+
     func testAppendingInsideAlignedBucketKeepsOlderBucketIDsStable() {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let initial = (0..<89).map {

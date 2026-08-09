@@ -74,19 +74,26 @@ struct DashboardTrendAverager {
             return 1
         }
 
-        let span = max(last.timestamp.timeIntervalSince(first.timestamp), 1)
+        let sourceSpan = last.timestamp.timeIntervalSince(first.timestamp)
+        let span = max(sourceSpan, 1)
         let preferredCount = preferredBucketCount(for: plotWidth)
         guard preferredCount > 0 else { return span }
 
         let sourceCountLimit = max(2, samples.count / 3)
         let targetCount = min(preferredCount, sourceCountLimit)
         let preferredDuration = span / Double(targetCount)
-        let minimumDuration = span / Double(maximumDisplayBucketCount)
+        // An aligned span can occupy one more bucket than its interval count.
+        let minimumDuration = span / Double(maximumDisplayBucketCount - 1)
         let candidates = stableDurations.filter { $0 >= minimumDuration }
 
-        return candidates.min {
+        var duration = candidates.min {
             abs(log($0 / preferredDuration)) < abs(log($1 / preferredDuration))
         } ?? ceil(minimumDuration)
+        // Averaged displays need real buckets at both visible source endpoints.
+        while samples.count >= 6, sourceSpan > 0, duration > sourceSpan {
+            duration /= 2
+        }
+        return duration
     }
 
     static func display(
