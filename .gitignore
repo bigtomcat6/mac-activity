@@ -11,6 +11,7 @@ default.profraw
 *.profraw
 xcuserdata/
 *.xcuserstate
+.worktrees/
 .swiftpm/configuration/registries.json
 .swiftpm/xcode/package.xcworkspace/
 
