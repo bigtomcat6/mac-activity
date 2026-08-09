@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 import XCTest
-import MacActivityCore
+@testable import MacActivityCore
 @testable import MacActivityApp
 
 @MainActor
@@ -42,8 +42,8 @@ final class EnergyImpactViewTests: XCTestCase {
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
-            sampleIntervalNanoseconds: 1,
-            publicationIntervalNanoseconds: 3,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
         )
         let renderer = ImageRenderer(
@@ -60,6 +60,33 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertNotNil(renderer.nsImage)
     }
 
+    func testRenderedEnergyImpactViewStartsVisibleLifecycleThroughModel() async {
+        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 120)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+        for _ in 0..<100 where provider.beginCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(provider.beginCount, 1)
+        XCTAssertEqual(provider.observeCount, 1)
+        XCTAssertEqual(provider.endCount, 1)
+    }
+
     func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
         let initialPreferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(initialPreferredLanguageIdentifier) }
@@ -73,16 +100,12 @@ final class EnergyImpactViewTests: XCTestCase {
     private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
         let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
-        var sleepCount = 0
         let renderedEntry = entry(power: 1_840)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[], [renderedEntry]]),
-            sampleIntervalNanoseconds: 1,
-            publicationIntervalNanoseconds: 1,
-            sleep: { _ in
-                sleepCount += 1
-                guard sleepCount == 1 else { throw CancellationError() }
-            }
+            provider: EnergyImpactViewProviderStub(responses: [[renderedEntry]]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
         )
         await model.refreshWhileVisible()
 
@@ -237,30 +260,31 @@ final class EnergyImpactViewTests: XCTestCase {
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
     private var responses: [[EnergyImpactEntry]]
-    private var activeSessionID: EnergyImpactSessionID?
+    private var nextGeneration: UInt64 = 0
+    private(set) var beginCount = 0
+    private(set) var observeCount = 0
+    private(set) var endCount = 0
 
     init(responses: [[EnergyImpactEntry]]) {
         self.responses = responses
     }
 
-    func beginSession() async -> EnergyImpactSessionID {
-        let sessionID = EnergyImpactSessionID()
-        activeSessionID = sessionID
-        return sessionID
+    func beginSession() async -> EnergyImpactSamplingLease? {
+        beginCount += 1
+        nextGeneration += 1
+        return EnergyImpactSamplingLease(requestGeneration: nextGeneration)
     }
 
-    func sample(
-        sessionID: EnergyImpactSessionID,
+    func observe(
+        lease: EnergyImpactSamplingLease,
         limit: Int,
-        scope: EnergyImpactAppScope,
-        publicationBoundary: Bool
+        scope: EnergyImpactAppScope
     ) async -> [EnergyImpactEntry]? {
-        guard sessionID == activeSessionID else { return nil }
+        observeCount += 1
         return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
     }
 
-    func endSession(_ sessionID: EnergyImpactSessionID) async {
-        guard sessionID == activeSessionID else { return }
-        activeSessionID = nil
+    func endSession(_ lease: EnergyImpactSamplingLease) async {
+        endCount += 1
     }
 }

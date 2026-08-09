@@ -1,208 +1,195 @@
-import Darwin
 import XCTest
 @testable import MacActivityCore
 
 @MainActor
 final class EnergyImpactProviderTests: XCTestCase {
-    func testServiceForwardsCatalogSnapshotsAndSamplingArguments() async throws {
-        let apps = [fixtureApp(processIdentifier: 101, kind: .regular)]
-        let catalog = EnergyImpactAppCatalogStub(apps: apps)
-        let sampler = EnergyImpactSamplingStub(output: [fixtureEntry()])
-        let service = EnergyImpactService(catalog: catalog, sampler: sampler)
-
-        let sessionID = await service.beginSession()
-        let sampled = await service.sample(
-            sessionID: sessionID,
-            limit: 12,
-            scope: .regularAndAccessory,
-            publicationBoundary: true
+    func testBeginSessionAllocatesGenerationsBeforeAwaitingSampler() async {
+        let sampler = ReorderingSamplingSpy()
+        let service = EnergyImpactService(
+            catalog: EnergyImpactAppCatalogStub(responses: [[]]),
+            sampler: sampler
         )
-        let entries = try XCTUnwrap(sampled)
-        await service.endSession(sessionID)
-        let snapshot = await sampler.snapshot()
 
-        XCTAssertEqual(entries, [fixtureEntry()])
-        XCTAssertEqual(catalog.requestedScopes, [.regularAndAccessory])
-        XCTAssertEqual(snapshot.requests, [
-            .init(
-                sessionID: sessionID,
-                apps: apps,
-                limit: 12,
-                publicationBoundary: true
-            ),
+        let first = Task { await service.beginSession() }
+        await sampler.waitForRequestCount(1)
+        let second = Task { await service.beginSession() }
+        await sampler.waitForRequestCount(2)
+
+        let requestGenerations = await sampler.requestGenerations
+        XCTAssertEqual(requestGenerations, [1, 2])
+        await sampler.releaseFirstRequest()
+        _ = await first.value
+        _ = await second.value
+    }
+
+    func testReorderedBeginLeavesNewerRequestAuthoritative() async throws {
+        let sampler = ReorderingSamplingSpy()
+        let service = EnergyImpactService(
+            catalog: EnergyImpactAppCatalogStub(responses: [[]]),
+            sampler: sampler
+        )
+
+        let first = Task { await service.beginSession() }
+        await sampler.waitForRequestCount(1)
+        let second = Task { await service.beginSession() }
+        await sampler.waitForRequestCount(2)
+        let newer = await second.value
+        await sampler.releaseFirstRequest()
+        let older = await first.value
+
+        XCTAssertNil(older)
+        XCTAssertEqual(try XCTUnwrap(newer).requestGeneration, 2)
+        let activeRequestGeneration = await sampler.activeRequestGeneration
+        XCTAssertEqual(activeRequestGeneration, 2)
+    }
+
+    func testObserveCapturesOneCurrentCatalogArrayForOneSamplerCall() async throws {
+        let expected = [EnergyImpactAppSnapshot(
+            processIdentifier: 101,
+            name: "First",
+            bundleIdentifier: "com.example.first",
+            bundleURL: nil
+        )]
+        let catalog = EnergyImpactAppCatalogStub(responses: [
+            expected,
+            [.init(processIdentifier: 202, name: "Later", bundleIdentifier: nil, bundleURL: nil)],
         ])
-        XCTAssertNil(snapshot.activeSessionID)
-    }
-
-    func testServiceRequestsCatalogForEverySample() async {
-        let catalog = EnergyImpactAppCatalogStub(apps: [fixtureApp()])
-        let sampler = EnergyImpactSamplingStub(output: [])
+        let sampler = SamplingSpy()
         let service = EnergyImpactService(catalog: catalog, sampler: sampler)
-        let sessionID = await service.beginSession()
+        let optionalLease = await service.beginSession()
+        let lease = try XCTUnwrap(optionalLease)
 
-        _ = await service.sample(
-            sessionID: sessionID,
+        _ = await service.observe(
+            lease: lease,
             limit: 20,
-            scope: .regularOnly,
-            publicationBoundary: false
-        )
-        _ = await service.sample(
-            sessionID: sessionID,
-            limit: 20,
-            scope: .regularAndAccessory,
-            publicationBoundary: true
+            scope: .regularAndAccessory
         )
 
-        XCTAssertEqual(catalog.requestedScopes, [.regularOnly, .regularAndAccessory])
+        XCTAssertEqual(catalog.callCount, 1)
+        let observedApps = await sampler.observedApps
+        let observeCount = await sampler.observeCount
+        XCTAssertEqual(observedApps, [expected])
+        XCTAssertEqual(observeCount, 1)
     }
 
-    func testObsoleteEndCannotClearNewestServiceSession() async {
-        let catalog = EnergyImpactAppCatalogStub(apps: [fixtureApp()])
-        let sampler = EnergyImpactSamplingStub(output: [fixtureEntry()])
+    func testObserveForwardsRegularOnlyScopeUnchanged() async throws {
+        let catalog = EnergyImpactAppCatalogStub(responses: [[]])
+        let sampler = SamplingSpy()
         let service = EnergyImpactService(catalog: catalog, sampler: sampler)
-        let oldSessionID = await service.beginSession()
-        let currentSessionID = await service.beginSession()
+        let optionalLease = await service.beginSession()
+        let lease = try XCTUnwrap(optionalLease)
 
-        await service.endSession(oldSessionID)
-        let entries = await service.sample(
-            sessionID: currentSessionID,
-            limit: 20,
-            scope: .regularOnly,
-            publicationBoundary: false
+        _ = await service.observe(
+            lease: lease,
+            limit: 7,
+            scope: .regularOnly
         )
 
-        XCTAssertEqual(entries, [fixtureEntry()])
-        let snapshot = await sampler.snapshot()
-        XCTAssertEqual(snapshot.activeSessionID, currentSessionID)
+        XCTAssertEqual(catalog.scopes, [.regularOnly])
+        let observedLimits = await sampler.observedLimits
+        XCTAssertEqual(observedLimits, [7])
     }
 
-    func testSystemCatalogRefreshesWorkspaceMetadataEveryThreeSeconds() {
-        let state = EnergyImpactCatalogTestState()
-        let catalog = SystemEnergyImpactAppCatalog(
-            snapshotProvider: {
-                state.workspaceRequestCount += 1
-                return [
-                    self.fixtureApp(processIdentifier: 101, kind: .regular),
-                    self.fixtureApp(processIdentifier: 102, kind: .accessory),
-                ]
-            },
-            nowSeconds: { state.now },
-            refreshIntervalSeconds: 3
+    func testFacadeStoresNoAlgorithmOrProcessState() {
+        let service = EnergyImpactService(
+            catalog: EnergyImpactAppCatalogStub(responses: [[]]),
+            sampler: SamplingSpy()
         )
 
-        XCTAssertEqual(catalog.snapshots(scope: .regularOnly).map(\.processIdentifier), [101])
-        state.now = 1
-        XCTAssertEqual(catalog.snapshots(scope: .regularAndAccessory).count, 2)
-        state.now = 2
-        _ = catalog.snapshots(scope: .regularOnly)
-        state.now = 3
-        _ = catalog.snapshots(scope: .regularOnly)
+        let labels = Mirror(reflecting: service).children.compactMap(\.label)
+        let forbiddenFragments = [
+            "baseline", "owner", "snapshot", "smoother", "ranker", "raw",
+        ]
 
-        XCTAssertEqual(state.workspaceRequestCount, 2)
+        XCTAssertEqual(Set(labels), ["catalog", "sampler", "nextRequestGeneration"])
+        XCTAssertTrue(labels.allSatisfy { label in
+            forbiddenFragments.allSatisfy { label.localizedCaseInsensitiveContains($0) == false }
+        })
     }
-
-    private func fixtureApp(
-        processIdentifier: pid_t = 101,
-        kind: EnergyImpactAppKind = .regular
-    ) -> EnergyImpactAppSnapshot {
-        EnergyImpactAppSnapshot(
-            processIdentifier: processIdentifier,
-            name: "Fixture",
-            bundleIdentifier: "example.fixture",
-            bundleURL: nil,
-            kind: kind
-        )
-    }
-
-    private func fixtureEntry() -> EnergyImpactEntry {
-        EnergyImpactEntry(
-            identity: EnergyImpactAppIdentity(
-                rootProcessIdentifier: 101,
-                rootProcessStartAbsoluteTime: 10
-            ),
-            name: "Fixture",
-            bundleIdentifier: "example.fixture",
-            bundleURL: nil,
-            currentPowerMicrowatts: 1,
-            sustainedPowerMicrowatts: nil,
-            rankingScore: 1,
-            trend: .steady,
-            coverage: .unavailable,
-            status: .stable
-        )
-    }
-}
-
-@MainActor
-private final class EnergyImpactCatalogTestState {
-    var now: TimeInterval = 0
-    var workspaceRequestCount = 0
 }
 
 @MainActor
 private final class EnergyImpactAppCatalogStub: EnergyImpactAppCataloging {
-    let apps: [EnergyImpactAppSnapshot]
-    private(set) var requestedScopes = [EnergyImpactAppScope]()
+    private var responses: [[EnergyImpactAppSnapshot]]
+    private(set) var scopes: [EnergyImpactAppScope] = []
 
-    init(apps: [EnergyImpactAppSnapshot]) {
-        self.apps = apps
+    init(responses: [[EnergyImpactAppSnapshot]]) {
+        self.responses = responses
     }
 
+    var callCount: Int { scopes.count }
+
     func snapshots(scope: EnergyImpactAppScope) -> [EnergyImpactAppSnapshot] {
-        requestedScopes.append(scope)
-        return apps
+        scopes.append(scope)
+        guard responses.isEmpty == false else { return [] }
+        return responses.removeFirst()
     }
 }
 
-private actor EnergyImpactSamplingStub: EnergyImpactSampling {
-    struct Request: Equatable, Sendable {
-        let sessionID: EnergyImpactSessionID
-        let apps: [EnergyImpactAppSnapshot]
-        let limit: Int
-        let publicationBoundary: Bool
+private actor SamplingSpy: EnergyImpactSampling {
+    private(set) var observedApps: [[EnergyImpactAppSnapshot]] = []
+    private(set) var observedLimits: [Int] = []
+    private(set) var observeCount = 0
+
+    func beginSession(
+        _ request: EnergyImpactSessionRequest
+    ) -> EnergyImpactSamplingLease? {
+        EnergyImpactSamplingLease(requestGeneration: request.generation)
     }
 
-    struct Snapshot: Sendable {
-        let activeSessionID: EnergyImpactSessionID?
-        let requests: [Request]
-    }
-
-    private let output: [EnergyImpactEntry]
-    private var activeSessionID: EnergyImpactSessionID?
-    private var requests = [Request]()
-
-    init(output: [EnergyImpactEntry]) {
-        self.output = output
-    }
-
-    func beginSession() -> EnergyImpactSessionID {
-        let sessionID = EnergyImpactSessionID()
-        activeSessionID = sessionID
-        return sessionID
-    }
-
-    func sample(
-        sessionID: EnergyImpactSessionID,
+    func observe(
+        lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
-        limit: Int,
-        publicationBoundary: Bool
+        limit: Int
     ) -> [EnergyImpactEntry]? {
-        guard sessionID == activeSessionID else { return nil }
-        requests.append(Request(
-            sessionID: sessionID,
-            apps: apps,
-            limit: limit,
-            publicationBoundary: publicationBoundary
-        ))
-        return Array(output.prefix(max(0, limit)))
+        observedApps.append(apps)
+        observedLimits.append(limit)
+        observeCount += 1
+        return []
     }
 
-    func endSession(_ sessionID: EnergyImpactSessionID) {
-        guard sessionID == activeSessionID else { return }
-        activeSessionID = nil
+    func endSession(_ lease: EnergyImpactSamplingLease) {}
+}
+
+private actor ReorderingSamplingSpy: EnergyImpactSampling {
+    private(set) var requestGenerations: [UInt64] = []
+    private(set) var activeRequestGeneration: UInt64?
+    private var highestSeenGeneration: UInt64 = 0
+    private var firstRequestContinuation: CheckedContinuation<Void, Never>?
+
+    func beginSession(
+        _ request: EnergyImpactSessionRequest
+    ) async -> EnergyImpactSamplingLease? {
+        requestGenerations.append(request.generation)
+        if request.generation == 1 {
+            await withCheckedContinuation { continuation in
+                firstRequestContinuation = continuation
+            }
+        }
+        guard request.generation > highestSeenGeneration else { return nil }
+        highestSeenGeneration = request.generation
+        activeRequestGeneration = request.generation
+        return EnergyImpactSamplingLease(requestGeneration: request.generation)
     }
 
-    func snapshot() -> Snapshot {
-        Snapshot(activeSessionID: activeSessionID, requests: requests)
+    func observe(
+        lease: EnergyImpactSamplingLease,
+        apps: [EnergyImpactAppSnapshot],
+        limit: Int
+    ) -> [EnergyImpactEntry]? {
+        []
+    }
+
+    func endSession(_ lease: EnergyImpactSamplingLease) {}
+
+    func waitForRequestCount(_ expectedCount: Int) async {
+        while requestGenerations.count < expectedCount {
+            await Task.yield()
+        }
+    }
+
+    func releaseFirstRequest() {
+        firstRequestContinuation?.resume()
+        firstRequestContinuation = nil
     }
 }

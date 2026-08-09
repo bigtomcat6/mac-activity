@@ -80,6 +80,38 @@ public enum EnergyImpactTrend: String, Equatable, Sendable {
     case falling
 }
 
+struct EnergyImpactSessionRequest: Hashable, Sendable {
+    let generation: UInt64
+
+    init(generation: UInt64) {
+        self.generation = generation
+    }
+}
+
+public struct EnergyImpactSamplingLease: Hashable, Sendable {
+    let requestGeneration: UInt64
+    let token: UUID
+
+    init(requestGeneration: UInt64, token: UUID = UUID()) {
+        self.requestGeneration = requestGeneration
+        self.token = token
+    }
+}
+
+protocol EnergyImpactSampling: Sendable {
+    func beginSession(
+        _ request: EnergyImpactSessionRequest
+    ) async -> EnergyImpactSamplingLease?
+
+    func observe(
+        lease: EnergyImpactSamplingLease,
+        apps: [EnergyImpactAppSnapshot],
+        limit: Int
+    ) async -> [EnergyImpactEntry]?
+
+    func endSession(_ lease: EnergyImpactSamplingLease) async
+}
+
 public struct EnergyImpactCoverage: Equatable, Sendable {
     public let discoveredProcessCount: Int
     public let readableProcessCount: Int
@@ -184,21 +216,18 @@ public struct SystemEnergyImpactClock: EnergyImpactClock {
 }
 
 public struct EnergyImpactConfiguration: Equatable, Sendable {
-    public let sampleIntervalSeconds: TimeInterval
-    public let publicationIntervalSeconds: TimeInterval
+    public let observationIntervalSeconds: TimeInterval
     public let maximumGapSeconds: TimeInterval
     public let fastHalfLifeSeconds: TimeInterval
     public let sustainedWindowSeconds: TimeInterval
 
     public init(
-        sampleIntervalSeconds: TimeInterval = 1,
-        publicationIntervalSeconds: TimeInterval = 3,
+        observationIntervalSeconds: TimeInterval = 3,
         maximumGapSeconds: TimeInterval = 10,
         fastHalfLifeSeconds: TimeInterval = 4,
         sustainedWindowSeconds: TimeInterval = 30
     ) {
-        self.sampleIntervalSeconds = sampleIntervalSeconds
-        self.publicationIntervalSeconds = publicationIntervalSeconds
+        self.observationIntervalSeconds = observationIntervalSeconds
         self.maximumGapSeconds = maximumGapSeconds
         self.fastHalfLifeSeconds = fastHalfLifeSeconds
         self.sustainedWindowSeconds = sustainedWindowSeconds
