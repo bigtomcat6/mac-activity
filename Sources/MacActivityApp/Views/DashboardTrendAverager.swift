@@ -50,6 +50,13 @@ struct DashboardTrendAverager {
     static let maximumDisplayBucketCount = 64
     static let pointsPerBucket: CGFloat = 6
 
+    private struct WeightedSample {
+        let sample: DashboardTrendSample
+        let secondaryWeight: Int
+
+        var timestamp: Date { sample.timestamp }
+    }
+
     private static let stableDurations: [TimeInterval] = [
         1, 2, 3, 5, 10, 15, 20, 30, 45,
         60, 120, 300, 600, 900, 1_800, 2_700, 3_600,
@@ -99,15 +106,24 @@ struct DashboardTrendAverager {
     static func normalizedSamples(
         _ samples: [DashboardTrendSample]
     ) -> [DashboardTrendSample] {
-        let valid = samples.compactMap { sample -> DashboardTrendSample? in
+        normalizedWeightedSamples(samples).map(\.sample)
+    }
+
+    private static func normalizedWeightedSamples(
+        _ samples: [DashboardTrendSample]
+    ) -> [WeightedSample] {
+        let valid = samples.compactMap { sample -> WeightedSample? in
             let timestamp = sample.timestamp.timeIntervalSinceReferenceDate
             guard timestamp.isFinite, sample.primaryValue.isFinite else { return nil }
             let secondary = sample.secondaryValue.flatMap { $0.isFinite ? $0 : nil }
-            return DashboardTrendSample(
-                timestamp: sample.timestamp,
-                primaryValue: sample.primaryValue,
-                secondaryValue: secondary,
-                sampleWeight: sample.sampleWeight
+            return WeightedSample(
+                sample: DashboardTrendSample(
+                    timestamp: sample.timestamp,
+                    primaryValue: sample.primaryValue,
+                    secondaryValue: secondary,
+                    sampleWeight: sample.sampleWeight
+                ),
+                secondaryWeight: secondary == nil ? 0 : sample.sampleWeight
             )
         }
 
@@ -115,11 +131,11 @@ struct DashboardTrendAverager {
         return grouped.keys.sorted().compactMap { timestamp in
             guard let samples = grouped[timestamp] else { return nil }
             let ordered = samples.sorted { lhs, rhs in
-                if lhs.primaryValue != rhs.primaryValue {
-                    return lhs.primaryValue < rhs.primaryValue
+                if lhs.sample.primaryValue != rhs.sample.primaryValue {
+                    return lhs.sample.primaryValue < rhs.sample.primaryValue
                 }
-                if lhs.secondaryValue != rhs.secondaryValue {
-                    switch (lhs.secondaryValue, rhs.secondaryValue) {
+                if lhs.sample.secondaryValue != rhs.sample.secondaryValue {
+                    switch (lhs.sample.secondaryValue, rhs.sample.secondaryValue) {
                     case (nil, .some):
                         return true
                     case (.some, nil):
@@ -130,9 +146,12 @@ struct DashboardTrendAverager {
                         break
                     }
                 }
-                return lhs.sampleWeight < rhs.sampleWeight
+                return lhs.sample.sampleWeight < rhs.sample.sampleWeight
             }
-            return averagedSample(ordered, timestamp: timestamp)
+            return WeightedSample(
+                sample: averagedSample(ordered, timestamp: timestamp),
+                secondaryWeight: ordered.reduce(0) { $0 + $1.secondaryWeight }
+            )
         }
     }
 
@@ -142,12 +161,15 @@ struct DashboardTrendAverager {
         referenceDate: Date
     ) -> DashboardTrendDisplay {
         guard preferredBucketCount(for: plotWidth) > 0 else { return .empty }
-        let ordered = normalizedSamples(samples)
-        guard ordered.count >= 2 else { return .empty }
+        let normalized = normalizedWeightedSamples(samples)
+        guard normalized.count >= 2 else { return .empty }
 
-        let duration = bucketDuration(for: ordered, plotWidth: plotWidth)
-        let sourceSegments = continuousSegments(ordered, bucketDuration: duration)
-        if ordered.count < 6 {
+        let duration = bucketDuration(
+            for: normalized.map(\.sample),
+            plotWidth: plotWidth
+        )
+        let sourceSegments = continuousSegments(normalized, bucketDuration: duration)
+        if normalized.count < 6 {
             return rawDisplay(for: sourceSegments)
         }
 
@@ -171,7 +193,7 @@ struct DashboardTrendAverager {
     }
 
     private static func rawDisplay(
-        for sourceSegments: [[DashboardTrendSample]]
+        for sourceSegments: [[WeightedSample]]
     ) -> DashboardTrendDisplay {
         DashboardTrendDisplay(
             segments: sourceSegments.compactMap { samples in
@@ -181,7 +203,7 @@ struct DashboardTrendAverager {
                         startDate: sample.timestamp,
                         endDate: sample.timestamp,
                         timestamp: sample.timestamp,
-                        sample: sample
+                        sample: sample.sample
                     )
                 }
                 return DashboardTrendDisplaySegment(id: first.timestamp, buckets: buckets)
@@ -190,9 +212,9 @@ struct DashboardTrendAverager {
     }
 
     private static func continuousSegments(
-        _ samples: [DashboardTrendSample],
+        _ samples: [WeightedSample],
         bucketDuration: TimeInterval
-    ) -> [[DashboardTrendSample]] {
+    ) -> [[WeightedSample]] {
         guard let first = samples.first else { return [] }
         let intervals = zip(samples, samples.dropFirst())
             .map { $1.timestamp.timeIntervalSince($0.timestamp) }
@@ -220,12 +242,12 @@ struct DashboardTrendAverager {
     }
 
     private static func buckets(
-        for samples: [DashboardTrendSample],
+        for samples: [WeightedSample],
         duration: TimeInterval,
         referenceDate: Date
     ) -> [DashboardTrendDisplayBucket] {
         let grouped = Dictionary(grouping: samples) {
-            alignedStart(for: $0.timestamp, duration: duration)
+            alignedStart(for: $0.sample.timestamp, duration: duration)
         }
         let effectiveReferenceDate = max(referenceDate, samples.last!.timestamp)
         var result = grouped.keys.sorted().compactMap { startDate -> DashboardTrendDisplayBucket? in
@@ -315,16 +337,16 @@ struct DashboardTrendAverager {
     }
 
     private static func averagedSample(
-        _ samples: [DashboardTrendSample],
+        _ samples: [WeightedSample],
         timestamp: Date
     ) -> DashboardTrendSample {
-        let primaryWeight = samples.reduce(0) { $0 + $1.sampleWeight }
+        let primaryWeight = samples.reduce(0) { $0 + $1.sample.sampleWeight }
         let primary = samples.reduce(0) {
-            $0 + $1.primaryValue * Double($1.sampleWeight)
+            $0 + $1.sample.primaryValue * Double($1.sample.sampleWeight)
         } / Double(primaryWeight)
         let secondarySamples = samples.compactMap { sample -> (Double, Int)? in
-            guard let value = sample.secondaryValue else { return nil }
-            return (value, sample.sampleWeight)
+            guard let value = sample.sample.secondaryValue else { return nil }
+            return (value, sample.secondaryWeight)
         }
         let secondaryWeight = secondarySamples.reduce(0) { $0 + $1.1 }
         let secondary = secondaryWeight > 0

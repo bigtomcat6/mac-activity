@@ -189,6 +189,29 @@ final class DashboardTrendAveragerTests: XCTestCase {
         XCTAssertEqual(expected.sampleWeight, 104)
     }
 
+    func testDenseDisplayKeepsInvalidDuplicateSecondaryWeightOutOfBucketAverage() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10, secondary: 100, weight: 1),
+            sample(base, 0, primary: 20, secondary: .infinity, weight: 100),
+            sample(base, 0, primary: 30, secondary: 300, weight: 3),
+            sample(base, 1, primary: 40, secondary: 500, weight: 1),
+            sample(base, 2, primary: 50),
+            sample(base, 10, primary: 60),
+            sample(base, 11, primary: 70),
+            sample(base, 12, primary: 80),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(12)
+        )
+        let firstBucket = try XCTUnwrap(display.buckets.first)
+
+        XCTAssertEqual(try XCTUnwrap(firstBucket.sample.secondaryValue), 300, accuracy: 0.001)
+    }
+
     func testCurrentBucketBlendsFromPreviousAverageByElapsedProgress() throws {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let samples = [
