@@ -6,140 +6,96 @@ import SwiftUI
 
 @MainActor
 final class DashboardTrendChartLayoutTests: XCTestCase {
-    func testDisplaySamplesReduceDenseNonNetworkSeriesWithinBudget() {
-        let samples = makeSamples(values: Array(0..<600).map(Double.init))
-        let containerSize = CGSize(width: 280, height: 60)
-
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
-            kind: .cpu,
-            containerSize: containerSize
-        )
-
-        XCTAssertLessThan(displaySamples.count, samples.count)
-        XCTAssertLessThanOrEqual(
-            displaySamples.count,
-            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
-        )
-        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
-        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
-    }
-
-    func testDisplaySamplesPreserveSpikeInOverviewSegment() {
-        let values = Array(repeating: 12.0, count: 320) + [95.0] + Array(repeating: 12.0, count: 279)
-        let samples = makeSamples(values: values)
-
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
-            kind: .cpu,
-            containerSize: CGSize(width: 280, height: 60)
-        )
-
-        XCTAssertTrue(displaySamples.contains { $0.primaryValue == 95.0 })
-    }
-
-    func testDisplaySamplesDownsampleFlatSeriesWithinBudget() {
-        let samples = makeSamples(values: Array(repeating: 42.0, count: 600))
-        let containerSize = CGSize(width: 280, height: 60)
-
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
-            kind: .memory,
-            containerSize: containerSize
-        )
-
-        XCTAssertLessThan(displaySamples.count, samples.count)
-        XCTAssertLessThanOrEqual(
-            displaySamples.count,
-            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
-        )
-        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
-        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
-    }
-
-    func testDisplaySamplesKeepFlatSeriesFromCollapsingIntoLargeTimeGap() {
-        let samples = makeSamples(values: Array(repeating: 42.0, count: 600))
-
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
-            kind: .temperature,
-            containerSize: CGSize(width: 280, height: 60)
-        )
-        let largestGap = zip(displaySamples, displaySamples.dropFirst())
-            .map { $1.timestamp.timeIntervalSince($0.timestamp) }
-            .max() ?? 0
-
-        XCTAssertLessThanOrEqual(largestGap, 30)
-    }
-
-    func testDisplaySamplesReduceDenseNetworkSeriesAndPreservePeaks() {
-        let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        var samples: [DashboardTrendSample] = []
-        for index in 0..<600 {
-            let sample = DashboardTrendSample(
+    func testAutomaticDomainUsesAveragedSamplesInsteadOfRawSpike() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let raw = (0..<90).map { index in
+            DashboardTrendSample(
                 timestamp: base.addingTimeInterval(Double(index)),
-                primaryValue: index == 240 ? 95_000 : Double(index % 9) * 1_000,
-                secondaryValue: index == 360 ? 88_000 : Double(index % 7) * 500
+                primaryValue: index == 44 ? 100 : 10
             )
-            samples.append(sample)
         }
-        let containerSize = CGSize(width: 280, height: 60)
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
-            kind: .network,
-            containerSize: containerSize
+        let display = DashboardTrendAverager.display(
+            samples: raw,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(89)
         )
 
-        XCTAssertLessThan(displaySamples.count, samples.count)
-        XCTAssertLessThanOrEqual(
-            displaySamples.count,
-            DashboardTrendChartLayout.displaySampleBudget(for: containerSize)
-        )
-        XCTAssertEqual(displaySamples.first?.timestamp, samples.first?.timestamp)
-        XCTAssertEqual(displaySamples.last?.timestamp, samples.last?.timestamp)
-        XCTAssertTrue(displaySamples.contains { $0.primaryValue == 95_000 })
-        XCTAssertTrue(displaySamples.contains { $0.secondaryValue == 88_000 })
-    }
-
-    func testDisplaySampleBudgetUsesRestPlotWidthNotHoverWidth() {
-        let containerSize = CGSize(width: 280, height: 60)
-        let hoverPlotWidth = DashboardTrendChartLayout.plotFrame(
-            in: containerSize,
-            isHovering: true,
-            yAxisLabelWidth: 54,
-            xAxisLabelHeight: 14
-        ).width
-
-        XCTAssertEqual(
-            DashboardTrendChartLayout.displayPlotWidth(for: containerSize),
-            DashboardTrendChartLayout.plotFrame(
-                in: containerSize,
-                isHovering: false
-            ).width,
-            accuracy: 0.001
-        )
-        XCTAssertNotEqual(
-            DashboardTrendChartLayout.displayPlotWidth(for: containerSize),
-            hoverPlotWidth,
-            accuracy: 0.001
-        )
-    }
-
-    func testDisplaySamplesRemainChronological() {
-        let values = (0..<600).map { index in
-            index.isMultiple(of: 17) ? 90.0 : Double(index % 13)
-        }
-        let samples = makeSamples(values: values)
-
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: samples,
+        let rawDomain = DashboardTrendChartLayout.valueDomain(
+            for: raw,
             kind: .temperature,
-            containerSize: CGSize(width: 280, height: 60)
+            scale: .automatic
+        )
+        let displayDomain = DashboardTrendChartLayout.valueDomain(
+            for: display.samples,
+            kind: .temperature,
+            scale: .automatic
         )
 
-        for pair in zip(displaySamples, displaySamples.dropFirst()) {
-            XCTAssertLessThanOrEqual(pair.0.timestamp, pair.1.timestamp)
+        XCTAssertLessThan(displayDomain.upperBound, rawDomain.upperBound)
+    }
+
+    func testDisplayLinePointIDsIgnoreChangingCurrentBucketValue() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let initial = (0..<90).map {
+            DashboardTrendSample(
+                timestamp: base.addingTimeInterval(Double($0)),
+                primaryValue: Double($0 % 8)
+            )
         }
+        let changed = initial.dropLast() + [
+            DashboardTrendSample(
+                timestamp: base.addingTimeInterval(89),
+                primaryValue: 80
+            )
+        ]
+        let firstDisplay = DashboardTrendAverager.display(
+            samples: initial,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(89)
+        )
+        let secondDisplay = DashboardTrendAverager.display(
+            samples: Array(changed),
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(89)
+        )
+
+        let firstPoint = try XCTUnwrap(
+            DashboardTrendChartLayout.linePoints(
+                for: firstDisplay,
+                kind: .cpu,
+                series: .primary
+            ).last
+        )
+        let secondPoint = try XCTUnwrap(
+            DashboardTrendChartLayout.linePoints(
+                for: secondDisplay,
+                kind: .cpu,
+                series: .primary
+            ).last
+        )
+
+        XCTAssertEqual(firstPoint.id, secondPoint.id)
+        XCTAssertNotEqual(firstPoint.value, secondPoint.value)
+    }
+
+    func testMissingNetworkSecondaryBucketStartsANewSecondaryLineRun() throws {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let buckets = [
+            displayBucket(base: base, offset: 0, primary: 100, secondary: 10),
+            displayBucket(base: base, offset: 10, primary: 200, secondary: nil),
+            displayBucket(base: base, offset: 20, primary: 300, secondary: 30),
+        ]
+        let display = DashboardTrendDisplay(
+            segments: [DashboardTrendDisplaySegment(id: base, buckets: buckets)]
+        )
+        let points = DashboardTrendChartLayout.linePoints(
+            for: display,
+            kind: .network,
+            series: .secondary
+        )
+
+        XCTAssertEqual(points.count, 2)
+        XCTAssertNotEqual(points[0].segmentID, points[1].segmentID)
     }
 
     func testAnnotationPositionTracksPointerYWithinPlotBounds() {
@@ -198,55 +154,6 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertEqual(
             DashboardTrendChartLayout.yAxisValues(for: 20...40),
             [20, 30, 40]
-        )
-    }
-
-    func testAreaFillAppliesToFlatNonNetworkTrend() {
-        let samples = [
-            DashboardTrendSample(timestamp: .now, primaryValue: 45),
-            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 45)
-        ]
-
-        XCTAssertTrue(
-            DashboardTrendChartLayout.showsAreaFill(
-                kind: .battery,
-                samples: samples,
-                domain: 0...100
-            )
-        )
-    }
-
-    func testAreaFillAppliesToNonNetworkTrendWithSpread() {
-        let samples = [
-            DashboardTrendSample(timestamp: .now, primaryValue: 20),
-            DashboardTrendSample(timestamp: .now.addingTimeInterval(60), primaryValue: 54)
-        ]
-
-        XCTAssertTrue(
-            DashboardTrendChartLayout.showsAreaFill(
-                kind: .cpu,
-                samples: samples,
-                domain: 0...100
-            )
-        )
-    }
-
-    func testAreaFillStaysDisabledForNetworkTrendEvenWithLargeSpread() {
-        let samples = [
-            DashboardTrendSample(timestamp: .now, primaryValue: 0, secondaryValue: 0),
-            DashboardTrendSample(
-                timestamp: .now.addingTimeInterval(60),
-                primaryValue: 2_600_000,
-                secondaryValue: 120_000
-            )
-        ]
-
-        XCTAssertFalse(
-            DashboardTrendChartLayout.showsAreaFill(
-                kind: .network,
-                samples: samples,
-                domain: 0...2_600_000
-            )
         )
     }
 
@@ -418,7 +325,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertNil(DashboardTrendChartLayout.batteryPowerConnectedPlaceholderCapsuleFrame(in: .zero))
     }
 
-    func testRenderedCPUTrendChartBuildsLocalizedAreaAndPrimaryMarks() {
+    func testRenderedCPUTrendChartBuildsLocalizedPrimaryLineWithoutAreaFill() {
         let chart = DashboardTrendChart(
             metric: DashboardMetric(
                 kind: .cpu,
@@ -668,17 +575,26 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
     func testNetworkLinePointsUseDistinctSeriesForPrimaryAndSecondaryValues() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let samples = [
-            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750)
-        ]
+        let display = DashboardTrendDisplay(
+            segments: [
+                DashboardTrendDisplaySegment(
+                    id: base,
+                    buckets: [
+                        displayBucket(base: base, offset: 0, primary: 2_000, secondary: 500),
+                        displayBucket(base: base, offset: 10, primary: 4_000, secondary: 750),
+                    ]
+                )
+            ]
+        )
 
         let primaryPoints = DashboardTrendChartLayout.linePoints(
-            for: samples,
+            for: display,
+            kind: .network,
             series: .primary
         )
         let secondaryPoints = DashboardTrendChartLayout.linePoints(
-            for: samples,
+            for: display,
+            kind: .network,
             series: .secondary
         )
 
@@ -693,18 +609,25 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
     func testNetworkLinePointsMirrorDownloadBelowUploadAboveBaseline() {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let samples = [
-            DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
-            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750)
-        ]
+        let display = DashboardTrendDisplay(
+            segments: [
+                DashboardTrendDisplaySegment(
+                    id: base,
+                    buckets: [
+                        displayBucket(base: base, offset: 0, primary: 2_000, secondary: 500),
+                        displayBucket(base: base, offset: 10, primary: 4_000, secondary: 750),
+                    ]
+                )
+            ]
+        )
 
         let downloadPoints = DashboardTrendChartLayout.linePoints(
-            for: samples,
+            for: display,
             kind: .network,
             series: .primary
         )
         let uploadPoints = DashboardTrendChartLayout.linePoints(
-            for: samples,
+            for: display,
             kind: .network,
             series: .secondary
         )
@@ -806,42 +729,6 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertNil(DashboardTrendChartLayout.hoverBaselineValue(for: .cpu))
         XCTAssertEqual(points.map(\.series), [.primary])
         XCTAssertEqual(points.map(\.value), [42])
-    }
-
-    func testLinePointIDsStayStableForSamplesThatRemainAfterHistoryRolls() {
-        let base = Date(timeIntervalSinceReferenceDate: 1_000)
-        let initialSamples = (0..<60).map { index in
-            DashboardTrendSample(
-                timestamp: base.addingTimeInterval(Double(index)),
-                primaryValue: Double(index)
-            )
-        }
-        let rolledSamples = (1..<61).map { index in
-            DashboardTrendSample(
-                timestamp: base.addingTimeInterval(Double(index)),
-                primaryValue: Double(index)
-            )
-        }
-
-        let initialIDsByTimestamp = Dictionary(
-            uniqueKeysWithValues: DashboardTrendChartLayout.linePoints(
-                for: initialSamples,
-                series: .primary
-            ).map { ($0.timestamp, $0.id) }
-        )
-        let rolledIDsByTimestamp = Dictionary(
-            uniqueKeysWithValues: DashboardTrendChartLayout.linePoints(
-                for: rolledSamples,
-                series: .primary
-            ).map { ($0.timestamp, $0.id) }
-        )
-
-        for timestamp in rolledSamples.dropLast().map(\.timestamp) {
-            XCTAssertEqual(
-                rolledIDsByTimestamp[timestamp],
-                initialIDsByTimestamp[timestamp]
-            )
-        }
     }
 
     func testHoverPlotFrameShrinksFromLeftAndBottomOnly() {
@@ -1058,6 +945,27 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
                 primaryValue: value
             )
         }
+    }
+
+    private func displayBucket(
+        base: Date,
+        offset: TimeInterval,
+        primary: Double,
+        secondary: Double?
+    ) -> DashboardTrendDisplayBucket {
+        let start = base.addingTimeInterval(offset)
+        let end = start.addingTimeInterval(10)
+        let timestamp = start.addingTimeInterval(5)
+        return DashboardTrendDisplayBucket(
+            startDate: start,
+            endDate: end,
+            timestamp: timestamp,
+            sample: DashboardTrendSample(
+                timestamp: timestamp,
+                primaryValue: primary,
+                secondaryValue: secondary
+            )
+        )
     }
 
     private func batteryChart(

@@ -11,14 +11,23 @@ struct DashboardTrendChart: View {
     let isCardHovered: Bool
     let showsYAxisLabels: Bool
 
-    @State private var hoveredSampleIndex: Int?
+    @State private var hoveredBucketIndex: Int?
     @State private var hoverLocation: CGPoint?
     @State private var displayedDomain: ClosedRange<Double>?
 
     var body: some View {
         GeometryReader { proxy in
             if let trend = metric.trend, trend.samples.count >= 2 {
-                chartBody(trend: trend, size: proxy.size)
+                let display = DashboardTrendAverager.display(
+                    samples: trend.samples,
+                    plotWidth: DashboardTrendChartLayout.displayPlotWidth(for: proxy.size),
+                    referenceDate: .now
+                )
+                if display.buckets.count >= 2 {
+                    chartBody(trend: trend, display: display, size: proxy.size)
+                } else {
+                    collectingPlaceholder(size: proxy.size)
+                }
             } else {
                 collectingPlaceholder(size: proxy.size)
             }
@@ -27,17 +36,18 @@ struct DashboardTrendChart: View {
 
     private func chartBody(
         trend: DashboardTrend,
+        display: DashboardTrendDisplay,
         size: CGSize
     ) -> some View {
-        let displaySamples = DashboardTrendChartLayout.displaySamples(
-            for: trend.samples,
-            kind: metric.kind,
-            containerSize: size
-        )
-        let rawDomain = chartDomain(for: trend)
+        let displayBuckets = display.buckets
+        let displaySamples = display.samples
+        let rawDomain = chartDomain(for: displaySamples, scale: trend.scale)
         let domain = displayedDomain ?? rawDomain
         let xDomain = xDomain(for: trend)
-        let selectedSample = isCardHovered ? (hoveredSample(in: trend) ?? trend.samples.last) : nil
+        let selectedBucket = isCardHovered
+            ? (hoveredBucket(in: displayBuckets) ?? displayBuckets.last)
+            : nil
+        let selectedSample = selectedBucket?.sample
         let isHovering = selectedSample != nil
         let isCompactHoverLayout = DashboardCardLayout.usesCompactHoverLayout(for: size.height)
         let yAxisValues = DashboardTrendChartLayout.yAxisValues(for: domain)
@@ -53,20 +63,13 @@ struct DashboardTrendChart: View {
         )
         let dataPlotFrame = DashboardTrendChartLayout.dataPlotFrame(for: metric.kind, plotFrame: plotFrame)
         let xAxisDates = DashboardTrendChartLayout.xAxisDates(for: displaySamples)
-        let showsAreaFill = DashboardTrendChartLayout.showsAreaFill(
-            kind: metric.kind,
-            samples: displaySamples,
-            domain: domain
-        )
-        let sampleAnimation = DashboardTrendChartLayout.animatesSampleChanges(for: metric.kind)
-        let usesDisplaySampling = displaySamples.count < trend.samples.count
         let primaryLinePoints = DashboardTrendChartLayout.linePoints(
-            for: displaySamples,
+            for: display,
             kind: metric.kind,
             series: .primary
         )
         let secondaryLinePoints = DashboardTrendChartLayout.linePoints(
-            for: displaySamples,
+            for: display,
             kind: metric.kind,
             series: .secondary
         )
@@ -94,16 +97,13 @@ struct DashboardTrendChart: View {
             }
 
             chartPlotView(
-                trendSamples: trend.samples,
-                displaySamples: displaySamples,
+                hoverSamples: displaySamples,
                 primaryLinePoints: primaryLinePoints,
                 secondaryLinePoints: secondaryLinePoints,
                 selectedSample: selectedSample,
                 domain: domain,
                 xDomain: xDomain,
                 plotFrame: dataPlotFrame,
-                showsAreaFill: showsAreaFill,
-                usesDisplaySampling: usesDisplaySampling,
                 isCompactHoverLayout: isCompactHoverLayout
             )
 
@@ -159,11 +159,16 @@ struct DashboardTrendChart: View {
         .onChange(of: metric.kind) { _ in
             updateDisplayedDomain(to: rawDomain, animated: false)
         }
-        .onChange(of: trend.samples) { _ in
+        .onChange(of: displaySamples) { _ in
             updateDisplayedDomain(to: rawDomain, animated: true)
         }
         .animation(DashboardMotion.hoverAnimation, value: isHovering)
-        .animation(sampleAnimation ? DashboardMotion.sampleAnimation : nil, value: displaySamples)
+        .animation(
+            DashboardTrendChartLayout.animatesSampleChanges(for: metric.kind)
+                ? DashboardMotion.sampleAnimation
+                : nil,
+            value: displayBuckets
+        )
         .animation(DashboardMotion.domainAnimation, value: displayedDomain)
     }
 
@@ -185,37 +190,26 @@ struct DashboardTrendChart: View {
     }
 
     private func chartPlotView(
-        trendSamples: [DashboardTrendSample],
-        displaySamples: [DashboardTrendSample],
+        hoverSamples: [DashboardTrendSample],
         primaryLinePoints: [DashboardTrendLinePoint],
         secondaryLinePoints: [DashboardTrendLinePoint],
         selectedSample: DashboardTrendSample?,
         domain: ClosedRange<Double>,
         xDomain: ClosedRange<Date>,
         plotFrame: CGRect,
-        showsAreaFill: Bool,
-        usesDisplaySampling: Bool,
         isCompactHoverLayout: Bool
     ) -> some View {
         Chart {
-            if showsAreaFill {
-                ForEach(displaySamples, id: \.timestamp) { sample in
-                    AreaMark(
-                        x: .value(AppLocalization.string(.chartDimensionTime), sample.timestamp),
-                        y: .value(AppLocalization.string(.chartDimensionPrimary), sample.primaryValue)
-                    )
-                    .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
-                    .foregroundStyle(areaGradient)
-                }
-            }
-
             ForEach(primaryLinePoints) { point in
-                    LineMark(
-                        x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
-                        y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
-                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
+                LineMark(
+                    x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
+                    y: .value(AppLocalization.string(.chartDimensionPrimary), point.value),
+                    series: .value(
+                        AppLocalization.string(.chartDimensionSeries),
+                        point.segmentID
                     )
-                .interpolationMethod(primaryInterpolationMethod(usesDisplaySampling: usesDisplaySampling))
+                )
+                .interpolationMethod(.monotone)
                 .lineStyle(StrokeStyle(lineWidth: 2, lineCap: .round, lineJoin: .round))
                 .foregroundStyle(primaryLineGradient)
             }
@@ -225,9 +219,12 @@ struct DashboardTrendChart: View {
                     LineMark(
                         x: .value(AppLocalization.string(.chartDimensionTime), point.timestamp),
                         y: .value(AppLocalization.string(.chartDimensionSecondary), point.value),
-                        series: .value(AppLocalization.string(.chartDimensionSeries), seriesLabel(for: point.series))
+                        series: .value(
+                            AppLocalization.string(.chartDimensionSeries),
+                            point.segmentID
+                        )
                     )
-                    .interpolationMethod(secondaryInterpolationMethod)
+                    .interpolationMethod(.monotone)
                     .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
                     .foregroundStyle(secondaryLineColor)
                 }
@@ -279,13 +276,13 @@ struct DashboardTrendChart: View {
                     case .active(let location):
                         updateHoverSelection(
                             location: location,
-                            samples: trendSamples,
+                            samples: hoverSamples,
                             xDomain: xDomain,
                             yDomain: domain,
                             plotFrame: plotFrame
                         )
                     case .ended:
-                        hoveredSampleIndex = nil
+                        hoveredBucketIndex = nil
                         hoverLocation = nil
                     }
                 }
@@ -310,12 +307,12 @@ struct DashboardTrendChart: View {
             yDomain: yDomain,
             plotFrame: plotFrame
         ) else {
-            hoveredSampleIndex = nil
+            hoveredBucketIndex = nil
             hoverLocation = nil
             return
         }
 
-        hoveredSampleIndex = selection.sampleIndex
+        hoveredBucketIndex = selection.sampleIndex
         hoverLocation = selection.location
     }
 
@@ -408,13 +405,6 @@ struct DashboardTrendChart: View {
             }
         }
         .allowsHitTesting(false)
-    }
-
-    private var areaGradient: LinearGradient {
-        DashboardOverviewChrome.chartAreaGradient(
-            baseColor: color,
-            appearsActive: appearsActive
-        )
     }
 
     private var primaryLineGradient: LinearGradient {
@@ -545,22 +535,6 @@ struct DashboardTrendChart: View {
         return isCompact ? 28 : 40
     }
 
-    private func primaryInterpolationMethod(usesDisplaySampling: Bool) -> InterpolationMethod {
-        if metric.kind == .fan {
-            return .stepEnd
-        }
-
-        if metric.kind == .network {
-            return .linear
-        }
-
-        return usesDisplaySampling ? .linear : .monotone
-    }
-
-    private var secondaryInterpolationMethod: InterpolationMethod {
-        .linear
-    }
-
     private func annotationView(
         sample: DashboardTrendSample,
         isCompact: Bool
@@ -609,20 +583,25 @@ struct DashboardTrendChart: View {
         return isCompact ? CGSize(width: 88, height: 34) : CGSize(width: 104, height: 44)
     }
 
-    private func hoveredSample(in trend: DashboardTrend) -> DashboardTrendSample? {
-        guard let hoveredSampleIndex,
-              trend.samples.indices.contains(hoveredSampleIndex) else {
+    private func hoveredBucket(
+        in buckets: [DashboardTrendDisplayBucket]
+    ) -> DashboardTrendDisplayBucket? {
+        guard let hoveredBucketIndex,
+              buckets.indices.contains(hoveredBucketIndex) else {
             return nil
         }
 
-        return trend.samples[hoveredSampleIndex]
+        return buckets[hoveredBucketIndex]
     }
 
-    private func chartDomain(for trend: DashboardTrend) -> ClosedRange<Double> {
+    private func chartDomain(
+        for samples: [DashboardTrendSample],
+        scale: DashboardTrendScale
+    ) -> ClosedRange<Double> {
         DashboardTrendChartLayout.valueDomain(
-            for: trend.samples,
+            for: samples,
             kind: metric.kind,
-            scale: trend.scale
+            scale: scale
         )
     }
 
@@ -652,15 +631,6 @@ struct DashboardTrendChart: View {
         AppLocalization.chartSecondaryReadout(for: metric.kind, sample: sample)
     }
 
-    private func seriesLabel(for series: DashboardTrendLineSeries) -> String {
-        switch series {
-        case .primary:
-            return AppLocalization.string(.chartDimensionPrimary)
-        case .secondary:
-            return AppLocalization.string(.chartDimensionSecondary)
-        }
-    }
-
     private func timestampLabel(for date: Date?) -> String {
         guard let date else {
             return "--:--"
@@ -678,6 +648,7 @@ enum DashboardTrendLineSeries: String, Equatable, Sendable {
 
 struct DashboardTrendLinePoint: Equatable, Identifiable, Sendable {
     let id: String
+    let segmentID: String
     let timestamp: Date
     let value: Double
     let series: DashboardTrendLineSeries
@@ -722,11 +693,6 @@ struct DashboardTrendChartLayout {
     static let xAxisLabelPlotGap: CGFloat = 4
     private static let maximumHoverLeadingWidthRatio: CGFloat = 0.36
     private static let maximumHoverBottomHeightRatio: CGFloat = 0.45
-    private static let minimumDisplaySampleBudget = 60
-    private static let maximumDisplaySampleBudget = 240
-    private static let recentDetailBudgetCap = 120
-    private static let flatPrimaryTolerance = 0.001
-    private static let flatSecondaryTolerance = 0.001
     private static let domainContractionStep = 0.35
     static let batteryPowerConnectedCapsuleHeight: CGFloat = 8
     static let batteryPowerConnectedCapsuleTopInset: CGFloat = 3
@@ -895,39 +861,43 @@ struct DashboardTrendChartLayout {
     }
 
     static func linePoints(
-        for samples: [DashboardTrendSample],
-        series: DashboardTrendLineSeries
-    ) -> [DashboardTrendLinePoint] {
-        linePoints(for: samples, kind: .cpu, series: series)
-    }
-
-    static func linePoints(
-        for samples: [DashboardTrendSample],
+        for display: DashboardTrendDisplay,
         kind: MetricKind,
         series: DashboardTrendLineSeries
     ) -> [DashboardTrendLinePoint] {
-        samples.compactMap { sample in
-            let value: Double?
+        display.segments.flatMap { segment -> [DashboardTrendLinePoint] in
+            var runIndex = 0
+            var isInsideRun = false
 
-            switch series {
-            case .primary:
-                value = plottedValue(sample.primaryValue, kind: kind, series: .primary)
-            case .secondary:
-                value = sample.secondaryValue.map {
-                    plottedValue($0, kind: kind, series: .secondary)
+            return segment.buckets.compactMap { bucket in
+                let rawValue: Double?
+                switch series {
+                case .primary:
+                    rawValue = bucket.sample.primaryValue
+                case .secondary:
+                    rawValue = bucket.sample.secondaryValue
                 }
-            }
 
-            guard let value else {
-                return nil
-            }
+                guard let rawValue else {
+                    if isInsideRun {
+                        runIndex += 1
+                        isInsideRun = false
+                    }
+                    return nil
+                }
+                isInsideRun = true
+                let value = plottedValue(rawValue, kind: kind, series: series)
+                let segmentBits = segment.id.timeIntervalSinceReferenceDate.bitPattern
+                let bucketBits = bucket.id.timeIntervalSinceReferenceDate.bitPattern
 
-            return DashboardTrendLinePoint(
-                id: "\(series.rawValue)-\(sample.timestamp.timeIntervalSinceReferenceDate.bitPattern)-\(value.bitPattern)",
-                timestamp: sample.timestamp,
-                value: value,
-                series: series
-            )
+                return DashboardTrendLinePoint(
+                    id: "\(series.rawValue)-\(bucketBits)",
+                    segmentID: "\(series.rawValue)-\(segmentBits)-\(runIndex)",
+                    timestamp: bucket.timestamp,
+                    value: value,
+                    series: series
+                )
+            }
         }
     }
 
@@ -940,8 +910,15 @@ struct DashboardTrendChartLayout {
         case .fixed(let lowerBound, let upperBound):
             return lowerBound...upperBound
         case .automatic:
-            let values = linePoints(for: samples, kind: kind, series: .primary).map(\.value)
-                + linePoints(for: samples, kind: kind, series: .secondary).map(\.value)
+            let primaryValues = samples.map {
+                plottedValue($0.primaryValue, kind: kind, series: .primary)
+            }
+            let secondaryValues = samples.compactMap { sample in
+                sample.secondaryValue.map {
+                    plottedValue($0, kind: kind, series: .secondary)
+                }
+            }
+            let values = primaryValues + secondaryValues
 
             if kind == .network {
                 let maximumMagnitude = max(values.map(abs).max() ?? 0, 1)
@@ -1094,191 +1071,6 @@ struct DashboardTrendChartLayout {
             in: containerSize,
             isHovering: false
         ).width
-    }
-
-    static func displaySampleBudget(for containerSize: CGSize) -> Int {
-        let width = displayPlotWidth(for: containerSize)
-        let scaledBudget = Int((width * 0.75).rounded())
-        return min(max(scaledBudget, minimumDisplaySampleBudget), maximumDisplaySampleBudget)
-    }
-
-    static func displaySamples(
-        for samples: [DashboardTrendSample],
-        kind: MetricKind,
-        containerSize: CGSize
-    ) -> [DashboardTrendSample] {
-        let budget = displaySampleBudget(for: containerSize)
-        guard samples.count > budget, samples.count >= 3 else {
-            return samples
-        }
-
-        let recentDetailCount = min(
-            samples.count,
-            min(
-                recentDetailBudgetCap,
-                max(24, Int(Double(budget) * 0.6))
-            )
-        )
-        let olderCount = max(0, samples.count - recentDetailCount)
-        let recentSamples = Array(samples.suffix(recentDetailCount))
-        let overviewBudget = max(1, budget - recentSamples.count)
-        let overviewSamples = sampledOverviewSamples(
-            Array(samples.prefix(olderCount)),
-            kind: kind,
-            budget: overviewBudget
-        )
-        var displaySamples = deduplicatedTimestamps(overviewSamples + recentSamples)
-
-        if displaySamples.first?.timestamp != samples.first?.timestamp, let firstSample = samples.first {
-            displaySamples.insert(firstSample, at: 0)
-        }
-
-        if displaySamples.last?.timestamp != samples.last?.timestamp, let lastSample = samples.last {
-            displaySamples.append(lastSample)
-        }
-
-        return deduplicatedTimestamps(displaySamples)
-    }
-
-    private static func sampledOverviewSamples(
-        _ samples: [DashboardTrendSample],
-        kind: MetricKind,
-        budget: Int
-    ) -> [DashboardTrendSample] {
-        guard budget > 0, !samples.isEmpty else {
-            return []
-        }
-
-        guard samples.count > budget else {
-            return samples
-        }
-
-        let bucketSize = kind == .network ? 4 : 3
-        let bucketCount = max(1, budget / bucketSize)
-        let representatives = (0..<bucketCount).flatMap { bucketIndex -> [DashboardTrendSample] in
-            let startIndex = bucketIndex * samples.count / bucketCount
-            let endIndex = min(samples.count, (bucketIndex + 1) * samples.count / bucketCount)
-            guard startIndex < endIndex else {
-                return []
-            }
-
-            let bucket = samples[startIndex..<endIndex]
-            if kind == .network {
-                return sampledNetworkOverviewBucket(bucket)
-            }
-
-            return sampledOverviewBucket(bucket)
-        }
-
-        return representatives
-    }
-
-    private static func sampledNetworkOverviewBucket(
-        _ samples: ArraySlice<DashboardTrendSample>
-    ) -> [DashboardTrendSample] {
-        let bucket = Array(samples)
-        let average = averagedNetworkSample(bucket)
-        let primaryPeak = bucket.max { $0.primaryValue < $1.primaryValue } ?? bucket[0]
-        let secondaryPeak = bucket.max {
-            ($0.secondaryValue ?? 0) < ($1.secondaryValue ?? 0)
-        } ?? bucket[0]
-        let candidates = [average, primaryPeak, secondaryPeak, bucket[bucket.count - 1]]
-
-        return deduplicatedTimestamps(candidates.sorted { $0.timestamp < $1.timestamp })
-    }
-
-    private static func averagedNetworkSample(
-        _ samples: [DashboardTrendSample]
-    ) -> DashboardTrendSample {
-        let timestampSum = samples.reduce(0) {
-            $0 + $1.timestamp.timeIntervalSinceReferenceDate
-        }
-        let primaryAverage = samples.reduce(0) { $0 + $1.primaryValue } / Double(samples.count)
-        let secondaryValues = samples.compactMap(\.secondaryValue)
-        let secondaryAverage = secondaryValues.isEmpty
-            ? nil
-            : secondaryValues.reduce(0, +) / Double(secondaryValues.count)
-        let averageTimestamp = Date(
-            timeIntervalSinceReferenceDate: timestampSum / Double(samples.count)
-        )
-
-        return DashboardTrendSample(
-            timestamp: uniqueAverageTimestamp(averageTimestamp, avoiding: samples),
-            primaryValue: primaryAverage,
-            secondaryValue: secondaryAverage
-        )
-    }
-
-    private static func uniqueAverageTimestamp(
-        _ timestamp: Date,
-        avoiding samples: [DashboardTrendSample]
-    ) -> Date {
-        guard samples.contains(where: { $0.timestamp == timestamp }) else {
-            return timestamp
-        }
-
-        return timestamp.addingTimeInterval(0.000_001)
-    }
-
-    private static func sampledOverviewBucket(
-        _ samples: ArraySlice<DashboardTrendSample>
-    ) -> [DashboardTrendSample] {
-        let bucket = Array(samples)
-        guard !bucket.isEmpty else {
-            return []
-        }
-
-        guard bucket.count > 2 else {
-            return bucket
-        }
-
-        if isFlat(bucket) {
-            return [bucket.last!]
-        }
-
-        let minIndex = bucket.indices.min {
-            bucket[$0].primaryValue < bucket[$1].primaryValue
-        } ?? bucket.startIndex
-        let maxIndex = bucket.indices.max {
-            bucket[$0].primaryValue < bucket[$1].primaryValue
-        } ?? bucket.startIndex
-        let candidateIndexes = Set([minIndex, maxIndex, bucket.index(before: bucket.endIndex)])
-
-        return candidateIndexes
-            .sorted()
-            .map { bucket[$0] }
-    }
-
-    private static func deduplicatedTimestamps(
-        _ samples: [DashboardTrendSample]
-    ) -> [DashboardTrendSample] {
-        guard samples.count > 1 else {
-            return samples
-        }
-
-        var result: [DashboardTrendSample] = []
-        result.reserveCapacity(samples.count)
-        var seenTimestamps = Set<Date>()
-
-        for sample in samples where seenTimestamps.insert(sample.timestamp).inserted {
-            result.append(sample)
-        }
-
-        return result
-    }
-
-    private static func isFlat(_ samples: [DashboardTrendSample]) -> Bool {
-        let primaryValues = samples.map(\.primaryValue)
-        let primaryRange = (primaryValues.max() ?? 0) - (primaryValues.min() ?? 0)
-        let secondaryValues = samples.compactMap(\.secondaryValue)
-        let secondaryRange: Double
-        if secondaryValues.isEmpty {
-            secondaryRange = 0
-        } else {
-            secondaryRange = (secondaryValues.max() ?? 0) - (secondaryValues.min() ?? 0)
-        }
-
-        return primaryRange < flatPrimaryTolerance && secondaryRange < flatSecondaryTolerance
     }
 
     static func plotFrame(
@@ -1537,14 +1329,6 @@ struct DashboardTrendChartLayout {
         }
 
         return unique
-    }
-
-    static func showsAreaFill(
-        kind: MetricKind,
-        samples: [DashboardTrendSample],
-        domain: ClosedRange<Double>
-    ) -> Bool {
-        samples.count >= 2 && kind != .network
     }
 
     static func animatesSampleChanges(for kind: MetricKind) -> Bool {
