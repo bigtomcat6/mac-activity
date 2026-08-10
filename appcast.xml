@@ -3,6 +3,16 @@
     <channel>
         <title>Mac Activity</title>
         <item>
+            <title>26.1.0-beta.4</title>
+            <pubDate>Mon, 10 Aug 2026 23:14:25 +0000</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>11</sparkle:version>
+            <sparkle:shortVersionString>26.1.0-beta.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://bigtomcat6.github.io/mac-activity/MacActivity-v26.1.0-beta.4.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/bigtomcat6/mac-activity/releases/download/v26.1.0-beta.4/MacActivity-v26.1.0-beta.4.zip" length="5428361" type="application/octet-stream" sparkle:edSignature="3fdmcglRYaPBjqmGPjc8SXV4nxl3+FN1PfTPe5LK1Bt0N5oxTAdPC3NvWKqDPu3sn2OWanFD8YtVGQxrttUECw=="/>
+        </item>
+        <item>
             <title>26.1.0-beta.3</title>
             <pubDate>Fri, 10 Jul 2026 13:31:57 +0000</pubDate>
             <sparkle:channel>beta</sparkle:channel>
