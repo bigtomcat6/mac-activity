@@ -122,14 +122,44 @@ actor EnergyImpactSampler: EnergyImpactSampling {
         }
         working.previousObservationTime = observation.capturedAt
         if breaksBaselineContinuity {
-            working.baselines.removeAll()
-            working.identityByProcessIdentifier.removeAll()
+            working.breakContinuity()
         }
         working.prune(at: observation.capturedAt, configuration: configuration)
         working.invalidateObservedOwnerTransitions(
             snapshots: observation.processSnapshots,
             owners: observation.owners
         )
+
+        var rootsRequiringFreshInterval = Set<pid_t>()
+        for app in observation.apps {
+            guard case let .success(rootReading)? =
+                observation.readingsByProcessIdentifier[app.processIdentifier] else {
+                continue
+            }
+            let confirmedIdentity = EnergyImpactAppIdentity(
+                rootProcessIdentifier: app.processIdentifier,
+                rootProcessStartAbsoluteTime: rootReading.processStartAbsoluteTime
+            )
+            let previousIdentity =
+                working.currentIdentityByRootProcessIdentifier[app.processIdentifier]
+            guard let confirmedGeneration = confirmedIdentity.generation else {
+                continue
+            }
+            if previousIdentity != confirmedIdentity
+                || working.baselines[confirmedGeneration] == nil {
+                rootsRequiringFreshInterval.insert(app.processIdentifier)
+            }
+            let hasUnconfirmedOwnedBaselines = previousIdentity == nil
+                && working.baselines.values.contains {
+                    $0.ownerRootProcessIdentifier == app.processIdentifier
+                }
+            if previousIdentity != nil && previousIdentity != confirmedIdentity
+                || hasUnconfirmedOwnedBaselines {
+                working.removeRootOwnedState(
+                    rootProcessIdentifier: app.processIdentifier
+                )
+            }
+        }
 
         let processIdentifiersByRoot = Dictionary(
             grouping: observation.owners.keys,
@@ -191,10 +221,6 @@ actor EnergyImpactSampler: EnergyImpactSampling {
                             rootProcessIdentifier: processIdentifier,
                             rootProcessStartAbsoluteTime: current.processStartAbsoluteTime
                         )
-                        if let oldIdentity = working.currentIdentityByRootProcessIdentifier[processIdentifier],
-                           oldIdentity != appIdentity {
-                            working.displayByIdentity.removeValue(forKey: oldIdentity)
-                        }
                         working.currentIdentityByRootProcessIdentifier[processIdentifier] = appIdentity
                     }
 
@@ -296,61 +322,143 @@ actor EnergyImpactSampler: EnergyImpactSampling {
             let allProcessesUnsupported = processIdentifiers.isEmpty == false
                 && unsupportedProcessCount == processIdentifiers.count
 
-            let status: EnergyImpactStatus
-            if allProcessesUnsupported {
-                status = .unavailable
-            } else if discoveredProcessSeconds > 0
-                && validProcessSeconds >= discoveredProcessSeconds - 0.000_001 {
-                status = .stable
-            } else if validProcessSeconds > 0 {
-                status = .partial
-            } else if canPublishStale {
-                status = .stale
-            } else if readableProcessCount > 0 {
-                status = .collecting
-            } else {
-                status = .unavailable
+            guard let generation = identity.generation else {
+                candidates.append(EnergyImpactEntry(
+                    identity: identity,
+                    name: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    bundleURL: app.bundleURL,
+                    kind: app.kind,
+                    currentPowerMicrowatts: allProcessesUnsupported
+                        ? nil
+                        : currentPowerMicrowatts,
+                    sustainedPowerMicrowatts: nil,
+                    rankingScore: nil,
+                    trend: .steady,
+                    coverage: currentCoverage,
+                    status: .collecting,
+                    observedWindowSeconds: observationDuration
+                ))
+                continue
             }
 
-            let publishedIdentity = status == .stale
-                ? previousDisplay!.entry.identity
-                : identity
-            let publishedPower = status == .stale
-                ? previousDisplay!.entry.currentPowerMicrowatts
-                : (status == .stable || status == .partial
-                    ? currentPowerMicrowatts
-                    : nil)
-            let publishedCoverage = status == .stale
-                ? previousDisplay!.entry.coverage
-                : currentCoverage
-            let entry = EnergyImpactEntry(
-                identity: publishedIdentity,
-                name: app.name,
-                bundleIdentifier: app.bundleIdentifier,
-                bundleURL: app.bundleURL,
-                kind: app.kind,
-                currentPowerMicrowatts: publishedPower,
-                sustainedPowerMicrowatts: nil,
-                rankingScore: status == .stable || status == .partial
-                    ? publishedPower
-                    : nil,
-                trend: .steady,
-                coverage: publishedCoverage,
-                status: status
-            )
+            var estimate: (
+                fast: Double,
+                sustained: Double?,
+                score: Double?,
+                trend: EnergyImpactTrend,
+                coverage: Double,
+                validProcessSeconds: TimeInterval,
+                discoveredProcessSeconds: TimeInterval,
+                observedWallSeconds: TimeInterval
+            )?
+            if observationDuration > 0,
+               rootsRequiringFreshInterval.contains(app.processIdentifier) == false {
+                var accumulator = working.accumulators[generation]
+                    ?? EnergyImpactAccumulator(configuration: configuration)
+                estimate = accumulator.observe(
+                    sample: EnergyIntervalSample(
+                        endTimeSeconds: observation.capturedAt,
+                        durationSeconds: observationDuration,
+                        contributions: contributions,
+                        discoveredProcessSeconds: discoveredProcessSeconds
+                    ),
+                    rawPowerMicrowatts: currentPowerMicrowatts
+                )
+                working.accumulators[generation] = accumulator
+            }
 
-            if (status == .stable || status == .partial),
-               publishedIdentity.generation != nil {
-                working.displayByIdentity[publishedIdentity] = EnergyImpactDisplayState(
+            if let estimate {
+                let coverage = EnergyImpactCoverage(
+                    discoveredProcessCount: processIdentifiers.count,
+                    readableProcessCount: readableProcessCount,
+                    validProcessSeconds: estimate.validProcessSeconds,
+                    discoveredProcessSeconds: estimate.discoveredProcessSeconds
+                )
+                let status: EnergyImpactStatus
+                if estimate.observedWallSeconds < 15 {
+                    status = .collecting
+                } else if estimate.coverage < 0.9 {
+                    status = .partial
+                } else {
+                    status = .stable
+                }
+                let entry = EnergyImpactEntry(
+                    identity: identity,
+                    name: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    bundleURL: app.bundleURL,
+                    kind: app.kind,
+                    currentPowerMicrowatts: estimate.fast,
+                    sustainedPowerMicrowatts: estimate.sustained,
+                    rankingScore: estimate.score,
+                    trend: estimate.trend,
+                    coverage: coverage,
+                    status: status,
+                    observedWindowSeconds: estimate.observedWallSeconds
+                )
+                working.displayByIdentity[identity] = EnergyImpactDisplayState(
                     entry: entry,
                     sampleTime: observation.capturedAt
                 )
+                candidates.append(entry)
             } else if allProcessesUnsupported {
                 working.displayByIdentity.removeValue(forKey: identity)
+                candidates.append(EnergyImpactEntry(
+                    identity: identity,
+                    name: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    bundleURL: app.bundleURL,
+                    kind: app.kind,
+                    currentPowerMicrowatts: nil,
+                    sustainedPowerMicrowatts: nil,
+                    rankingScore: nil,
+                    trend: .steady,
+                    coverage: currentCoverage,
+                    status: .unavailable,
+                    observedWindowSeconds: observationDuration
+                ))
+            } else if canPublishStale {
+                let displayed = previousDisplay!.entry
+                candidates.append(EnergyImpactEntry(
+                    identity: displayed.identity,
+                    name: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    bundleURL: app.bundleURL,
+                    kind: app.kind,
+                    currentPowerMicrowatts: displayed.currentPowerMicrowatts,
+                    sustainedPowerMicrowatts: displayed.sustainedPowerMicrowatts,
+                    rankingScore: nil,
+                    trend: displayed.trend,
+                    coverage: displayed.coverage,
+                    status: .stale,
+                    observedWindowSeconds: displayed.observedWindowSeconds
+                ))
+            } else {
+                candidates.append(EnergyImpactEntry(
+                    identity: identity,
+                    name: app.name,
+                    bundleIdentifier: app.bundleIdentifier,
+                    bundleURL: app.bundleURL,
+                    kind: app.kind,
+                    currentPowerMicrowatts: nil,
+                    sustainedPowerMicrowatts: nil,
+                    rankingScore: nil,
+                    trend: .steady,
+                    coverage: currentCoverage,
+                    status: readableProcessCount > 0
+                        ? .collecting
+                        : .unavailable,
+                    observedWindowSeconds: observationDuration
+                ))
             }
-            candidates.append(entry)
         }
 
+        let currentGenerations = Set(observation.apps.compactMap {
+            working.currentIdentityByRootProcessIdentifier[$0.processIdentifier]?
+                .generation
+        })
+        working.retainOnlyRootGenerations(currentGenerations)
         working.prune(at: observation.capturedAt, configuration: configuration)
         return candidates
     }
@@ -375,6 +483,7 @@ private struct EnergyImpactSamplerState: Sendable {
     var baselines: [EnergyImpactProcessIdentity: ProcessEnergyBaseline] = [:]
     var identityByProcessIdentifier: [pid_t: EnergyImpactProcessIdentity] = [:]
     var currentIdentityByRootProcessIdentifier: [pid_t: EnergyImpactAppIdentity] = [:]
+    var accumulators: [EnergyImpactProcessIdentity: EnergyImpactAccumulator] = [:]
     var displayByIdentity: [EnergyImpactAppIdentity: EnergyImpactDisplayState] = [:]
     var previousObservationTime: TimeInterval?
     var publicationState: EnergyImpactPublicationState
@@ -382,6 +491,14 @@ private struct EnergyImpactSamplerState: Sendable {
 
     init(configuration: EnergyImpactConfiguration) {
         publicationState = EnergyImpactPublicationState(configuration: configuration)
+    }
+
+    mutating func breakContinuity() {
+        baselines.removeAll()
+        identityByProcessIdentifier.removeAll()
+        currentIdentityByRootProcessIdentifier.removeAll()
+        accumulators.removeAll()
+        displayByIdentity.removeAll()
     }
 
     mutating func prune(
@@ -393,7 +510,19 @@ private struct EnergyImpactSamplerState: Sendable {
             return age > configuration.maximumGapSeconds ? identity : nil
         }
         for identity in expiredIdentities {
-            removeBaseline(for: identity)
+            if let appIdentity =
+                currentIdentityByRootProcessIdentifier[identity.processIdentifier],
+               appIdentity.generation == identity {
+                removeBaseline(for: identity)
+                removeEstimatedState(
+                    rootProcessIdentifier: identity.processIdentifier
+                )
+                currentIdentityByRootProcessIdentifier.removeValue(
+                    forKey: identity.processIdentifier
+                )
+            } else {
+                removeBaseline(for: identity)
+            }
         }
 
         displayByIdentity = displayByIdentity.filter { _, display in
@@ -407,6 +536,10 @@ private struct EnergyImpactSamplerState: Sendable {
             currentIdentityByRootProcessIdentifier.filter { _, identity in
                 identity.generation.map { baselines[$0] != nil } == true
             }
+        let currentGenerations = Set(
+            currentIdentityByRootProcessIdentifier.values.compactMap(\.generation)
+        )
+        retainOnlyRootGenerations(currentGenerations)
     }
 
     mutating func invalidateObservedOwnerTransitions(
@@ -419,7 +552,56 @@ private struct EnergyImpactSamplerState: Sendable {
                   owners[processIdentifier] != baseline.ownerRootProcessIdentifier else {
                 continue
             }
+            let affectedRoots = [
+                baseline.ownerRootProcessIdentifier,
+                owners[processIdentifier],
+            ].compactMap { $0 }
+            for rootProcessIdentifier in Set(affectedRoots) {
+                removeEstimatedState(
+                    rootProcessIdentifier: rootProcessIdentifier
+                )
+            }
             removeBaseline(for: identity)
+        }
+    }
+
+    mutating func removeRootOwnedState(
+        rootProcessIdentifier: pid_t
+    ) {
+        let ownedIdentities = baselines.compactMap { identity, baseline in
+            baseline.ownerRootProcessIdentifier == rootProcessIdentifier
+                ? identity
+                : nil
+        }
+        for identity in ownedIdentities {
+            removeBaseline(for: identity)
+        }
+        removeEstimatedState(rootProcessIdentifier: rootProcessIdentifier)
+        currentIdentityByRootProcessIdentifier.removeValue(
+            forKey: rootProcessIdentifier
+        )
+    }
+
+    mutating func removeEstimatedState(
+        rootProcessIdentifier: pid_t
+    ) {
+        let generations = currentIdentityByRootProcessIdentifier[
+            rootProcessIdentifier
+        ]?.generation.map { Set([$0]) } ?? []
+        accumulators = accumulators.filter {
+            generations.contains($0.key) == false
+        }
+        displayByIdentity = displayByIdentity.filter { identity, _ in
+            identity.rootProcessIdentifier != rootProcessIdentifier
+        }
+    }
+
+    mutating func retainOnlyRootGenerations(
+        _ generations: Set<EnergyImpactProcessIdentity>
+    ) {
+        accumulators = accumulators.filter { generations.contains($0.key) }
+        displayByIdentity = displayByIdentity.filter { identity, _ in
+            identity.generation.map { generations.contains($0) } == true
         }
     }
 

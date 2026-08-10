@@ -2,17 +2,11 @@ import Foundation
 
 public struct EnergyImpactPublicationState: Sendable {
     private let configuration: EnergyImpactConfiguration
-    private var smoother: EnergyImpactSmoother
     private var ranker = StableEnergyImpactRanker()
-    private var lastValidObservationTimes:
-        [EnergyImpactProcessIdentity: TimeInterval] = [:]
     private var lastPublicationTime: TimeInterval?
 
     public init(configuration: EnergyImpactConfiguration = .production) {
         self.configuration = configuration
-        self.smoother = EnergyImpactSmoother(
-            halfLifeSeconds: configuration.fastHalfLifeSeconds
-        )
     }
 
     public mutating func publish(
@@ -20,172 +14,43 @@ public struct EnergyImpactPublicationState: Sendable {
         at publicationTime: TimeInterval,
         limit: Int
     ) -> [EnergyImpactEntry] {
-        publish(
-            candidates,
-            at: publicationTime,
-            limit: limit,
-            smoothingOverride: nil
-        )
-    }
-
-    mutating func publish(
-        _ candidates: [EnergyImpactEntry],
-        at publicationTime: TimeInterval,
-        limit: Int,
-        smoothingOverrideForTesting: @Sendable (
-            EnergyImpactProcessIdentity,
-            Double,
-            TimeInterval
-        ) -> Double?
-    ) -> [EnergyImpactEntry] {
-        withoutActuallyEscaping(smoothingOverrideForTesting) { smoothingOverride in
-            publish(
-                candidates,
-                at: publicationTime,
-                limit: limit,
-                smoothingOverride: smoothingOverride
-            )
-        }
-    }
-
-    private mutating func publish(
-        _ candidates: [EnergyImpactEntry],
-        at publicationTime: TimeInterval,
-        limit: Int,
-        smoothingOverride: (@Sendable (
-            EnergyImpactProcessIdentity,
-            Double,
-            TimeInterval
-        ) -> Double?)?
-    ) -> [EnergyImpactEntry] {
-        guard publicationTime.isFinite else {
-            resetStatistics()
-            return Array(
-                ranker.rank(
-                    candidates.map(Self.sanitizedForInvalidClock),
-                    atPublicationBoundary: true
-                )
-                    .prefix(max(0, limit))
-            )
-        }
-
-        if let lastPublicationTime {
+        let hasValidClock = publicationTime.isFinite
+        if hasValidClock == false {
+            ranker.reset()
+            lastPublicationTime = nil
+        } else if let lastPublicationTime {
             let publicationGap = publicationTime - lastPublicationTime
-            if publicationGap <= 0 || publicationGap > configuration.maximumGapSeconds {
-                resetStatistics()
+            if publicationGap <= 0
+                || publicationGap > configuration.maximumGapSeconds {
+                ranker.reset()
             }
         }
 
-        let currentGenerations = Set(candidates.compactMap(\.identity.generation))
-        smoother.retainOnly(currentGenerations)
-        lastValidObservationTimes = lastValidObservationTimes.filter {
-            currentGenerations.contains($0.key)
-        }
-
+        var seenGenerations = Set<EnergyImpactProcessIdentity>()
         let processed = candidates.map { candidate in
-            process(
-                candidate,
-                at: publicationTime,
-                smoothingOverride: smoothingOverride
-            )
-        }
-        lastPublicationTime = publicationTime
-
-        return Array(
-            ranker.rank(processed, atPublicationBoundary: true)
-                .prefix(max(0, limit))
-        )
-    }
-
-    private mutating func process(
-        _ candidate: EnergyImpactEntry,
-        at publicationTime: TimeInterval,
-        smoothingOverride: (@Sendable (
-            EnergyImpactProcessIdentity,
-            Double,
-            TimeInterval
-        ) -> Double?)?
-    ) -> EnergyImpactEntry {
-        let sanitized = Self.sanitizingInvalidNumerics(candidate)
-        guard sanitized.status == .stable || sanitized.status == .partial else {
+            let generation = candidate.identity.generation
+            let isDuplicate = generation.map {
+                seenGenerations.insert($0).inserted == false
+            } ?? false
+            if isDuplicate {
+                return Self.nonnumericUnavailable(candidate)
+            }
+            let sanitized = Self.sanitizingFieldShape(candidate)
+            if hasValidClock == false,
+               sanitized.status == .stable || sanitized.status == .partial {
+                return Self.nonnumericUnavailable(sanitized)
+            }
             return sanitized
         }
-        guard let currentPower = sanitized.currentPowerMicrowatts,
-              let rankingScore = sanitized.rankingScore,
-              currentPower.isFinite,
-              currentPower >= 0,
-              rankingScore.isFinite,
-              rankingScore >= 0 else {
-            return Self.nonnumericUnavailable(sanitized)
-        }
-        guard let generation = sanitized.identity.generation else {
-            return sanitized
+        if hasValidClock {
+            lastPublicationTime = publicationTime
         }
 
-        let elapsedSeconds: TimeInterval
-        if let lastValidObservationTime = lastValidObservationTimes[generation] {
-            elapsedSeconds = publicationTime - lastValidObservationTime
-        } else {
-            elapsedSeconds = configuration.observationIntervalSeconds
-        }
-        guard elapsedSeconds.isFinite, elapsedSeconds > 0 else {
-            return Self.nonnumericUnavailable(sanitized)
-        }
-
-        if elapsedSeconds > configuration.maximumGapSeconds {
-            smoother.retainOnly(
-                Set(lastValidObservationTimes.keys).subtracting([generation])
-            )
-            lastValidObservationTimes[generation] = nil
-        }
-        let smoothingElapsed = min(elapsedSeconds, configuration.maximumGapSeconds)
-        let smoothed: Double?
-        if let smoothingOverride {
-            smoothed = smoothingOverride(
-                generation,
-                currentPower,
-                smoothingElapsed
-            )
-        } else {
-            smoothed = smoother.update(
-                identity: generation,
-                value: currentPower,
-                elapsedSeconds: smoothingElapsed
-            )
-        }
-        guard let smoothed else {
-            return Self.nonnumericUnavailable(sanitized)
-        }
-        lastValidObservationTimes[generation] = publicationTime
-        return Self.replacingCurrentPower(in: sanitized, with: smoothed)
-    }
-
-    private mutating func resetStatistics() {
-        smoother = EnergyImpactSmoother(
-            halfLifeSeconds: configuration.fastHalfLifeSeconds
+        let ranked = ranker.rank(
+            processed,
+            atPublicationBoundary: true
         )
-        ranker.reset()
-        lastValidObservationTimes.removeAll()
-        lastPublicationTime = nil
-    }
-
-    private static func replacingCurrentPower(
-        in entry: EnergyImpactEntry,
-        with currentPower: Double
-    ) -> EnergyImpactEntry {
-        EnergyImpactEntry(
-            identity: entry.identity,
-            name: entry.name,
-            bundleIdentifier: entry.bundleIdentifier,
-            bundleURL: entry.bundleURL,
-            kind: entry.kind,
-            currentPowerMicrowatts: currentPower,
-            sustainedPowerMicrowatts: entry.sustainedPowerMicrowatts,
-            rankingScore: currentPower,
-            trend: entry.trend,
-            coverage: entry.coverage,
-            status: entry.status
-        )
+        return Array(ranked.prefix(max(0, limit)))
     }
 
     private static func nonnumericUnavailable(
@@ -194,30 +59,75 @@ public struct EnergyImpactPublicationState: Sendable {
         nonnumeric(entry, status: .unavailable)
     }
 
-    private static func sanitizedForInvalidClock(
+    private static func sanitizingFieldShape(
         _ entry: EnergyImpactEntry
     ) -> EnergyImpactEntry {
-        let sanitized = sanitizingInvalidNumerics(entry)
-        if sanitized.status == .stable || sanitized.status == .partial {
-            return nonnumericUnavailable(sanitized)
+        if entry.identity.generation == nil {
+            let current = entry.currentPowerMicrowatts.flatMap {
+                $0.isFinite && $0 >= 0 ? $0 : nil
+            }
+            return replacingFields(
+                in: entry,
+                current: current,
+                sustained: nil,
+                score: nil,
+                status: .collecting
+            )
         }
-        return sanitized
-    }
-
-    private static func sanitizingInvalidNumerics(
-        _ entry: EnergyImpactEntry
-    ) -> EnergyImpactEntry {
         let numericValues = [
             entry.currentPowerMicrowatts,
             entry.sustainedPowerMicrowatts,
             entry.rankingScore,
         ].compactMap { $0 }
         guard numericValues.contains(where: { $0.isFinite == false || $0 < 0 }) else {
-            return entry
+            switch entry.status {
+            case .stable, .partial:
+                guard entry.currentPowerMicrowatts != nil,
+                      entry.sustainedPowerMicrowatts != nil,
+                      entry.rankingScore != nil else {
+                    return nonnumericUnavailable(entry)
+                }
+                return entry
+            case .stale:
+                return replacingFields(
+                    in: entry,
+                    current: entry.currentPowerMicrowatts,
+                    sustained: entry.sustainedPowerMicrowatts,
+                    score: nil,
+                    status: .stale
+                )
+            case .unavailable:
+                return nonnumeric(entry, status: .unavailable)
+            case .collecting:
+                return entry
+            }
         }
         let status: EnergyImpactStatus =
             entry.status == .stable || entry.status == .partial ? .unavailable : entry.status
         return nonnumeric(entry, status: status)
+    }
+
+    private static func replacingFields(
+        in entry: EnergyImpactEntry,
+        current: Double?,
+        sustained: Double?,
+        score: Double?,
+        status: EnergyImpactStatus
+    ) -> EnergyImpactEntry {
+        EnergyImpactEntry(
+            identity: entry.identity,
+            name: entry.name,
+            bundleIdentifier: entry.bundleIdentifier,
+            bundleURL: entry.bundleURL,
+            kind: entry.kind,
+            currentPowerMicrowatts: current,
+            sustainedPowerMicrowatts: sustained,
+            rankingScore: score,
+            trend: entry.trend,
+            coverage: entry.coverage,
+            status: status,
+            observedWindowSeconds: entry.observedWindowSeconds
+        )
     }
 
     private static func nonnumeric(
@@ -235,7 +145,8 @@ public struct EnergyImpactPublicationState: Sendable {
             rankingScore: nil,
             trend: entry.trend,
             coverage: entry.coverage,
-            status: status
+            status: status,
+            observedWindowSeconds: entry.observedWindowSeconds
         )
     }
 }

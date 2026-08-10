@@ -15,19 +15,101 @@ final class EnergyImpactStatisticsTests: XCTestCase {
         )
     }
 
-    func testNewProcessGenerationDoesNotInheritOldSmoothing() {
-        var smoother = EnergyImpactSmoother(halfLifeSeconds: 4)
-        let old = EnergyImpactProcessIdentity(
-            processIdentifier: 101,
-            processStartAbsoluteTime: 10
+    func testNewProcessGenerationUsesAnIndependentAccumulator() throws {
+        var old = EnergyImpactAccumulator(configuration: .production)
+        var replacement = EnergyImpactAccumulator(configuration: .production)
+
+        let oldEstimate = old.observe(
+            sample: .init(
+                endTimeSeconds: 3,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 0, end: 3, energy: 300),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 100
         )
-        let replacement = EnergyImpactProcessIdentity(
-            processIdentifier: 101,
-            processStartAbsoluteTime: 20
+        let replacementEstimate = replacement.observe(
+            sample: .init(
+                endTimeSeconds: 6,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 3, end: 6, energy: 15),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 5
         )
 
-        XCTAssertEqual(smoother.update(identity: old, value: 100, elapsedSeconds: 3), 100)
-        XCTAssertEqual(smoother.update(identity: replacement, value: 5, elapsedSeconds: 3), 5)
+        XCTAssertEqual(try XCTUnwrap(oldEstimate).fast, 100)
+        XCTAssertEqual(try XCTUnwrap(replacementEstimate).fast, 5)
+    }
+
+    func testAccumulatorCommitsPendingWallAndPIDTimeWithRecoveredEnergy() throws {
+        var accumulator = EnergyImpactAccumulator(configuration: .production)
+
+        XCTAssertNil(accumulator.observe(
+            sample: .init(
+                endTimeSeconds: 3,
+                durationSeconds: 3,
+                contributions: [],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: nil
+        ))
+        let recovered = try XCTUnwrap(accumulator.observe(
+            sample: .init(
+                endTimeSeconds: 6,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 0, end: 6, energy: 6),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 1
+        ))
+
+        XCTAssertEqual(try XCTUnwrap(recovered.sustained), 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage, 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.validProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.observedWallSeconds, 6, accuracy: 0.001)
+    }
+
+    func testTrendTreatsExactFifteenPercentBoundariesAsSteady() {
+        let sustained = 100.0
+        let fractionalSustained = 9.0
+
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: sustained * 1.15,
+                sustained: sustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: sustained * 0.85,
+                sustained: sustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: fractionalSustained * 0.85,
+                sustained: fractionalSustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(fast: 115.001, sustained: 100),
+            .rising
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(fast: 84.999, sustained: 100),
+            .falling
+        )
     }
 
     func testInvalidEMAInputDoesNotBecomeZeroOrMutateState() {
@@ -214,6 +296,143 @@ final class EnergyImpactStatisticsTests: XCTestCase {
             [10, 20]
         )
     }
+
+    func testThirtySecondWindowWeightsIrregularDurations() throws {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 1,
+            durationSeconds: 1,
+            contributions: [contribution(pid: 1, start: 0, end: 1, energy: 100)],
+            discoveredProcessSeconds: 1
+        )))
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 4,
+            durationSeconds: 3,
+            contributions: [contribution(pid: 1, start: 1, end: 4, energy: 900)],
+            discoveredProcessSeconds: 3
+        )))
+
+        XCTAssertEqual(try XCTUnwrap(window.powerMicrowatts), 250, accuracy: 0.001)
+        XCTAssertEqual(window.totalDurationSeconds, 4, accuracy: 0.001)
+        XCTAssertEqual(window.validProcessSeconds, 4, accuracy: 0.001)
+    }
+
+    func testWindowTrimsOnlyTheExpiredFractionOfAnInterval() {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [contribution(pid: 1, start: 0, end: 10, energy: 1_000)],
+            discoveredProcessSeconds: 10
+        )))
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 35,
+            durationSeconds: 25,
+            contributions: [contribution(pid: 1, start: 10, end: 35, energy: 5_000)],
+            discoveredProcessSeconds: 25
+        )))
+
+        XCTAssertEqual(window.totalEnergyMicrojoules, 5_500, accuracy: 0.001)
+        XCTAssertEqual(window.totalDurationSeconds, 30, accuracy: 0.001)
+    }
+
+    func testWindowRejectsNonMonotonicSampleEndTimesWithoutCorruptingRetainedSamples() {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [contribution(pid: 1, start: 0, end: 10, energy: 1_000)],
+            discoveredProcessSeconds: 10
+        )))
+
+        XCTAssertFalse(window.append(.init(
+            endTimeSeconds: 9,
+            durationSeconds: 1,
+            contributions: [contribution(pid: 1, start: 8, end: 9, energy: 900)],
+            discoveredProcessSeconds: 1
+        )))
+
+        XCTAssertEqual(window.totalEnergyMicrojoules, 1_000, accuracy: 0.001)
+        XCTAssertEqual(window.totalDurationSeconds, 10, accuracy: 0.001)
+        XCTAssertEqual(window.validProcessSeconds, 10, accuracy: 0.001)
+    }
+
+    func testWindowPreservesPIDTimeAndCoverageAfterFractionalTrim() {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [contribution(pid: 1, start: 0, end: 10, energy: 1_000)],
+            discoveredProcessSeconds: 20
+        )))
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 35,
+            durationSeconds: 25,
+            contributions: [contribution(pid: 2, start: 10, end: 35, energy: 2_500)],
+            discoveredProcessSeconds: 50
+        )))
+
+        XCTAssertEqual(window.totalDurationSeconds, 30, accuracy: 0.001)
+        XCTAssertEqual(window.validProcessSeconds, 30, accuracy: 0.001)
+        XCTAssertEqual(window.discoveredDurationSeconds, 60, accuracy: 0.001)
+        XCTAssertEqual(window.coverage, 0.5, accuracy: 0.001)
+    }
+
+    func testWindowRejectsInvalidNumericSamplesWithoutMutatingRetainedSamples() {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [contribution(pid: 1, start: 0, end: 10, energy: 1_000)],
+            discoveredProcessSeconds: 10
+        )))
+
+        XCTAssertFalse(window.append(.init(
+            endTimeSeconds: .nan,
+            durationSeconds: 1,
+            contributions: [],
+            discoveredProcessSeconds: 0
+        )))
+        XCTAssertFalse(window.append(.init(
+            endTimeSeconds: 11,
+            durationSeconds: 1,
+            contributions: [contribution(pid: 1, start: 10, end: 11, energy: .nan)],
+            discoveredProcessSeconds: 1
+        )))
+        XCTAssertFalse(window.append(.init(
+            endTimeSeconds: 11,
+            durationSeconds: 1,
+            contributions: [],
+            discoveredProcessSeconds: .infinity
+        )))
+
+        XCTAssertEqual(window.totalEnergyMicrojoules, 1_000, accuracy: 0.001)
+        XCTAssertEqual(window.totalDurationSeconds, 10, accuracy: 0.001)
+    }
+
+    func testWindowTreatsUnreadableIntervalsAsMissingPower() {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [],
+            discoveredProcessSeconds: 10
+        )))
+
+        XCTAssertNil(window.powerMicrowatts)
+    }
+
+    func testWindowPreservesReadableZeroEnergyAsNumericZero() throws {
+        var window = TimeWeightedEnergyWindow(windowSeconds: 30)
+        XCTAssertTrue(window.append(.init(
+            endTimeSeconds: 10,
+            durationSeconds: 10,
+            contributions: [contribution(pid: 1, start: 0, end: 10, energy: 0)],
+            discoveredProcessSeconds: 10
+        )))
+
+        XCTAssertEqual(try XCTUnwrap(window.powerMicrowatts), 0, accuracy: 0.001)
+    }
 }
 
 private func fixtureEntry(
@@ -245,5 +464,23 @@ private func fixtureEntry(
             discoveredProcessSeconds: 3
         ),
         status: status
+    )
+}
+
+private func contribution(
+    pid: pid_t,
+    start: TimeInterval,
+    end: TimeInterval,
+    energy: Double
+) -> ProcessEnergyContribution {
+    ProcessEnergyContribution(
+        processIdentity: .init(
+            processIdentifier: pid,
+            processStartAbsoluteTime: UInt64(pid)
+        ),
+        ownerRootProcessIdentifier: 100,
+        startTimeSeconds: start,
+        endTimeSeconds: end,
+        energyMicrojoules: energy
     )
 }

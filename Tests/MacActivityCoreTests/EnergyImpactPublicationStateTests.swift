@@ -2,26 +2,21 @@ import XCTest
 @testable import MacActivityCore
 
 final class EnergyImpactPublicationStateTests: XCTestCase {
-    func testStaleEntryDoesNotAdvanceEMARecoveryTime() throws {
+    func testAlreadyEstimatedRowsAreNotSmoothedAgain() throws {
         var state = EnergyImpactPublicationState()
-        _ = state.publish([publicationEntry(power: 100)], at: 3, limit: 20)
-        _ = state.publish(
-            [publicationEntry(power: 100, status: .stale)],
+        let first = state.publish(
+            [publicationEntry(power: 100)],
+            at: 3,
+            limit: 20
+        )
+        let second = state.publish(
+            [publicationEntry(power: 400)],
             at: 6,
             limit: 20
         )
 
-        let recovered = state.publish(
-            [publicationEntry(power: 0)],
-            at: 9,
-            limit: 20
-        )
-
-        XCTAssertEqual(
-            try XCTUnwrap(recovered.first?.currentPowerMicrowatts),
-            35.355_339_06,
-            accuracy: 0.000_001
-        )
+        XCTAssertEqual(try XCTUnwrap(first.first?.currentPowerMicrowatts), 100)
+        XCTAssertEqual(try XCTUnwrap(second.first?.currentPowerMicrowatts), 400)
     }
 
     func testAllCandidatesAdvanceBeforeTopTwentyTruncation() throws {
@@ -53,23 +48,9 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
                 secondLead.first { $0.processIdentifier == 21 }?
                     .currentPowerMicrowatts
             ),
-            64.644_660_94,
+            100,
             accuracy: 0.000_001
         )
-    }
-
-    func testTestingSmootherOverrideAppliesAtPublication() throws {
-        var state = EnergyImpactPublicationState()
-        let rows = state.publish(
-            [publicationEntry(pid: 100, power: 100, status: .stable)],
-            at: 3,
-            limit: 20,
-            smoothingOverrideForTesting: { _, _, _ in 42 }
-        )
-        let row = try XCTUnwrap(rows.first)
-
-        XCTAssertEqual(row.currentPowerMicrowatts, 42)
-        XCTAssertEqual(row.rankingScore, 42)
     }
 
     func testStaleEntryInterruptsRankConfirmation() {
@@ -81,14 +62,14 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
                 limit: 20
             ),
             state.publish(
-                [publicationEntry(pid: 1, power: 100), publicationEntry(pid: 2, power: 145)],
+                [publicationEntry(pid: 1, power: 100), publicationEntry(pid: 2, power: 112)],
                 at: 6,
                 limit: 20
             ),
             state.publish(
                 [
                     publicationEntry(pid: 1, power: 100),
-                    publicationEntry(pid: 2, power: 145, status: .stale),
+                    publicationEntry(pid: 2, power: 112, status: .stale),
                 ],
                 at: 9,
                 limit: 20
@@ -108,7 +89,7 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
         XCTAssertEqual(orders, [[1, 2], [1, 2], [1, 2], [1, 2], [2, 1]])
     }
 
-    func testNonfinitePowerPublishesUnavailableWithoutAdvancingEMA() throws {
+    func testNonfinitePowerPublishesUnavailableWithoutRewritingRecovery() throws {
         var state = EnergyImpactPublicationState()
         _ = state.publish([publicationEntry(power: 100)], at: 3, limit: 20)
 
@@ -124,7 +105,7 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
         let recovered = state.publish([publicationEntry(power: 0)], at: 9, limit: 20)
         XCTAssertEqual(
             try XCTUnwrap(recovered.first?.currentPowerMicrowatts),
-            35.355_339_06,
+            0,
             accuracy: 0.000_001
         )
     }
@@ -205,66 +186,33 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
 
         XCTAssertEqual(rows.count, 2)
         XCTAssertEqual(rows.filter { $0.status == .stable }.count, 1)
+        let retained = try XCTUnwrap(rows.first { $0.status == .stable })
+        XCTAssertEqual(retained.currentPowerMicrowatts, 10)
         let unavailable = try XCTUnwrap(rows.first { $0.status == .unavailable })
         XCTAssertNil(unavailable.currentPowerMicrowatts)
         XCTAssertNil(unavailable.sustainedPowerMicrowatts)
         XCTAssertNil(unavailable.rankingScore)
     }
 
-    func testNilSmoothingOutputPublishesUnavailable() throws {
+    func testLongGapResetsPriorRankOrder() {
         var state = EnergyImpactPublicationState()
-
-        let rows = state.publish(
-            [publicationEntry(power: 100)],
-            at: 3,
-            limit: 20,
-            smoothingOverrideForTesting: { _, _, _ in nil }
-        )
-
-        let row = try XCTUnwrap(rows.first)
-        XCTAssertEqual(row.status, .unavailable)
-        XCTAssertNil(row.currentPowerMicrowatts)
-        XCTAssertNil(row.sustainedPowerMicrowatts)
-        XCTAssertNil(row.rankingScore)
-    }
-
-    func testLongGapResetsPriorSmoothingState() throws {
-        var state = EnergyImpactPublicationState()
-        _ = state.publish([publicationEntry(power: 0)], at: 3, limit: 20)
-        _ = state.publish([publicationEntry(power: 100)], at: 6, limit: 20)
-
-        let afterGap = state.publish([publicationEntry(power: 0)], at: 17, limit: 20)
-
-        XCTAssertEqual(try XCTUnwrap(afterGap.first?.currentPowerMicrowatts), 0)
-    }
-
-    func testRecoveryAfterStaleSeriesBeyondMaximumGapStartsFreshEMA() throws {
-        var state = EnergyImpactPublicationState()
-        _ = state.publish([publicationEntry(power: 100)], at: 3, limit: 20)
         _ = state.publish(
-            [publicationEntry(power: 100, status: .stale)],
+            [publicationEntry(pid: 1, power: 100), publicationEntry(pid: 2, power: 90)],
+            at: 3,
+            limit: 20
+        )
+        _ = state.publish(
+            [publicationEntry(pid: 1, power: 100), publicationEntry(pid: 2, power: 112)],
             at: 6,
             limit: 20
         )
-        _ = state.publish(
-            [publicationEntry(power: 100, status: .stale)],
-            at: 9,
-            limit: 20
-        )
-        _ = state.publish(
-            [publicationEntry(power: 100, status: .stale)],
-            at: 12,
+        let afterGap = state.publish(
+            [publicationEntry(pid: 1, power: 100), publicationEntry(pid: 2, power: 112)],
+            at: 17,
             limit: 20
         )
 
-        let recovered = state.publish(
-            [publicationEntry(power: 0)],
-            at: 15,
-            limit: 20
-        )
-
-        XCTAssertEqual(try XCTUnwrap(recovered.first?.status), .stable)
-        XCTAssertEqual(try XCTUnwrap(recovered.first?.currentPowerMicrowatts), 0)
+        XCTAssertEqual(afterGap.map(\.processIdentifier), [2, 1])
     }
 
     func testPIDReuseStartsReplacementGenerationFromItsOwnRawValue() throws {
@@ -290,7 +238,7 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(replacement.first?.currentPowerMicrowatts), 5)
     }
 
-    func testMissingGenerationPublishesRawValueWithoutRetainingEMAState() throws {
+    func testMissingGenerationPublishesOnlyCollectingCurrentIntervalData() throws {
         var state = EnergyImpactPublicationState()
         _ = state.publish(
             [publicationEntry(power: 0, startTime: nil)],
@@ -309,7 +257,57 @@ final class EnergyImpactPublicationStateTests: XCTestCase {
             limit: 20
         )
 
+        XCTAssertEqual(try XCTUnwrap(third.first?.status), .collecting)
         XCTAssertEqual(try XCTUnwrap(third.first?.currentPowerMicrowatts), 0)
+        XCTAssertNil(try XCTUnwrap(third.first).sustainedPowerMicrowatts)
+        XCTAssertNil(try XCTUnwrap(third.first).rankingScore)
+    }
+
+    func testMissingGenerationIsUnrankedAndObservedWindowIsForwarded() throws {
+        var state = EnergyImpactPublicationState()
+        let rows = state.publish(
+            [
+                publicationEntry(
+                    pid: 1,
+                    power: 1,
+                    observedWindowSeconds: 15
+                ),
+                publicationEntry(
+                    pid: 2,
+                    power: 1_000,
+                    startTime: nil,
+                    observedWindowSeconds: 3
+                ),
+            ],
+            at: 3,
+            limit: 20
+        )
+
+        XCTAssertEqual(rows.map(\.processIdentifier), [1, 2])
+        let missingGeneration = try XCTUnwrap(rows.last)
+        XCTAssertEqual(missingGeneration.status, .collecting)
+        XCTAssertEqual(missingGeneration.currentPowerMicrowatts, 1_000)
+        XCTAssertNil(missingGeneration.sustainedPowerMicrowatts)
+        XCTAssertNil(missingGeneration.rankingScore)
+        XCTAssertEqual(missingGeneration.observedWindowSeconds, 3)
+    }
+
+    func testUnavailableSanitizerRetainsObservedWindowContext() throws {
+        var state = EnergyImpactPublicationState()
+        let row = try XCTUnwrap(state.publish(
+            [publicationEntry(
+                power: .nan,
+                observedWindowSeconds: 12
+            )],
+            at: 3,
+            limit: 20
+        ).first)
+
+        XCTAssertEqual(row.status, .unavailable)
+        XCTAssertNil(row.currentPowerMicrowatts)
+        XCTAssertNil(row.sustainedPowerMicrowatts)
+        XCTAssertNil(row.rankingScore)
+        XCTAssertEqual(row.observedWindowSeconds, 12)
     }
 }
 
@@ -317,7 +315,8 @@ private func publicationEntry(
     pid: pid_t = 101,
     power: Double?,
     startTime: UInt64? = 1,
-    status: EnergyImpactStatus = .stable
+    status: EnergyImpactStatus = .stable,
+    observedWindowSeconds: TimeInterval = 0
 ) -> EnergyImpactEntry {
     EnergyImpactEntry(
         identity: EnergyImpactAppIdentity(
@@ -337,6 +336,7 @@ private func publicationEntry(
             validProcessSeconds: status == .stable || status == .partial ? 3 : 0,
             discoveredProcessSeconds: 3
         ),
-        status: status
+        status: status,
+        observedWindowSeconds: observedWindowSeconds
     )
 }
