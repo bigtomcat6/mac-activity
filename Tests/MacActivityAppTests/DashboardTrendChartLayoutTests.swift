@@ -79,6 +79,67 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertNotEqual(firstPoint.value, secondPoint.value)
     }
 
+    func testSegmentedAveragesProduceDrawablePrimaryLines() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            DashboardTrendSample(timestamp: base, primaryValue: 10),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 11),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(2), primaryValue: 12),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(300), primaryValue: 20),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(301), primaryValue: 21),
+            DashboardTrendSample(timestamp: base.addingTimeInterval(302), primaryValue: 22),
+        ]
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(302.5)
+        )
+        let pointsBySegment = Dictionary(
+            grouping: DashboardTrendChartLayout.linePoints(
+                for: display,
+                kind: .cpu,
+                series: .primary
+            ),
+            by: \.segmentID
+        )
+
+        XCTAssertEqual(pointsBySegment.count, 2)
+        XCTAssertTrue(pointsBySegment.values.allSatisfy { $0.count >= 2 })
+    }
+
+    func testDrawablePrimaryLineRequiresTwoBucketsInOneSegment() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let firstBucket = displayBucket(
+            base: base,
+            offset: 0,
+            primary: 10,
+            secondary: nil
+        )
+        let secondBucket = displayBucket(
+            base: base,
+            offset: 300,
+            primary: 20,
+            secondary: nil
+        )
+        let singletonSegments = DashboardTrendDisplay(
+            segments: [
+                DashboardTrendDisplaySegment(id: firstBucket.id, buckets: [firstBucket]),
+                DashboardTrendDisplaySegment(id: secondBucket.id, buckets: [secondBucket]),
+            ]
+        )
+        let twoBucketSegment = DashboardTrendDisplay(
+            segments: [
+                DashboardTrendDisplaySegment(
+                    id: firstBucket.id,
+                    buckets: [firstBucket, secondBucket]
+                )
+            ]
+        )
+
+        XCTAssertFalse(DashboardTrendChartLayout.hasDrawablePrimaryLine(in: singletonSegments))
+        XCTAssertTrue(DashboardTrendChartLayout.hasDrawablePrimaryLine(in: twoBucketSegment))
+    }
+
     func testMissingNetworkSecondaryBucketStartsANewSecondaryLineRun() throws {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let buckets = [

@@ -235,7 +235,7 @@ final class DashboardTrendAveragerTests: XCTestCase {
         XCTAssertEqual(latest.sample.primaryValue, 28, accuracy: 0.001)
     }
 
-    func testMaterialSamplingGapCreatesSeparateDisplaySegments() {
+    func testMaterialSamplingGapKeepsEachAveragedSegmentDrawable() throws {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let samples = [
             sample(base, 0, primary: 10),
@@ -246,14 +246,18 @@ final class DashboardTrendAveragerTests: XCTestCase {
             sample(base, 302, primary: 22),
         ]
 
+        let referenceDate = base.addingTimeInterval(302.5)
         let display = DashboardTrendAverager.display(
             samples: samples,
             plotWidth: 280,
-            referenceDate: base.addingTimeInterval(302)
+            referenceDate: referenceDate
         )
+        let latestBucket = try XCTUnwrap(display.segments.last?.buckets.last)
 
         XCTAssertEqual(display.segments.count, 2)
-        XCTAssertEqual(display.segments.map { $0.buckets.count }, [1, 1])
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [2, 2])
+        XCTAssertEqual(latestBucket.endDate, referenceDate)
+        XCTAssertEqual(latestBucket.sample.primaryValue, 21, accuracy: 0.001)
     }
 
     func testDisplayIsDeterministicForInjectedReferenceDate() {

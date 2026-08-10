@@ -23,7 +23,7 @@ struct DashboardTrendChart: View {
                     plotWidth: DashboardTrendChartLayout.displayPlotWidth(for: proxy.size),
                     referenceDate: .now
                 )
-                if display.buckets.count >= 2 {
+                if DashboardTrendChartLayout.hasDrawablePrimaryLine(in: display) {
                     chartBody(trend: trend, display: display, size: proxy.size)
                 } else {
                     collectingPlaceholder(size: proxy.size)
@@ -706,6 +706,10 @@ struct DashboardTrendChartLayout {
     private static let batteryPowerConnectedLaneBottomGap: CGFloat = 3
     private static let batteryPowerConnectedIconSize: CGFloat = 8
     private static let batteryPowerConnectedIconMinimumCapsuleWidth: CGFloat = 22
+
+    static func hasDrawablePrimaryLine(in display: DashboardTrendDisplay) -> Bool {
+        display.segments.contains { $0.buckets.count >= 2 }
+    }
 
     static func annotationPosition(
         pointer: CGPoint,

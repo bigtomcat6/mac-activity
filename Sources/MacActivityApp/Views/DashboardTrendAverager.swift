@@ -57,6 +57,11 @@ struct DashboardTrendAverager {
         var timestamp: Date { sample.timestamp }
     }
 
+    private struct AveragedSegment {
+        var displaySegment: DashboardTrendDisplaySegment
+        let duration: TimeInterval
+    }
+
     private static let stableDurations: [TimeInterval] = [
         1, 2, 3, 5, 10, 15, 20, 30, 45,
         60, 120, 300, 600, 900, 1_800, 2_700, 3_600,
@@ -173,22 +178,39 @@ struct DashboardTrendAverager {
             return rawDisplay(for: sourceSegments)
         }
 
-        var segments = sourceSegments.compactMap { samples -> DashboardTrendDisplaySegment? in
-            let buckets = buckets(
+        var averagedSegments = sourceSegments.compactMap { samples -> AveragedSegment? in
+            var segmentDuration = duration
+            var segmentBuckets = buckets(
                 for: samples,
-                duration: duration,
+                duration: segmentDuration,
                 referenceDate: referenceDate
             )
-            guard let firstBucket = buckets.first else { return nil }
-            return DashboardTrendDisplaySegment(id: firstBucket.startDate, buckets: buckets)
+            while samples.count >= 2, segmentBuckets.count < 2 {
+                let halvedDuration = segmentDuration / 2
+                guard halvedDuration != segmentDuration else { break }
+                segmentDuration = halvedDuration
+                segmentBuckets = buckets(
+                    for: samples,
+                    duration: segmentDuration,
+                    referenceDate: referenceDate
+                )
+            }
+
+            guard let firstBucket = segmentBuckets.first else { return nil }
+            return AveragedSegment(
+                displaySegment: DashboardTrendDisplaySegment(
+                    id: firstBucket.startDate,
+                    buckets: segmentBuckets
+                ),
+                duration: segmentDuration
+            )
         }
 
         stabilizeCurrentBucket(
-            in: &segments,
-            duration: duration,
+            in: &averagedSegments,
             referenceDate: referenceDate
         )
-        return DashboardTrendDisplay(segments: segments)
+        return DashboardTrendDisplay(segments: averagedSegments.map(\.displaySegment))
     }
 
     private static func rawDisplay(
@@ -275,16 +297,16 @@ struct DashboardTrendAverager {
     }
 
     private static func stabilizeCurrentBucket(
-        in segments: inout [DashboardTrendDisplaySegment],
-        duration: TimeInterval,
+        in segments: inout [AveragedSegment],
         referenceDate: Date
     ) {
         guard let segmentIndex = segments.indices.last,
-              segments[segmentIndex].buckets.count >= 2 else {
+              segments[segmentIndex].displaySegment.buckets.count >= 2 else {
             return
         }
 
-        var buckets = segments[segmentIndex].buckets
+        let duration = segments[segmentIndex].duration
+        var buckets = segments[segmentIndex].displaySegment.buckets
         let currentIndex = buckets.index(before: buckets.endIndex)
         let previousIndex = buckets.index(before: currentIndex)
         let current = buckets[currentIndex]
@@ -320,8 +342,8 @@ struct DashboardTrendAverager {
             timestamp: current.timestamp,
             sample: blended
         )
-        segments[segmentIndex] = DashboardTrendDisplaySegment(
-            id: segments[segmentIndex].id,
+        segments[segmentIndex].displaySegment = DashboardTrendDisplaySegment(
+            id: segments[segmentIndex].displaySegment.id,
             buckets: buckets
         )
     }
