@@ -42,6 +42,25 @@ final class EnergyImpactPresentationTests: XCTestCase {
         )
     }
 
+    func testNumericCollectingPowerTextIncludesLocalizedProvisionalState() {
+        XCTAssertEqual(
+            EnergyImpactPresentation.powerText(
+                microwatts: 120,
+                status: .collecting,
+                bundle: AppLocalization.bundle(forLanguageIdentifier: "en")
+            ),
+            "120 µW · Collecting"
+        )
+        XCTAssertEqual(
+            EnergyImpactPresentation.powerText(
+                microwatts: 120,
+                status: .collecting,
+                bundle: AppLocalization.bundle(forLanguageIdentifier: "zh-Hans")
+            ),
+            "120 µW · 采集中"
+        )
+    }
+
     func testInvalidPowerValuesNeverRenderZeroMicrowatts() {
         for value in [Double.nan, .infinity, -.infinity, -1] {
             let text = EnergyImpactPresentation.powerText(

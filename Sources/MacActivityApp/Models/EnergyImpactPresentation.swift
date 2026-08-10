@@ -43,10 +43,14 @@ enum EnergyImpactPresentation {
             }
             return AppLocalization.string(key, bundle: bundle)
         }
-        return powerText(
+        let localizedPowerText = powerText(
             microwatts: microwatts,
             locale: AppLocalization.currentLocale(bundle: bundle)
         )
+        if status == .collecting {
+            return "\(localizedPowerText) · \(AppLocalization.string(.energyImpactCollecting, bundle: bundle))"
+        }
+        return localizedPowerText
     }
 
     static func accessibilityLabel(

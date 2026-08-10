@@ -28,6 +28,22 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactRowShowsLocalizedProvisionalStateForNumericCollectingValue() {
+        let collecting = entry(power: 120, sustainedPower: 960, status: .collecting)
+
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(for: collecting, bundle: Self.englishBundle),
+            "120 µW · Collecting"
+        )
+        XCTAssertEqual(
+            EnergyImpactRow.trailingText(
+                for: collecting,
+                bundle: AppLocalization.bundle(forLanguageIdentifier: "zh-Hans")
+            ),
+            "120 µW · 采集中"
+        )
+    }
+
     func testEnergyImpactViewShowsLocalizedEmptyMessage() {
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: true, bundle: Self.englishBundle),
@@ -237,6 +253,7 @@ final class EnergyImpactViewTests: XCTestCase {
         name: String = "Safari",
         bundleURL: URL? = nil,
         power: Double? = 860,
+        sustainedPower: Double? = nil,
         status: EnergyImpactStatus = .stable
     ) -> EnergyImpactEntry {
         EnergyImpactEntry(
@@ -248,7 +265,7 @@ final class EnergyImpactViewTests: XCTestCase {
             bundleIdentifier: "com.apple.Safari",
             bundleURL: bundleURL,
             currentPowerMicrowatts: power,
-            sustainedPowerMicrowatts: power,
+            sustainedPowerMicrowatts: sustainedPower ?? power,
             rankingScore: power,
             trend: .steady,
             coverage: .unavailable,
