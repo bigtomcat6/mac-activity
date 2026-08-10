@@ -29,17 +29,20 @@ public struct DashboardTrendSample: Equatable, Sendable {
     public var primaryValue: Double
     public var secondaryValue: Double?
     public var batteryIsConnectedToPower: Bool?
+    public var sampleWeight: Int
 
     public init(
         timestamp: Date,
         primaryValue: Double,
         secondaryValue: Double? = nil,
-        batteryIsConnectedToPower: Bool? = nil
+        batteryIsConnectedToPower: Bool? = nil,
+        sampleWeight: Int = 1
     ) {
         self.timestamp = timestamp
         self.primaryValue = primaryValue
         self.secondaryValue = secondaryValue
         self.batteryIsConnectedToPower = batteryIsConnectedToPower
+        self.sampleWeight = max(1, sampleWeight)
     }
 }
 
@@ -448,7 +451,8 @@ public final class DashboardModel: ObservableObject {
                     primaryValue: showsHardwareBatteryPercentage
                         ? (sample.secondaryValue ?? sample.primaryValue)
                         : sample.primaryValue,
-                    batteryIsConnectedToPower: sample.batteryIsConnectedToPower
+                    batteryIsConnectedToPower: sample.batteryIsConnectedToPower,
+                    sampleWeight: sample.sampleCount
                 )
             },
             scale: .fixed(lowerBound: 0, upperBound: 100)
@@ -466,7 +470,8 @@ public final class DashboardModel: ObservableObject {
                 DashboardTrendSample(
                     timestamp: $0.timestamp,
                     primaryValue: $0.primaryValue,
-                    secondaryValue: kind == .network ? $0.secondaryValue : nil
+                    secondaryValue: kind == .network ? $0.secondaryValue : nil,
+                    sampleWeight: $0.sampleCount
                 )
             },
             scale: scale

@@ -3,6 +3,53 @@ import XCTest
 
 @MainActor
 final class DashboardModelTests: XCTestCase {
+    func testTrendSampleDefaultsAndClampsSampleWeight() {
+        XCTAssertEqual(
+            DashboardTrendSample(
+                timestamp: Date(timeIntervalSinceReferenceDate: 1),
+                primaryValue: 42
+            ).sampleWeight,
+            1
+        )
+        XCTAssertEqual(
+            DashboardTrendSample(
+                timestamp: Date(timeIntervalSinceReferenceDate: 1),
+                primaryValue: 42,
+                sampleWeight: 0
+            ).sampleWeight,
+            1
+        )
+    }
+
+    func testTrendSamplesCarryRetainedHistoryWeights() throws {
+        let store = MetricsStore()
+        let start = Date(timeIntervalSinceReferenceDate: 10_000)
+
+        for index in 0..<2_000 {
+            store.apply(
+                [
+                    .cpu(CPUReading(usagePercent: Double(index % 100))),
+                    .battery(
+                        BatteryReading(
+                            percentage: Double(index % 100),
+                            isCharging: false,
+                            isConnectedToPower: false
+                        )
+                    ),
+                ],
+                timestamp: start.addingTimeInterval(Double(index))
+            )
+        }
+
+        let model = DashboardModel(store: store)
+        for kind in [MetricKind.cpu, .battery] {
+            let metric = try XCTUnwrap(model.metrics.first { $0.kind == kind })
+            let samples = try XCTUnwrap(metric.trend?.samples)
+            XCTAssertTrue(samples.contains { $0.sampleWeight > 1 })
+            XCTAssertEqual(samples.reduce(0) { $0 + $1.sampleWeight }, 2_000)
+        }
+    }
+
     func testModelBuildsMemoryStackedMetricAndOmitsVRAMCard() async throws {
         let store = MetricsStore()
         let model = DashboardModel(store: store)
