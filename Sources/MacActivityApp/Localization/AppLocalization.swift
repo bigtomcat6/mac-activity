@@ -493,6 +493,24 @@ enum AppLocalization {
         return date.formatted(format.locale(locale(for: bundle ?? configuredBundle())))
     }
 
+    static func formattedTimeRange(
+        _ range: ClosedRange<Date>,
+        includesSeconds: Bool = false,
+        bundle: Bundle? = nil
+    ) -> String {
+        let start = formattedTime(
+            range.lowerBound,
+            includesSeconds: includesSeconds,
+            bundle: bundle
+        )
+        let end = formattedTime(
+            range.upperBound,
+            includesSeconds: includesSeconds,
+            bundle: bundle
+        )
+        return start == end ? start : "\(start)–\(end)"
+    }
+
     static func chartAxisLabel(for kind: MetricKind, value: Double, bundle: Bundle? = nil) -> String {
         switch kind {
         case .cpu, .gpu, .disk, .swap, .memory, .vram, .battery:

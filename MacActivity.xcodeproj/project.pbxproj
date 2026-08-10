@@ -53,6 +53,7 @@
 		40CE3A305988195A3041D2A8 /* StatusItemController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 051A8D20F98149046273836B /* StatusItemController.swift */; };
 		442969EB596E699488524CFD /* UpdateCandidateSelectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7A168A4B1458DEE0615A8 /* UpdateCandidateSelectorTests.swift */; };
 		44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */; };
+		457D9DCD12136541E854413A /* DashboardTrendAverager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */; };
 		45A7297E010B7FBDC275DADA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */; };
 		481D37333B0C15E0EE471191 /* LazyShellControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */; };
 		499E922334CC48A0F1656BBC /* AudioProcessProfileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35C82068288F70203DE52633 /* AudioProcessProfileTests.swift */; };
@@ -121,6 +122,7 @@
 		B5EF90985452340276CD86DB /* AudioFeatureAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35053D8A15E42D79FE09D8F /* AudioFeatureAvailabilityTests.swift */; };
 		B6059BE6D5CE1387694F8BBD /* EnergyImpactSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1F7A521F369C3B108ACABF /* EnergyImpactSampler.swift */; };
 		B62368B572182AE9A25D2187 /* DashboardTrendLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5773E6B2EBA7BBAABE1570DF /* DashboardTrendLocalizationTests.swift */; };
+		B70072555CA37599262ACDF0 /* DashboardTrendAveragerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E7865A23C6BF0DA2F9A359 /* DashboardTrendAveragerTests.swift */; };
 		B993782CB47CAC5AB917052A /* MacActivityCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		BD3C6B2AEFF6E988ED8E6694 /* MetricProviderSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018FE6516B13F8FCE943C7CB /* MetricProviderSampleTests.swift */; };
 		BDF8CCE31C580FDBF7ED7FA1 /* EnergyImpactViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DFFF072E13B7DBEA690C77C /* EnergyImpactViewTests.swift */; };
@@ -329,6 +331,7 @@
 		A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModelTests.swift; sourceTree = "<group>"; };
 		A47AF78DA008CD37CCBE9BF6 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupStatusView.swift; sourceTree = "<group>"; };
+		A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendAverager.swift; sourceTree = "<group>"; };
 		A5D2DB29774991AF1785E99D /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/Localizable.strings; sourceTree = "<group>"; };
 		A62CD05233387237992500A0 /* NetworkProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProvider.swift; sourceTree = "<group>"; };
 		A81C781F00F6BDB8AEF86A56 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/InfoPlist.strings; sourceTree = "<group>"; };
@@ -385,6 +388,7 @@
 		F7B4887EAAB65C8DBBE0314A /* ActiveCleanupModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModelTests.swift; sourceTree = "<group>"; };
 		F87B7F0908FC00B4069386C6 /* AudioHALClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioHALClient.swift; sourceTree = "<group>"; };
 		F913116816E2BD3A771FCA4A /* SystemStorageProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemStorageProvider.swift; sourceTree = "<group>"; };
+		F9E7865A23C6BF0DA2F9A359 /* DashboardTrendAveragerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendAveragerTests.swift; sourceTree = "<group>"; };
 		FA74494A949B2E36D7F81079 /* AudioControlCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlCoordinator.swift; sourceTree = "<group>"; };
 		FFD8679864283C26574C3861 /* MetricsSnapshot.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSnapshot.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
@@ -640,6 +644,7 @@
 				D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */,
 				443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */,
 				67191FA29FAD0078810BA81D /* AudioDashboardView.swift */,
+				A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */,
 				C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */,
 				80D21F3C01CE00EFD700E003 /* DashboardView.swift */,
 				A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */,
@@ -723,6 +728,7 @@
 				5FC8340436E36F7FCE415A82 /* AudioDashboardViewTests.swift */,
 				64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */,
 				0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */,
+				F9E7865A23C6BF0DA2F9A359 /* DashboardTrendAveragerTests.swift */,
 				B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */,
 				5773E6B2EBA7BBAABE1570DF /* DashboardTrendLocalizationTests.swift */,
 				2E667EB81235A9CF840D61AB /* EnergyImpactModelTests.swift */,
@@ -935,6 +941,7 @@
 				F417E88391363283C92E2B86 /* AudioDashboardViewTests.swift in Sources */,
 				86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */,
 				A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */,
+				B70072555CA37599262ACDF0 /* DashboardTrendAveragerTests.swift in Sources */,
 				D490D4024E6274B6F559D0A3 /* DashboardTrendChartLayoutTests.swift in Sources */,
 				B62368B572182AE9A25D2187 /* DashboardTrendLocalizationTests.swift in Sources */,
 				FB7F3E4B37EC29A3688E3AEC /* EnergyImpactModelTests.swift in Sources */,
@@ -1081,6 +1088,7 @@
 				942C0019C9F31F025BD8F880 /* AudioDashboardModel.swift in Sources */,
 				8507593B5300A3D1651FF296 /* AudioDashboardView.swift in Sources */,
 				B2FCD7583F98E66D0FB507E4 /* DashboardPopoverController.swift in Sources */,
+				457D9DCD12136541E854413A /* DashboardTrendAverager.swift in Sources */,
 				C34CFD6BA2083C5B981BFE7F /* DashboardTrendChart.swift in Sources */,
 				D2EED3D79D2450518952BAE5 /* DashboardView.swift in Sources */,
 				551B137A9AD7F434850FD5EB /* DiskCleanupStatusView.swift in Sources */,
