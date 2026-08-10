@@ -15,19 +15,101 @@ final class EnergyImpactStatisticsTests: XCTestCase {
         )
     }
 
-    func testNewProcessGenerationDoesNotInheritOldSmoothing() {
-        var smoother = EnergyImpactSmoother(halfLifeSeconds: 4)
-        let old = EnergyImpactProcessIdentity(
-            processIdentifier: 101,
-            processStartAbsoluteTime: 10
+    func testNewProcessGenerationUsesAnIndependentAccumulator() throws {
+        var old = EnergyImpactAccumulator(configuration: .production)
+        var replacement = EnergyImpactAccumulator(configuration: .production)
+
+        let oldEstimate = old.observe(
+            sample: .init(
+                endTimeSeconds: 3,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 0, end: 3, energy: 300),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 100
         )
-        let replacement = EnergyImpactProcessIdentity(
-            processIdentifier: 101,
-            processStartAbsoluteTime: 20
+        let replacementEstimate = replacement.observe(
+            sample: .init(
+                endTimeSeconds: 6,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 3, end: 6, energy: 15),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 5
         )
 
-        XCTAssertEqual(smoother.update(identity: old, value: 100, elapsedSeconds: 3), 100)
-        XCTAssertEqual(smoother.update(identity: replacement, value: 5, elapsedSeconds: 3), 5)
+        XCTAssertEqual(try XCTUnwrap(oldEstimate).fast, 100)
+        XCTAssertEqual(try XCTUnwrap(replacementEstimate).fast, 5)
+    }
+
+    func testAccumulatorCommitsPendingWallAndPIDTimeWithRecoveredEnergy() throws {
+        var accumulator = EnergyImpactAccumulator(configuration: .production)
+
+        XCTAssertNil(accumulator.observe(
+            sample: .init(
+                endTimeSeconds: 3,
+                durationSeconds: 3,
+                contributions: [],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: nil
+        ))
+        let recovered = try XCTUnwrap(accumulator.observe(
+            sample: .init(
+                endTimeSeconds: 6,
+                durationSeconds: 3,
+                contributions: [
+                    contribution(pid: 101, start: 0, end: 6, energy: 6),
+                ],
+                discoveredProcessSeconds: 3
+            ),
+            rawPowerMicrowatts: 1
+        ))
+
+        XCTAssertEqual(try XCTUnwrap(recovered.sustained), 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage, 1, accuracy: 0.001)
+        XCTAssertEqual(recovered.validProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.observedWallSeconds, 6, accuracy: 0.001)
+    }
+
+    func testTrendTreatsExactFifteenPercentBoundariesAsSteady() {
+        let sustained = 100.0
+        let fractionalSustained = 9.0
+
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: sustained * 1.15,
+                sustained: sustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: sustained * 0.85,
+                sustained: sustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(
+                fast: fractionalSustained * 0.85,
+                sustained: fractionalSustained
+            ),
+            .steady
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(fast: 115.001, sustained: 100),
+            .rising
+        )
+        XCTAssertEqual(
+            EnergyImpactAccumulator.trend(fast: 84.999, sustained: 100),
+            .falling
+        )
     }
 
     func testInvalidEMAInputDoesNotBecomeZeroOrMutateState() {

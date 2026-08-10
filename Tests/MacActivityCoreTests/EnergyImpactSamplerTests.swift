@@ -119,12 +119,301 @@ final class EnergyImpactSamplerTests: XCTestCase {
             bundleIdentifier: nil,
             bundleURL: nil,
             currentPowerMicrowatts: power,
-            sustainedPowerMicrowatts: nil,
+            sustainedPowerMicrowatts: power,
             rankingScore: power,
             trend: .steady,
             coverage: .unavailable,
             status: status
         )
+    }
+
+    private func makeSamplerForPowerSeries(
+        _ powers: [Double],
+        interval: TimeInterval
+    ) -> (EnergyImpactSampler, [EnergyImpactAppSnapshot], Int) {
+        var cumulativeNanojoules: UInt64 = 0
+        var readings = [reading(energy: 0)]
+        for power in powers {
+            cumulativeNanojoules += UInt64(power * interval * 1_000)
+            readings.append(reading(energy: cumulativeNanojoules))
+        }
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: readings.map(ProcessEnergyReadResult.success),
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(
+                times: (0...powers.count).map { Double($0) * interval }
+            )
+        )
+        return (
+            sampler,
+            [
+                EnergyImpactAppSnapshot(
+                    processIdentifier: 100,
+                    name: "Fixture",
+                    bundleIdentifier: nil,
+                    bundleURL: nil
+                ),
+            ],
+            powers.count + 1
+        )
+    }
+
+    private func consumeAllObservations(
+        sampler: EnergyImpactSampler,
+        apps: [EnergyImpactAppSnapshot],
+        count: Int,
+        limit: Int = 20
+    ) async throws -> [[EnergyImpactEntry]] {
+        let lease = try require(
+            await sampler.beginSession(.init(generation: 1))
+        )
+        var observations: [[EnergyImpactEntry]] = []
+        for _ in 0..<count {
+            observations.append(try require(
+                await sampler.observe(lease: lease, apps: apps, limit: limit)
+            ))
+        }
+        await sampler.endSession(lease)
+        return observations
+    }
+
+    private func entryAfter(
+        observedSeconds: Int,
+        coverage targetCoverage: Double
+    ) async throws -> EnergyImpactEntry {
+        let processCount = targetCoverage == 1 ? 1 : 100
+        let readableCount = Int((targetCoverage * Double(processCount)).rounded())
+        let observationCount = observedSeconds / 3 + 1
+        let rootPID: pid_t = 100
+        let processIdentifiers = (0..<processCount).map { rootPID + pid_t($0) }
+        let snapshots = processIdentifiers.dropFirst().map {
+            ProcessParentSnapshot(
+                processIdentifier: $0,
+                parentProcessIdentifier: rootPID
+            )
+        }
+        var results: [pid_t: [ProcessEnergyReadResult]] = [:]
+        for (index, processIdentifier) in processIdentifiers.enumerated() {
+            if index < readableCount {
+                results[processIdentifier] = (0..<observationCount).map { sample in
+                    .success(reading(
+                        energy: UInt64(sample * 3_000),
+                        start: UInt64(processIdentifier)
+                    ))
+                }
+            } else {
+                results[processIdentifier] = Array(
+                    repeating: .failure(.permissionDenied),
+                    count: observationCount
+                )
+            }
+        }
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: results),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(
+                snapshots: Array(snapshots)
+            ),
+            clock: EnergyImpactClockStub(
+                times: (0..<observationCount).map { Double($0 * 3) }
+            )
+        )
+        let observations = try await consumeAllObservations(
+            sampler: sampler,
+            apps: [
+                .init(
+                    processIdentifier: rootPID,
+                    name: "Fixture",
+                    bundleIdentifier: nil,
+                    bundleURL: nil
+                ),
+            ],
+            count: observationCount
+        )
+        return try require(observations.last?.first)
+    }
+
+    func testFastAndSustainedValuesUseLockedWeights() async throws {
+        let fixture = makeSamplerForPowerSeries(
+            Array(repeating: 100.0, count: 7)
+                + Array(repeating: 400.0, count: 4),
+            interval: 3
+        )
+        let entries = try await consumeAllObservations(
+            sampler: fixture.0,
+            apps: fixture.1,
+            count: fixture.2
+        )
+        let entry = try require(entries.last?.first)
+
+        XCTAssertNotNil(entry.currentPowerMicrowatts)
+        XCTAssertNotNil(entry.sustainedPowerMicrowatts)
+        XCTAssertEqual(
+            try require(entry.rankingScore),
+            0.4 * (try require(entry.currentPowerMicrowatts))
+                + 0.6 * (try require(entry.sustainedPowerMicrowatts)),
+            accuracy: 0.001
+        )
+        XCTAssertEqual(entry.trend, .rising)
+    }
+
+    func testStableRequiresFifteenValidSecondsAndNinetyPercentCoverage() async throws {
+        let twelveSeconds = try await entryAfter(observedSeconds: 12, coverage: 1)
+        let lowCoverage = try await entryAfter(observedSeconds: 18, coverage: 0.89)
+        let stable = try await entryAfter(observedSeconds: 15, coverage: 0.9)
+
+        XCTAssertEqual(twelveSeconds.status, .collecting)
+        XCTAssertEqual(lowCoverage.status, .partial)
+        XCTAssertEqual(stable.status, .stable)
+    }
+
+    func testAllCandidatesUpdateBeforeTopTwentyLimit() async throws {
+        let apps = (1...21).map { index in
+            EnergyImpactAppSnapshot(
+                processIdentifier: pid_t(index),
+                name: "App \(index)",
+                bundleIdentifier: nil,
+                bundleURL: nil
+            )
+        }
+        let results = Dictionary(uniqueKeysWithValues: (1...21).map { index in
+            let firstDelta = index == 21 ? 1_000 : 3_000
+            let secondDelta = index == 21 ? 300_000 : 3_000
+            return (
+                pid_t(index),
+                [
+                    ProcessEnergyReadResult.success(reading(
+                        energy: 0,
+                        start: UInt64(index)
+                    )),
+                    .success(reading(
+                        energy: UInt64(firstDelta),
+                        start: UInt64(index)
+                    )),
+                    .success(reading(
+                        energy: UInt64(firstDelta + secondDelta),
+                        start: UInt64(index)
+                    )),
+                ]
+            )
+        })
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: results),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+        let observations = try await consumeAllObservations(
+            sampler: sampler,
+            apps: apps,
+            count: 3,
+            limit: 20
+        )
+        let entries = try require(observations.last)
+
+        XCTAssertEqual(entries.count, 20)
+        XCTAssertEqual(entries.first?.name, "App 21")
+    }
+
+    func testAllPIDFailureRecoveryCommitsMatchingEnergyAndWallTime() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 0)),
+                    .failure(.permissionDenied),
+                    .success(reading(energy: 6_000)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0, 3, 6])
+        )
+        let observations = try await consumeAllObservations(
+            sampler: sampler,
+            apps: [
+                .init(
+                    processIdentifier: 100,
+                    name: "Fixture",
+                    bundleIdentifier: nil,
+                    bundleURL: nil
+                ),
+            ],
+            count: 3
+        )
+        let last = try require(observations.last?.first)
+
+        XCTAssertEqual(
+            try require(last.sustainedPowerMicrowatts),
+            1,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(last.observedWindowSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(last.coverage.fraction, 1, accuracy: 0.001)
+    }
+
+    func testStaleIntervalDoesNotAdvanceEstimatorState() async throws {
+        let service = makeService(
+            results: [
+                .success(reading(energy: 0)),
+                .success(reading(energy: 300_000)),
+                .failure(.permissionDenied),
+                .success(reading(energy: 300_000)),
+            ],
+            times: [0, 3, 6, 9]
+        )
+
+        _ = await service.observe(limit: 1)
+        let estimated = try require(await service.observe(limit: 1).first)
+        let stale = try require(await service.observe(limit: 1).first)
+        let recovered = try require(await service.observe(limit: 1).first)
+
+        XCTAssertEqual(try require(estimated.currentPowerMicrowatts), 100)
+        XCTAssertEqual(stale.status, .stale)
+        XCTAssertNil(stale.rankingScore)
+        XCTAssertEqual(
+            try require(recovered.currentPowerMicrowatts),
+            35.355_339_06,
+            accuracy: 0.000_001
+        )
+        XCTAssertEqual(recovered.observedWindowSeconds, 9, accuracy: 0.001)
+    }
+
+    func testMissingRootGenerationPublishesOnlyCurrentIntervalData() async throws {
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                ],
+                101: [
+                    .success(reading(energy: 0, start: 11)),
+                    .success(reading(energy: 3_000, start: 11)),
+                ],
+            ]),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: [
+                .init(processIdentifier: 101, parentProcessIdentifier: 100),
+            ]),
+            clock: EnergyImpactClockStub(times: [0, 3])
+        )
+        let publications = try await consumeAllObservations(
+            sampler: sampler,
+            apps: [
+                .init(
+                    processIdentifier: 100,
+                    name: "Fixture",
+                    bundleIdentifier: nil,
+                    bundleURL: nil
+                ),
+            ],
+            count: 2
+        )
+        let row = try require(publications.last?.first)
+
+        XCTAssertNil(row.identity.rootProcessStartAbsoluteTime)
+        XCTAssertEqual(row.status, .collecting)
+        XCTAssertEqual(try require(row.currentPowerMicrowatts), 1, accuracy: 0.001)
+        XCTAssertNil(row.sustainedPowerMicrowatts)
+        XCTAssertNil(row.rankingScore)
+        XCTAssertEqual(row.observedWindowSeconds, 3, accuracy: 0.001)
     }
 
     func testNewerBeginRequestWinsWhenItArrivesBeforeOlderRequest() async throws {
@@ -272,7 +561,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
             await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
         )
 
-        XCTAssertEqual(row.status, .partial)
+        XCTAssertEqual(row.status, .collecting)
         XCTAssertEqual(try require(row.currentPowerMicrowatts), 1, accuracy: 0.001)
         XCTAssertEqual(row.coverage.readableProcessCount, 1)
         XCTAssertEqual(row.coverage.discoveredProcessCount, 2)
@@ -371,7 +660,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
             await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
         )
 
-        XCTAssertEqual(row.status, .stable)
+        XCTAssertEqual(row.status, .collecting)
         XCTAssertNotNil(row.currentPowerMicrowatts)
     }
 
@@ -407,7 +696,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let recovered = try require(
             await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
         )
-        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
 
@@ -564,6 +853,42 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(entry.status, .collecting)
     }
 
+    func testEnergyImpactEntrySanitizesInvalidObservedWindowContext() async {
+        let base = EnergyImpactAppIdentity(
+            rootProcessIdentifier: 101,
+            rootProcessStartAbsoluteTime: 10
+        )
+        let nonfinite = EnergyImpactEntry(
+            identity: base,
+            name: "Fixture",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            currentPowerMicrowatts: nil,
+            sustainedPowerMicrowatts: nil,
+            rankingScore: nil,
+            trend: .steady,
+            coverage: .unavailable,
+            status: .collecting,
+            observedWindowSeconds: .nan
+        )
+        let negative = EnergyImpactEntry(
+            identity: base,
+            name: "Fixture",
+            bundleIdentifier: nil,
+            bundleURL: nil,
+            currentPowerMicrowatts: nil,
+            sustainedPowerMicrowatts: nil,
+            rankingScore: nil,
+            trend: .steady,
+            coverage: .unavailable,
+            status: .collecting,
+            observedWindowSeconds: -1
+        )
+
+        XCTAssertEqual(nonfinite.observedWindowSeconds, 0)
+        XCTAssertEqual(negative.observedWindowSeconds, 0)
+    }
+
     func testEnergyImpactCoverageUsesValidPIDTime() async {
         let coverage = EnergyImpactCoverage(
             discoveredProcessCount: 4,
@@ -586,7 +911,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(coverage.fraction, 0)
     }
 
-    func testEnergyImpactSamplerReportsPartialCoverageWhenOneDescendantHasNoValidDelta() async throws {
+    func testEnergyImpactSamplerReportsRollingCoverageWhenOneDescendantHasNoValidDelta() async throws {
         let app = EnergyImpactAppSnapshot(
             processIdentifier: 100,
             name: "Browser",
@@ -614,7 +939,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         _ = await service.observe(limit: 1)
         let entry = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(entry.status, .partial)
+        XCTAssertEqual(entry.status, .collecting)
         XCTAssertEqual(entry.coverage.validProcessSeconds, 1)
         XCTAssertEqual(entry.coverage.discoveredProcessSeconds, 2)
         XCTAssertEqual(entry.coverage.fraction, 0.5, accuracy: 0.001)
@@ -870,7 +1195,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         XCTAssertEqual(regression.status, .collecting)
         XCTAssertNil(regression.currentPowerMicrowatts)
-        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(recovered.currentPowerMicrowatts, 1)
     }
 
@@ -942,7 +1267,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(entry?.status, .collecting)
     }
 
-    func testEnergyImpactSamplerKeepsUnreadableAppsAsUnavailableRows() async {
+    func testEnergyImpactSamplerKeepsUnconfirmedRootsAsCollectingRows() async {
         let reader = ProcessEnergyReadingProviderStub(readings: [:])
         let service = EnergyImpactSamplerTestSession(
             reader: reader,
@@ -963,7 +1288,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(entries.count, 1)
         XCTAssertEqual(entries[0].name, "Locked App")
         XCTAssertNil(entries[0].currentPowerMicrowatts)
-        XCTAssertEqual(entries[0].status, .unavailable)
+        XCTAssertEqual(entries[0].status, .collecting)
     }
 
     // Production break caught: an unreadable helper is collapsed into a false full-coverage value.
@@ -983,7 +1308,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         _ = await service.observe(limit: 1)
         let entry = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(entry.status, .partial)
+        XCTAssertEqual(entry.status, .collecting)
         XCTAssertEqual(try require(entry.currentPowerMicrowatts), 1, accuracy: 0.001)
         XCTAssertEqual(entry.coverage.readableProcessCount, 1)
         XCTAssertEqual(entry.coverage.discoveredProcessCount, 2)
@@ -1009,7 +1334,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         XCTAssertNotEqual(failed.status, .stable)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
-        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.status, .collecting)
     }
 
     // Production break caught: a baseline older than the ten-second bound still emits a diluted recovery value.
@@ -1051,7 +1376,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let entry = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(try require(confirmedZero.currentPowerMicrowatts), 0, accuracy: 0.001)
-        XCTAssertEqual(confirmedZero.status, .stable)
+        XCTAssertEqual(confirmedZero.status, .collecting)
         XCTAssertNil(entry.currentPowerMicrowatts)
         XCTAssertNil(entry.rankingScore)
         XCTAssertEqual(entry.status, .unavailable)
@@ -1078,7 +1403,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         XCTAssertEqual(rebaselined.status, .collecting)
         XCTAssertNil(rebaselined.currentPowerMicrowatts)
-        XCTAssertEqual(validInterval.status, .stable)
+        XCTAssertEqual(validInterval.status, .collecting)
         XCTAssertEqual(try require(validInterval.currentPowerMicrowatts), 0, accuracy: 0.001)
     }
 
@@ -1218,9 +1543,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
             1 + smoothingAlpha,
             accuracy: 0.001
         )
-        XCTAssertEqual(recovered.status, .stable)
-        XCTAssertEqual(recovered.coverage.validProcessSeconds, 6, accuracy: 0.001)
-        XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
+        XCTAssertEqual(recovered.status, .collecting)
+        XCTAssertEqual(
+            try require(recovered.sustainedPowerMicrowatts),
+            2,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(recovered.coverage.validProcessSeconds, 12, accuracy: 0.001)
+        XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 12, accuracy: 0.001)
     }
 
     // Production break caught: stale output loses the confirmed root generation or refreshes its own grace window.
@@ -1241,14 +1571,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let recovered = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(collecting.status, .collecting)
-        XCTAssertEqual(stable.status, .stable)
+        XCTAssertEqual(stable.status, .collecting)
         XCTAssertEqual(stable.currentPowerMicrowatts, 1)
         XCTAssertEqual(stale.status, .stale)
         XCTAssertEqual(stale.identity, stable.identity)
         XCTAssertEqual(stale.currentPowerMicrowatts, stable.currentPowerMicrowatts)
         XCTAssertEqual(stale.coverage, stable.coverage)
         XCTAssertNil(stale.rankingScore)
-        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(recovered.identity, stable.identity)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
@@ -1274,7 +1604,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(secondStale?.status, .stale)
         let expired = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(expired.status, .unavailable)
+        XCTAssertEqual(expired.status, .collecting)
         XCTAssertNil(expired.currentPowerMicrowatts)
     }
 
@@ -1292,7 +1622,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let stable = try require(await service.observe(limit: 1).first)
         let atBoundary = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(stable.status, .stable)
+        XCTAssertEqual(stable.status, .collecting)
         XCTAssertEqual(stable.identity.rootProcessStartAbsoluteTime, 10)
         XCTAssertEqual(atBoundary.status, .stale)
         XCTAssertEqual(atBoundary.identity.rootProcessStartAbsoluteTime, 10)
@@ -1322,14 +1652,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let changed = try require(await service.observe(limit: 1).first)
         let stale = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(old.status, .stable)
+        XCTAssertEqual(old.status, .collecting)
         XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
         XCTAssertEqual(changed.identity.rootProcessStartAbsoluteTime, 20)
-        XCTAssertEqual(changed.status, .partial)
-        XCTAssertEqual(changed.currentPowerMicrowatts, 1)
-        XCTAssertEqual(stale.status, .stale)
+        XCTAssertEqual(changed.status, .collecting)
+        XCTAssertNil(changed.currentPowerMicrowatts)
+        XCTAssertEqual(stale.status, .unavailable)
         XCTAssertEqual(stale.identity.rootProcessStartAbsoluteTime, 20)
-        XCTAssertEqual(stale.currentPowerMicrowatts, 1)
+        XCTAssertNil(stale.currentPowerMicrowatts)
     }
 
     // Production break caught: helper-only partial samples renew an expired root generation.
@@ -1361,12 +1691,12 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let withinConfirmationGap = try require(await service.observe(limit: 1).first)
         let expired = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(confirmed.status, .stable)
+        XCTAssertEqual(confirmed.status, .collecting)
         XCTAssertEqual(confirmed.identity.rootProcessStartAbsoluteTime, 10)
-        XCTAssertEqual(withinConfirmationGap.status, .partial)
+        XCTAssertEqual(withinConfirmationGap.status, .collecting)
         XCTAssertEqual(withinConfirmationGap.identity.rootProcessStartAbsoluteTime, 10)
         XCTAssertNotNil(withinConfirmationGap.currentPowerMicrowatts)
-        XCTAssertEqual(expired.status, .partial)
+        XCTAssertEqual(expired.status, .collecting)
         XCTAssertNil(expired.identity.rootProcessStartAbsoluteTime)
         XCTAssertEqual(expired.currentPowerMicrowatts, 1)
         XCTAssertEqual(expired.coverage.validProcessSeconds, 3)
@@ -1409,14 +1739,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let helperOnly = try require(await service.observe(limit: 1).first)
         let established = try require(await service.observe(limit: 1).first)
 
-        XCTAssertEqual(old.status, .stable)
+        XCTAssertEqual(old.status, .collecting)
         XCTAssertEqual(old.identity.rootProcessStartAbsoluteTime, 10)
         XCTAssertEqual(expired.status, .collecting)
         XCTAssertNil(expired.identity.rootProcessStartAbsoluteTime)
-        XCTAssertEqual(helperOnly.status, .partial)
+        XCTAssertEqual(helperOnly.status, .collecting)
         XCTAssertEqual(helperOnly.currentPowerMicrowatts, 1)
         XCTAssertNil(helperOnly.identity.rootProcessStartAbsoluteTime)
-        XCTAssertEqual(established.status, .partial)
+        XCTAssertEqual(established.status, .collecting)
         XCTAssertEqual(established.identity.rootProcessStartAbsoluteTime, 20)
     }
 
@@ -1440,7 +1770,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         _ = await service.observe(limit: 1)
         let stable = await service.observe(limit: 1).first
-        XCTAssertEqual(stable?.status, .stable)
+        XCTAssertEqual(stable?.status, .collecting)
         let mixed = try require(await service.observe(limit: 1).first)
         let unsupported = try require(await service.observe(limit: 1).first)
 
@@ -1497,24 +1827,20 @@ final class EnergyImpactSamplerTests: XCTestCase {
         }
 
         assertNonnumeric(try require(first[100]), status: .collecting)
-        assertNonnumeric(try require(first[200]), status: .unavailable)
-        assertNonnumeric(try require(moved[100]), status: .unavailable)
+        assertNonnumeric(try require(first[200]), status: .collecting)
+        assertNonnumeric(try require(moved[100]), status: .collecting)
         assertNonnumeric(try require(moved[200]), status: .collecting)
-        assertNonnumeric(try require(settled[100]), status: .unavailable)
+        assertNonnumeric(try require(settled[100]), status: .collecting)
 
         let settledSecondRoot = try require(settled[200])
-        XCTAssertEqual(settledSecondRoot.status, .partial)
+        XCTAssertEqual(settledSecondRoot.status, .collecting)
         XCTAssertEqual(
             try require(settledSecondRoot.currentPowerMicrowatts),
             1,
             accuracy: 0.001
         )
         XCTAssertNil(settledSecondRoot.sustainedPowerMicrowatts)
-        XCTAssertEqual(
-            try require(settledSecondRoot.rankingScore),
-            1,
-            accuracy: 0.001
-        )
+        XCTAssertNil(settledSecondRoot.rankingScore)
     }
 
     func testHelperDisappearancePreservesSameGenerationOwnerContinuityWithinGap() async throws {
@@ -1544,7 +1870,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         XCTAssertEqual(reader.readCount(for: 100), 3)
         XCTAssertEqual(reader.readCount(for: 300), 2)
-        XCTAssertEqual(recovered.status, .partial)
+        XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
         XCTAssertEqual(recovered.coverage.validProcessSeconds, 3, accuracy: 0.001)
         XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 6, accuracy: 0.001)
@@ -1593,7 +1919,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         _ = await reordered.observe(limit: 1)
         let actual = try require(await reordered.observe(limit: 1).first)
 
-        XCTAssertEqual(actual.status, .stable)
+        XCTAssertEqual(actual.status, .collecting)
         XCTAssertEqual(actual.currentPowerMicrowatts, expected.currentPowerMicrowatts)
         XCTAssertEqual(actual.coverage, expected.coverage)
     }
@@ -1672,12 +1998,12 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let recovered = try require(await service.observe(limit: 1).first)
 
         XCTAssertEqual(collecting.status, .collecting)
-        XCTAssertEqual(numeric.status, .stable)
+        XCTAssertEqual(numeric.status, .collecting)
         XCTAssertEqual(replacement.status, .collecting)
         XCTAssertNil(replacement.currentPowerMicrowatts)
         XCTAssertEqual(afterGap.status, .collecting)
         XCTAssertNil(afterGap.currentPowerMicrowatts)
-        XCTAssertEqual(recovered.status, .stable)
+        XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
     }
 
@@ -1734,7 +2060,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(sortedByImpact(entries, limit: 2).map(\.name), ["Calendar", "Notes"])
     }
 
-    func testUnavailableNumericEntrySortsBeforeNonnumericRegardlessOfInputOrder() async {
+    func testUnavailableEntriesStripNumericFieldsBeforeDeterministicOrdering() async {
         let numeric = entry(
             processIdentifier: 1,
             name: "Numeric",
@@ -1751,12 +2077,12 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(
             sortedByImpact([numeric, nonnumeric], limit: 2)
                 .map(\.processIdentifier),
-            [1, 2]
+            [2, 1]
         )
         XCTAssertEqual(
             sortedByImpact([nonnumeric, numeric], limit: 2)
                 .map(\.processIdentifier),
-            [1, 2]
+            [2, 1]
         )
     }
 

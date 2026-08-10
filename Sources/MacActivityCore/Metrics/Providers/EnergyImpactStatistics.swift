@@ -121,29 +121,93 @@ public struct TimeAwareEnergyEMA: Equatable, Sendable {
     }
 }
 
-public struct EnergyImpactSmoother: Sendable {
-    private let halfLifeSeconds: TimeInterval
-    private var values: [EnergyImpactProcessIdentity: TimeAwareEnergyEMA] = [:]
+struct EnergyImpactAccumulator: Sendable {
+    private var fast: TimeAwareEnergyEMA
+    private var sustained: TimeWeightedEnergyWindow
+    private var pendingDurationSeconds: TimeInterval = 0
+    private var pendingDiscoveredProcessSeconds: TimeInterval = 0
+    private var pendingContributions: [ProcessEnergyContribution] = []
 
-    public init(halfLifeSeconds: TimeInterval) {
-        self.halfLifeSeconds = halfLifeSeconds
+    init(configuration: EnergyImpactConfiguration) {
+        fast = TimeAwareEnergyEMA(
+            halfLifeSeconds: configuration.fastHalfLifeSeconds
+        )
+        sustained = TimeWeightedEnergyWindow(
+            windowSeconds: configuration.sustainedWindowSeconds
+        )
     }
 
-    public mutating func update(
-        identity: EnergyImpactProcessIdentity,
-        value: Double,
-        elapsedSeconds: TimeInterval
-    ) -> Double? {
-        guard value.isFinite, value >= 0,
-              elapsedSeconds.isFinite, elapsedSeconds > 0 else { return nil }
-        var ema = values[identity] ?? TimeAwareEnergyEMA(halfLifeSeconds: halfLifeSeconds)
-        guard let result = ema.update(value: value, elapsedSeconds: elapsedSeconds) else { return nil }
-        values[identity] = ema
-        return result
+    mutating func observe(
+        sample: EnergyIntervalSample,
+        rawPowerMicrowatts: Double?
+    ) -> (
+        fast: Double,
+        sustained: Double?,
+        score: Double?,
+        trend: EnergyImpactTrend,
+        coverage: Double,
+        validProcessSeconds: TimeInterval,
+        discoveredProcessSeconds: TimeInterval,
+        observedWallSeconds: TimeInterval
+    )? {
+        guard sample.isValid else { return nil }
+        pendingDurationSeconds += sample.durationSeconds
+        pendingDiscoveredProcessSeconds += sample.discoveredProcessSeconds
+        pendingContributions.append(contentsOf: sample.contributions)
+
+        guard let rawPowerMicrowatts,
+              rawPowerMicrowatts.isFinite,
+              rawPowerMicrowatts >= 0 else {
+            return nil
+        }
+
+        let elapsedSinceValidObservation = pendingDurationSeconds
+        let committed = EnergyIntervalSample(
+            endTimeSeconds: sample.endTimeSeconds,
+            durationSeconds: elapsedSinceValidObservation,
+            contributions: pendingContributions,
+            discoveredProcessSeconds: pendingDiscoveredProcessSeconds
+        )
+        pendingDurationSeconds = 0
+        pendingDiscoveredProcessSeconds = 0
+        pendingContributions.removeAll(keepingCapacity: true)
+
+        guard sustained.append(committed),
+              let fastValue = fast.update(
+                  value: rawPowerMicrowatts,
+                  elapsedSeconds: elapsedSinceValidObservation
+              ) else {
+            return nil
+        }
+
+        let sustainedValue = sustained.powerMicrowatts
+        let score = sustainedValue.map {
+            0.4 * fastValue + 0.6 * $0
+        }
+        let trend = Self.trend(
+            fast: fastValue,
+            sustained: sustainedValue
+        )
+        return (
+            fast: fastValue,
+            sustained: sustainedValue,
+            score: score,
+            trend: trend,
+            coverage: sustained.coverage,
+            validProcessSeconds: sustained.validProcessSeconds,
+            discoveredProcessSeconds: sustained.discoveredDurationSeconds,
+            observedWallSeconds: sustained.totalDurationSeconds
+        )
     }
 
-    public mutating func retainOnly(_ identities: Set<EnergyImpactProcessIdentity>) {
-        values = values.filter { identities.contains($0.key) }
+    static func trend(
+        fast: Double,
+        sustained: Double?
+    ) -> EnergyImpactTrend {
+        guard let sustained else { return .steady }
+        if fast > sustained * 1.15 { return .rising }
+        if fast < sustained * 0.85 { return .falling }
+        return .steady
     }
 }
 

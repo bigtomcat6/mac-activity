@@ -156,6 +156,7 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
     public let trend: EnergyImpactTrend
     public let coverage: EnergyImpactCoverage
     public let status: EnergyImpactStatus
+    public let observedWindowSeconds: TimeInterval
 
     public init(
         identity: EnergyImpactAppIdentity,
@@ -168,7 +169,8 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
         rankingScore: Double?,
         trend: EnergyImpactTrend,
         coverage: EnergyImpactCoverage,
-        status: EnergyImpactStatus
+        status: EnergyImpactStatus,
+        observedWindowSeconds: TimeInterval = 0
     ) {
         self.id = identity
         self.identity = identity
@@ -182,6 +184,10 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
         self.trend = trend
         self.coverage = coverage
         self.status = status
+        self.observedWindowSeconds = observedWindowSeconds.isFinite
+            && observedWindowSeconds >= 0
+            ? observedWindowSeconds
+            : 0
     }
 
     public var processIdentifier: pid_t {
