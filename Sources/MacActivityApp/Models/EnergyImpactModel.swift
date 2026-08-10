@@ -4,14 +4,15 @@ import MacActivityCore
 
 @MainActor
 protocol EnergyImpactProviding: AnyObject {
-    func beginSession() async -> EnergyImpactSessionID
-    func sample(
-        sessionID: EnergyImpactSessionID,
+    func beginSession() async -> EnergyImpactSamplingLease?
+
+    func observe(
+        lease: EnergyImpactSamplingLease,
         limit: Int,
-        scope: EnergyImpactAppScope,
-        publicationBoundary: Bool
+        scope: EnergyImpactAppScope
     ) async -> [EnergyImpactEntry]?
-    func endSession(_ sessionID: EnergyImpactSessionID) async
+
+    func endSession(_ lease: EnergyImpactSamplingLease) async
 }
 
 extension EnergyImpactService: EnergyImpactProviding {}
@@ -23,165 +24,109 @@ final class EnergyImpactModel: ObservableObject {
 
     private let provider: any EnergyImpactProviding
     private let limit: Int
-    private let sampleIntervalNanoseconds: UInt64
-    private let publicationIntervalNanoseconds: UInt64
-    private let sleep: @MainActor (UInt64) async throws -> Void
-
+    private let observationIntervalNanoseconds: UInt64
+    private let nowNanoseconds: () -> UInt64
+    private let sleep: (UInt64) async throws -> Void
     private var activeRunID: UUID?
-    private var activeSessionID: EnergyImpactSessionID?
-    private var providerRequestInFlight = false
-    private var providerRequestWaiters = [CheckedContinuation<Void, Never>]()
 
     init(
         provider: any EnergyImpactProviding = EnergyImpactService(),
         limit: Int = 20,
-        sampleIntervalNanoseconds: UInt64 = 1_000_000_000,
-        publicationIntervalNanoseconds: UInt64 = 3_000_000_000,
-        sleep: @escaping @MainActor (UInt64) async throws -> Void = {
+        observationIntervalNanoseconds: UInt64 = 3_000_000_000,
+        nowNanoseconds: @escaping () -> UInt64 = {
+            DispatchTime.now().uptimeNanoseconds
+        },
+        sleep: @escaping (UInt64) async throws -> Void = {
             try await Task.sleep(nanoseconds: $0)
         }
     ) {
         self.provider = provider
         self.limit = limit
-        self.sampleIntervalNanoseconds = sampleIntervalNanoseconds
-        self.publicationIntervalNanoseconds = publicationIntervalNanoseconds
+        self.observationIntervalNanoseconds = observationIntervalNanoseconds
+        self.nowNanoseconds = nowNanoseconds
         self.sleep = sleep
     }
 
-    func refreshWhileVisible() async {
+    func refreshWhileVisible(
+        scope: EnergyImpactAppScope = .regularOnly
+    ) async {
         let runID = UUID()
         activeRunID = runID
-        activeSessionID = nil
         isRefreshing = true
 
         guard Task.isCancelled == false else {
-            clearRunIfCurrent(runID)
+            finishRun(runID)
             return
         }
-        guard let sessionID = await beginProviderSession(for: runID),
-              isCurrent(runID),
-              Task.isCancelled == false else {
-            clearRunIfCurrent(runID)
-            return
-        }
-        activeSessionID = sessionID
-
-        guard case let .sampled(initial) = await sampleProvider(
-            for: runID,
-            sessionID: sessionID,
-            publicationBoundary: false
-        ) else {
-            await endProviderSessionIfCurrent(sessionID, for: runID)
-            clearRunIfCurrent(runID)
+        guard let lease = await provider.beginSession() else {
+            finishRun(runID)
             return
         }
 
-        var latest = initial
-        var elapsedSincePublication: UInt64 = 0
+        var deadline = nowNanoseconds()
         do {
-            while isCurrent(runID), Task.isCancelled == false {
-                try await sleep(sampleIntervalNanoseconds)
-                guard isCurrent(runID), Task.isCancelled == false else { break }
-
-                let nextElapsed = elapsedSincePublication.addingReportingOverflow(
-                    sampleIntervalNanoseconds
-                )
-                let willPublish = nextElapsed.overflow
-                    || nextElapsed.partialValue >= publicationIntervalNanoseconds
-                guard case let .sampled(sampled) = await sampleProvider(
-                    for: runID,
-                    sessionID: sessionID,
-                    publicationBoundary: willPublish
-                ) else { break }
-                latest = sampled
-                guard isCurrent(runID), Task.isCancelled == false else { break }
-
-                elapsedSincePublication = nextElapsed.partialValue
-                if willPublish {
-                    entries = latest
-                    isRefreshing = false
-                    elapsedSincePublication = 0
+            while Task.isCancelled == false, activeRunID == runID {
+                let now = nowNanoseconds()
+                if deadline > now {
+                    try await sleep(deadline - now)
                 }
+                guard Task.isCancelled == false,
+                      activeRunID == runID else {
+                    break
+                }
+                guard let observed = await provider.observe(
+                    lease: lease,
+                    limit: limit,
+                    scope: scope
+                ) else {
+                    break
+                }
+                guard Task.isCancelled == false,
+                      activeRunID == runID else {
+                    break
+                }
+
+                entries = observed
+                isRefreshing = false
+                deadline = Self.firstFutureDeadline(
+                    after: deadline,
+                    now: nowNanoseconds(),
+                    interval: observationIntervalNanoseconds
+                )
             }
         } catch is CancellationError {
-            // Hiding the page normally cancels its view task.
+            // Normal hidden-page exit; cleanup below still runs.
         } catch {
-            // Keep current rows visible. The next page appearance starts a fresh session.
+            // Preserve the last honest rows; a future visible run retries.
         }
 
-        await endProviderSessionIfCurrent(sessionID, for: runID)
-        clearRunIfCurrent(runID)
+        await provider.endSession(lease)
+        finishRun(runID)
     }
 
-    private func beginProviderSession(for runID: UUID) async -> EnergyImpactSessionID? {
-        await acquireProviderRequestGate()
-        defer { releaseProviderRequestGate() }
-        guard isCurrent(runID), Task.isCancelled == false else { return nil }
-        return await provider.beginSession()
+    private static func firstFutureDeadline(
+        after previousDeadline: UInt64,
+        now: UInt64,
+        interval rawInterval: UInt64
+    ) -> UInt64 {
+        let interval = max(1, rawInterval)
+        let (first, firstOverflow) =
+            previousDeadline.addingReportingOverflow(interval)
+        guard firstOverflow == false else { return .max }
+        guard first <= now else { return first }
+
+        let missed = (now - first) / interval + 1
+        let (jump, jumpOverflow) =
+            interval.multipliedReportingOverflow(by: missed)
+        guard jumpOverflow == false else { return .max }
+        let (advanced, advancedOverflow) =
+            first.addingReportingOverflow(jump)
+        return advancedOverflow ? .max : advanced
     }
 
-    private func sampleProvider(
-        for runID: UUID,
-        sessionID: EnergyImpactSessionID,
-        publicationBoundary: Bool
-    ) async -> ProviderSampleResult {
-        await acquireProviderRequestGate()
-        defer { releaseProviderRequestGate() }
-        guard isCurrent(runID),
-              activeSessionID == sessionID,
-              Task.isCancelled == false else { return .stopped }
-        guard let sampled = await provider.sample(
-            sessionID: sessionID,
-            limit: limit,
-            scope: .regularOnly,
-            publicationBoundary: publicationBoundary
-        ), isCurrent(runID), Task.isCancelled == false else {
-            return .stopped
-        }
-        return .sampled(sampled)
-    }
-
-    private func endProviderSessionIfCurrent(
-        _ sessionID: EnergyImpactSessionID,
-        for runID: UUID
-    ) async {
-        await acquireProviderRequestGate()
-        defer { releaseProviderRequestGate() }
-        guard isCurrent(runID), activeSessionID == sessionID else { return }
-        await provider.endSession(sessionID)
-    }
-
-    private func acquireProviderRequestGate() async {
-        guard providerRequestInFlight else {
-            providerRequestInFlight = true
-            return
-        }
-        await withCheckedContinuation { continuation in
-            providerRequestWaiters.append(continuation)
-        }
-    }
-
-    private func releaseProviderRequestGate() {
-        guard providerRequestWaiters.isEmpty == false else {
-            providerRequestInFlight = false
-            return
-        }
-        providerRequestWaiters.removeFirst().resume()
-    }
-
-    private func isCurrent(_ runID: UUID) -> Bool {
-        activeRunID == runID
-    }
-
-    private func clearRunIfCurrent(_ runID: UUID) {
-        guard isCurrent(runID) else { return }
+    private func finishRun(_ runID: UUID) {
+        guard activeRunID == runID else { return }
         activeRunID = nil
-        activeSessionID = nil
         isRefreshing = false
     }
-}
-
-private enum ProviderSampleResult {
-    case sampled([EnergyImpactEntry])
-    case stopped
 }
