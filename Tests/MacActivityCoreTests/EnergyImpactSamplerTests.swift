@@ -1553,6 +1553,63 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(recovered.coverage.discoveredProcessSeconds, 12, accuracy: 0.001)
     }
 
+    // Production break caught: recovery merges changing discovery counts before rolling-window trimming.
+    func testRecoveryPreservesDiscoveryIntervalsAtTheSustainedWindowCutoff() async throws {
+        let service = EnergyImpactSamplerTestSession(
+            reader: ProcessEnergyReadingProviderStub(results: [
+                100: [
+                    .success(reading(energy: 0)),
+                    .failure(.permissionDenied),
+                    .failure(.permissionDenied),
+                    .success(reading(energy: 9_000)),
+                    .success(reading(energy: 12_000)),
+                    .success(reading(energy: 15_000)),
+                    .success(reading(energy: 18_000)),
+                    .success(reading(energy: 21_000)),
+                    .success(reading(energy: 24_000)),
+                    .success(reading(energy: 27_000)),
+                    .success(reading(energy: 30_000)),
+                    .success(reading(energy: 33_000)),
+                ],
+                101: [.failure(.permissionDenied)],
+                102: [.failure(.permissionDenied)],
+            ]),
+            processSnapshotReader: SequencedProcessParentSnapshotReaderStub(
+                snapshotsByCall: [
+                    [],
+                    [
+                        .init(processIdentifier: 101, parentProcessIdentifier: 100),
+                        .init(processIdentifier: 102, parentProcessIdentifier: 100),
+                    ],
+                    [], [], [], [], [], [], [], [], [], [],
+                ]
+            ),
+            appSnapshotProvider: { [
+                .init(
+                    processIdentifier: 100,
+                    name: "Fixture",
+                    bundleIdentifier: nil,
+                    bundleURL: nil
+                ),
+            ] },
+            clock: EnergyImpactClockStub(
+                times: [0, 3, 6, 9, 12, 15, 18, 21, 24, 27, 30, 33]
+            )
+        )
+
+        var finalEntry: EnergyImpactEntry?
+        for _ in 0..<12 {
+            finalEntry = await service.observe(limit: 1).first
+        }
+        let entry = try require(finalEntry)
+
+        XCTAssertEqual(entry.observedWindowSeconds, 30, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.validProcessSeconds, 30, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.discoveredProcessSeconds, 30, accuracy: 0.001)
+        XCTAssertEqual(entry.coverage.fraction, 1, accuracy: 0.001)
+        XCTAssertEqual(entry.status, .stable)
+    }
+
     // Production break caught: stale output loses the confirmed root generation or refreshes its own grace window.
     func testStableFailureRecoverySequencePreservesFullIdentityWithoutConfirmingStale() async throws {
         let service = makeService(

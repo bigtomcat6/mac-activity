@@ -124,9 +124,7 @@ public struct TimeAwareEnergyEMA: Equatable, Sendable {
 struct EnergyImpactAccumulator: Sendable {
     private var fast: TimeAwareEnergyEMA
     private var sustained: TimeWeightedEnergyWindow
-    private var pendingDurationSeconds: TimeInterval = 0
-    private var pendingDiscoveredProcessSeconds: TimeInterval = 0
-    private var pendingContributions: [ProcessEnergyContribution] = []
+    private var pendingSamples: [EnergyIntervalSample] = []
 
     init(configuration: EnergyImpactConfiguration) {
         fast = TimeAwareEnergyEMA(
@@ -151,34 +149,32 @@ struct EnergyImpactAccumulator: Sendable {
         observedWallSeconds: TimeInterval
     )? {
         guard sample.isValid else { return nil }
-        pendingDurationSeconds += sample.durationSeconds
-        pendingDiscoveredProcessSeconds += sample.discoveredProcessSeconds
-        pendingContributions.append(contentsOf: sample.contributions)
 
         guard let rawPowerMicrowatts,
               rawPowerMicrowatts.isFinite,
               rawPowerMicrowatts >= 0 else {
+            pendingSamples.append(sample)
             return nil
         }
 
-        let elapsedSinceValidObservation = pendingDurationSeconds
-        let committed = EnergyIntervalSample(
-            endTimeSeconds: sample.endTimeSeconds,
-            durationSeconds: elapsedSinceValidObservation,
-            contributions: pendingContributions,
-            discoveredProcessSeconds: pendingDiscoveredProcessSeconds
-        )
-        pendingDurationSeconds = 0
-        pendingDiscoveredProcessSeconds = 0
-        pendingContributions.removeAll(keepingCapacity: true)
-
-        guard sustained.append(committed),
-              let fastValue = fast.update(
-                  value: rawPowerMicrowatts,
-                  elapsedSeconds: elapsedSinceValidObservation
-              ) else {
+        let samplesToCommit = pendingSamples + [sample]
+        let elapsedSinceValidObservation = samplesToCommit.reduce(0) {
+            $0 + $1.durationSeconds
+        }
+        var stagedSustained = sustained
+        for sampleToCommit in samplesToCommit {
+            guard stagedSustained.append(sampleToCommit) else { return nil }
+        }
+        var stagedFast = fast
+        guard let fastValue = stagedFast.update(
+            value: rawPowerMicrowatts,
+            elapsedSeconds: elapsedSinceValidObservation
+        ) else {
             return nil
         }
+        sustained = stagedSustained
+        fast = stagedFast
+        pendingSamples.removeAll(keepingCapacity: true)
 
         let sustainedValue = sustained.powerMicrowatts
         let score = sustainedValue.map {
