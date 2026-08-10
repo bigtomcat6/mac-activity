@@ -1,5 +1,6 @@
 import XCTest
 import AppKit
+import Foundation
 import MacActivityCore
 import SwiftUI
 @testable import MacActivityApp
@@ -118,6 +119,36 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
 
         XCTAssertLessThan(position.x, 236)
         XCTAssertGreaterThanOrEqual(position.y, 31)
+    }
+
+    func testHoverAnnotationFormatsSingleBucketTimestampRatherThanRange() throws {
+        let source = try dashboardTrendChartSource()
+
+        XCTAssertTrue(
+            source.contains(
+                "AppLocalization.formattedTime(\n                    sample.timestamp,\n                    includesSeconds: true\n                )"
+            )
+        )
+        XCTAssertFalse(source.contains("AppLocalization.formattedTimeRange("))
+    }
+
+    func testHoverAnnotationMovesWithHoverAnimationWithoutReinsertionTransition() throws {
+        let source = try dashboardTrendChartSource()
+
+        XCTAssertTrue(
+            source.contains("let annotationPosition = DashboardTrendChartLayout.annotationPosition(")
+        )
+        XCTAssertTrue(source.contains(".position(annotationPosition)"))
+        XCTAssertTrue(source.contains(".contentTransition(.identity)"))
+        XCTAssertTrue(
+            source.contains(".animation(DashboardMotion.hoverAnimation, value: annotationPosition)")
+        )
+        XCTAssertTrue(
+            source.contains(
+                ".animation(DashboardMotion.hoverAnimation, value: annotationPosition)\n                .allowsHitTesting(false)"
+            )
+        )
+        XCTAssertFalse(source.contains(".transition(.opacity)"))
     }
 
     func testXAxisDatesUseFirstAndLastSamples() {
@@ -884,7 +915,7 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         )
     }
 
-    func testHoverSelectionUsesAveragedBucketCoordinatesAndRange() throws {
+    func testHoverSelectionUsesAveragedBucketCoordinatesAndInstant() throws {
         let start = Date(timeIntervalSinceReferenceDate: 1_000)
         let middle = start.addingTimeInterval(60)
         let end = start.addingTimeInterval(120)
@@ -925,12 +956,14 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
             ),
             accuracy: 0.001
         )
-        XCTAssertFalse(
-            AppLocalization.formattedTimeRange(
-                selectedBucket.startDate...selectedBucket.endDate,
-                includesSeconds: true
-            ).localizedCaseInsensitiveContains("avg")
+        XCTAssertEqual(selectedBucket.sample.timestamp, middle)
+        let hoverTime = AppLocalization.formattedTime(
+            selectedBucket.sample.timestamp,
+            includesSeconds: true
         )
+        XCTAssertFalse(hoverTime.contains("–"))
+        XCTAssertFalse(hoverTime.localizedCaseInsensitiveContains("avg"))
+        XCTAssertFalse(hoverTime.contains("平均"))
     }
 
     func testTopAxisLabelPositionStaysInsideContainer() {
@@ -975,6 +1008,16 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
                 secondaryValue: secondary
             )
         )
+    }
+
+    private func dashboardTrendChartSource() throws -> String {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = packageRoot
+            .appendingPathComponent("Sources/MacActivityApp/Views/DashboardTrendChart.swift")
+        return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 
     private func batteryChart(

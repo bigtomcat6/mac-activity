@@ -137,6 +137,11 @@ struct DashboardTrendChart: View {
                     for: selectedBucket,
                     isCompact: isCompactHoverLayout
                 )
+                let annotationPosition = DashboardTrendChartLayout.annotationPosition(
+                    pointer: annotationAnchor,
+                    plotFrame: dataPlotFrame,
+                    annotationSize: annotationSize
+                )
 
                 annotationView(bucket: selectedBucket, isCompact: isCompactHoverLayout)
                 .frame(
@@ -144,14 +149,10 @@ struct DashboardTrendChart: View {
                     height: annotationSize.height,
                     alignment: .leading
                 )
-                .position(
-                    DashboardTrendChartLayout.annotationPosition(
-                        pointer: annotationAnchor,
-                        plotFrame: dataPlotFrame,
-                        annotationSize: annotationSize
-                    )
-                )
-                .transition(.opacity)
+                .contentTransition(.identity)
+                .position(annotationPosition)
+                .animation(DashboardMotion.hoverAnimation, value: annotationPosition)
+                .allowsHitTesting(false)
             }
         }
         .animation(DashboardMotion.focusPaletteAnimation, value: appearsActive)
@@ -561,8 +562,8 @@ struct DashboardTrendChart: View {
             }
 
             Text(
-                AppLocalization.formattedTimeRange(
-                    bucket.startDate...bucket.endDate,
+                AppLocalization.formattedTime(
+                    sample.timestamp,
                     includesSeconds: true
                 )
             )
