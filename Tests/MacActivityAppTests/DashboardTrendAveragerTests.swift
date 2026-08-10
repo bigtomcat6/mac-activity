@@ -33,19 +33,19 @@ final class DashboardTrendAveragerTests: XCTestCase {
             sample(base, 0, primary: 10, secondary: 100, weight: 3),
             sample(base, 1, primary: 40, secondary: 400),
             sample(base, 2, primary: 20),
-            sample(base, 10, primary: 50, secondary: 500),
-            sample(base, 11, primary: 70, secondary: 700),
-            sample(base, 12, primary: 90, secondary: 900),
+            sample(base, 3, primary: 50, secondary: 500),
+            sample(base, 4, primary: 70, secondary: 700),
+            sample(base, 5, primary: 90, secondary: 900),
         ]
 
         let display = DashboardTrendAverager.display(
             samples: samples,
             plotWidth: 280,
-            referenceDate: base.addingTimeInterval(12)
+            referenceDate: base.addingTimeInterval(5)
         )
         let first = try XCTUnwrap(display.buckets.first)
 
-        XCTAssertEqual(DashboardTrendAverager.bucketDuration(for: samples, plotWidth: 280), 5)
+        XCTAssertEqual(DashboardTrendAverager.bucketDuration(for: samples, plotWidth: 280), 3)
         XCTAssertEqual(first.sample.primaryValue, 18, accuracy: 0.001)
         XCTAssertEqual(try XCTUnwrap(first.sample.secondaryValue), 175, accuracy: 0.001)
         XCTAssertEqual(first.sample.sampleWeight, 5)
@@ -216,8 +216,10 @@ final class DashboardTrendAveragerTests: XCTestCase {
         let base = Date(timeIntervalSinceReferenceDate: 0)
         let samples = [
             sample(base, 0, primary: 10),
-            sample(base, 1, primary: 10),
             sample(base, 2, primary: 10),
+            sample(base, 4, primary: 10),
+            sample(base, 6, primary: 10),
+            sample(base, 8, primary: 10),
             sample(base, 10, primary: 100),
             sample(base, 10.5, primary: 100),
             sample(base, 11, primary: 100),
@@ -351,6 +353,78 @@ final class DashboardTrendAveragerTests: XCTestCase {
 
         XCTAssertEqual(display.segments.count, 2)
         XCTAssertEqual(display.segments.map { $0.buckets.count }, [1, 1])
+    }
+
+    func testTwoSamplesSeparatedByFourHundredFiftySecondsAreDiscontinuous() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 450, primary: 20),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(450)
+        )
+
+        XCTAssertEqual(display.segments.count, 2)
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [1, 1])
+    }
+
+    func testObservedCadenceStillSplitsAnAveragedMaterialGap() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 1, primary: 11),
+            sample(base, 2, primary: 12),
+            sample(base, 452, primary: 20),
+            sample(base, 453, primary: 21),
+            sample(base, 454, primary: 22),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(454)
+        )
+
+        XCTAssertEqual(display.segments.count, 2)
+    }
+
+    func testSlowestShippingCadenceRemainsContinuous() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 120, primary: 20),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(120)
+        )
+
+        XCTAssertEqual(display.segments.count, 1)
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [2])
+    }
+
+    func testObservedSlowCadenceUsesMaximumVisualGapCap() {
+        let base = Date(timeIntervalSinceReferenceDate: 0)
+        let samples = [
+            sample(base, 0, primary: 10),
+            sample(base, 120, primary: 20),
+            sample(base, 420, primary: 30),
+        ]
+
+        let display = DashboardTrendAverager.display(
+            samples: samples,
+            plotWidth: 280,
+            referenceDate: base.addingTimeInterval(420)
+        )
+
+        XCTAssertEqual(display.segments.count, 2)
+        XCTAssertEqual(display.segments.map { $0.buckets.count }, [2, 1])
     }
 
     private func sample(

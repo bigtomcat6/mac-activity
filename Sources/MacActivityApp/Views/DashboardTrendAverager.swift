@@ -49,6 +49,7 @@ struct DashboardTrendAverager {
     static let minimumDisplayBucketCount = 24
     static let maximumDisplayBucketCount = 64
     static let pointsPerBucket: CGFloat = 6
+    private static let maximumVisualGap: TimeInterval = 300
 
     private struct WeightedSample {
         let sample: DashboardTrendSample
@@ -173,7 +174,7 @@ struct DashboardTrendAverager {
             for: normalized.map(\.sample),
             plotWidth: plotWidth
         )
-        let sourceSegments = continuousSegments(normalized, bucketDuration: duration)
+        let sourceSegments = continuousSegments(normalized)
         if normalized.count < 6 {
             return rawDisplay(for: sourceSegments)
         }
@@ -233,27 +234,31 @@ struct DashboardTrendAverager {
     }
 
     private static func continuousSegments(
-        _ samples: [WeightedSample],
-        bucketDuration: TimeInterval
+        _ samples: [WeightedSample]
     ) -> [[WeightedSample]] {
         guard let first = samples.first else { return [] }
         let intervals = zip(samples, samples.dropFirst())
             .map { $1.timestamp.timeIntervalSince($0.timestamp) }
             .filter { $0 > 0 }
             .sorted()
-        let cadenceIntervals = intervals.dropLast()
+        let cadenceIntervals = intervals.count >= 2
+            ? Array(intervals.dropLast())
+            : []
         let gapThreshold: TimeInterval
         if cadenceIntervals.isEmpty {
-            gapThreshold = bucketDuration * 2
+            gapThreshold = maximumVisualGap
         } else {
-            let medianCadence = cadenceIntervals[(cadenceIntervals.count - 1) / 2]
-            gapThreshold = max(bucketDuration * 2, medianCadence * 3)
+            let midpoint = cadenceIntervals.count / 2
+            let medianCadence = cadenceIntervals.count.isMultiple(of: 2)
+                ? (cadenceIntervals[midpoint - 1] + cadenceIntervals[midpoint]) / 2
+                : cadenceIntervals[midpoint]
+            gapThreshold = min(medianCadence * 3, maximumVisualGap)
         }
 
         var segments = [[first]]
         for sample in samples.dropFirst() {
             let previous = segments[segments.index(before: segments.endIndex)].last!
-            if sample.timestamp.timeIntervalSince(previous.timestamp) > gapThreshold {
+            if sample.timestamp.timeIntervalSince(previous.timestamp) >= gapThreshold {
                 segments.append([sample])
             } else {
                 segments[segments.index(before: segments.endIndex)].append(sample)
