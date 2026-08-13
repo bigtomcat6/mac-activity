@@ -36,9 +36,11 @@ struct EnergyImpactView: View {
                 Text(AppLocalization.string(.energyImpactSubtitleSustained))
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                Text(Self.coverageText(model: model))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                if let coverageText = Self.coverageText(model: model) {
+                    Text(coverageText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 HStack {
                     Text(AppLocalization.string(.energyImpactAppColumn))
                     Spacer()
@@ -91,7 +93,8 @@ struct EnergyImpactView: View {
     }
 
     @MainActor
-    static func coverageText(model: EnergyImpactModel, bundle: Bundle? = nil) -> String {
+    static func coverageText(model: EnergyImpactModel, bundle: Bundle? = nil) -> String? {
+        guard model.hasReceivedObservation else { return nil }
         let readable = model.entries.reduce(0) { $0 + $1.coverage.readableProcessCount }
         let discovered = model.entries.reduce(0) { $0 + $1.coverage.discoveredProcessCount }
         return "\(EnergyImpactPresentation.coverageText(readable: readable, discovered: discovered, bundle: bundle)) · \(AppLocalization.string(.energyImpactCheckedNow, bundle: bundle))"

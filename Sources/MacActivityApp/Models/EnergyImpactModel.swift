@@ -20,6 +20,7 @@ extension EnergyImpactService: EnergyImpactProviding {}
 @MainActor
 final class EnergyImpactModel: ObservableObject {
     @Published private(set) var entries: [EnergyImpactEntry] = []
+    @Published private(set) var hasReceivedObservation = false
     @Published private(set) var isRefreshing = false
 
     private let provider: any EnergyImpactProviding
@@ -87,6 +88,7 @@ final class EnergyImpactModel: ObservableObject {
                 }
 
                 entries = observed
+                hasReceivedObservation = true
                 isRefreshing = false
                 deadline = Self.firstFutureDeadline(
                     after: deadline,

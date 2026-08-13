@@ -21,6 +21,49 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactViewDoesNotClaimACompletedCheckBeforeFirstObservation() {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: []),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        XCTAssertNil(EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle))
+    }
+
+    func testEnergyImpactViewSummarizesCoverageAfterAnObservation() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [[entry(), entry(processIdentifier: 202)]]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "2 of 4 processes readable · Checked just now"
+        )
+    }
+
+    func testEnergyImpactViewReportsAnEmptyCompletedObservation() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [[]]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "0 of 0 processes readable · Checked just now"
+        )
+    }
+
     func testRenderedEnergyImpactViewShowsEmptyStateAtFourHundredTwentyPoints() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
