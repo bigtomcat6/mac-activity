@@ -110,14 +110,20 @@
 "diskCleanup.category.userLogs" = "ログ";
 
 "energyImpact.title" = "エネルギー影響";
-"energyImpact.subtitle.current" = "最近のCPUエネルギー推定 · 低いほど良好";
+"energyImpact.subtitle.sustained" = "最大30秒のCPUエネルギー推定 · 低いほど良好";
 "energyImpact.column.app" = "アプリ";
-"energyImpact.column.current" = "現在";
+"energyImpact.column.sustained" = "30秒";
+"energyImpact.coverage" = "%2$lld件中%1$lld件のプロセスを読み取り可能";
+"energyImpact.checked.now" = "たった今確認";
+"energyImpact.info" = "エネルギー推定の説明";
+"energyImpact.explanation" = "読み取り可能なアプリプロセスに割り当てられたCPUエネルギーに基づく推定です。保護された、または短時間のヘルパーは含まれない場合があります。";
+"energyImpact.trend.rising" = "上昇";
+"energyImpact.trend.steady" = "安定";
+"energyImpact.trend.falling" = "下降";
+"energyImpact.accessibility.row.sustained" = "%1$@、%2$lld位、最大30秒 %3$@、%4$@";
 "energyImpact.collecting" = "収集中";
 "energyImpact.partial" = "一部データ";
 "energyImpact.stale" = "古いデータ";
-"energyImpact.staleWithValue" = "古いデータ · %1$@";
-"energyImpact.accessibility.row" = "%1$@、%2$lld位、%3$@";
 "energyImpact.empty" = "エネルギー推定を報告している通常のアプリはありません。";
 "energyImpact.unavailable" = "利用不可";
 

@@ -195,7 +195,7 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
     }
 
     public var displayPowerMicrowatts: Double? {
-        currentPowerMicrowatts
+        sustainedPowerMicrowatts ?? currentPowerMicrowatts
     }
 }
 

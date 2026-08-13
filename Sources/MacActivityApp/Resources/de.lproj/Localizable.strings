@@ -110,14 +110,20 @@
 "diskCleanup.category.userLogs" = "Protokolle";
 
 "energyImpact.title" = "Energieeinfluss";
-"energyImpact.subtitle.current" = "Aktuelle CPU-Energieschätzung · Niedriger ist besser";
+"energyImpact.subtitle.sustained" = "CPU-Energieschätzung für bis zu 30 Sek. · Niedriger ist besser";
 "energyImpact.column.app" = "App";
-"energyImpact.column.current" = "Aktuell";
+"energyImpact.column.sustained" = "30 Sek.";
+"energyImpact.coverage" = "%1$lld von %2$lld Prozessen lesbar";
+"energyImpact.checked.now" = "Gerade geprüft";
+"energyImpact.info" = "Details zur Energieschätzung";
+"energyImpact.explanation" = "Schätzung auf Basis der CPU-Energie lesbarer App-Prozesse. Geschützte oder kurzlebige Hilfsprozesse können fehlen.";
+"energyImpact.trend.rising" = "steigend";
+"energyImpact.trend.steady" = "stabil";
+"energyImpact.trend.falling" = "fallend";
+"energyImpact.accessibility.row.sustained" = "%1$@, Rang %2$lld, bis zu 30 Sekunden %3$@, %4$@";
 "energyImpact.collecting" = "Wird erfasst";
 "energyImpact.partial" = "Teilweise";
 "energyImpact.stale" = "Veraltet";
-"energyImpact.staleWithValue" = "Veraltet · %1$@";
-"energyImpact.accessibility.row" = "%1$@, Rang %2$lld, %3$@";
 "energyImpact.empty" = "Keine regulären Apps melden eine Energieschätzung.";
 "energyImpact.unavailable" = "Nicht verfügbar";
 

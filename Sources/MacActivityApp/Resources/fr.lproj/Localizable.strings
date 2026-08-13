@@ -110,14 +110,20 @@
 "diskCleanup.category.userLogs" = "Journaux";
 
 "energyImpact.title" = "Impact énergétique";
-"energyImpact.subtitle.current" = "Estimation récente de l’énergie CPU · Plus bas est préférable";
+"energyImpact.subtitle.sustained" = "Estimation d’énergie CPU sur 30 s max. · Plus bas est préférable";
 "energyImpact.column.app" = "App";
-"energyImpact.column.current" = "Actuel";
+"energyImpact.column.sustained" = "30 s";
+"energyImpact.coverage" = "%1$lld processus lisibles sur %2$lld";
+"energyImpact.checked.now" = "Vérifié à l’instant";
+"energyImpact.info" = "Détails de l’estimation énergétique";
+"energyImpact.explanation" = "Estimation fondée sur l’énergie CPU attribuée aux processus lisibles. Les processus protégés ou très courts peuvent manquer.";
+"energyImpact.trend.rising" = "en hausse";
+"energyImpact.trend.steady" = "stable";
+"energyImpact.trend.falling" = "en baisse";
+"energyImpact.accessibility.row.sustained" = "%1$@, rang %2$lld, jusqu’à 30 secondes %3$@, %4$@";
 "energyImpact.collecting" = "Collecte";
 "energyImpact.partial" = "Partiel";
 "energyImpact.stale" = "Obsolète";
-"energyImpact.staleWithValue" = "Obsolète · %1$@";
-"energyImpact.accessibility.row" = "%1$@, rang %2$lld, %3$@";
 "energyImpact.empty" = "Aucune app standard ne fournit d’estimation énergétique.";
 "energyImpact.unavailable" = "Indisponible";
 

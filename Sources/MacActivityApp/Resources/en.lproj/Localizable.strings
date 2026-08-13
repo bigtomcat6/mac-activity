@@ -171,14 +171,20 @@
 "diskCleanup.category.plural" = "categories";
 
 "energyImpact.title" = "Energy Impact";
-"energyImpact.subtitle.current" = "Recent CPU energy estimate · Lower is better";
+"energyImpact.subtitle.sustained" = "Up to 30 sec CPU energy estimate · Lower is better";
 "energyImpact.column.app" = "App";
-"energyImpact.column.current" = "Current";
+"energyImpact.column.sustained" = "30 sec";
+"energyImpact.coverage" = "%1$lld of %2$lld processes readable";
+"energyImpact.checked.now" = "Checked just now";
+"energyImpact.info" = "Energy estimate details";
+"energyImpact.explanation" = "Estimate based on CPU energy attributed to readable app processes. Protected or short-lived helpers may be omitted.";
+"energyImpact.trend.rising" = "rising";
+"energyImpact.trend.steady" = "steady";
+"energyImpact.trend.falling" = "falling";
+"energyImpact.accessibility.row.sustained" = "%1$@, rank %2$lld, up to 30 seconds %3$@, %4$@";
 "energyImpact.collecting" = "Collecting";
 "energyImpact.partial" = "Partial";
 "energyImpact.stale" = "Stale";
-"energyImpact.staleWithValue" = "Stale · %1$@";
-"energyImpact.accessibility.row" = "%1$@, rank %2$lld, %3$@";
 "energyImpact.empty" = "No regular apps are reporting an energy estimate.";
 "energyImpact.unavailable" = "Unavailable";
 

@@ -171,14 +171,20 @@
 "diskCleanup.category.plural" = "个分类";
 
 "energyImpact.title" = "耗电影响";
-"energyImpact.subtitle.current" = "近期 CPU 能耗估算 · 越低越好";
+"energyImpact.subtitle.sustained" = "最近最多 30 秒 CPU 能耗估算 · 越低越好";
 "energyImpact.column.app" = "应用";
-"energyImpact.column.current" = "当前";
+"energyImpact.column.sustained" = "30 秒";
+"energyImpact.coverage" = "可读取 %1$lld / %2$lld 个进程";
+"energyImpact.checked.now" = "刚刚检查";
+"energyImpact.info" = "估算说明";
+"energyImpact.explanation" = "基于可读取应用进程所归属的 CPU 能耗进行估算；受保护或生命周期很短的辅助进程可能不会被计入。";
+"energyImpact.trend.rising" = "上升";
+"energyImpact.trend.steady" = "稳定";
+"energyImpact.trend.falling" = "下降";
+"energyImpact.accessibility.row.sustained" = "%1$@，第 %2$lld 名，最近最多 30 秒 %3$@，%4$@";
 "energyImpact.collecting" = "采集中";
 "energyImpact.partial" = "部分数据";
 "energyImpact.stale" = "数据已过期";
-"energyImpact.staleWithValue" = "数据已过期 · %1$@";
-"energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
 "energyImpact.empty" = "当前没有普通应用报告能耗估算。";
 "energyImpact.unavailable" = "不可读取";
 

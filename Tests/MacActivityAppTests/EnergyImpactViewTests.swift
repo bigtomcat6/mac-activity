@@ -10,40 +10,6 @@ final class EnergyImpactViewTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
-    func testEnergyImpactRowShowsLocalizedPowerText() {
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: 1_840), bundle: Self.englishBundle),
-            "1.8 mW"
-        )
-    }
-
-    func testEnergyImpactRowDoesNotRenderCollectingOrUnavailableAsZero() {
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: nil, status: .collecting), bundle: Self.englishBundle),
-            "Collecting"
-        )
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: nil, status: .unavailable), bundle: Self.englishBundle),
-            "Unavailable"
-        )
-    }
-
-    func testEnergyImpactRowShowsLocalizedProvisionalStateForNumericCollectingValue() {
-        let collecting = entry(power: 120, sustainedPower: 960, status: .collecting)
-
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: collecting, bundle: Self.englishBundle),
-            "120 µW · Collecting"
-        )
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(
-                for: collecting,
-                bundle: AppLocalization.bundle(forLanguageIdentifier: "zh-Hans")
-            ),
-            "120 µW · 采集中"
-        )
-    }
-
     func testEnergyImpactViewShowsLocalizedEmptyMessage() {
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: true, bundle: Self.englishBundle),
@@ -69,7 +35,7 @@ final class EnergyImpactViewTests: XCTestCase {
                 showsApplicationIdentifier: true
             )
             .environment(\.locale, Locale(identifier: "en"))
-            .frame(width: 420, height: 120)
+            .frame(width: 420, height: 560)
         )
         renderer.scale = 1
 
@@ -90,7 +56,7 @@ final class EnergyImpactViewTests: XCTestCase {
                 refreshTrigger: 0,
                 showsApplicationIdentifier: true
             )
-            .frame(width: 420, height: 120)
+            .frame(width: 420, height: 560)
         )
         renderer.scale = 1
 
@@ -116,7 +82,7 @@ final class EnergyImpactViewTests: XCTestCase {
     private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
         let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
-        let renderedEntry = entry(power: 1_840)
+        let renderedEntry = entry(power: 1_400, sustainedPower: 1_000, trend: .rising)
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: [[renderedEntry]]),
             observationIntervalNanoseconds: 1,
@@ -129,32 +95,32 @@ final class EnergyImpactViewTests: XCTestCase {
             languageIdentifier: String,
             title: String,
             subtitle: String,
-            currentLabel: String,
+            sustainedLabel: String,
             accessibilityLabel: String
         )] = [
             (
                 "en",
                 "Energy Impact",
-                "Recent CPU energy estimate · Lower is better",
-                "Current",
-                "Safari, rank 1, 1.8 mW"
+                "Up to 30 sec CPU energy estimate · Lower is better",
+                "30 sec",
+                "Safari, rank 1, up to 30 seconds 1 mW, rising"
             ),
             (
                 "zh-Hans",
                 "耗电影响",
-                "近期 CPU 能耗估算 · 越低越好",
-                "当前",
-                "Safari，第 1 名，1.8 mW"
+                "最近最多 30 秒 CPU 能耗估算 · 越低越好",
+                "30 秒",
+                "Safari，第 1 名，最近最多 30 秒 1 mW，上升"
             )
         ]
 
         for expectation in expectations {
             AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
             XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
-            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleCurrent), expectation.subtitle)
-            XCTAssertEqual(AppLocalization.string(.energyImpactCurrentColumn), expectation.currentLabel)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleSustained), expectation.subtitle)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSustainedColumn), expectation.sustainedLabel)
             XCTAssertEqual(
-                EnergyImpactPresentation.accessibilityLabel(entry: renderedEntry, rank: 1),
+                EnergyImpactPresentation.row(entry: renderedEntry, rank: 1).accessibilityLabel,
                 expectation.accessibilityLabel
             )
 
@@ -164,7 +130,7 @@ final class EnergyImpactViewTests: XCTestCase {
                     refreshTrigger: 0,
                     showsApplicationIdentifier: true
                 )
-                .frame(width: 420, height: 160)
+                .frame(width: 420, height: 560)
             )
             renderer.scale = 1
 
@@ -220,32 +186,36 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
-    func testEnergyImpactRowAccessibilityIncludesOneBasedRankAndPowerText() {
+    func testEnergyImpactRowAccessibilityContainsAppRankWindowValueAndStateOrTrend() {
+        let row = EnergyImpactPresentation.row(
+            entry: entry(power: 1_400, sustainedPower: 1_000, trend: .rising),
+            rank: 2,
+            bundle: Self.englishBundle
+        )
+
         XCTAssertEqual(
-            EnergyImpactPresentation.accessibilityLabel(
-                entry: entry(name: "Safari", power: 860),
-                rank: 2,
-                bundle: Self.englishBundle
-            ),
-            "Safari, rank 2, 860 µW"
+            row.accessibilityLabel,
+            "Safari, rank 2, up to 30 seconds 1 mW, rising"
         )
     }
 
-    func testNumericStaleRowMarksRetainedPowerInVisibleAndAccessibilityText() {
-        let stale = entry(name: "Safari", power: 1_840, status: .stale)
+    func testRenderedEnergyImpactRowHandlesLongNameAndBothIdentifierPreferencesAtFourHundredTwentyPoints() {
+        let longName = String(repeating: "A", count: 60)
+        let renderedEntry = entry(name: longName, power: 1_400, sustainedPower: 1_000)
 
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: stale, bundle: Self.englishBundle),
-            "Stale · 1.8 mW"
-        )
-        XCTAssertEqual(
-            EnergyImpactPresentation.accessibilityLabel(
-                entry: stale,
-                rank: 2,
-                bundle: Self.englishBundle
-            ),
-            "Safari, rank 2, Stale · 1.8 mW"
-        )
+        for showsApplicationIdentifier in [false, true] {
+            let renderer = ImageRenderer(
+                content: EnergyImpactRow(
+                    entry: renderedEntry,
+                    rank: 1,
+                    showsApplicationIdentifier: showsApplicationIdentifier
+                )
+                .frame(width: 420, height: ActiveProcessMemoryLayout.rowHeight)
+            )
+            renderer.scale = 1
+
+            XCTAssertNotNil(renderer.nsImage, "showsApplicationIdentifier=\(showsApplicationIdentifier)")
+        }
     }
 
     private func entry(
@@ -254,6 +224,7 @@ final class EnergyImpactViewTests: XCTestCase {
         bundleURL: URL? = nil,
         power: Double? = 860,
         sustainedPower: Double? = nil,
+        trend: EnergyImpactTrend = .steady,
         status: EnergyImpactStatus = .stable
     ) -> EnergyImpactEntry {
         EnergyImpactEntry(
@@ -267,9 +238,15 @@ final class EnergyImpactViewTests: XCTestCase {
             currentPowerMicrowatts: power,
             sustainedPowerMicrowatts: sustainedPower ?? power,
             rankingScore: power,
-            trend: .steady,
-            coverage: .unavailable,
-            status: status
+            trend: trend,
+            coverage: EnergyImpactCoverage(
+                discoveredProcessCount: 2,
+                readableProcessCount: 1,
+                validProcessSeconds: 3,
+                discoveredProcessSeconds: 6
+            ),
+            status: status,
+            observedWindowSeconds: 30
         )
     }
 }

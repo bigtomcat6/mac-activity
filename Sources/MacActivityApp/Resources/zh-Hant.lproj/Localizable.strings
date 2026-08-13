@@ -110,14 +110,20 @@
 "diskCleanup.category.userLogs" = "日誌";
 
 "energyImpact.title" = "耗電影響";
-"energyImpact.subtitle.current" = "近期 CPU 能耗估算 · 越低越好";
+"energyImpact.subtitle.sustained" = "最近最多 30 秒 CPU 能耗估算 · 越低越好";
 "energyImpact.column.app" = "應用程式";
-"energyImpact.column.current" = "目前";
+"energyImpact.column.sustained" = "30 秒";
+"energyImpact.coverage" = "可讀取 %1$lld / %2$lld 個程序";
+"energyImpact.checked.now" = "剛剛檢查";
+"energyImpact.info" = "估算說明";
+"energyImpact.explanation" = "基於可讀取應用程式程序所歸屬的 CPU 能耗進行估算；受保護或生命週期很短的輔助程序可能不會被計入。";
+"energyImpact.trend.rising" = "上升";
+"energyImpact.trend.steady" = "穩定";
+"energyImpact.trend.falling" = "下降";
+"energyImpact.accessibility.row.sustained" = "%1$@，第 %2$lld 名，最近最多 30 秒 %3$@，%4$@";
 "energyImpact.collecting" = "收集中";
 "energyImpact.partial" = "部分資料";
 "energyImpact.stale" = "資料已過期";
-"energyImpact.staleWithValue" = "資料已過期 · %1$@";
-"energyImpact.accessibility.row" = "%1$@，第 %2$lld 名，%3$@";
 "energyImpact.empty" = "目前沒有一般應用程式回報能耗估算。";
 "energyImpact.unavailable" = "無法讀取";
 

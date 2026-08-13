@@ -110,14 +110,20 @@
 "diskCleanup.category.userLogs" = "로그";
 
 "energyImpact.title" = "에너지 영향";
-"energyImpact.subtitle.current" = "최근 CPU 에너지 추정치 · 낮을수록 좋음";
+"energyImpact.subtitle.sustained" = "최대 30초 CPU 에너지 추정치 · 낮을수록 좋음";
 "energyImpact.column.app" = "앱";
-"energyImpact.column.current" = "현재";
+"energyImpact.column.sustained" = "30초";
+"energyImpact.coverage" = "프로세스 %2$lld개 중 %1$lld개 읽기 가능";
+"energyImpact.checked.now" = "방금 확인함";
+"energyImpact.info" = "에너지 추정치 설명";
+"energyImpact.explanation" = "읽을 수 있는 앱 프로세스에 귀속된 CPU 에너지를 기반으로 한 추정치입니다. 보호되거나 수명이 짧은 도우미는 누락될 수 있습니다.";
+"energyImpact.trend.rising" = "상승";
+"energyImpact.trend.steady" = "안정";
+"energyImpact.trend.falling" = "하락";
+"energyImpact.accessibility.row.sustained" = "%1$@, %2$lld위, 최대 30초 %3$@, %4$@";
 "energyImpact.collecting" = "수집 중";
 "energyImpact.partial" = "일부 데이터";
 "energyImpact.stale" = "오래된 데이터";
-"energyImpact.staleWithValue" = "오래된 데이터 · %1$@";
-"energyImpact.accessibility.row" = "%1$@, %2$lld위, %3$@";
 "energyImpact.empty" = "에너지 추정치를 보고하는 일반 앱이 없습니다.";
 "energyImpact.unavailable" = "사용할 수 없음";
 
