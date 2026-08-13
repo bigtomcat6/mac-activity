@@ -76,6 +76,28 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertFalse(model.isRefreshing)
     }
 
+    func testNewVisibleRunHidesCoverageUntilItAcceptsAnObservation() async {
+        let provider = PublicationBarrierProvider()
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+        XCTAssertNotNil(EnergyImpactView.coverageText(model: model))
+
+        let run = Task { await model.refreshWhileVisible() }
+        await provider.waitUntilFinalReturnBarrier()
+
+        XCTAssertNil(EnergyImpactView.coverageText(model: model))
+
+        run.cancel()
+        provider.releaseFinalReturnBarrier()
+        await run.value
+    }
+
     func testEveryReturnedLeaseEndsOnceWhenSleepThrows() async {
         let provider = ControlledEnergyImpactProvider()
         let model = EnergyImpactModel(

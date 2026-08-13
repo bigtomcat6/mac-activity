@@ -53,6 +53,7 @@ final class EnergyImpactModel: ObservableObject {
     ) async {
         let runID = UUID()
         activeRunID = runID
+        hasReceivedObservation = false
         isRefreshing = true
 
         guard Task.isCancelled == false else {
