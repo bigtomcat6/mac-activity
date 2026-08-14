@@ -101,6 +101,7 @@ enum AppLocalization {
         case preferencesHardwareBatteryPercentage = "preferences.hardwareBatteryPercentage"
         case preferencesHardwareBatteryPercentageHelp = "preferences.hardwareBatteryPercentageHelp"
         case preferencesProcessApplicationIdentifier = "preferences.processApplicationIdentifier"
+        case preferencesEnergyImpactAppScope = "preferences.energyImpactAppScope"
         case preferencesDiskCleanupScope = "preferences.diskCleanupScope"
         case preferencesDiskCleanupHelp = "preferences.diskCleanupHelp"
         case preferencesMenuBarMetrics = "preferences.menuBarMetrics"
@@ -172,16 +173,26 @@ enum AppLocalization {
         case diskCleanupCategorySingular = "diskCleanup.category.singular"
         case diskCleanupCategoryPlural = "diskCleanup.category.plural"
         case energyImpactEmpty = "energyImpact.empty"
+        case energyImpactEmptyExpanded = "energyImpact.empty.expanded"
         case energyImpactUnavailable = "energyImpact.unavailable"
         case energyImpactTitle = "energyImpact.title"
-        case energyImpactSubtitleCurrent = "energyImpact.subtitle.current"
+        case energyImpactSubtitleSustained = "energyImpact.subtitle.sustained"
         case energyImpactAppColumn = "energyImpact.column.app"
-        case energyImpactCurrentColumn = "energyImpact.column.current"
+        case energyImpactSustainedColumn = "energyImpact.column.sustained"
+        case energyImpactCoverage = "energyImpact.coverage"
+        case energyImpactCheckedNow = "energyImpact.checked.now"
+        case energyImpactInfo = "energyImpact.info"
+        case energyImpactExplanation = "energyImpact.explanation"
+        case energyImpactTrendRising = "energyImpact.trend.rising"
+        case energyImpactTrendSteady = "energyImpact.trend.steady"
+        case energyImpactTrendFalling = "energyImpact.trend.falling"
+        case energyImpactScopeRegularOnly = "energyImpact.scope.regularOnly"
+        case energyImpactScopeRegularAndAccessory = "energyImpact.scope.regularAndAccessory"
+        case energyImpactKindAccessory = "energyImpact.kind.accessory"
+        case energyImpactRowAccessibilitySustained = "energyImpact.accessibility.row.sustained"
         case energyImpactCollecting = "energyImpact.collecting"
         case energyImpactPartial = "energyImpact.partial"
         case energyImpactStale = "energyImpact.stale"
-        case energyImpactStaleWithValue = "energyImpact.staleWithValue"
-        case energyImpactRowAccessibility = "energyImpact.accessibility.row"
         case processEmpty = "process.empty"
         case processFallbackName = "process.fallbackName"
         case processActionRequested = "process.action.requested"
@@ -551,6 +562,18 @@ enum AppLocalization {
             return string(.temperatureSourceCPUSMC, bundle: bundle)
         case .battery:
             return string(.temperatureSourceBattery, bundle: bundle)
+        }
+    }
+
+    static func energyImpactScopeTitle(
+        for scope: EnergyImpactAppScope,
+        bundle: Bundle? = nil
+    ) -> String {
+        switch scope {
+        case .regularOnly:
+            return string(.energyImpactScopeRegularOnly, bundle: bundle)
+        case .regularAndAccessory:
+            return string(.energyImpactScopeRegularAndAccessory, bundle: bundle)
         }
     }
 

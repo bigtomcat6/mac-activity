@@ -82,6 +82,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.savedValues.last?.updateChannel, .beta)
     }
 
+    func testEnergyImpactAppScopePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setEnergyImpactAppScope(.regularAndAccessory)
+
+        XCTAssertEqual(controller.state.energyImpactAppScope, .regularAndAccessory)
+        XCTAssertEqual(store.savedValues.last?.energyImpactAppScope, .regularAndAccessory)
+    }
+
     func testUpdateChannelSyncsOnlyWhenInstalledReleaseTagChanges() throws {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

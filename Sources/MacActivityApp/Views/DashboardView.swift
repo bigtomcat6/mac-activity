@@ -765,6 +765,7 @@ struct DashboardView: View {
         EnergyImpactView(
             model: energyImpactModel,
             refreshTrigger: energyImpactRefreshTrigger,
+            scope: preferencesController.state.energyImpactAppScope,
             showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier
         )
         .padding(18)

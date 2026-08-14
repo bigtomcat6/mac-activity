@@ -171,9 +171,10 @@ final class EnergyImpactSamplerTests: XCTestCase {
         )
         var observations: [[EnergyImpactEntry]] = []
         for _ in 0..<count {
-            observations.append(try require(
+            let publication = try require(
                 await sampler.observe(lease: lease, apps: apps, limit: limit)
-            ))
+            )
+            observations.append(publication.entries)
         }
         await sampler.endSession(lease)
         return observations
@@ -499,7 +500,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
                 lease: replacement,
                 apps: apps,
                 limit: 20
-            )?.first
+            )?.entries.first
         )
 
         XCTAssertEqual(restarted.status, .collecting)
@@ -523,7 +524,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
             apps: [.init(processIdentifier: 100, name: "Root", bundleIdentifier: nil, bundleURL: nil)],
             limit: 20
         ))
-        let row = try require(rows.first)
+        let row = try require(rows.entries.first)
 
         XCTAssertEqual(row.status, .collecting)
         XCTAssertNil(row.currentPowerMicrowatts)
@@ -558,7 +559,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
         let row = try require(
-            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.entries.first
         )
 
         XCTAssertEqual(row.status, .collecting)
@@ -628,7 +629,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
         let rows = try require(await sampler.observe(lease: lease, apps: apps, limit: 20))
 
-        XCTAssertTrue(rows.allSatisfy { $0.currentPowerMicrowatts == nil })
+        XCTAssertTrue(rows.entries.allSatisfy { $0.currentPowerMicrowatts == nil })
     }
 
     func testReorderedEquivalentOwnershipRemainsNumeric() async throws {
@@ -657,7 +658,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
         let row = try require(
-            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.entries.first
         )
 
         XCTAssertEqual(row.status, .collecting)
@@ -694,7 +695,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let cancelledResult = await cancelled.value
         XCTAssertNil(cancelledResult)
         let recovered = try require(
-            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.entries.first
         )
         XCTAssertEqual(recovered.status, .collecting)
         XCTAssertEqual(try require(recovered.currentPowerMicrowatts), 1, accuracy: 0.001)
@@ -791,9 +792,48 @@ final class EnergyImpactSamplerTests: XCTestCase {
         _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
         let rows = try require(await sampler.observe(lease: lease, apps: apps, limit: 20))
 
-        XCTAssertEqual(rows.count, 20)
-        XCTAssertTrue(rows.contains { $0.processIdentifier == 21 })
+        XCTAssertEqual(rows.entries.count, 20)
+        XCTAssertTrue(rows.entries.contains { $0.processIdentifier == 21 })
         XCTAssertEqual(reader.readCount(for: 21), 2)
+    }
+
+    func testPublicationCoverageIncludesCandidatesBeyondTopTwentyLimit() async throws {
+        let apps = (1...21).map { index in
+            EnergyImpactAppSnapshot(
+                processIdentifier: pid_t(index),
+                name: "App \(index)",
+                bundleIdentifier: nil,
+                bundleURL: nil
+            )
+        }
+        let readings = Dictionary(uniqueKeysWithValues: apps.map { app in
+            (
+                app.processIdentifier,
+                [ProcessEnergyReadResult.success(reading(
+                    energy: 0,
+                    start: UInt64(app.processIdentifier)
+                ))]
+            )
+        })
+        let sampler = EnergyImpactSampler(
+            reader: ProcessEnergyReadingProviderStub(results: readings),
+            processSnapshotReader: ProcessParentSnapshotReaderStub(snapshots: []),
+            clock: EnergyImpactClockStub(times: [0])
+        )
+        let lease = try require(await sampler.beginSession(.init(generation: 1)))
+
+        let publication = try require(await sampler.observe(
+            lease: lease,
+            apps: apps,
+            limit: 20
+        ))
+
+        XCTAssertEqual(publication.entries.count, 20)
+        XCTAssertEqual(publication.coverage.discoveredProcessCount, 21)
+        XCTAssertEqual(publication.coverage.readableProcessCount, 21)
+        XCTAssertEqual(publication.coverage.validProcessSeconds, 0, accuracy: 0.001)
+        XCTAssertEqual(publication.coverage.discoveredProcessSeconds, 0, accuracy: 0.001)
+        await sampler.endSession(lease)
     }
 
     func testConfigurationUsesSingleThreeSecondObservationInterval() async {
@@ -819,7 +859,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
 
         _ = await sampler.observe(lease: lease, apps: apps, limit: 20)
         let row = try require(
-            await sampler.observe(lease: lease, apps: apps, limit: 20)?.first
+            await sampler.observe(lease: lease, apps: apps, limit: 20)?.entries.first
         )
 
         XCTAssertEqual(try require(row.currentPowerMicrowatts), 1, accuracy: 0.001)
@@ -1067,7 +1107,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(reader.readCount(for: 999), 0)
     }
 
-    func testEnergyImpactSamplerAssignsNestedRegularRootProcessesToNearestRootExactlyOnce() async throws {
+    func testEnergyImpactSamplerAssignsNestedAccessoryRootProcessesToNearestRootExactlyOnce() async throws {
         let apps = [
             EnergyImpactAppSnapshot(
                 processIdentifier: 100,
@@ -1077,9 +1117,10 @@ final class EnergyImpactSamplerTests: XCTestCase {
             ),
             EnergyImpactAppSnapshot(
                 processIdentifier: 200,
-                name: "Nested App",
+                name: "Nested Accessory",
                 bundleIdentifier: "com.example.nested",
-                bundleURL: nil
+                bundleURL: nil,
+                kind: .accessory
             ),
         ]
         let reader = ProcessEnergyReadingProviderStub(readings: [
@@ -1117,9 +1158,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let powerByProcess = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.processIdentifier, $0.currentPowerMicrowatts)
         })
+        let kindByProcess = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.processIdentifier, $0.kind)
+        })
 
         XCTAssertEqual(try require(powerByProcess[100] ?? nil), 3, accuracy: 0.001)
         XCTAssertEqual(try require(powerByProcess[200] ?? nil), 7, accuracy: 0.001)
+        XCTAssertEqual(kindByProcess[100], .regular)
+        XCTAssertEqual(kindByProcess[200], .accessory)
         XCTAssertEqual(reader.readCount(for: 100), 2)
         XCTAssertEqual(reader.readCount(for: 150), 2)
         XCTAssertEqual(reader.readCount(for: 200), 2)
@@ -2215,7 +2261,7 @@ private final class EnergyImpactSamplerTestSession {
             lease: lease,
             apps: appSnapshotProvider(),
             limit: limit
-        ) ?? []
+        )?.entries ?? []
     }
 }
 

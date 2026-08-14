@@ -10,40 +10,6 @@ final class EnergyImpactViewTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
-    func testEnergyImpactRowShowsLocalizedPowerText() {
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: 1_840), bundle: Self.englishBundle),
-            "1.8 mW"
-        )
-    }
-
-    func testEnergyImpactRowDoesNotRenderCollectingOrUnavailableAsZero() {
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: nil, status: .collecting), bundle: Self.englishBundle),
-            "Collecting"
-        )
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: entry(power: nil, status: .unavailable), bundle: Self.englishBundle),
-            "Unavailable"
-        )
-    }
-
-    func testEnergyImpactRowShowsLocalizedProvisionalStateForNumericCollectingValue() {
-        let collecting = entry(power: 120, sustainedPower: 960, status: .collecting)
-
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: collecting, bundle: Self.englishBundle),
-            "120 µW · Collecting"
-        )
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(
-                for: collecting,
-                bundle: AppLocalization.bundle(forLanguageIdentifier: "zh-Hans")
-            ),
-            "120 µW · 采集中"
-        )
-    }
-
     func testEnergyImpactViewShowsLocalizedEmptyMessage() {
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: true, bundle: Self.englishBundle),
@@ -52,6 +18,104 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertEqual(
             EnergyImpactView.emptyMessage(isRefreshing: false, bundle: Self.englishBundle),
             "No regular apps are reporting an energy estimate."
+        )
+    }
+
+    func testEnergyImpactViewExpandedEmptyCopyAndScopeBearingTaskIdentity() {
+        XCTAssertEqual(
+            EnergyImpactView.emptyMessage(
+                isRefreshing: false,
+                scope: .regularAndAccessory,
+                bundle: Self.englishBundle
+            ),
+            "No regular or menu-bar apps are reporting an energy estimate."
+        )
+        XCTAssertNotEqual(
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularOnly),
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularAndAccessory)
+        )
+    }
+
+    func testEnergyImpactViewDoesNotClaimACompletedCheckBeforeFirstObservation() {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: []),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        XCTAssertNil(EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle))
+    }
+
+    func testEnergyImpactViewUsesFullScopeCoverageBeyondTwentyVisibleRows() async {
+        let rows = (1...20).map { index in
+            entry(processIdentifier: pid_t(index))
+        }
+        let coverage = EnergyImpactCoverage(
+            discoveredProcessCount: 42,
+            readableProcessCount: 21,
+            validProcessSeconds: 63,
+            discoveredProcessSeconds: 126
+        )
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [
+                EnergyImpactPublication(entries: rows, coverage: coverage),
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(model.entries.count, 20)
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "21 of 42 processes readable · Checked just now"
+        )
+    }
+
+    func testEnergyImpactViewSummarizesCoverageAfterAnObservation() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [
+                publication(
+                    entries: [entry(), entry(processIdentifier: 202)],
+                    coverage: EnergyImpactCoverage(
+                        discoveredProcessCount: 4,
+                        readableProcessCount: 2,
+                        validProcessSeconds: 3,
+                        discoveredProcessSeconds: 6
+                    )
+                ),
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "2 of 4 processes readable · Checked just now"
+        )
+    }
+
+    func testEnergyImpactViewReportsAnEmptyCompletedObservation() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [
+                EnergyImpactPublication(entries: [], coverage: .unavailable),
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "0 of 0 processes readable · Checked just now"
         )
     }
 
@@ -69,7 +133,7 @@ final class EnergyImpactViewTests: XCTestCase {
                 showsApplicationIdentifier: true
             )
             .environment(\.locale, Locale(identifier: "en"))
-            .frame(width: 420, height: 120)
+            .frame(width: 420, height: 560)
         )
         renderer.scale = 1
 
@@ -77,7 +141,7 @@ final class EnergyImpactViewTests: XCTestCase {
     }
 
     func testRenderedEnergyImpactViewStartsVisibleLifecycleThroughModel() async {
-        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let provider = EnergyImpactViewProviderStub(responses: [publication(entries: [])])
         let model = EnergyImpactModel(
             provider: provider,
             observationIntervalNanoseconds: 1,
@@ -90,7 +154,7 @@ final class EnergyImpactViewTests: XCTestCase {
                 refreshTrigger: 0,
                 showsApplicationIdentifier: true
             )
-            .frame(width: 420, height: 120)
+            .frame(width: 420, height: 560)
         )
         renderer.scale = 1
 
@@ -101,6 +165,32 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertEqual(provider.beginCount, 1)
         XCTAssertEqual(provider.observeCount, 1)
         XCTAssertEqual(provider.endCount, 1)
+    }
+
+    func testRenderedEnergyImpactViewForwardsExpandedScopeToModel() async {
+        let provider = EnergyImpactViewProviderStub(responses: [publication(entries: [])])
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                scope: .regularAndAccessory,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 560)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+        for _ in 0..<100 where provider.observeCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(provider.requestedScopes, [.regularAndAccessory])
     }
 
     func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
@@ -116,9 +206,9 @@ final class EnergyImpactViewTests: XCTestCase {
     private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
         let preferredLanguageIdentifier = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
-        let renderedEntry = entry(power: 1_840)
+        let renderedEntry = entry(power: 1_400, sustainedPower: 1_000, trend: .rising)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[renderedEntry]]),
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: [renderedEntry])]),
             observationIntervalNanoseconds: 1,
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
@@ -129,32 +219,32 @@ final class EnergyImpactViewTests: XCTestCase {
             languageIdentifier: String,
             title: String,
             subtitle: String,
-            currentLabel: String,
+            sustainedLabel: String,
             accessibilityLabel: String
         )] = [
             (
                 "en",
                 "Energy Impact",
-                "Recent CPU energy estimate · Lower is better",
-                "Current",
-                "Safari, rank 1, 1.8 mW"
+                "Up to 30 sec CPU energy estimate · Lower is better",
+                "30 sec",
+                "Safari, rank 1, up to 30 seconds 1 mW, rising"
             ),
             (
                 "zh-Hans",
                 "耗电影响",
-                "近期 CPU 能耗估算 · 越低越好",
-                "当前",
-                "Safari，第 1 名，1.8 mW"
+                "最近最多 30 秒 CPU 能耗估算 · 越低越好",
+                "30 秒",
+                "Safari，第 1 名，最近最多 30 秒 1 mW，上升"
             )
         ]
 
         for expectation in expectations {
             AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
             XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
-            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleCurrent), expectation.subtitle)
-            XCTAssertEqual(AppLocalization.string(.energyImpactCurrentColumn), expectation.currentLabel)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleSustained), expectation.subtitle)
+            XCTAssertEqual(AppLocalization.string(.energyImpactSustainedColumn), expectation.sustainedLabel)
             XCTAssertEqual(
-                EnergyImpactPresentation.accessibilityLabel(entry: renderedEntry, rank: 1),
+                EnergyImpactPresentation.row(entry: renderedEntry, rank: 1).accessibilityLabel,
                 expectation.accessibilityLabel
             )
 
@@ -164,7 +254,7 @@ final class EnergyImpactViewTests: XCTestCase {
                     refreshTrigger: 0,
                     showsApplicationIdentifier: true
                 )
-                .frame(width: 420, height: 160)
+                .frame(width: 420, height: 560)
             )
             renderer.scale = 1
 
@@ -220,40 +310,85 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
-    func testEnergyImpactRowAccessibilityIncludesOneBasedRankAndPowerText() {
+    func testEnergyImpactRowAccessibilityContainsAppRankWindowValueAndStateOrTrend() {
+        let row = EnergyImpactPresentation.row(
+            entry: entry(power: 1_400, sustainedPower: 1_000, trend: .rising),
+            rank: 2,
+            bundle: Self.englishBundle
+        )
+
         XCTAssertEqual(
-            EnergyImpactPresentation.accessibilityLabel(
-                entry: entry(name: "Safari", power: 860),
-                rank: 2,
-                bundle: Self.englishBundle
-            ),
-            "Safari, rank 2, 860 µW"
+            row.accessibilityLabel,
+            "Safari, rank 2, up to 30 seconds 1 mW, rising"
         )
     }
 
-    func testNumericStaleRowMarksRetainedPowerInVisibleAndAccessibilityText() {
-        let stale = entry(name: "Safari", power: 1_840, status: .stale)
+    func testRenderedExpandedEnergyImpactViewSupportsAccessoryBadgeAtFourHundredTwentyPoints() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [
+                publication(entries: [entry(kind: .accessory)]),
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible(scope: .regularAndAccessory)
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                scope: .regularAndAccessory,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 560)
+        )
+        renderer.scale = 1
 
-        XCTAssertEqual(
-            EnergyImpactRow.trailingText(for: stale, bundle: Self.englishBundle),
-            "Stale · 1.8 mW"
-        )
-        XCTAssertEqual(
-            EnergyImpactPresentation.accessibilityLabel(
-                entry: stale,
-                rank: 2,
-                bundle: Self.englishBundle
-            ),
-            "Safari, rank 2, Stale · 1.8 mW"
-        )
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedEnergyImpactRowHandlesLongNameAndBothIdentifierPreferencesAtFourHundredTwentyPoints() {
+        for kind in [EnergyImpactAppKind.regular, .accessory] {
+            let renderedEntry = entry(
+                kind: kind,
+                name: String(repeating: "A", count: 60),
+                power: 1_400,
+                sustainedPower: 1_000
+            )
+            for showsApplicationIdentifier in [false, true] {
+                let renderer = ImageRenderer(
+                    content: EnergyImpactRow(
+                        entry: renderedEntry,
+                        rank: 1,
+                        showsApplicationIdentifier: showsApplicationIdentifier
+                    )
+                    .frame(width: 420, height: ActiveProcessMemoryLayout.rowHeight)
+                )
+                renderer.scale = 1
+
+                XCTAssertNotNil(
+                    renderer.nsImage,
+                    "kind=\(kind) showsApplicationIdentifier=\(showsApplicationIdentifier)"
+                )
+            }
+        }
+    }
+
+    private func publication(
+        entries: [EnergyImpactEntry],
+        coverage: EnergyImpactCoverage = .unavailable
+    ) -> EnergyImpactPublication {
+        EnergyImpactPublication(entries: entries, coverage: coverage)
     }
 
     private func entry(
+        kind: EnergyImpactAppKind = .regular,
         processIdentifier: pid_t = 101,
         name: String = "Safari",
         bundleURL: URL? = nil,
         power: Double? = 860,
         sustainedPower: Double? = nil,
+        trend: EnergyImpactTrend = .steady,
         status: EnergyImpactStatus = .stable
     ) -> EnergyImpactEntry {
         EnergyImpactEntry(
@@ -264,25 +399,33 @@ final class EnergyImpactViewTests: XCTestCase {
             name: name,
             bundleIdentifier: "com.apple.Safari",
             bundleURL: bundleURL,
+            kind: kind,
             currentPowerMicrowatts: power,
             sustainedPowerMicrowatts: sustainedPower ?? power,
             rankingScore: power,
-            trend: .steady,
-            coverage: .unavailable,
-            status: status
+            trend: trend,
+            coverage: EnergyImpactCoverage(
+                discoveredProcessCount: 2,
+                readableProcessCount: 1,
+                validProcessSeconds: 3,
+                discoveredProcessSeconds: 6
+            ),
+            status: status,
+            observedWindowSeconds: 30
         )
     }
 }
 
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
-    private var responses: [[EnergyImpactEntry]]
+    private var responses: [EnergyImpactPublication]
     private var nextGeneration: UInt64 = 0
     private(set) var beginCount = 0
     private(set) var observeCount = 0
     private(set) var endCount = 0
+    private(set) var requestedScopes: [EnergyImpactAppScope] = []
 
-    init(responses: [[EnergyImpactEntry]]) {
+    init(responses: [EnergyImpactPublication]) {
         self.responses = responses
     }
 
@@ -296,9 +439,11 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         observeCount += 1
-        return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
+        requestedScopes.append(scope)
+        guard responses.isEmpty == false else { return nil }
+        return responses.removeFirst()
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {

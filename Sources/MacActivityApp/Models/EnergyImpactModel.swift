@@ -10,7 +10,7 @@ protocol EnergyImpactProviding: AnyObject {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]?
+    ) async -> EnergyImpactPublication?
 
     func endSession(_ lease: EnergyImpactSamplingLease) async
 }
@@ -20,6 +20,8 @@ extension EnergyImpactService: EnergyImpactProviding {}
 @MainActor
 final class EnergyImpactModel: ObservableObject {
     @Published private(set) var entries: [EnergyImpactEntry] = []
+    @Published private(set) var coverage: EnergyImpactCoverage?
+    @Published private(set) var hasReceivedObservation = false
     @Published private(set) var isRefreshing = false
 
     private let provider: any EnergyImpactProviding
@@ -52,6 +54,8 @@ final class EnergyImpactModel: ObservableObject {
     ) async {
         let runID = UUID()
         activeRunID = runID
+        hasReceivedObservation = false
+        coverage = nil
         isRefreshing = true
 
         guard Task.isCancelled == false else {
@@ -86,7 +90,9 @@ final class EnergyImpactModel: ObservableObject {
                     break
                 }
 
-                entries = observed
+                entries = observed.entries
+                coverage = observed.coverage
+                hasReceivedObservation = true
                 isRefreshing = false
                 deadline = Self.firstFutureDeadline(
                     after: deadline,

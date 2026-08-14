@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import MacActivityCore
 
@@ -106,6 +107,46 @@ final class EnergyImpactProviderTests: XCTestCase {
             forbiddenFragments.allSatisfy { label.localizedCaseInsensitiveContains($0) == false }
         })
     }
+
+    func testAppCatalogMapsCandidatesByActivationPolicyScopeAndDeduplicatesProcessIdentifiers() {
+        let candidates = [
+            EnergyImpactCatalogCandidate(processIdentifier: 100, activationPolicy: .regular, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 200, activationPolicy: .accessory, name: "Menu", bundleIdentifier: "com.example.menu", bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 300, activationPolicy: .prohibited, name: "Daemon", bundleIdentifier: nil, bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: -1, activationPolicy: .regular, name: "Invalid", bundleIdentifier: nil, bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 200, activationPolicy: .accessory, name: "Duplicate", bundleIdentifier: nil, bundleURL: nil),
+        ]
+
+        XCTAssertEqual(
+            SystemEnergyImpactAppCatalog.appSnapshots(from: candidates, scope: .regularOnly),
+            [EnergyImpactAppSnapshot(processIdentifier: 100, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil, kind: .regular)]
+        )
+        XCTAssertEqual(
+            SystemEnergyImpactAppCatalog.appSnapshots(from: candidates, scope: .regularAndAccessory),
+            [
+                EnergyImpactAppSnapshot(processIdentifier: 100, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil, kind: .regular),
+                EnergyImpactAppSnapshot(processIdentifier: 200, name: "Menu", bundleIdentifier: "com.example.menu", bundleURL: nil, kind: .accessory),
+            ]
+        )
+    }
+
+    func testLiveCatalogAdapterReturnsUniquePositiveScopedSnapshots() {
+        XCTAssertFalse(NSWorkspace.shared.runningApplications.isEmpty)
+
+        let snapshots = SystemEnergyImpactAppCatalog().snapshots(
+            scope: .regularAndAccessory
+        )
+
+        XCTAssertEqual(
+            Set(snapshots.map(\.processIdentifier)).count,
+            snapshots.count
+        )
+        XCTAssertTrue(snapshots.allSatisfy { snapshot in
+            snapshot.processIdentifier > 0
+                && snapshot.name.isEmpty == false
+                && (snapshot.kind == .regular || snapshot.kind == .accessory)
+        })
+    }
 }
 
 @MainActor
@@ -141,11 +182,11 @@ private actor SamplingSpy: EnergyImpactSampling {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) -> [EnergyImpactEntry]? {
+    ) -> EnergyImpactPublication? {
         observedApps.append(apps)
         observedLimits.append(limit)
         observeCount += 1
-        return []
+        return EnergyImpactPublication(entries: [], coverage: .unavailable)
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) {}
@@ -176,8 +217,8 @@ private actor ReorderingSamplingSpy: EnergyImpactSampling {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) -> [EnergyImpactEntry]? {
-        []
+    ) -> EnergyImpactPublication? {
+        EnergyImpactPublication(entries: [], coverage: .unavailable)
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) {}

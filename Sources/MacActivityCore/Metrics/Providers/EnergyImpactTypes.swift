@@ -107,7 +107,7 @@ protocol EnergyImpactSampling: Sendable {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) async -> [EnergyImpactEntry]?
+    ) async -> EnergyImpactPublication?
 
     func endSession(_ lease: EnergyImpactSamplingLease) async
 }
@@ -195,7 +195,17 @@ public struct EnergyImpactEntry: Identifiable, Equatable, Sendable {
     }
 
     public var displayPowerMicrowatts: Double? {
-        currentPowerMicrowatts
+        sustainedPowerMicrowatts ?? currentPowerMicrowatts
+    }
+}
+
+public struct EnergyImpactPublication: Equatable, Sendable {
+    public let entries: [EnergyImpactEntry]
+    public let coverage: EnergyImpactCoverage
+
+    public init(entries: [EnergyImpactEntry], coverage: EnergyImpactCoverage) {
+        self.entries = entries
+        self.coverage = coverage
     }
 }
 

@@ -76,6 +76,29 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertFalse(model.isRefreshing)
     }
 
+    func testNewVisibleRunHidesCoverageUntilItAcceptsAnObservation() async {
+        let provider = PublicationBarrierProvider()
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+        XCTAssertNotNil(EnergyImpactView.coverageText(model: model))
+
+        let run = Task { await model.refreshWhileVisible() }
+        await provider.waitUntilFinalReturnBarrier()
+
+        XCTAssertNil(EnergyImpactView.coverageText(model: model))
+        XCTAssertNil(model.coverage)
+
+        run.cancel()
+        provider.releaseFinalReturnBarrier()
+        await run.value
+    }
+
     func testEveryReturnedLeaseEndsOnceWhenSleepThrows() async {
         let provider = ControlledEnergyImpactProvider()
         let model = EnergyImpactModel(
@@ -155,6 +178,25 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertEqual(Set(provider.endedLeases), Set(provider.returnedLeases))
     }
 
+    func testReplacementVisibleRunUsesSelectedScope() async {
+        let provider = ControlledEnergyImpactProvider()
+        let model = EnergyImpactModel(provider: provider)
+
+        let regularRun = Task { await model.refreshWhileVisible(scope: .regularOnly) }
+        while provider.observeCount < 1 { await Task.yield() }
+        let expandedRun = Task { await model.refreshWhileVisible(scope: .regularAndAccessory) }
+        while provider.observeCount < 2 { await Task.yield() }
+
+        regularRun.cancel()
+        expandedRun.cancel()
+        await regularRun.value
+        await expandedRun.value
+
+        XCTAssertEqual(provider.requestedScopes, [.regularOnly, .regularAndAccessory])
+        XCTAssertEqual(provider.endedLeases.count, 2)
+        XCTAssertEqual(Set(provider.endedLeases), Set(provider.returnedLeases))
+    }
+
     func testReplacementCannotPublishOlderCompletedObservation() async {
         let provider = ReplacementRunProvider(blockOldSecondObservation: true)
         let sleep = SequencedSleepController()
@@ -212,7 +254,16 @@ final class EnergyImpactModelTests: XCTestCase {
             entry(pid: 303, name: "Third", power: 3),
             entry(pid: 101, name: "First", power: 1),
         ]
-        let provider = ControlledEnergyImpactProvider(responses: [[], expected])
+        let expectedCoverage = EnergyImpactCoverage(
+            discoveredProcessCount: 2,
+            readableProcessCount: 2,
+            validProcessSeconds: 6,
+            discoveredProcessSeconds: 6
+        )
+        let provider = ControlledEnergyImpactProvider(responses: [
+            publication(entries: []),
+            publication(entries: expected, coverage: expectedCoverage),
+        ])
         var sleepCount = 0
         let model = EnergyImpactModel(
             provider: provider,
@@ -228,6 +279,7 @@ final class EnergyImpactModelTests: XCTestCase {
         await model.refreshWhileVisible()
 
         XCTAssertEqual(model.entries, expected)
+        XCTAssertEqual(model.coverage, expectedCoverage)
         XCTAssertEqual(provider.requestedLimits, [2, 2])
     }
 }
@@ -261,9 +313,16 @@ private func entry(
     )
 }
 
+private func publication(
+    entries: [EnergyImpactEntry],
+    coverage: EnergyImpactCoverage = .unavailable
+) -> EnergyImpactPublication {
+    EnergyImpactPublication(entries: entries, coverage: coverage)
+}
+
 @MainActor
 private final class ControlledEnergyImpactProvider: EnergyImpactProviding {
-    private var responses: [[EnergyImpactEntry]]
+    private var responses: [EnergyImpactPublication]
     private let nilObservationCounts: Set<Int>
     private let onObservation: ((Int) -> Void)?
     private(set) var beginCount = 0
@@ -277,7 +336,7 @@ private final class ControlledEnergyImpactProvider: EnergyImpactProviding {
     private var observationCountsByLease: [UInt64: Int] = [:]
 
     init(
-        responses: [[EnergyImpactEntry]] = [],
+        responses: [EnergyImpactPublication] = [],
         nilObservationCounts: Set<Int> = [],
         onObservation: ((Int) -> Void)? = nil
     ) {
@@ -297,7 +356,7 @@ private final class ControlledEnergyImpactProvider: EnergyImpactProviding {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         observeCount += 1
         observationCountsByLease[lease.requestGeneration, default: 0] += 1
         let leaseObservationCount = observationCountsByLease[lease.requestGeneration, default: 0]
@@ -309,11 +368,11 @@ private final class ControlledEnergyImpactProvider: EnergyImpactProviding {
             return nil
         }
         if responses.isEmpty == false { return responses.removeFirst() }
-        return [entry(
+        return publication(entries: [entry(
             pid: pid_t(lease.requestGeneration),
             name: "Run \(lease.requestGeneration) Observation \(leaseObservationCount)",
             power: Double(leaseObservationCount)
-        )]
+        )])
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {
@@ -342,15 +401,15 @@ private final class PublicationBarrierProvider: EnergyImpactProviding {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         completedObservationCount += 1
         if lease.requestGeneration == 2 {
             await withCheckedContinuation { finalReturnContinuation = $0 }
         }
-        return [entry(
+        return publication(entries: [entry(
             name: lease.requestGeneration == 1 ? "Prior" : "Cancelled",
             power: Double(lease.requestGeneration)
-        )]
+        )])
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {
@@ -402,7 +461,7 @@ private final class ReplacementRunProvider: EnergyImpactProviding {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         let generation = lease.requestGeneration
         observationCounts[generation, default: 0] += 1
         let count = observationCounts[generation, default: 0]
@@ -415,7 +474,7 @@ private final class ReplacementRunProvider: EnergyImpactProviding {
             await withCheckedContinuation { newFirstObservationContinuation = $0 }
         }
         let name = generation == 1 && count == 2 ? "Old A" : "Run \(generation == 1 ? "A" : "B")"
-        return [entry(pid: pid_t(generation), name: name, power: Double(generation))]
+        return publication(entries: [entry(pid: pid_t(generation), name: name, power: Double(generation))])
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {

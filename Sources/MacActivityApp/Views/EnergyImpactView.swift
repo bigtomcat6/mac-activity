@@ -2,23 +2,55 @@ import AppKit
 import SwiftUI
 import MacActivityCore
 
+struct EnergyImpactRefreshTaskID: Equatable {
+    let trigger: Int
+    let scope: EnergyImpactAppScope
+}
+
 struct EnergyImpactView: View {
     @ObservedObject var model: EnergyImpactModel
     let refreshTrigger: Int
+    var scope: EnergyImpactAppScope = .regularOnly
     let showsApplicationIdentifier: Bool
+
+    @State private var showsInfoPopover = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
             VStack(alignment: .leading, spacing: 4) {
-                Text(AppLocalization.string(.energyImpactTitle))
-                    .font(.headline)
-                Text(AppLocalization.string(.energyImpactSubtitleCurrent))
+                HStack {
+                    Text(AppLocalization.string(.energyImpactTitle))
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        showsInfoPopover.toggle()
+                    } label: {
+                        Image(systemName: "info.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .font(.body)
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel(AppLocalization.string(.energyImpactInfo))
+                    .popover(isPresented: $showsInfoPopover) {
+                        Text(AppLocalization.string(.energyImpactExplanation))
+                            .font(.caption)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(width: 260, alignment: .leading)
+                            .padding(12)
+                    }
+                }
+                Text(AppLocalization.string(.energyImpactSubtitleSustained))
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                if let coverageText = Self.coverageText(model: model) {
+                    Text(coverageText)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
                 HStack {
                     Text(AppLocalization.string(.energyImpactAppColumn))
                     Spacer()
-                    Text(AppLocalization.string(.energyImpactCurrentColumn))
+                    Text(AppLocalization.string(.energyImpactSustainedColumn))
                 }
                 .font(.caption2.weight(.semibold))
                 .foregroundStyle(.secondary)
@@ -26,7 +58,7 @@ struct EnergyImpactView: View {
             .padding(.horizontal, 12)
 
             if model.entries.isEmpty {
-                Text(Self.emptyMessage(isRefreshing: model.isRefreshing))
+                Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(
@@ -54,16 +86,33 @@ struct EnergyImpactView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: refreshTrigger) {
-            await model.refreshWhileVisible()
+        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope)) {
+            await model.refreshWhileVisible(scope: scope)
         }
     }
 
-    static func emptyMessage(isRefreshing: Bool, bundle: Bundle? = nil) -> String {
+    static func emptyMessage(
+        isRefreshing: Bool,
+        scope: EnergyImpactAppScope = .regularOnly,
+        bundle: Bundle? = nil
+    ) -> String {
         if isRefreshing {
             return AppLocalization.string(.dashboardWaitingFirstSample, bundle: bundle)
         }
-        return AppLocalization.string(.energyImpactEmpty, bundle: bundle)
+        switch scope {
+        case .regularOnly:
+            return AppLocalization.string(.energyImpactEmpty, bundle: bundle)
+        case .regularAndAccessory:
+            return AppLocalization.string(.energyImpactEmptyExpanded, bundle: bundle)
+        }
+    }
+
+    @MainActor
+    static func coverageText(model: EnergyImpactModel, bundle: Bundle? = nil) -> String? {
+        guard model.hasReceivedObservation, let coverage = model.coverage else {
+            return nil
+        }
+        return "\(EnergyImpactPresentation.coverageText(readable: coverage.readableProcessCount, discovered: coverage.discoveredProcessCount, bundle: bundle)) · \(AppLocalization.string(.energyImpactCheckedNow, bundle: bundle))"
     }
 }
 
@@ -72,8 +121,8 @@ struct EnergyImpactRow: View {
     let rank: Int
     let showsApplicationIdentifier: Bool
 
-    private var accessibilityLabel: String {
-        EnergyImpactPresentation.accessibilityLabel(entry: entry, rank: rank)
+    private var presentation: EnergyImpactRowPresentation {
+        EnergyImpactPresentation.row(entry: entry, rank: rank)
     }
 
     var body: some View {
@@ -82,9 +131,17 @@ struct EnergyImpactRow: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(entry.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    if let accessoryBadgeText = presentation.accessoryBadgeText {
+                        Text(accessoryBadgeText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
                 if let identifier = Self.identifierText(
                     for: entry,
                     showsApplicationIdentifier: showsApplicationIdentifier
@@ -98,16 +155,30 @@ struct EnergyImpactRow: View {
 
             Spacer(minLength: 8)
 
-            Text(Self.trailingText(for: entry))
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(minWidth: 72, alignment: .trailing)
+            HStack(spacing: 4) {
+                Text(presentation.primaryValue)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                if let statusText = presentation.statusText {
+                    Text(statusText)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                }
+                if let trendSymbol = presentation.trendSymbol {
+                    Image(systemName: trendSymbol)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .frame(minWidth: 72, alignment: .trailing)
         }
         .padding(.horizontal, 12)
         .frame(height: ActiveProcessMemoryLayout.rowHeight)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(accessibilityLabel)
+        .accessibilityLabel(presentation.accessibilityLabel)
     }
 
     @ViewBuilder
@@ -135,14 +206,6 @@ struct EnergyImpactRow: View {
             return .fallbackSystemSymbol
         }
         return .bundle(bundleURL)
-    }
-
-    static func trailingText(for entry: EnergyImpactEntry, bundle: Bundle? = nil) -> String {
-        EnergyImpactPresentation.powerText(
-            microwatts: entry.displayPowerMicrowatts,
-            status: entry.status,
-            bundle: bundle
-        )
     }
 
     static func identifierText(

@@ -17,6 +17,7 @@ final class PreferencesStoreTests: XCTestCase {
             diskCleanupCategories: [.userCaches, .trash, .userLogs],
             showsHardwareBatteryPercentage: true,
             showsProcessApplicationIdentifier: false,
+            energyImpactAppScope: .regularAndAccessory,
             updateChannel: .alpha,
             audioProcessProfiles: [
                 "com.example.Player": AudioProcessProfile(
@@ -41,6 +42,7 @@ final class PreferencesStoreTests: XCTestCase {
         )
         XCTAssertFalse(AppPreferences.default.showsHardwareBatteryPercentage)
         XCTAssertFalse(AppPreferences.default.showsProcessApplicationIdentifier)
+        XCTAssertEqual(AppPreferences.default.energyImpactAppScope, .regularOnly)
         XCTAssertEqual(AppPreferences.default.updateChannel, .release)
     }
 
@@ -143,6 +145,22 @@ final class PreferencesStoreTests: XCTestCase {
         let loaded = store.load()
 
         XCTAssertEqual(loaded.updateChannel, .release)
+    }
+
+    func testLoadDefaultsEnergyImpactAppScopeWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        userDefaults.set(
+            Data(#"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":false,"temperatureSource":"smc"}"#.utf8),
+            forKey: "mac-activity.preferences"
+        )
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(
+            store.load().energyImpactAppScope,
+            .regularOnly
+        )
     }
 
     func testLoadMigratesLegacyDiskCleanupScopeToCategories() throws {
