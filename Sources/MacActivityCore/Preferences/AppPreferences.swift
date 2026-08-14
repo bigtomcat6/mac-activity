@@ -94,6 +94,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var diskCleanupCategories: [DiskCleanupCategoryKind]
     public var showsHardwareBatteryPercentage: Bool
     public var showsProcessApplicationIdentifier: Bool
+    public var energyImpactAppScope: EnergyImpactAppScope
     public var updateChannel: UpdateChannel
     public var lastSyncedUpdateChannelReleaseTag: String?
     public var audioProcessProfiles: [String: AudioProcessProfile]
@@ -106,6 +107,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         diskCleanupCategories: [DiskCleanupCategoryKind] = AppPreferences.defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: Bool = false,
         showsProcessApplicationIdentifier: Bool = false,
+        energyImpactAppScope: EnergyImpactAppScope = .regularOnly,
         updateChannel: UpdateChannel = .release,
         lastSyncedUpdateChannelReleaseTag: String? = nil,
         audioProcessProfiles: [String: AudioProcessProfile] = [:]
@@ -117,6 +119,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.diskCleanupCategories = AppPreferences.orderedDiskCleanupCategories(from: Set(diskCleanupCategories))
         self.showsHardwareBatteryPercentage = showsHardwareBatteryPercentage
         self.showsProcessApplicationIdentifier = showsProcessApplicationIdentifier
+        self.energyImpactAppScope = energyImpactAppScope
         self.updateChannel = updateChannel
         self.lastSyncedUpdateChannelReleaseTag = lastSyncedUpdateChannelReleaseTag
         self.audioProcessProfiles = audioProcessProfiles
@@ -130,6 +133,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case diskCleanupCategories
         case showsHardwareBatteryPercentage
         case showsProcessApplicationIdentifier
+        case energyImpactAppScope
         case updateChannel
         case lastSyncedUpdateChannelReleaseTag
         case audioProcessProfiles
@@ -157,6 +161,10 @@ public struct AppPreferences: Equatable, Codable, Sendable {
             Bool.self,
             forKey: .showsProcessApplicationIdentifier
         ) ?? false
+        self.energyImpactAppScope = try container.decodeIfPresent(
+            EnergyImpactAppScope.self,
+            forKey: .energyImpactAppScope
+        ) ?? .regularOnly
         self.updateChannel = try container.decodeIfPresent(UpdateChannel.self, forKey: .updateChannel) ?? .release
         self.lastSyncedUpdateChannelReleaseTag = try container.decodeIfPresent(
             String.self,
@@ -177,6 +185,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(diskCleanupCategories, forKey: .diskCleanupCategories)
         try container.encode(showsHardwareBatteryPercentage, forKey: .showsHardwareBatteryPercentage)
         try container.encode(showsProcessApplicationIdentifier, forKey: .showsProcessApplicationIdentifier)
+        try container.encode(energyImpactAppScope, forKey: .energyImpactAppScope)
         try container.encode(updateChannel, forKey: .updateChannel)
         try container.encodeIfPresent(lastSyncedUpdateChannelReleaseTag, forKey: .lastSyncedUpdateChannelReleaseTag)
         try container.encode(audioProcessProfiles, forKey: .audioProcessProfiles)
@@ -197,6 +206,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         diskCleanupCategories: defaultDiskCleanupCategories,
         showsHardwareBatteryPercentage: false,
         showsProcessApplicationIdentifier: false,
+        energyImpactAppScope: .regularOnly,
         updateChannel: .release,
         audioProcessProfiles: [:]
     )

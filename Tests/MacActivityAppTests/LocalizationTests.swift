@@ -461,6 +461,74 @@ final class LocalizationTests: XCTestCase {
                 XCTAssertEqual(AppLocalization.string(key, bundle: bundle), expected, "\(key.rawValue) in \(identifier)")
             }
         }
+
+        let part7AExpectations: [String: [AppLocalization.Key: String]] = [
+            "en": [
+                .preferencesEnergyImpactAppScope: "Energy app scope",
+                .energyImpactScopeRegularOnly: "Regular apps",
+                .energyImpactScopeRegularAndAccessory: "Regular and menu-bar apps",
+                .energyImpactKindAccessory: "Menu Bar",
+                .energyImpactEmptyExpanded: "No regular or menu-bar apps are reporting an energy estimate.",
+            ],
+            "de": [
+                .preferencesEnergyImpactAppScope: "Umfang der Energie-Apps",
+                .energyImpactScopeRegularOnly: "Reguläre Apps",
+                .energyImpactScopeRegularAndAccessory: "Reguläre und Menüleisten-Apps",
+                .energyImpactKindAccessory: "Menüleiste",
+                .energyImpactEmptyExpanded: "Keine regulären oder Menüleisten-Apps melden eine Energieschätzung.",
+            ],
+            "fr": [
+                .preferencesEnergyImpactAppScope: "Étendue des apps d’énergie",
+                .energyImpactScopeRegularOnly: "Apps standard",
+                .energyImpactScopeRegularAndAccessory: "Apps standard et de barre des menus",
+                .energyImpactKindAccessory: "Barre des menus",
+                .energyImpactEmptyExpanded: "Aucune app standard ou de barre des menus ne fournit d’estimation énergétique.",
+            ],
+            "ja": [
+                .preferencesEnergyImpactAppScope: "エネルギー対象アプリ",
+                .energyImpactScopeRegularOnly: "通常のアプリ",
+                .energyImpactScopeRegularAndAccessory: "通常のアプリとメニューバーアプリ",
+                .energyImpactKindAccessory: "メニューバー",
+                .energyImpactEmptyExpanded: "エネルギー推定を報告している通常またはメニューバーアプリはありません。",
+            ],
+            "ko": [
+                .preferencesEnergyImpactAppScope: "에너지 앱 범위",
+                .energyImpactScopeRegularOnly: "일반 앱",
+                .energyImpactScopeRegularAndAccessory: "일반 앱 및 메뉴 막대 앱",
+                .energyImpactKindAccessory: "메뉴 막대",
+                .energyImpactEmptyExpanded: "에너지 추정치를 보고하는 일반 또는 메뉴 막대 앱이 없습니다.",
+            ],
+            "zh-Hans": [
+                .preferencesEnergyImpactAppScope: "能耗应用范围",
+                .energyImpactScopeRegularOnly: "普通应用",
+                .energyImpactScopeRegularAndAccessory: "普通应用与菜单栏应用",
+                .energyImpactKindAccessory: "菜单栏",
+                .energyImpactEmptyExpanded: "当前没有普通应用或菜单栏应用报告能耗估算。",
+            ],
+            "zh-Hant": [
+                .preferencesEnergyImpactAppScope: "能耗應用程式範圍",
+                .energyImpactScopeRegularOnly: "一般應用程式",
+                .energyImpactScopeRegularAndAccessory: "一般應用程式與選單列應用程式",
+                .energyImpactKindAccessory: "選單列",
+                .energyImpactEmptyExpanded: "目前沒有一般應用程式或選單列應用程式回報能耗估算。",
+            ],
+        ]
+
+        XCTAssertEqual(Set(part7AExpectations.keys), Set(AppLocalization.availableLanguageIdentifiers()))
+        for (identifier, expectedStrings) in part7AExpectations {
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: identifier))
+            for (key, expected) in expectedStrings {
+                XCTAssertEqual(AppLocalization.string(key, bundle: bundle), expected, "\(key.rawValue) in \(identifier)")
+            }
+            XCTAssertEqual(
+                AppLocalization.energyImpactScopeTitle(for: .regularOnly, bundle: bundle),
+                try XCTUnwrap(expectedStrings[.energyImpactScopeRegularOnly])
+            )
+            XCTAssertEqual(
+                AppLocalization.energyImpactScopeTitle(for: .regularAndAccessory, bundle: bundle),
+                try XCTUnwrap(expectedStrings[.energyImpactScopeRegularAndAccessory])
+            )
+        }
     }
 
     func testChartReadoutsUseLocalizedUnits() throws {

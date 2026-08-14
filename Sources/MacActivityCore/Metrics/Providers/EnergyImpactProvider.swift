@@ -31,27 +31,34 @@ protocol EnergyImpactAppCataloging: AnyObject {
     ) -> [EnergyImpactAppSnapshot]
 }
 
+struct EnergyImpactCatalogCandidate {
+    let processIdentifier: pid_t
+    let activationPolicy: NSApplication.ActivationPolicy
+    let name: String
+    let bundleIdentifier: String?
+    let bundleURL: URL?
+}
+
 @MainActor
-private final class SystemEnergyImpactAppCatalog: EnergyImpactAppCataloging {
+final class SystemEnergyImpactAppCatalog: EnergyImpactAppCataloging {
     private let workspace: NSWorkspace
 
     init(workspace: NSWorkspace = .shared) {
         self.workspace = workspace
     }
 
-    func snapshots(
+    static func appSnapshots(
+        from candidates: [EnergyImpactCatalogCandidate],
         scope: EnergyImpactAppScope
     ) -> [EnergyImpactAppSnapshot] {
-        var seenProcessIdentifiers = Set<pid_t>()
-        return workspace.runningApplications.compactMap { application in
-            let processIdentifier = application.processIdentifier
-            guard processIdentifier > 0,
-                  seenProcessIdentifiers.insert(processIdentifier).inserted else {
+        var seen = Set<pid_t>()
+        return candidates.compactMap { candidate in
+            guard candidate.processIdentifier > 0,
+                  seen.insert(candidate.processIdentifier).inserted else {
                 return nil
             }
-
             let kind: EnergyImpactAppKind
-            switch application.activationPolicy {
+            switch candidate.activationPolicy {
             case .regular:
                 kind = .regular
             case .accessory where scope == .regularAndAccessory:
@@ -61,17 +68,33 @@ private final class SystemEnergyImpactAppCatalog: EnergyImpactAppCataloging {
             @unknown default:
                 return nil
             }
-
             return EnergyImpactAppSnapshot(
-                processIdentifier: processIdentifier,
-                name: application.localizedName
-                    ?? application.bundleIdentifier
-                    ?? "Process \(processIdentifier)",
-                bundleIdentifier: application.bundleIdentifier,
-                bundleURL: application.bundleURL,
+                processIdentifier: candidate.processIdentifier,
+                name: candidate.name,
+                bundleIdentifier: candidate.bundleIdentifier,
+                bundleURL: candidate.bundleURL,
                 kind: kind
             )
         }
+    }
+
+    func snapshots(
+        scope: EnergyImpactAppScope
+    ) -> [EnergyImpactAppSnapshot] {
+        Self.appSnapshots(
+            from: workspace.runningApplications.map { application in
+                EnergyImpactCatalogCandidate(
+                    processIdentifier: application.processIdentifier,
+                    activationPolicy: application.activationPolicy,
+                    name: application.localizedName
+                        ?? application.bundleIdentifier
+                        ?? "Process \(application.processIdentifier)",
+                    bundleIdentifier: application.bundleIdentifier,
+                    bundleURL: application.bundleURL
+                )
+            },
+            scope: scope
+        )
     }
 }
 

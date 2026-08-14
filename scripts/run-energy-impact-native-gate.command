@@ -16,6 +16,11 @@ if [[ -n "$repository_status" ]]; then
   exit 70
 fi
 candidate_sha="$(git -C "$repo_root" rev-parse HEAD)"
+requested_scope="${MACACTIVITY_ENERGY_NATIVE_SCOPE:-regularOnly}"
+case "$requested_scope" in
+  regularOnly|regularAndAccessory) ;;
+  *) print -u2 "Invalid MACACTIVITY_ENERGY_NATIVE_SCOPE: $requested_scope"; exit 2 ;;
+esac
 evidence_dir="$1"
 
 if [[ "${evidence_dir[1]}" != "/" ]]; then
@@ -47,12 +52,13 @@ for run in 1 2 3 4 5; do
   log_file="$evidence_dir/run-$run.log"
   set +e
   MACACTIVITY_ENERGY_NATIVE_VALIDATION=1 \
-    CLANG_MODULE_CACHE_PATH=/private/tmp/macactivity-part4-clang-cache \
-    swift test \
-      --package-path "$repo_root" \
-      --filter \
-      EnergyImpactNativeValidationTests/testVisibleFacadeBudget \
-      > "$log_file" 2>&1
+  MACACTIVITY_ENERGY_NATIVE_SCOPE="$requested_scope" \
+  CLANG_MODULE_CACHE_PATH=/private/tmp/macactivity-part4-clang-cache \
+  swift test \
+    --package-path "$repo_root" \
+    --filter \
+    EnergyImpactNativeValidationTests/testVisibleFacadeBudget \
+    > "$log_file" 2>&1
   test_status="$?"
   set -e
 
@@ -108,6 +114,25 @@ for run in 1 2 3 4 5; do
       /usr/bin/tr ' ' '\n' |
       /usr/bin/awk -F= '$1 == "wall_seconds" { print $2 }'
   )"
+  scope="$(
+    print -r -- "$metric_line" |
+      /usr/bin/tr ' ' '\n' |
+      /usr/bin/awk -F= '$1 == "scope" { print $2 }'
+  )"
+  scope_count="$(
+    print -r -- "$metric_line" |
+      /usr/bin/tr ' ' '\n' |
+      /usr/bin/awk -F= '$1 == "scope" { count += 1 } END { print count + 0 }'
+  )"
+
+  if [[ "$scope_count" -ne 1 || "$scope" != "$requested_scope" ]]; then
+    print -u2 "run $run has invalid scope metric: $scope"
+    /usr/bin/printf '%s\t%s\t%s\t%s\t%s\n' \
+      "$run" "scope_invalid" "$test_status" \
+      "$metric_count" "$log_file" >> "$run_status_file"
+    overall_status=1
+    continue
+  fi
 
   if [[ -z "$observations" ||
         -z "$pre_run_catalog_apps" ||
@@ -153,9 +178,9 @@ for run in 1 2 3 4 5; do
     continue
   fi
 
-  /usr/bin/printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
-    "$run" "$observations" "$pre_run_catalog_apps" \
-    "$system_snapshot_processes" \
+  /usr/bin/printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n' \
+    "$run" "scope=$scope" "$observations" \
+    "$pre_run_catalog_apps" "$system_snapshot_processes" \
     "$p50_ms" "$p95_ms" "$cpu_percent" "$wall_seconds" \
     "$log_file" \
     >> "$metrics_file"
@@ -211,7 +236,7 @@ summary_file="$evidence_dir/summary.txt"
     '{ print $1, $2, $3, $4, $5 }' "$run_status_file"
 } > "$summary_file"
 if [[ "$valid_count" -eq 5 ]]; then
-  /usr/bin/cut -f7 "$metrics_file" |
+  /usr/bin/cut -f8 "$metrics_file" |
     /usr/bin/sort -n > "$evidence_dir/cpu-sorted.txt"
   median="$(
     /usr/bin/sed -n '3p' "$evidence_dir/cpu-sorted.txt"
@@ -231,9 +256,9 @@ if [[ "$valid_count" -eq 5 ]]; then
   {
     print "ENERGY_NATIVE_GATE median_cpu_percent=$median maximum_cpu_percent=$maximum"
     print "sorted_cpu_percent=$sorted_values"
-    print "run observations pre_run_catalog_apps system_snapshot_processes p50_ms p95_ms cpu_percent wall_seconds log"
+    print "run scope observations pre_run_catalog_apps system_snapshot_processes p50_ms p95_ms cpu_percent wall_seconds log"
     /usr/bin/awk -F '\t' \
-      '{ print $1, $2, $3, $4, $5, $6, $7, $8, $9 }' \
+      '{ print $1, $2, $3, $4, $5, $6, $7, $8, $9, $10 }' \
       "$metrics_file"
   } | /usr/bin/tee -a "$summary_file"
 else

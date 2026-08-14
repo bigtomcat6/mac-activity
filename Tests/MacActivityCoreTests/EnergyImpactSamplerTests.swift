@@ -1067,7 +1067,7 @@ final class EnergyImpactSamplerTests: XCTestCase {
         XCTAssertEqual(reader.readCount(for: 999), 0)
     }
 
-    func testEnergyImpactSamplerAssignsNestedRegularRootProcessesToNearestRootExactlyOnce() async throws {
+    func testEnergyImpactSamplerAssignsNestedAccessoryRootProcessesToNearestRootExactlyOnce() async throws {
         let apps = [
             EnergyImpactAppSnapshot(
                 processIdentifier: 100,
@@ -1077,9 +1077,10 @@ final class EnergyImpactSamplerTests: XCTestCase {
             ),
             EnergyImpactAppSnapshot(
                 processIdentifier: 200,
-                name: "Nested App",
+                name: "Nested Accessory",
                 bundleIdentifier: "com.example.nested",
-                bundleURL: nil
+                bundleURL: nil,
+                kind: .accessory
             ),
         ]
         let reader = ProcessEnergyReadingProviderStub(readings: [
@@ -1117,9 +1118,14 @@ final class EnergyImpactSamplerTests: XCTestCase {
         let powerByProcess = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.processIdentifier, $0.currentPowerMicrowatts)
         })
+        let kindByProcess = Dictionary(uniqueKeysWithValues: entries.map {
+            ($0.processIdentifier, $0.kind)
+        })
 
         XCTAssertEqual(try require(powerByProcess[100] ?? nil), 3, accuracy: 0.001)
         XCTAssertEqual(try require(powerByProcess[200] ?? nil), 7, accuracy: 0.001)
+        XCTAssertEqual(kindByProcess[100], .regular)
+        XCTAssertEqual(kindByProcess[200], .accessory)
         XCTAssertEqual(reader.readCount(for: 100), 2)
         XCTAssertEqual(reader.readCount(for: 150), 2)
         XCTAssertEqual(reader.readCount(for: 200), 2)

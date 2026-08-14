@@ -95,6 +95,7 @@
 "preferences.hardwareBatteryPercentage" = "ハードウェアバッテリー残量を表示";
 "preferences.hardwareBatteryPercentageHelp" = "利用可能な場合は AppleSmartBattery の実容量を使用し、利用できない場合はシステムの残量を使用します。";
 "preferences.processApplicationIdentifier" = "プロセスリストにアプリIDを表示";
+"preferences.energyImpactAppScope" = "エネルギー対象アプリ";
 "preferences.diskCleanupScope" = "クリーンアップ範囲";
 "preferences.diskCleanupHelp" = "アクティブのディスククリーンアップでスキャンと削除を行う対象を制御します。";
 "preferences.menuBarMetrics" = "メニューバー指標";
@@ -120,11 +121,15 @@
 "energyImpact.trend.rising" = "上昇";
 "energyImpact.trend.steady" = "安定";
 "energyImpact.trend.falling" = "下降";
+"energyImpact.scope.regularOnly" = "通常のアプリ";
+"energyImpact.scope.regularAndAccessory" = "通常のアプリとメニューバーアプリ";
+"energyImpact.kind.accessory" = "メニューバー";
 "energyImpact.accessibility.row.sustained" = "%1$@、%2$lld位、最大30秒 %3$@、%4$@";
 "energyImpact.collecting" = "収集中";
 "energyImpact.partial" = "一部データ";
 "energyImpact.stale" = "古いデータ";
 "energyImpact.empty" = "エネルギー推定を報告している通常のアプリはありません。";
+"energyImpact.empty.expanded" = "エネルギー推定を報告している通常またはメニューバーアプリはありません。";
 "energyImpact.unavailable" = "利用不可";
 
 "memoryRelease.action.release" = "解放";

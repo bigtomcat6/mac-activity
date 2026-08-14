@@ -95,6 +95,7 @@
 "preferences.hardwareBatteryPercentage" = "Afficher le pourcentage matériel de la batterie";
 "preferences.hardwareBatteryPercentageHelp" = "Utilise la capacité brute AppleSmartBattery quand elle est disponible ; sinon revient au pourcentage système.";
 "preferences.processApplicationIdentifier" = "Afficher l’identifiant d’app dans les listes de processus";
+"preferences.energyImpactAppScope" = "Étendue des apps d’énergie";
 "preferences.diskCleanupScope" = "Portée du nettoyage";
 "preferences.diskCleanupHelp" = "Contrôle les éléments que le nettoyage du disque d’Actives analyse et supprime.";
 "preferences.menuBarMetrics" = "Indicateurs de la barre de menu";
@@ -120,11 +121,15 @@
 "energyImpact.trend.rising" = "en hausse";
 "energyImpact.trend.steady" = "stable";
 "energyImpact.trend.falling" = "en baisse";
+"energyImpact.scope.regularOnly" = "Apps standard";
+"energyImpact.scope.regularAndAccessory" = "Apps standard et de barre des menus";
+"energyImpact.kind.accessory" = "Barre des menus";
 "energyImpact.accessibility.row.sustained" = "%1$@, rang %2$lld, jusqu’à 30 secondes %3$@, %4$@";
 "energyImpact.collecting" = "Collecte";
 "energyImpact.partial" = "Partiel";
 "energyImpact.stale" = "Obsolète";
 "energyImpact.empty" = "Aucune app standard ne fournit d’estimation énergétique.";
+"energyImpact.empty.expanded" = "Aucune app standard ou de barre des menus ne fournit d’estimation énergétique.";
 "energyImpact.unavailable" = "Indisponible";
 
 "memoryRelease.action.release" = "Libérer";

@@ -51,12 +51,18 @@ enum EnergyImpactPresentation {
         } else {
             accessibilityQualifier = statusText ?? trendText
         }
+        let accessoryBadgeText = entry.kind == .accessory
+            ? AppLocalization.string(.energyImpactKindAccessory, bundle: bundle)
+            : nil
+        let qualifierParts = [accessoryBadgeText, accessibilityQualifier]
+            .compactMap { $0 }
+        let finalQualifier = qualifierParts.joined(separator: " · ")
         let accessibility = AppLocalization.string(
             .energyImpactRowAccessibilitySustained,
             entry.name,
             rank,
             primary,
-            accessibilityQualifier,
+            finalQualifier,
             bundle: bundle
         )
         return EnergyImpactRowPresentation(
@@ -64,6 +70,7 @@ enum EnergyImpactPresentation {
             statusText: statusText,
             trendSymbol: trendSymbol,
             trendAccessibilityText: trendText,
+            accessoryBadgeText: accessoryBadgeText,
             accessibilityLabel: accessibility
         )
     }
@@ -95,5 +102,6 @@ struct EnergyImpactRowPresentation: Equatable {
     let statusText: String?
     let trendSymbol: String?
     let trendAccessibilityText: String
+    let accessoryBadgeText: String?
     let accessibilityLabel: String
 }

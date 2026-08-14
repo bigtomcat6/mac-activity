@@ -2,9 +2,15 @@ import AppKit
 import SwiftUI
 import MacActivityCore
 
+struct EnergyImpactRefreshTaskID: Equatable {
+    let trigger: Int
+    let scope: EnergyImpactAppScope
+}
+
 struct EnergyImpactView: View {
     @ObservedObject var model: EnergyImpactModel
     let refreshTrigger: Int
+    var scope: EnergyImpactAppScope = .regularOnly
     let showsApplicationIdentifier: Bool
 
     @State private var showsInfoPopover = false
@@ -52,7 +58,7 @@ struct EnergyImpactView: View {
             .padding(.horizontal, 12)
 
             if model.entries.isEmpty {
-                Text(Self.emptyMessage(isRefreshing: model.isRefreshing))
+                Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .frame(
@@ -80,16 +86,25 @@ struct EnergyImpactView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: refreshTrigger) {
-            await model.refreshWhileVisible()
+        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope)) {
+            await model.refreshWhileVisible(scope: scope)
         }
     }
 
-    static func emptyMessage(isRefreshing: Bool, bundle: Bundle? = nil) -> String {
+    static func emptyMessage(
+        isRefreshing: Bool,
+        scope: EnergyImpactAppScope = .regularOnly,
+        bundle: Bundle? = nil
+    ) -> String {
         if isRefreshing {
             return AppLocalization.string(.dashboardWaitingFirstSample, bundle: bundle)
         }
-        return AppLocalization.string(.energyImpactEmpty, bundle: bundle)
+        switch scope {
+        case .regularOnly:
+            return AppLocalization.string(.energyImpactEmpty, bundle: bundle)
+        case .regularAndAccessory:
+            return AppLocalization.string(.energyImpactEmptyExpanded, bundle: bundle)
+        }
     }
 
     @MainActor
@@ -116,9 +131,17 @@ struct EnergyImpactRow: View {
                 .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(entry.name)
-                    .font(.caption.weight(.semibold))
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(entry.name)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    if let accessoryBadgeText = presentation.accessoryBadgeText {
+                        Text(accessoryBadgeText)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    }
+                }
                 if let identifier = Self.identifierText(
                     for: entry,
                     showsApplicationIdentifier: showsApplicationIdentifier

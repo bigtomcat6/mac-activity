@@ -179,16 +179,67 @@ final class EnergyImpactPresentationTests: XCTestCase {
         }
     }
 
+    func testAccessoryRowShowsBadgeAndMergesItIntoAccessibilityLabel() {
+        let englishBundle = AppLocalization.bundle(forLanguageIdentifier: "en")
+
+        let accessory = EnergyImpactPresentation.row(
+            entry: fixtureEntry(
+                kind: .accessory,
+                current: 1_400,
+                sustained: 1_000,
+                trend: .rising,
+                status: .stable,
+                coverage: 1
+            ),
+            rank: 1,
+            bundle: englishBundle
+        )
+        XCTAssertEqual(accessory.accessoryBadgeText, "Menu Bar")
+        XCTAssertEqual(
+            accessory.accessibilityLabel,
+            "Test App, rank 1, up to 30 seconds 1 mW, Menu Bar · rising"
+        )
+        XCTAssertNil(
+            EnergyImpactPresentation.row(
+                entry: fixtureEntry(
+                    kind: .regular,
+                    current: 1_400,
+                    sustained: 1_000,
+                    trend: .rising,
+                    status: .stable,
+                    coverage: 1
+                ),
+                rank: 1,
+                bundle: englishBundle
+            ).accessoryBadgeText
+        )
+        let partialAccessory = EnergyImpactPresentation.row(
+            entry: fixtureEntry(
+                kind: .accessory,
+                current: 1_400,
+                sustained: 1_000,
+                trend: .rising,
+                status: .partial,
+                coverage: 0.7
+            ),
+            rank: 1,
+            bundle: englishBundle
+        )
+        XCTAssertEqual(
+            partialAccessory.accessibilityLabel,
+            "Test App, rank 1, up to 30 seconds 1 mW, Menu Bar · Partial · rising"
+        )
+    }
+
     private func fixtureEntry(
+        kind: EnergyImpactAppKind = .regular,
         current: Double?,
         sustained: Double?,
         trend: EnergyImpactTrend,
         status: EnergyImpactStatus,
         coverage: Double
     ) -> EnergyImpactEntry {
-        let discovered = 10
-        let readable = Int((coverage * Double(discovered)).rounded())
-        return EnergyImpactEntry(
+        EnergyImpactEntry(
             identity: EnergyImpactAppIdentity(
                 rootProcessIdentifier: 101,
                 rootProcessStartAbsoluteTime: 1
@@ -196,15 +247,16 @@ final class EnergyImpactPresentationTests: XCTestCase {
             name: "Test App",
             bundleIdentifier: "com.example.test",
             bundleURL: nil,
+            kind: kind,
             currentPowerMicrowatts: current,
             sustainedPowerMicrowatts: sustained,
             rankingScore: sustained ?? current,
             trend: trend,
             coverage: EnergyImpactCoverage(
-                discoveredProcessCount: discovered,
-                readableProcessCount: readable,
-                validProcessSeconds: coverage * Double(discovered),
-                discoveredProcessSeconds: Double(discovered)
+                discoveredProcessCount: 10,
+                readableProcessCount: Int((coverage * 10).rounded()),
+                validProcessSeconds: coverage * 10,
+                discoveredProcessSeconds: 10
             ),
             status: status,
             observedWindowSeconds: 30

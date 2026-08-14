@@ -177,6 +177,25 @@ final class EnergyImpactModelTests: XCTestCase {
         XCTAssertEqual(Set(provider.endedLeases), Set(provider.returnedLeases))
     }
 
+    func testReplacementVisibleRunUsesSelectedScope() async {
+        let provider = ControlledEnergyImpactProvider()
+        let model = EnergyImpactModel(provider: provider)
+
+        let regularRun = Task { await model.refreshWhileVisible(scope: .regularOnly) }
+        while provider.observeCount < 1 { await Task.yield() }
+        let expandedRun = Task { await model.refreshWhileVisible(scope: .regularAndAccessory) }
+        while provider.observeCount < 2 { await Task.yield() }
+
+        regularRun.cancel()
+        expandedRun.cancel()
+        await regularRun.value
+        await expandedRun.value
+
+        XCTAssertEqual(provider.requestedScopes, [.regularOnly, .regularAndAccessory])
+        XCTAssertEqual(provider.endedLeases.count, 2)
+        XCTAssertEqual(Set(provider.endedLeases), Set(provider.returnedLeases))
+    }
+
     func testReplacementCannotPublishOlderCompletedObservation() async {
         let provider = ReplacementRunProvider(blockOldSecondObservation: true)
         let sleep = SequencedSleepController()

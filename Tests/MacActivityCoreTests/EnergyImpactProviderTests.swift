@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 @testable import MacActivityCore
 
@@ -105,6 +106,28 @@ final class EnergyImpactProviderTests: XCTestCase {
         XCTAssertTrue(labels.allSatisfy { label in
             forbiddenFragments.allSatisfy { label.localizedCaseInsensitiveContains($0) == false }
         })
+    }
+
+    func testAppCatalogMapsCandidatesByActivationPolicyScopeAndDeduplicatesProcessIdentifiers() {
+        let candidates = [
+            EnergyImpactCatalogCandidate(processIdentifier: 100, activationPolicy: .regular, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 200, activationPolicy: .accessory, name: "Menu", bundleIdentifier: "com.example.menu", bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 300, activationPolicy: .prohibited, name: "Daemon", bundleIdentifier: nil, bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: -1, activationPolicy: .regular, name: "Invalid", bundleIdentifier: nil, bundleURL: nil),
+            EnergyImpactCatalogCandidate(processIdentifier: 200, activationPolicy: .accessory, name: "Duplicate", bundleIdentifier: nil, bundleURL: nil),
+        ]
+
+        XCTAssertEqual(
+            SystemEnergyImpactAppCatalog.appSnapshots(from: candidates, scope: .regularOnly),
+            [EnergyImpactAppSnapshot(processIdentifier: 100, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil, kind: .regular)]
+        )
+        XCTAssertEqual(
+            SystemEnergyImpactAppCatalog.appSnapshots(from: candidates, scope: .regularAndAccessory),
+            [
+                EnergyImpactAppSnapshot(processIdentifier: 100, name: "Regular", bundleIdentifier: "com.example.regular", bundleURL: nil, kind: .regular),
+                EnergyImpactAppSnapshot(processIdentifier: 200, name: "Menu", bundleIdentifier: "com.example.menu", bundleURL: nil, kind: .accessory),
+            ]
+        )
     }
 }
 

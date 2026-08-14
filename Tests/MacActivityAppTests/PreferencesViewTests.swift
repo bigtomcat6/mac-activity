@@ -149,6 +149,22 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
     }
 
+    func testPreferencesViewCanPersistEnergyImpactAppScope() {
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let view = PreferencesView(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+
+        controller.setEnergyImpactAppScope(.regularAndAccessory)
+
+        XCTAssertEqual(controller.state.energyImpactAppScope, .regularAndAccessory)
+        XCTAssertFalse(String(describing: type(of: view.body)).isEmpty)
+    }
+
     func testProcessApplicationIdentifierPreferenceUsesSharedProcessListCopy() {
         let english = AppLocalization.bundle(forLanguageIdentifier: "en")!
 

@@ -21,6 +21,21 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
+    func testEnergyImpactViewExpandedEmptyCopyAndScopeBearingTaskIdentity() {
+        XCTAssertEqual(
+            EnergyImpactView.emptyMessage(
+                isRefreshing: false,
+                scope: .regularAndAccessory,
+                bundle: Self.englishBundle
+            ),
+            "No regular or menu-bar apps are reporting an energy estimate."
+        )
+        XCTAssertNotEqual(
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularOnly),
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularAndAccessory)
+        )
+    }
+
     func testEnergyImpactViewDoesNotClaimACompletedCheckBeforeFirstObservation() {
         let model = EnergyImpactModel(
             provider: EnergyImpactViewProviderStub(responses: []),
@@ -110,6 +125,32 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertEqual(provider.beginCount, 1)
         XCTAssertEqual(provider.observeCount, 1)
         XCTAssertEqual(provider.endCount, 1)
+    }
+
+    func testRenderedEnergyImpactViewForwardsExpandedScopeToModel() async {
+        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let model = EnergyImpactModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                scope: .regularAndAccessory,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 560)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
+        for _ in 0..<100 where provider.observeCount == 0 {
+            await Task.yield()
+        }
+        XCTAssertEqual(provider.requestedScopes, [.regularAndAccessory])
     }
 
     func testRenderedEnergyImpactViewShowsLocalizedContentAtFourHundredTwentyPointsAndRestoresPreferredLanguageOverride() async {
@@ -242,26 +283,57 @@ final class EnergyImpactViewTests: XCTestCase {
         )
     }
 
-    func testRenderedEnergyImpactRowHandlesLongNameAndBothIdentifierPreferencesAtFourHundredTwentyPoints() {
-        let longName = String(repeating: "A", count: 60)
-        let renderedEntry = entry(name: longName, power: 1_400, sustainedPower: 1_000)
-
-        for showsApplicationIdentifier in [false, true] {
-            let renderer = ImageRenderer(
-                content: EnergyImpactRow(
-                    entry: renderedEntry,
-                    rank: 1,
-                    showsApplicationIdentifier: showsApplicationIdentifier
-                )
-                .frame(width: 420, height: ActiveProcessMemoryLayout.rowHeight)
+    func testRenderedExpandedEnergyImpactViewSupportsAccessoryBadgeAtFourHundredTwentyPoints() async {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [[entry(kind: .accessory)]]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible(scope: .regularAndAccessory)
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: model,
+                refreshTrigger: 0,
+                scope: .regularAndAccessory,
+                showsApplicationIdentifier: true
             )
-            renderer.scale = 1
+            .frame(width: 420, height: 560)
+        )
+        renderer.scale = 1
 
-            XCTAssertNotNil(renderer.nsImage, "showsApplicationIdentifier=\(showsApplicationIdentifier)")
+        XCTAssertNotNil(renderer.nsImage)
+    }
+
+    func testRenderedEnergyImpactRowHandlesLongNameAndBothIdentifierPreferencesAtFourHundredTwentyPoints() {
+        for kind in [EnergyImpactAppKind.regular, .accessory] {
+            let renderedEntry = entry(
+                kind: kind,
+                name: String(repeating: "A", count: 60),
+                power: 1_400,
+                sustainedPower: 1_000
+            )
+            for showsApplicationIdentifier in [false, true] {
+                let renderer = ImageRenderer(
+                    content: EnergyImpactRow(
+                        entry: renderedEntry,
+                        rank: 1,
+                        showsApplicationIdentifier: showsApplicationIdentifier
+                    )
+                    .frame(width: 420, height: ActiveProcessMemoryLayout.rowHeight)
+                )
+                renderer.scale = 1
+
+                XCTAssertNotNil(
+                    renderer.nsImage,
+                    "kind=\(kind) showsApplicationIdentifier=\(showsApplicationIdentifier)"
+                )
+            }
         }
     }
 
     private func entry(
+        kind: EnergyImpactAppKind = .regular,
         processIdentifier: pid_t = 101,
         name: String = "Safari",
         bundleURL: URL? = nil,
@@ -278,6 +350,7 @@ final class EnergyImpactViewTests: XCTestCase {
             name: name,
             bundleIdentifier: "com.apple.Safari",
             bundleURL: bundleURL,
+            kind: kind,
             currentPowerMicrowatts: power,
             sustainedPowerMicrowatts: sustainedPower ?? power,
             rankingScore: power,
@@ -301,6 +374,7 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
     private(set) var beginCount = 0
     private(set) var observeCount = 0
     private(set) var endCount = 0
+    private(set) var requestedScopes: [EnergyImpactAppScope] = []
 
     init(responses: [[EnergyImpactEntry]]) {
         self.responses = responses
@@ -318,6 +392,7 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
         scope: EnergyImpactAppScope
     ) async -> [EnergyImpactEntry]? {
         observeCount += 1
+        requestedScopes.append(scope)
         return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
     }
 

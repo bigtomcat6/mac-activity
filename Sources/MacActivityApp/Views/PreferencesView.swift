@@ -133,6 +133,25 @@ struct PreferencesView: View {
                 )
 
                 VStack(alignment: .leading, spacing: 8) {
+                    Text(AppLocalization.string(.preferencesEnergyImpactAppScope))
+                        .font(.headline)
+
+                    Picker(
+                        AppLocalization.string(.preferencesEnergyImpactAppScope),
+                        selection: Binding(
+                            get: { preferencesController.state.energyImpactAppScope },
+                            set: { preferencesController.setEnergyImpactAppScope($0) }
+                        )
+                    ) {
+                        ForEach(EnergyImpactAppScope.allCases, id: \.rawValue) { scope in
+                            Text(AppLocalization.energyImpactScopeTitle(for: scope)).tag(scope)
+                        }
+                    }
+                    .pickerStyle(.segmented)
+                    .id("energy-impact-scope-\(localizationRefreshID)")
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
                     Text(AppLocalization.string(.preferencesDiskCleanupScope))
                         .font(.headline)
 

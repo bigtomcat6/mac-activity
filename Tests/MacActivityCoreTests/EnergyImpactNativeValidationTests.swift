@@ -5,33 +5,6 @@ import XCTest
 @testable import MacActivityCore
 
 @MainActor
-private final class SystemEnergyImpactAppCatalog {
-    func snapshots(
-        scope: EnergyImpactAppScope
-    ) -> [NSRunningApplication] {
-        var seenProcessIdentifiers = Set<pid_t>()
-        return NSWorkspace.shared.runningApplications.filter { application in
-            let processIdentifier = application.processIdentifier
-            guard processIdentifier > 0,
-                  seenProcessIdentifiers.insert(processIdentifier).inserted else {
-                return false
-            }
-
-            switch application.activationPolicy {
-            case .regular:
-                return true
-            case .accessory:
-                return scope == .regularAndAccessory
-            case .prohibited:
-                return false
-            @unknown default:
-                return false
-            }
-        }
-    }
-}
-
-@MainActor
 final class EnergyImpactNativeValidationTests: XCTestCase {
     private struct NativeMetrics {
         let observationCount: Int
@@ -48,20 +21,102 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
         case missedDeadline(index: Int, latenessSeconds: TimeInterval)
     }
 
-    func testVisibleFacadeBudget() async throws {
-        guard ProcessInfo.processInfo.environment[
-            "MACACTIVITY_ENERGY_NATIVE_VALIDATION"
-        ] == "1" else {
-            throw XCTSkip(
-                "Set MACACTIVITY_ENERGY_NATIVE_VALIDATION=1 explicitly"
+    private enum NativeScopeError: Error, Equatable {
+        case invalid(String)
+    }
+
+    private static func nativeScope(
+        environment: [String: String]
+    ) throws -> EnergyImpactAppScope {
+        switch environment["MACACTIVITY_ENERGY_NATIVE_SCOPE"] {
+        case nil, "regularOnly":
+            return .regularOnly
+        case "regularAndAccessory":
+            return .regularAndAccessory
+        case let value?:
+            throw NativeScopeError.invalid(value)
+        }
+    }
+
+    private static func nativeMetricLine(
+        scope: EnergyImpactAppScope,
+        metrics: NativeMetrics
+    ) -> String {
+        String(
+            format: "ENERGY_NATIVE_METRICS scope=\(scope.rawValue) observations=%d pre_run_catalog_apps=%d system_snapshot_processes=%d p50_ms=%.3f p95_ms=%.3f cpu_percent=%.6f wall_seconds=%.3f",
+            locale: Locale(identifier: "en_US_POSIX"),
+            metrics.observationCount,
+            metrics.preRunCatalogAppCount,
+            metrics.systemSnapshotProcessCount,
+            metrics.p50Seconds * 1_000,
+            metrics.p95Seconds * 1_000,
+            metrics.cpuPercent,
+            metrics.wallSeconds
+        )
+    }
+
+    func testNativeScopeDefaultsAndParsesOnlySupportedValues() throws {
+        XCTAssertEqual(try Self.nativeScope(environment: [:]), .regularOnly)
+        XCTAssertEqual(
+            try Self.nativeScope(environment: ["MACACTIVITY_ENERGY_NATIVE_SCOPE": "regularOnly"]),
+            .regularOnly
+        )
+        XCTAssertEqual(
+            try Self.nativeScope(environment: ["MACACTIVITY_ENERGY_NATIVE_SCOPE": "regularAndAccessory"]),
+            .regularAndAccessory
+        )
+        XCTAssertThrowsError(
+            try Self.nativeScope(environment: ["MACACTIVITY_ENERGY_NATIVE_SCOPE": "all"])
+        ) { error in
+            XCTAssertEqual(error as? NativeScopeError, .invalid("all"))
+        }
+    }
+
+    func testNativeMetricLineIncludesExactlyOneSelectedScope() {
+        let line = Self.nativeMetricLine(
+            scope: .regularAndAccessory,
+            metrics: NativeMetrics(
+                observationCount: 21,
+                preRunCatalogAppCount: 2,
+                systemSnapshotProcessCount: 8,
+                p50Seconds: 0.001,
+                p95Seconds: 0.002,
+                cpuPercent: 0.1,
+                wallSeconds: 60
             )
+        )
+
+        XCTAssertEqual(
+            line.split(separator: " ")
+                .filter { $0.hasPrefix("scope=") }
+                .map(String.init),
+            ["scope=regularAndAccessory"]
+        )
+    }
+
+    func testVisibleFacadeBudget() async throws {
+        let environment = ProcessInfo.processInfo.environment
+        let scope = try Self.nativeScope(environment: environment)
+        guard environment["MACACTIVITY_ENERGY_NATIVE_VALIDATION"] == "1" else {
+            throw XCTSkip("Set MACACTIVITY_ENERGY_NATIVE_VALIDATION=1 explicitly")
         }
 
-        let catalog = SystemEnergyImpactAppCatalog()
-        let preRunCatalogAppCount =
-            catalog.snapshots(scope: .regularOnly).count
-        let systemSnapshotProcessCount =
-            SystemProcessParentSnapshotReader().snapshots().count
+        let candidates = NSWorkspace.shared.runningApplications.map { application in
+            EnergyImpactCatalogCandidate(
+                processIdentifier: application.processIdentifier,
+                activationPolicy: application.activationPolicy,
+                name: application.localizedName
+                    ?? application.bundleIdentifier
+                    ?? "Process \(application.processIdentifier)",
+                bundleIdentifier: application.bundleIdentifier,
+                bundleURL: application.bundleURL
+            )
+        }
+        let preRunCatalogAppCount = SystemEnergyImpactAppCatalog.appSnapshots(
+            from: candidates,
+            scope: scope
+        ).count
+        let systemSnapshotProcessCount = SystemProcessParentSnapshotReader().snapshots().count
         let service = EnergyImpactService()
         guard let lease = await service.beginSession() else {
             XCTFail("Native validation could not begin a sampler lease")
@@ -74,8 +129,8 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
                 service: service,
                 lease: lease,
                 preRunCatalogAppCount: preRunCatalogAppCount,
-                systemSnapshotProcessCount:
-                    systemSnapshotProcessCount
+                systemSnapshotProcessCount: systemSnapshotProcessCount,
+                scope: scope
             )
         } catch {
             await service.endSession(lease)
@@ -83,17 +138,7 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
         }
         await service.endSession(lease)
 
-        print(String(
-            format: "ENERGY_NATIVE_METRICS observations=%d pre_run_catalog_apps=%d system_snapshot_processes=%d p50_ms=%.3f p95_ms=%.3f cpu_percent=%.6f wall_seconds=%.3f",
-            locale: Locale(identifier: "en_US_POSIX"),
-            metrics.observationCount,
-            metrics.preRunCatalogAppCount,
-            metrics.systemSnapshotProcessCount,
-            metrics.p50Seconds * 1_000,
-            metrics.p95Seconds * 1_000,
-            metrics.cpuPercent,
-            metrics.wallSeconds
-        ))
+        print(Self.nativeMetricLine(scope: scope, metrics: metrics))
 
         XCTAssertEqual(metrics.observationCount, 21)
         XCTAssertGreaterThan(metrics.preRunCatalogAppCount, 0)
@@ -111,7 +156,8 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
         service: EnergyImpactService,
         lease: EnergyImpactSamplingLease,
         preRunCatalogAppCount: Int,
-        systemSnapshotProcessCount: Int
+        systemSnapshotProcessCount: Int,
+        scope: EnergyImpactAppScope
     ) async throws -> NativeMetrics {
         let wallStart = ProcessInfo.processInfo.systemUptime
         let cpuStart = processCPUSeconds()
@@ -121,8 +167,7 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
         for index in 0..<21 {
             if index > 0 {
                 let deadline = wallStart + Double(index) * 3
-                let remaining =
-                    deadline - ProcessInfo.processInfo.systemUptime
+                let remaining = deadline - ProcessInfo.processInfo.systemUptime
                 guard remaining >= 0 else {
                     throw NativeValidationError.missedDeadline(
                         index: index,
@@ -131,48 +176,33 @@ final class EnergyImpactNativeValidationTests: XCTestCase {
                 }
                 if remaining > 0 {
                     try await Task.sleep(
-                        nanoseconds: UInt64(
-                            remaining * 1_000_000_000
-                        )
+                        nanoseconds: UInt64(remaining * 1_000_000_000)
                     )
                 }
             }
 
-            let started =
-                ProcessInfo.processInfo.systemUptime
+            let started = ProcessInfo.processInfo.systemUptime
             let observed = await service.observe(
                 lease: lease,
                 limit: 20,
-                scope: .regularOnly
+                scope: scope
             )
             guard observed != nil else {
-                throw NativeValidationError
-                    .observationRejected(index)
+                throw NativeValidationError.observationRejected(index)
             }
-            latencies.append(
-                ProcessInfo.processInfo.systemUptime - started
-            )
+            latencies.append(ProcessInfo.processInfo.systemUptime - started)
         }
 
-        let wall =
-            ProcessInfo.processInfo.systemUptime - wallStart
-        let cpuPercent =
-            (processCPUSeconds() - cpuStart) / wall * 100
+        let wall = ProcessInfo.processInfo.systemUptime - wallStart
+        let cpuPercent = (processCPUSeconds() - cpuStart) / wall * 100
         let sorted = latencies.sorted()
 
         return NativeMetrics(
             observationCount: latencies.count,
             preRunCatalogAppCount: preRunCatalogAppCount,
-            systemSnapshotProcessCount:
-                systemSnapshotProcessCount,
-            p50Seconds: nearestRank(
-                sorted,
-                percentile: 0.50
-            ),
-            p95Seconds: nearestRank(
-                sorted,
-                percentile: 0.95
-            ),
+            systemSnapshotProcessCount: systemSnapshotProcessCount,
+            p50Seconds: nearestRank(sorted, percentile: 0.50),
+            p95Seconds: nearestRank(sorted, percentile: 0.95),
             cpuPercent: cpuPercent,
             wallSeconds: wall
         )
