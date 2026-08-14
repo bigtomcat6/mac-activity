@@ -30,7 +30,7 @@ final class EnergyImpactTraceReplayTests: XCTestCase {
                 XCTFail("Expected every ordered trace observation to publish")
                 return publications
             }
-            publications.append(publication)
+            publications.append(publication.entries)
         }
         await fixture.sampler.endSession(lease)
         return publications

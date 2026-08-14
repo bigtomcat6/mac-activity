@@ -129,6 +129,24 @@ final class EnergyImpactProviderTests: XCTestCase {
             ]
         )
     }
+
+    func testLiveCatalogAdapterReturnsUniquePositiveScopedSnapshots() {
+        XCTAssertFalse(NSWorkspace.shared.runningApplications.isEmpty)
+
+        let snapshots = SystemEnergyImpactAppCatalog().snapshots(
+            scope: .regularAndAccessory
+        )
+
+        XCTAssertEqual(
+            Set(snapshots.map(\.processIdentifier)).count,
+            snapshots.count
+        )
+        XCTAssertTrue(snapshots.allSatisfy { snapshot in
+            snapshot.processIdentifier > 0
+                && snapshot.name.isEmpty == false
+                && (snapshot.kind == .regular || snapshot.kind == .accessory)
+        })
+    }
 }
 
 @MainActor
@@ -164,11 +182,11 @@ private actor SamplingSpy: EnergyImpactSampling {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) -> [EnergyImpactEntry]? {
+    ) -> EnergyImpactPublication? {
         observedApps.append(apps)
         observedLimits.append(limit)
         observeCount += 1
-        return []
+        return EnergyImpactPublication(entries: [], coverage: .unavailable)
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) {}
@@ -199,8 +217,8 @@ private actor ReorderingSamplingSpy: EnergyImpactSampling {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) -> [EnergyImpactEntry]? {
-        []
+    ) -> EnergyImpactPublication? {
+        EnergyImpactPublication(entries: [], coverage: .unavailable)
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) {}

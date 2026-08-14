@@ -47,9 +47,47 @@ final class EnergyImpactViewTests: XCTestCase {
         XCTAssertNil(EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle))
     }
 
+    func testEnergyImpactViewUsesFullScopeCoverageBeyondTwentyVisibleRows() async {
+        let rows = (1...20).map { index in
+            entry(processIdentifier: pid_t(index))
+        }
+        let coverage = EnergyImpactCoverage(
+            discoveredProcessCount: 42,
+            readableProcessCount: 21,
+            validProcessSeconds: 63,
+            discoveredProcessSeconds: 126
+        )
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [
+                EnergyImpactPublication(entries: rows, coverage: coverage),
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(model.entries.count, 20)
+        XCTAssertEqual(
+            EnergyImpactView.coverageText(model: model, bundle: Self.englishBundle),
+            "21 of 42 processes readable · Checked just now"
+        )
+    }
+
     func testEnergyImpactViewSummarizesCoverageAfterAnObservation() async {
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[entry(), entry(processIdentifier: 202)]]),
+            provider: EnergyImpactViewProviderStub(responses: [
+                publication(
+                    entries: [entry(), entry(processIdentifier: 202)],
+                    coverage: EnergyImpactCoverage(
+                        discoveredProcessCount: 4,
+                        readableProcessCount: 2,
+                        validProcessSeconds: 3,
+                        discoveredProcessSeconds: 6
+                    )
+                ),
+            ]),
             observationIntervalNanoseconds: 1,
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
@@ -65,7 +103,9 @@ final class EnergyImpactViewTests: XCTestCase {
 
     func testEnergyImpactViewReportsAnEmptyCompletedObservation() async {
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[]]),
+            provider: EnergyImpactViewProviderStub(responses: [
+                EnergyImpactPublication(entries: [], coverage: .unavailable),
+            ]),
             observationIntervalNanoseconds: 1,
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
@@ -101,7 +141,7 @@ final class EnergyImpactViewTests: XCTestCase {
     }
 
     func testRenderedEnergyImpactViewStartsVisibleLifecycleThroughModel() async {
-        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let provider = EnergyImpactViewProviderStub(responses: [publication(entries: [])])
         let model = EnergyImpactModel(
             provider: provider,
             observationIntervalNanoseconds: 1,
@@ -128,7 +168,7 @@ final class EnergyImpactViewTests: XCTestCase {
     }
 
     func testRenderedEnergyImpactViewForwardsExpandedScopeToModel() async {
-        let provider = EnergyImpactViewProviderStub(responses: [[]])
+        let provider = EnergyImpactViewProviderStub(responses: [publication(entries: [])])
         let model = EnergyImpactModel(
             provider: provider,
             observationIntervalNanoseconds: 1,
@@ -168,7 +208,7 @@ final class EnergyImpactViewTests: XCTestCase {
         defer { AppLocalization.setPreferredLanguageIdentifier(preferredLanguageIdentifier) }
         let renderedEntry = entry(power: 1_400, sustainedPower: 1_000, trend: .rising)
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[renderedEntry]]),
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: [renderedEntry])]),
             observationIntervalNanoseconds: 1,
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
@@ -285,7 +325,9 @@ final class EnergyImpactViewTests: XCTestCase {
 
     func testRenderedExpandedEnergyImpactViewSupportsAccessoryBadgeAtFourHundredTwentyPoints() async {
         let model = EnergyImpactModel(
-            provider: EnergyImpactViewProviderStub(responses: [[entry(kind: .accessory)]]),
+            provider: EnergyImpactViewProviderStub(responses: [
+                publication(entries: [entry(kind: .accessory)]),
+            ]),
             observationIntervalNanoseconds: 1,
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
@@ -332,6 +374,13 @@ final class EnergyImpactViewTests: XCTestCase {
         }
     }
 
+    private func publication(
+        entries: [EnergyImpactEntry],
+        coverage: EnergyImpactCoverage = .unavailable
+    ) -> EnergyImpactPublication {
+        EnergyImpactPublication(entries: entries, coverage: coverage)
+    }
+
     private func entry(
         kind: EnergyImpactAppKind = .regular,
         processIdentifier: pid_t = 101,
@@ -369,14 +418,14 @@ final class EnergyImpactViewTests: XCTestCase {
 
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
-    private var responses: [[EnergyImpactEntry]]
+    private var responses: [EnergyImpactPublication]
     private var nextGeneration: UInt64 = 0
     private(set) var beginCount = 0
     private(set) var observeCount = 0
     private(set) var endCount = 0
     private(set) var requestedScopes: [EnergyImpactAppScope] = []
 
-    init(responses: [[EnergyImpactEntry]]) {
+    init(responses: [EnergyImpactPublication]) {
         self.responses = responses
     }
 
@@ -390,10 +439,11 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         observeCount += 1
         requestedScopes.append(scope)
-        return responses.isEmpty ? [] : Array(responses.removeFirst().prefix(limit))
+        guard responses.isEmpty == false else { return nil }
+        return responses.removeFirst()
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {

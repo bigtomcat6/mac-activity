@@ -44,7 +44,7 @@ actor EnergyImpactSampler: EnergyImpactSampling {
         lease: EnergyImpactSamplingLease,
         apps: [EnergyImpactAppSnapshot],
         limit: Int
-    ) -> [EnergyImpactEntry]? {
+    ) -> EnergyImpactPublication? {
         guard canContinue(lease) else { return nil }
         var working = state
         let capturedAt = clock.nowSeconds()
@@ -85,7 +85,19 @@ actor EnergyImpactSampler: EnergyImpactSampling {
         ) else {
             return nil
         }
-        let published = working.publicationState.publish(
+        let coverage = candidates.reduce(EnergyImpactCoverage.unavailable) { total, candidate in
+            EnergyImpactCoverage(
+                discoveredProcessCount: total.discoveredProcessCount
+                    + candidate.coverage.discoveredProcessCount,
+                readableProcessCount: total.readableProcessCount
+                    + candidate.coverage.readableProcessCount,
+                validProcessSeconds: total.validProcessSeconds
+                    + candidate.coverage.validProcessSeconds,
+                discoveredProcessSeconds: total.discoveredProcessSeconds
+                    + candidate.coverage.discoveredProcessSeconds
+            )
+        }
+        let entries = working.publicationState.publish(
             candidates,
             at: observation.capturedAt,
             limit: limit
@@ -93,7 +105,7 @@ actor EnergyImpactSampler: EnergyImpactSampling {
         guard canContinue(lease) else { return nil }
         working.sequence = observation.sequence
         state = working
-        return published
+        return EnergyImpactPublication(entries: entries, coverage: coverage)
     }
 
     func endSession(_ lease: EnergyImpactSamplingLease) {

@@ -109,10 +109,10 @@ struct EnergyImpactView: View {
 
     @MainActor
     static func coverageText(model: EnergyImpactModel, bundle: Bundle? = nil) -> String? {
-        guard model.hasReceivedObservation else { return nil }
-        let readable = model.entries.reduce(0) { $0 + $1.coverage.readableProcessCount }
-        let discovered = model.entries.reduce(0) { $0 + $1.coverage.discoveredProcessCount }
-        return "\(EnergyImpactPresentation.coverageText(readable: readable, discovered: discovered, bundle: bundle)) · \(AppLocalization.string(.energyImpactCheckedNow, bundle: bundle))"
+        guard model.hasReceivedObservation, let coverage = model.coverage else {
+            return nil
+        }
+        return "\(EnergyImpactPresentation.coverageText(readable: coverage.readableProcessCount, discovered: coverage.discoveredProcessCount, bundle: bundle)) · \(AppLocalization.string(.energyImpactCheckedNow, bundle: bundle))"
     }
 }
 

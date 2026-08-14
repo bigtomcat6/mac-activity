@@ -130,7 +130,7 @@ public final class EnergyImpactService {
         lease: EnergyImpactSamplingLease,
         limit: Int,
         scope: EnergyImpactAppScope = .regularOnly
-    ) async -> [EnergyImpactEntry]? {
+    ) async -> EnergyImpactPublication? {
         let apps = catalog.snapshots(scope: scope)
         return await sampler.observe(
             lease: lease,
