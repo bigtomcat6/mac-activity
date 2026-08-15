@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import XCTest
 @testable import MacActivityCore
@@ -18,6 +19,13 @@ final class PowerFlowViewTests: XCTestCase {
             nowNanoseconds: { 0 },
             sleep: { _ in throw CancellationError() }
         )
+        let snapshotPublished = expectation(description: "power-flow snapshot published")
+        let observation = model.$snapshot.sink { snapshot in
+            if snapshot.outputEndpoints.map(\.type) == [.battery, .mac] {
+                snapshotPublished.fulfill()
+            }
+        }
+        defer { observation.cancel() }
         let renderer = ImageRenderer(
             content: PowerFlowView(model: model, refreshTrigger: 0)
                 .frame(width: 420, height: 120)
@@ -25,7 +33,7 @@ final class PowerFlowViewTests: XCTestCase {
         renderer.scale = 1
 
         XCTAssertNotNil(renderer.nsImage)
-        while provider.snapshotCount == 0 { await Task.yield() }
+        await fulfillment(of: [snapshotPublished], timeout: 1)
         XCTAssertEqual(provider.snapshotCount, 1)
         XCTAssertEqual(model.snapshot.outputEndpoints.map(\.type), [.battery, .mac])
     }

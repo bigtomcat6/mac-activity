@@ -70,6 +70,7 @@ private struct PowerFlowEndpointRow: View {
                 .font(.caption.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
+                .layoutPriority(1)
         }
         .frame(minHeight: 24)
         .accessibilityElement(children: .ignore)
