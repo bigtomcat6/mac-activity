@@ -33,8 +33,8 @@ calculated balance as live physical power.
 - Do not display an adapter's negotiated or rated watts as current input power.
 - Do not add totals, trends, history, preferences, menu-bar values, or
   background sampling.
-- Do not infer USB-C, MagSafe, or another connector type from wattage or an
-  unstructured adapter name.
+- Do not infer a connector type from wattage, adapter capacity, or an
+  unrecognized adapter description.
 
 ## User Interface
 
@@ -57,9 +57,12 @@ Unavailable`.
 - When idle, it remains in the data snapshot but is omitted from both active
   lists. An empty list states that it has no active endpoints.
 
-An external endpoint uses its confirmed connector type as the row name. If the
-hardware cannot confirm a type, the row name is `Unknown External Interface`.
-No generic external-power label or duplicate type badge is shown.
+An external endpoint uses its classified connector type as the row name. The
+classifier first uses confirmed structured metadata, then a controlled,
+case-insensitive match of system-provided adapter descriptions: `magsafe`
+maps to `MagSafe`; `usb-c`, `usb c`, `usb pd`, and `pd charger` map to
+`USB-C`. Any other description maps to `Unknown External Interface`. No
+generic external-power label or duplicate type badge is shown.
 
 The section must remain readable in the existing 420-point dashboard width.
 Names truncate before power values; a missing value remains explicit rather
@@ -115,12 +118,14 @@ measurement belongs to input or output. Missing, contradictory, non-finite, or
 invalid values produce an unavailable measurement and never a zero value.
 
 External endpoints are discovered individually where the system exposes them.
-Their connector type is classified only from an explicit structured connector
-metadata field with a known connector value. Free-text adapter or product
-descriptions are not parsed for classification. A watt value is shown only if
-the same hardware source exposes live voltage and current that can be
-validated. Adapter capacity, negotiated voltage/current limits, and rated
-wattage are not measurements and remain unavailable.
+Their connector type is classified first from an explicit structured connector
+metadata field with a known value. If that is unavailable, the collector uses
+only the controlled adapter-description tokens defined in the User Interface
+section. It does not use arbitrary descriptions, wattage, adapter capacity, or
+negotiated voltage/current limits to classify a connector. A watt value is
+shown only if the same hardware source exposes live voltage and current that
+can be validated. Adapter capacity, negotiated voltage/current limits, and
+rated wattage are not measurements and remain unavailable.
 
 `Mac` may show watts only if the hardware exposes a direct, valid whole-system
 meter. Otherwise, it remains visible in Output with power unavailable.
@@ -153,6 +158,8 @@ Core unit tests cover:
 - Rejection of missing, non-finite, negative, and contradictory readings.
 - Battery charge, discharge, and idle transitions.
 - External endpoints with recognized and unknown connector types.
+- Controlled adapter-description matches for `MagSafe` and `USB-C`, plus an
+  unrecognized description that remains unknown.
 - The rule that adapter capacity and negotiated limits never become current
   power values.
 - Desktop-style snapshots without a battery.
