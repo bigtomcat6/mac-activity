@@ -115,8 +115,9 @@ measurement belongs to input or output. Missing, contradictory, non-finite, or
 invalid values produce an unavailable measurement and never a zero value.
 
 External endpoints are discovered individually where the system exposes them.
-Their connector type is classified only from explicit connector metadata or an
-explicit system-provided adapter description. A watt value is shown only if
+Their connector type is classified only from an explicit structured connector
+metadata field with a known connector value. Free-text adapter or product
+descriptions are not parsed for classification. A watt value is shown only if
 the same hardware source exposes live voltage and current that can be
 validated. Adapter capacity, negotiated voltage/current limits, and rated
 wattage are not measurements and remain unavailable.
