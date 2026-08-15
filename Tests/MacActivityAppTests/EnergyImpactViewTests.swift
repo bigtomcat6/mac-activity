@@ -129,6 +129,7 @@ final class EnergyImpactViewTests: XCTestCase {
         let renderer = ImageRenderer(
             content: EnergyImpactView(
                 model: model,
+                powerFlowModel: testPowerFlowModel(),
                 refreshTrigger: 0,
                 showsApplicationIdentifier: true
             )
@@ -151,6 +152,7 @@ final class EnergyImpactViewTests: XCTestCase {
         let renderer = ImageRenderer(
             content: EnergyImpactView(
                 model: model,
+                powerFlowModel: testPowerFlowModel(),
                 refreshTrigger: 0,
                 showsApplicationIdentifier: true
             )
@@ -178,6 +180,7 @@ final class EnergyImpactViewTests: XCTestCase {
         let renderer = ImageRenderer(
             content: EnergyImpactView(
                 model: model,
+                powerFlowModel: testPowerFlowModel(),
                 refreshTrigger: 0,
                 scope: .regularAndAccessory,
                 showsApplicationIdentifier: true
@@ -201,6 +204,39 @@ final class EnergyImpactViewTests: XCTestCase {
         await assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints()
 
         XCTAssertEqual(AppLocalization.explicitPreferredLanguageIdentifier(), "fr")
+    }
+
+    func testRenderedEnergyImpactViewIncludesPowerFlowAtFourHundredTwentyPoints() async {
+        let powerFlowModel = PowerFlowModel(
+            provider: EnergyImpactPowerFlowProviderStub(responses: [
+                PowerFlowSnapshot(endpoints: [
+                    PowerFlowEndpoint(id: "external", type: .usbC, direction: .input, measurement: .unavailable),
+                    PowerFlowEndpoint(id: "mac", type: .mac, direction: .output, measurement: .unavailable),
+                ])
+            ]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        let energyModel = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: [])]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+
+        let renderer = ImageRenderer(
+            content: EnergyImpactView(
+                model: energyModel,
+                powerFlowModel: powerFlowModel,
+                refreshTrigger: 0,
+                showsApplicationIdentifier: true
+            )
+            .frame(width: 420, height: 560)
+        )
+        renderer.scale = 1
+
+        XCTAssertNotNil(renderer.nsImage)
     }
 
     private func assertLocalizedEnergyImpactViewRendersAtFourHundredTwentyPoints() async {
@@ -251,6 +287,7 @@ final class EnergyImpactViewTests: XCTestCase {
             let renderer = ImageRenderer(
                 content: EnergyImpactView(
                     model: model,
+                    powerFlowModel: testPowerFlowModel(),
                     refreshTrigger: 0,
                     showsApplicationIdentifier: true
                 )
@@ -336,6 +373,7 @@ final class EnergyImpactViewTests: XCTestCase {
         let renderer = ImageRenderer(
             content: EnergyImpactView(
                 model: model,
+                powerFlowModel: testPowerFlowModel(),
                 refreshTrigger: 0,
                 scope: .regularAndAccessory,
                 showsApplicationIdentifier: true
@@ -372,6 +410,17 @@ final class EnergyImpactViewTests: XCTestCase {
                 )
             }
         }
+    }
+
+    private func testPowerFlowModel(
+        responses: [PowerFlowSnapshot] = [PowerFlowSnapshot.empty]
+    ) -> PowerFlowModel {
+        PowerFlowModel(
+            provider: EnergyImpactPowerFlowProviderStub(responses: responses),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
     }
 
     private func publication(
@@ -448,5 +497,19 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
 
     func endSession(_ lease: EnergyImpactSamplingLease) async {
         endCount += 1
+    }
+}
+
+@MainActor
+private final class EnergyImpactPowerFlowProviderStub: PowerFlowProviding {
+    private var responses: [PowerFlowSnapshot]
+
+    init(responses: [PowerFlowSnapshot]) {
+        self.responses = responses
+    }
+
+    func snapshot() async -> PowerFlowSnapshot {
+        guard responses.isEmpty == false else { return .empty }
+        return responses.removeFirst()
     }
 }
