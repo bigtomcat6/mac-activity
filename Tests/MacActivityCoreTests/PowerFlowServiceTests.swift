@@ -1,3 +1,4 @@
+import IOKit.ps
 import XCTest
 @testable import MacActivityCore
 
@@ -130,6 +131,48 @@ final class PowerFlowServiceTests: XCTestCase {
         XCTAssertEqual(snapshot.outputEndpoints, [
             PowerFlowEndpoint(id: "mac", type: .mac, direction: .output, measurement: .unavailable),
         ])
+    }
+
+    func testNilPowerSourceSnapshotYieldsNilDescription() {
+        let result = SystemPowerFlowReader.batteryPowerSourceDescription(
+            snapshot: nil,
+            sources: [NSObject()],
+            descriptionForSource: { _, _ in [:] }
+        )
+        XCTAssertNil(result)
+    }
+
+    func testNilPowerSourceSourceListYieldsNilDescription() {
+        let result = SystemPowerFlowReader.batteryPowerSourceDescription(
+            snapshot: NSObject(),
+            sources: nil,
+            descriptionForSource: { _, _ in [:] }
+        )
+        XCTAssertNil(result)
+    }
+
+    func testPowerSourceDescriptionPrefersInternalBatteryDescription() {
+        let first = NSObject()
+        let second = NSObject()
+        let result = SystemPowerFlowReader.batteryPowerSourceDescription(
+            snapshot: NSObject(),
+            sources: [first, second],
+            descriptionForSource: { _, source in
+                source === first
+                    ? [kIOPSTypeKey as String: "UPS"]
+                    : [kIOPSTypeKey as String: kIOPSInternalBatteryType]
+            }
+        )
+        XCTAssertEqual(result?[kIOPSTypeKey as String] as? String, kIOPSInternalBatteryType)
+    }
+
+    func testPowerSourceDescriptionFallsBackToFirstDescription() {
+        let result = SystemPowerFlowReader.batteryPowerSourceDescription(
+            snapshot: NSObject(),
+            sources: [NSObject()],
+            descriptionForSource: { _, _ in [kIOPSTypeKey as String: "UPS"] }
+        )
+        XCTAssertEqual(result?[kIOPSTypeKey as String] as? String, "UPS")
     }
 }
 

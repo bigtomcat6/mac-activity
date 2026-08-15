@@ -76,7 +76,7 @@ public final class PowerFlowService {
     }
 }
 
-private enum SystemPowerFlowReader {
+enum SystemPowerFlowReader {
     static func read() -> PowerFlowRawReading {
         let timestamp = Date()
         let source = batteryPowerSourceDescription()
@@ -122,6 +122,18 @@ private enum SystemPowerFlowReader {
         )
     }
 
+    static func batteryPowerSourceDescription(
+        snapshot: CFTypeRef?,
+        sources: [CFTypeRef]?,
+        descriptionForSource: (CFTypeRef, CFTypeRef) -> [String: Any]?
+    ) -> [String: Any]? {
+        guard let snapshot, let sources else { return nil }
+        let descriptions = sources.compactMap { descriptionForSource(snapshot, $0) }
+        return descriptions.first {
+            ($0[kIOPSTypeKey as String] as? String) == kIOPSInternalBatteryType
+        } ?? descriptions.first
+    }
+
     private struct BatteryRegistryReading {
         let exists: Bool
         let voltageMillivolts: Double?
@@ -132,15 +144,21 @@ private enum SystemPowerFlowReader {
     }
 
     private static func batteryPowerSourceDescription() -> [String: Any]? {
-        let snapshot = IOPSCopyPowerSourcesInfo().takeRetainedValue()
-        let sources = IOPSCopyPowerSourcesList(snapshot).takeRetainedValue() as [CFTypeRef]
-        let descriptions = sources.compactMap { source in
-            IOPSGetPowerSourceDescription(snapshot, source)?
-                .takeUnretainedValue() as? [String: Any]
+        guard let snapshot = IOPSCopyPowerSourcesInfo()?.takeRetainedValue() else {
+            return nil
         }
-        return descriptions.first {
-            ($0[kIOPSTypeKey as String] as? String) == kIOPSInternalBatteryType
-        } ?? descriptions.first
+        guard let sources = IOPSCopyPowerSourcesList(snapshot)?
+            .takeRetainedValue() as? [CFTypeRef] else {
+            return nil
+        }
+        return batteryPowerSourceDescription(
+            snapshot: snapshot,
+            sources: sources,
+            descriptionForSource: { snapshot, source in
+                IOPSGetPowerSourceDescription(snapshot, source)?
+                    .takeUnretainedValue() as? [String: Any]
+            }
+        )
     }
 
     private static func batteryRegistryReading() -> BatteryRegistryReading {
