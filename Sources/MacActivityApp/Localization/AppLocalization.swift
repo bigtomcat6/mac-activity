@@ -200,6 +200,14 @@ enum AppLocalization {
         case processActionNotTerminable = "process.action.notTerminable"
         case processActionQuit = "process.action.quit"
         case processActionConfirm = "process.action.confirm"
+        case powerFlowInput = "powerFlow.input"
+        case powerFlowOutput = "powerFlow.output"
+        case powerFlowEmpty = "powerFlow.empty"
+        case powerFlowUnavailable = "powerFlow.unavailable"
+        case powerFlowEndpointBattery = "powerFlow.endpoint.battery"
+        case powerFlowEndpointMac = "powerFlow.endpoint.mac"
+        case powerFlowEndpointUnknownExternal = "powerFlow.endpoint.unknownExternal"
+        case powerFlowRowAccessibility = "powerFlow.accessibility.row"
     }
 
     static var bundle: Bundle {

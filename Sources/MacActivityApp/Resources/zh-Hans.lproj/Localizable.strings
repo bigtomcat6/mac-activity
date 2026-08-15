@@ -193,6 +193,16 @@
 "energyImpact.empty.expanded" = "当前没有普通应用或菜单栏应用报告能耗估算。";
 "energyImpact.unavailable" = "不可读取";
 
+"powerFlow.input" = "输入端";
+"powerFlow.output" = "输出端";
+"powerFlow.empty" = "没有活动端点";
+"powerFlow.unavailable" = "功率不可用";
+"powerFlow.endpoint.battery" = "电池";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "未知外接接口";
+"powerFlow.accessibility.row" = "%1$@，%2$@，%3$@";
+
+
 "process.empty" = "当前没有前台应用报告内存用量。";
 "process.fallbackName" = "进程 %d";
 "process.action.requested" = "已请求 %@ 退出。";

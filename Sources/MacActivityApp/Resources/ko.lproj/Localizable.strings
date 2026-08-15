@@ -132,6 +132,16 @@
 "energyImpact.empty.expanded" = "에너지 추정치를 보고하는 일반 또는 메뉴 막대 앱이 없습니다.";
 "energyImpact.unavailable" = "사용할 수 없음";
 
+"powerFlow.input" = "입력";
+"powerFlow.output" = "출력";
+"powerFlow.empty" = "활성 엔드포인트 없음";
+"powerFlow.unavailable" = "전력 정보를 사용할 수 없음";
+"powerFlow.endpoint.battery" = "배터리";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "알 수 없는 외부 인터페이스";
+"powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
+
+
 "memoryRelease.action.release" = "해제";
 "memoryRelease.action.releasing" = "해제 중";
 "memoryRelease.title.idle" = "메모리";
