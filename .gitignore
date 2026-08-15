@@ -19,6 +19,7 @@ xcuserdata/
 
 # Local agent worktrees
 /.worktrees/
+/.superpowers/
 
 # Python caches
 __pycache__/
