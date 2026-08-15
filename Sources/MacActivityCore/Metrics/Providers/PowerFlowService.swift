@@ -16,11 +16,26 @@ struct PowerFlowRawExternalAdapter: Equatable, Sendable {
     let reportedVoltageMillivolts: Double?
 }
 
+struct PowerFlowRawTelemetry: Equatable, Sendable {
+    let inputVoltageMillivolts: Double?
+    let inputCurrentMilliamps: Double?
+    let inputPowerMilliwatts: Double?
+    let systemLoadMilliwatts: Double?
+
+    static let unavailable = PowerFlowRawTelemetry(
+        inputVoltageMillivolts: nil,
+        inputCurrentMilliamps: nil,
+        inputPowerMilliwatts: nil,
+        systemLoadMilliwatts: nil
+    )
+}
+
 struct PowerFlowRawReading: Equatable, Sendable {
     let timestamp: Date
     let isExternalPowerConnected: Bool
     let battery: PowerFlowRawBattery?
     let externalAdapter: PowerFlowRawExternalAdapter?
+    var telemetry: PowerFlowRawTelemetry = .unavailable
 }
 
 @MainActor
@@ -39,6 +54,15 @@ public final class PowerFlowService {
         let raw = read()
         var endpoints = [PowerFlowEndpoint]()
 
+        let externalMeasurement = PowerFlowRules.externalInputMeasurement(
+            voltageMillivolts: raw.telemetry.inputVoltageMillivolts,
+            currentMilliamps: raw.telemetry.inputCurrentMilliamps,
+            reportedPowerMilliwatts: raw.telemetry.inputPowerMilliwatts
+        )
+        let macMeasurement = PowerFlowRules.macOutputMeasurement(
+            systemLoadMilliwatts: raw.telemetry.systemLoadMilliwatts
+        )
+
         if raw.isExternalPowerConnected {
             let adapter = raw.externalAdapter
             endpoints.append(PowerFlowEndpoint(
@@ -48,7 +72,7 @@ public final class PowerFlowService {
                     adapterDescription: adapter?.adapterDescription
                 ),
                 direction: .input,
-                measurement: .unavailable
+                measurement: externalMeasurement
             ))
         }
 
@@ -70,7 +94,7 @@ public final class PowerFlowService {
             id: "mac",
             type: .mac,
             direction: .output,
-            measurement: .unavailable
+            measurement: macMeasurement
         ))
         return PowerFlowSnapshot(timestamp: raw.timestamp, endpoints: endpoints)
     }
@@ -118,7 +142,8 @@ enum SystemPowerFlowReader {
             timestamp: timestamp,
             isExternalPowerConnected: isExternalPowerConnected,
             battery: battery,
-            externalAdapter: externalAdapter
+            externalAdapter: externalAdapter,
+            telemetry: registry.telemetry
         )
     }
 
@@ -134,6 +159,17 @@ enum SystemPowerFlowReader {
         } ?? descriptions.first
     }
 
+    static func powerTelemetryReading(
+        _ details: [String: Any]?
+    ) -> PowerFlowRawTelemetry {
+        PowerFlowRawTelemetry(
+            inputVoltageMillivolts: number(in: details, key: "SystemVoltageIn"),
+            inputCurrentMilliamps: number(in: details, key: "SystemCurrentIn"),
+            inputPowerMilliwatts: number(in: details, key: "SystemPowerIn"),
+            systemLoadMilliwatts: number(in: details, key: "SystemLoad")
+        )
+    }
+
     private struct BatteryRegistryReading {
         let exists: Bool
         let voltageMillivolts: Double?
@@ -141,6 +177,7 @@ enum SystemPowerFlowReader {
         let amperageMilliamps: Double?
         let externalConnected: Bool
         let adapterDetails: [String: Any]?
+        let telemetry: PowerFlowRawTelemetry
     }
 
     private static func batteryPowerSourceDescription() -> [String: Any]? {
@@ -169,7 +206,8 @@ enum SystemPowerFlowReader {
                 instantAmperageMilliamps: nil,
                 amperageMilliamps: nil,
                 externalConnected: false,
-                adapterDetails: nil
+                adapterDetails: nil,
+                telemetry: .unavailable
             )
         }
         let service = IOServiceGetMatchingService(kIOMainPortDefault, matching)
@@ -180,7 +218,8 @@ enum SystemPowerFlowReader {
                 instantAmperageMilliamps: nil,
                 amperageMilliamps: nil,
                 externalConnected: false,
-                adapterDetails: nil
+                adapterDetails: nil,
+                telemetry: .unavailable
             )
         }
         defer { IOObjectRelease(service) }
@@ -192,7 +231,10 @@ enum SystemPowerFlowReader {
             amperageMilliamps: numberProperty("Amperage", service: service),
             externalConnected: boolProperty("ExternalConnected", service: service),
             adapterDetails: dictionaryProperty("AppleRawAdapterDetails", service: service)
-                ?? dictionaryProperty("AdapterDetails", service: service)
+                ?? dictionaryProperty("AdapterDetails", service: service),
+            telemetry: powerTelemetryReading(
+                dictionaryProperty("PowerTelemetryData", service: service)
+            )
         )
     }
 

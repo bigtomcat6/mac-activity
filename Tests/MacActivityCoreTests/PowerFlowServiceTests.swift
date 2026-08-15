@@ -133,6 +133,75 @@ final class PowerFlowServiceTests: XCTestCase {
         ])
     }
 
+    func testServiceUsesValidatedLiveTelemetryForExternalInputAndMacOutput() async {
+        let snapshot = await service(reading: PowerFlowRawReading(
+            timestamp: Date(timeIntervalSince1970: 7),
+            isExternalPowerConnected: true,
+            battery: nil,
+            externalAdapter: PowerFlowRawExternalAdapter(
+                hasUSBPowerDeliveryMetadata: true,
+                adapterDescription: "pd charger",
+                reportedWatts: 100,
+                reportedCurrentMilliamps: 5_000,
+                reportedVoltageMillivolts: 20_000
+            ),
+            telemetry: PowerFlowRawTelemetry(
+                inputVoltageMillivolts: 19_654,
+                inputCurrentMilliamps: 1_399,
+                inputPowerMilliwatts: 27_471,
+                systemLoadMilliwatts: 27_471
+            )
+        )).snapshot()
+
+        guard case .watts(let inputWatts) = snapshot.inputEndpoints.first?.measurement else {
+            return XCTFail("Expected live external input watts")
+        }
+        guard case .watts(let macWatts) = snapshot.outputEndpoints.last?.measurement else {
+            return XCTFail("Expected live Mac output watts")
+        }
+        XCTAssertEqual(inputWatts, 27.496, accuracy: 0.001)
+        XCTAssertEqual(macWatts, 27.471, accuracy: 0.001)
+    }
+
+    func testServiceDoesNotFallBackToAdapterCapabilityWhenLiveTelemetryIsInvalid() async {
+        let snapshot = await service(reading: PowerFlowRawReading(
+            timestamp: Date(timeIntervalSince1970: 8),
+            isExternalPowerConnected: true,
+            battery: nil,
+            externalAdapter: PowerFlowRawExternalAdapter(
+                hasUSBPowerDeliveryMetadata: true,
+                adapterDescription: "pd charger",
+                reportedWatts: 100,
+                reportedCurrentMilliamps: 5_000,
+                reportedVoltageMillivolts: 20_000
+            ),
+            telemetry: PowerFlowRawTelemetry(
+                inputVoltageMillivolts: 19_654,
+                inputCurrentMilliamps: 1_399,
+                inputPowerMilliwatts: 65_000,
+                systemLoadMilliwatts: .nan
+            )
+        )).snapshot()
+
+        XCTAssertEqual(snapshot.inputEndpoints.first?.measurement, .unavailable)
+        XCTAssertEqual(snapshot.outputEndpoints.last?.measurement, .unavailable)
+    }
+
+    func testPowerTelemetryReadingKeepsOnlyExpectedNumericValues() {
+        let telemetry = SystemPowerFlowReader.powerTelemetryReading([
+            "SystemVoltageIn": NSNumber(value: 19_654),
+            "SystemCurrentIn": NSNumber(value: 1_399),
+            "SystemPowerIn": NSNumber(value: 27_471),
+            "SystemLoad": NSNumber(value: 27_471),
+            "Unrelated": "ignored",
+        ])
+
+        XCTAssertEqual(telemetry.inputVoltageMillivolts, 19_654)
+        XCTAssertEqual(telemetry.inputCurrentMilliamps, 1_399)
+        XCTAssertEqual(telemetry.inputPowerMilliwatts, 27_471)
+        XCTAssertEqual(telemetry.systemLoadMilliwatts, 27_471)
+    }
+
     func testNilPowerSourceSnapshotYieldsNilDescription() {
         let result = SystemPowerFlowReader.batteryPowerSourceDescription(
             snapshot: nil,

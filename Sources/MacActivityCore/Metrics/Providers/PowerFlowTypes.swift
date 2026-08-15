@@ -123,4 +123,53 @@ enum PowerFlowRules {
         }
         return .unknownExternalInterface
     }
+
+    static func externalInputMeasurement(
+        voltageMillivolts: Double?,
+        currentMilliamps: Double?,
+        reportedPowerMilliwatts: Double?
+    ) -> PowerFlowMeasurement {
+        guard let voltageMillivolts,
+              let currentMilliamps,
+              let reportedPowerMilliwatts,
+              voltageMillivolts.isFinite,
+              currentMilliamps.isFinite,
+              reportedPowerMilliwatts.isFinite,
+              voltageMillivolts > 0,
+              currentMilliamps > 0,
+              reportedPowerMilliwatts > 0 else {
+            return .unavailable
+        }
+
+        let calculatedWatts = voltageMillivolts * currentMilliamps / 1_000_000
+        let reportedWatts = reportedPowerMilliwatts / 1_000
+        guard calculatedWatts.isFinite,
+              reportedWatts.isFinite,
+              calculatedWatts > 0,
+              reportedWatts > 0 else {
+            return .unavailable
+        }
+
+        let tolerance = max(0.5, max(calculatedWatts, reportedWatts) * 0.05)
+        guard abs(calculatedWatts - reportedWatts) <= tolerance else {
+            return .unavailable
+        }
+        return .watts(calculatedWatts)
+    }
+
+    static func macOutputMeasurement(
+        systemLoadMilliwatts: Double?
+    ) -> PowerFlowMeasurement {
+        guard let systemLoadMilliwatts,
+              systemLoadMilliwatts.isFinite,
+              systemLoadMilliwatts > 0 else {
+            return .unavailable
+        }
+
+        let watts = systemLoadMilliwatts / 1_000
+        guard watts.isFinite, watts > 0 else {
+            return .unavailable
+        }
+        return .watts(watts)
+    }
 }
