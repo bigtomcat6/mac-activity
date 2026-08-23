@@ -84,11 +84,8 @@ enum PowerFlowRules {
         amperageMilliamps: Double?,
         isCharging: Bool
     ) -> PowerFlowBatteryState {
-        guard let voltageMillivolts,
-              let amperageMilliamps,
-              voltageMillivolts.isFinite,
+        guard let amperageMilliamps,
               amperageMilliamps.isFinite,
-              voltageMillivolts > 0,
               amperageMilliamps != 0 else {
             return PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
         }
@@ -101,9 +98,15 @@ enum PowerFlowRules {
             return PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
         }
 
+        guard let voltageMillivolts,
+              voltageMillivolts.isFinite,
+              voltageMillivolts > 0 else {
+            return PowerFlowBatteryState(direction: direction, measurement: .unavailable)
+        }
+
         let watts = abs(voltageMillivolts * amperageMilliamps) / 1_000_000
         guard watts.isFinite, watts > 0 else {
-            return PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
+            return PowerFlowBatteryState(direction: direction, measurement: .unavailable)
         }
         return PowerFlowBatteryState(direction: direction, measurement: .watts(watts))
     }

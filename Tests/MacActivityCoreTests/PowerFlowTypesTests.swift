@@ -107,19 +107,38 @@ final class PowerFlowTypesTests: XCTestCase {
         )
         XCTAssertEqual(
             PowerFlowRules.batteryState(
-                voltageMillivolts: .nan,
-                amperageMilliamps: 2_000,
-                isCharging: true
-            ),
-            PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
-        )
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
                 voltageMillivolts: 12_000,
                 amperageMilliamps: .infinity,
                 isCharging: true
             ),
             PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
+        )
+    }
+
+    func testKnownBatteryDirectionRemainsVisibleWhenWattsAreUnavailable() {
+        XCTAssertEqual(
+            PowerFlowRules.batteryState(
+                voltageMillivolts: nil,
+                amperageMilliamps: -2_000,
+                isCharging: false
+            ),
+            PowerFlowBatteryState(direction: .input, measurement: .unavailable)
+        )
+        XCTAssertEqual(
+            PowerFlowRules.batteryState(
+                voltageMillivolts: .nan,
+                amperageMilliamps: 1_500,
+                isCharging: true
+            ),
+            PowerFlowBatteryState(direction: .output, measurement: .unavailable)
+        )
+        XCTAssertEqual(
+            PowerFlowRules.batteryState(
+                voltageMillivolts: .greatestFiniteMagnitude,
+                amperageMilliamps: .greatestFiniteMagnitude,
+                isCharging: true
+            ),
+            PowerFlowBatteryState(direction: .output, measurement: .unavailable)
         )
     }
 
