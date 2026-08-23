@@ -168,11 +168,6 @@ enum PowerFlowRules {
               systemLoadMilliwatts > 0 else {
             return .unavailable
         }
-
-        let watts = systemLoadMilliwatts / 1_000
-        guard watts.isFinite, watts > 0 else {
-            return .unavailable
-        }
-        return .watts(watts)
+        return .watts(systemLoadMilliwatts / 1_000)
     }
 }

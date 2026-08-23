@@ -9,7 +9,7 @@ import XCTest
 final class PowerFlowViewTests: XCTestCase {
     func testRenderedPowerFlowViewAtFourHundredTwentyPointsStartsVisibleLifecycle() async {
         let provider = PowerFlowViewProviderStub(snapshot: PowerFlowSnapshot(endpoints: [
-            PowerFlowEndpoint(id: "external", type: .usbC, direction: .input, measurement: .unavailable),
+            PowerFlowEndpoint(id: "external", type: .unknownExternalInterface, direction: .input, measurement: .unavailable),
             PowerFlowEndpoint(id: "battery", type: .battery, direction: .output, measurement: .watts(22.1)),
             PowerFlowEndpoint(id: "mac", type: .mac, direction: .output, measurement: .unavailable),
         ]))

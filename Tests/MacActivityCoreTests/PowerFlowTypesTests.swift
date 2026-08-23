@@ -196,4 +196,29 @@ final class PowerFlowTypesTests: XCTestCase {
             )
         }
     }
+
+    func testMeasurementWattsReturnsOnlyMeasuredPower() {
+        XCTAssertEqual(PowerFlowMeasurement.watts(1.5).watts, 1.5)
+        XCTAssertNil(PowerFlowMeasurement.unavailable.watts)
+    }
+
+    func testExternalInputMeasurementRejectsOverflowedCalculation() {
+        XCTAssertEqual(
+            PowerFlowRules.externalInputMeasurement(
+                voltageMillivolts: .greatestFiniteMagnitude,
+                currentMilliamps: .greatestFiniteMagnitude,
+                reportedPowerMilliwatts: .greatestFiniteMagnitude
+            ),
+            .unavailable
+        )
+    }
+
+    func testMacOutputMeasurementConvertsLargestFiniteLoad() {
+        XCTAssertEqual(
+            PowerFlowRules.macOutputMeasurement(
+                systemLoadMilliwatts: .greatestFiniteMagnitude
+            ),
+            .watts(.greatestFiniteMagnitude / 1_000)
+        )
+    }
 }

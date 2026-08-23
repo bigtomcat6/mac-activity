@@ -98,19 +98,70 @@ final class PowerFlowModelTests: XCTestCase {
         XCTAssertEqual(provider.snapshotCount, 1)
         XCTAssertFalse(model.isRefreshing)
     }
+
+    func testSlowSnapshotSkipsMissedDeadlinesWithoutBurst() async {
+        var now: UInt64 = 0
+        var sleeps = [UInt64]()
+        let provider = SequencePowerFlowProvider(
+            responses: [inputSnapshot(watts: 12)],
+            onSnapshot: { count in
+                if count == 1 { now = 7 }
+            }
+        )
+        let model = PowerFlowModel(
+            provider: provider,
+            observationIntervalNanoseconds: 3,
+            nowNanoseconds: { now },
+            sleep: { duration in
+                sleeps.append(duration)
+                throw CancellationError()
+            }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(sleeps, [2])
+        XCTAssertEqual(provider.snapshotCount, 1)
+        XCTAssertFalse(model.isRefreshing)
+    }
+
+    func testRefreshStopsWhenSleepThrowsNonCancellationError() async {
+        let provider = SequencePowerFlowProvider(responses: [inputSnapshot(watts: 12)])
+        let model = PowerFlowModel(
+            provider: provider,
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw PowerFlowModelTestError.expected }
+        )
+
+        await model.refreshWhileVisible()
+
+        XCTAssertEqual(provider.snapshotCount, 1)
+        XCTAssertFalse(model.isRefreshing)
+    }
+}
+
+private enum PowerFlowModelTestError: Error {
+    case expected
 }
 
 @MainActor
 private final class SequencePowerFlowProvider: PowerFlowProviding {
     private var responses: [PowerFlowSnapshot]
+    private let onSnapshot: ((Int) -> Void)?
     private(set) var snapshotCount = 0
 
-    init(responses: [PowerFlowSnapshot]) {
+    init(
+        responses: [PowerFlowSnapshot],
+        onSnapshot: ((Int) -> Void)? = nil
+    ) {
         self.responses = responses
+        self.onSnapshot = onSnapshot
     }
 
     func snapshot() async -> PowerFlowSnapshot {
         snapshotCount += 1
+        onSnapshot?(snapshotCount)
         return responses.removeFirst()
     }
 }

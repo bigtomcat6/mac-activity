@@ -35,4 +35,32 @@ final class PowerFlowPresentationTests: XCTestCase {
         XCTAssertEqual(row.powerText, "Power unavailable")
         XCTAssertEqual(row.accessibilityLabel, "Input, USB-C, Power unavailable")
     }
+
+    func testMagSafeRowUsesMagSafeTitle() {
+        let row = PowerFlowPresentation.row(
+            endpoint: PowerFlowEndpoint(
+                id: "external-power",
+                type: .magSafe,
+                direction: .input,
+                measurement: .unavailable
+            ),
+            bundle: Self.englishBundle
+        )
+
+        XCTAssertEqual(row.title, "MagSafe")
+    }
+
+    func testUnknownExternalRowUsesLocalizedTitle() {
+        let row = PowerFlowPresentation.row(
+            endpoint: PowerFlowEndpoint(
+                id: "external-power",
+                type: .unknownExternalInterface,
+                direction: .input,
+                measurement: .unavailable
+            ),
+            bundle: Self.englishBundle
+        )
+
+        XCTAssertEqual(row.title, "Unknown external interface")
+    }
 }
