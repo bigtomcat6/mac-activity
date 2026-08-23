@@ -221,4 +221,13 @@ final class PowerFlowTypesTests: XCTestCase {
             .watts(.greatestFiniteMagnitude / 1_000)
         )
     }
+
+    func testMacOutputMeasurementRejectsUnderflowedConversion() {
+        XCTAssertEqual(
+            PowerFlowRules.macOutputMeasurement(
+                systemLoadMilliwatts: .leastNonzeroMagnitude
+            ),
+            .unavailable
+        )
+    }
 }

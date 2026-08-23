@@ -25,7 +25,7 @@
 - Create: `Sources/MacActivityCore/Metrics/Providers/SystemPowerFlowReader.swift` - contain direct IOKit reads and signed battery-current decoding.
 - Modify: `Tests/MacActivityCoreTests/PowerFlowTypesTests.swift` - cover unavailable battery measurements and remaining deterministic rule branches.
 - Modify: `Tests/MacActivityCoreTests/PowerFlowServiceTests.swift` - cover signed registry current decoding.
-- Modify: `Sources/MacActivityCore/Metrics/Providers/PowerFlowTypes.swift` - remove the mathematically unreachable post-conversion validity guard.
+- Modify: `Sources/MacActivityCore/Metrics/Providers/PowerFlowTypes.swift` - retain the post-conversion safety guard in `macOutputMeasurement` so underflowed conversions stay `.unavailable`.
 - Modify: `Tests/MacActivityAppTests/PowerFlowModelTests.swift` - cover missed deadlines and non-cancellation sleep failures.
 - Modify: `Tests/MacActivityAppTests/PowerFlowPresentationTests.swift` - cover MagSafe and unknown-interface titles.
 - Modify: `Tests/MacActivityAppTests/PowerFlowViewTests.swift` - render the unknown-interface symbol branch.
@@ -489,7 +489,7 @@ Expected: the generated project includes `SystemPowerFlowReader.swift`, and all 
 - Consumes: existing public Power Flow types and internal app-testable models.
 - Produces: deterministic tests for every changed non-hardware line covered by Codecov.
 
-- [ ] **Step 1: Add Core measurement and overflow tests**
+- [ ] **Step 1: Add Core measurement, overflow, and underflow tests**
 
 Add these methods to `PowerFlowTypesTests`:
 
@@ -518,11 +518,25 @@ func testMacOutputMeasurementConvertsLargestFiniteLoad() {
         .watts(.greatestFiniteMagnitude / 1_000)
     )
 }
+
+func testMacOutputMeasurementRejectsUnderflowedConversion() {
+    XCTAssertEqual(
+        PowerFlowRules.macOutputMeasurement(
+            systemLoadMilliwatts: .leastNonzeroMagnitude
+        ),
+        .unavailable
+    )
+}
 ```
 
-- [ ] **Step 2: Remove the unreachable post-conversion guard**
+`testMacOutputMeasurementRejectsUnderflowedConversion` is a regression test for
+the review finding: dividing `.leastNonzeroMagnitude` by 1,000 underflows to
+`0.0`, which the post-conversion guard must map to `.unavailable` rather than
+`.watts(0)`.
 
-Replace `macOutputMeasurement` with:
+- [ ] **Step 2: Retain the post-conversion safety guard**
+
+Keep `macOutputMeasurement` with the post-conversion validity guard:
 
 ```swift
 static func macOutputMeasurement(
@@ -533,15 +547,26 @@ static func macOutputMeasurement(
           systemLoadMilliwatts > 0 else {
         return .unavailable
     }
-    return .watts(systemLoadMilliwatts / 1_000)
+
+    let watts = systemLoadMilliwatts / 1_000
+    guard watts.isFinite, watts > 0 else {
+        return .unavailable
+    }
+    return .watts(watts)
 }
 ```
+
+The guard is not removed: although the input is already finite and positive, the
+division can underflow to `0.0` (e.g. `.leastNonzeroMagnitude`), so the
+post-conversion check preserves the established `.unavailable` behavior for such
+inputs.
 
 - [ ] **Step 3: Run the focused Core rule suite**
 
 Run: `swift test --filter PowerFlowTypesTests`
 
-Expected: all rule tests pass and the only removed branch is unreachable after the finite-positive input guard.
+Expected: all rule tests pass, including the underflow regression test that
+exercises the retained post-conversion guard.
 
 - [ ] **Step 4: Add app model timing and error-path tests**
 
