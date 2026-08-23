@@ -2,6 +2,23 @@ import IOKit.ps
 import XCTest
 @testable import MacActivityCore
 
+private final class ReadThreadRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var mainThreadExecutions = 0
+
+    func record(_ onMainThread: Bool) {
+        lock.lock()
+        if onMainThread { mainThreadExecutions += 1 }
+        lock.unlock()
+    }
+
+    func mainThreadExecutionCount() -> Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return mainThreadExecutions
+    }
+}
+
 @MainActor
 final class PowerFlowServiceTests: XCTestCase {
     func testServicePlacesDischargingBatteryInInputAndMacInOutput() async {
@@ -251,6 +268,23 @@ final class PowerFlowServiceTests: XCTestCase {
             SystemPowerFlowReader.signedAmperage(from: encodedDischarge),
             -2_000
         )
+    }
+
+    func testInjectedReadClosureDoesNotRunOnMainThread() async {
+        let recorder = ReadThreadRecorder()
+        let service = PowerFlowService(read: {
+            recorder.record(Thread.isMainThread)
+            return PowerFlowRawReading(
+                timestamp: Date(timeIntervalSince1970: 9),
+                isExternalPowerConnected: false,
+                battery: nil,
+                externalAdapter: nil
+            )
+        })
+
+        _ = await service.snapshot()
+
+        XCTAssertEqual(recorder.mainThreadExecutionCount(), 0)
     }
 }
 

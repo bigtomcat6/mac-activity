@@ -38,18 +38,19 @@ struct PowerFlowRawReading: Equatable, Sendable {
 
 @MainActor
 public final class PowerFlowService {
-    private let read: () -> PowerFlowRawReading
+    private let read: @Sendable () -> PowerFlowRawReading
 
     public init() {
         read = SystemPowerFlowReader.read
     }
 
-    init(read: @escaping () -> PowerFlowRawReading) {
+    init(read: @escaping @Sendable () -> PowerFlowRawReading) {
         self.read = read
     }
 
     public func snapshot() async -> PowerFlowSnapshot {
-        let raw = read()
+        let read = self.read
+        let raw = await Task.detached(priority: .utility) { read() }.value
         var endpoints = [PowerFlowEndpoint]()
 
         let externalMeasurement = PowerFlowRules.externalInputMeasurement(
