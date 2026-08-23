@@ -243,6 +243,15 @@ final class PowerFlowServiceTests: XCTestCase {
         )
         XCTAssertEqual(result?[kIOPSTypeKey as String] as? String, "UPS")
     }
+
+    func testSignedAmperageDecodesWrappedNegative32BitValue() {
+        let encodedDischarge = NSNumber(value: UInt32.max - UInt32(1_999))
+
+        XCTAssertEqual(
+            SystemPowerFlowReader.signedAmperage(from: encodedDischarge),
+            -2_000
+        )
+    }
 }
 
 @MainActor
