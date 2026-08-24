@@ -193,6 +193,15 @@
 "energyImpact.empty.expanded" = "No regular or menu-bar apps are reporting an energy estimate.";
 "energyImpact.unavailable" = "Unavailable";
 
+"powerFlow.input" = "Input";
+"powerFlow.output" = "Output";
+"powerFlow.empty" = "No active endpoints";
+"powerFlow.unavailable" = "Power unavailable";
+"powerFlow.endpoint.battery" = "Battery";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "Unknown external interface";
+"powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
+
 "process.empty" = "No foreground apps are reporting memory usage.";
 "process.fallbackName" = "Process %d";
 "process.action.requested" = "Requested %@ to quit.";

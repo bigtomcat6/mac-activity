@@ -41,6 +41,13 @@ Network trends need at least two samples before the direction is meaningful.
 Temperature, fan, GPU, VRAM, and battery metrics can be unavailable on Macs that
 do not expose the relevant source.
 
+The Energy Impact page shows a physical power-flow panel above the app ranking:
+
+- Physical power flow shows active input and output endpoints above the app energy-impact ranking.
+- Battery appears as an input while discharging and an output while charging.
+- Connector labels can identify USB-C or MagSafe when Mac Activity can recognize the adapter; otherwise the app shows an unknown external interface.
+- Current watts appear only for hardware measurements that are directly available. Adapter ratings and negotiated limits are not shown as live power.
+
 ## Actives
 
 The Actives surface focuses on cleanup work and process memory.
@@ -134,6 +141,8 @@ Some metrics are intentionally conditional:
 - Disk and swap samples run on a slower cadence than CPU or network samples.
 - Memory history improves after the app has been running long enough to collect
   samples.
+- Connector labels and direct power-flow values depend on hardware and system
+  APIs, and unavailable values are expected on some Macs.
 
 ## Troubleshooting
 

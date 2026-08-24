@@ -132,6 +132,16 @@
 "energyImpact.empty.expanded" = "Keine regulären oder Menüleisten-Apps melden eine Energieschätzung.";
 "energyImpact.unavailable" = "Nicht verfügbar";
 
+"powerFlow.input" = "Eingang";
+"powerFlow.output" = "Ausgang";
+"powerFlow.empty" = "Keine aktiven Endpunkte";
+"powerFlow.unavailable" = "Leistung nicht verfügbar";
+"powerFlow.endpoint.battery" = "Akku";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "Unbekannte externe Schnittstelle";
+"powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
+
+
 "memoryRelease.action.release" = "Freigeben";
 "memoryRelease.action.releasing" = "Wird freigegeben";
 "memoryRelease.title.idle" = "Arbeitsspeicher";

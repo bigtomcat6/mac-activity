@@ -329,6 +329,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "Stale",
                 .energyImpactEmpty: "No regular apps are reporting an energy estimate.",
                 .energyImpactUnavailable: "Unavailable",
+                .powerFlowInput: "Input",
+                .powerFlowOutput: "Output",
+                .powerFlowEmpty: "No active endpoints",
+                .powerFlowUnavailable: "Power unavailable",
+                .powerFlowEndpointBattery: "Battery",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "Unknown external interface",
+                .powerFlowRowAccessibility: "%1$@, %2$@, %3$@",
                 .preferencesProcessApplicationIdentifier: "Show application ID in process lists"
             ],
             "de": [
@@ -349,6 +357,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "Veraltet",
                 .energyImpactEmpty: "Keine regulären Apps melden eine Energieschätzung.",
                 .energyImpactUnavailable: "Nicht verfügbar",
+                .powerFlowInput: "Eingang",
+                .powerFlowOutput: "Ausgang",
+                .powerFlowEmpty: "Keine aktiven Endpunkte",
+                .powerFlowUnavailable: "Leistung nicht verfügbar",
+                .powerFlowEndpointBattery: "Akku",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "Unbekannte externe Schnittstelle",
+                .powerFlowRowAccessibility: "%1$@, %2$@, %3$@",
                 .preferencesProcessApplicationIdentifier: "App-ID in Prozesslisten anzeigen"
             ],
             "fr": [
@@ -369,6 +385,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "Obsolète",
                 .energyImpactEmpty: "Aucune app standard ne fournit d’estimation énergétique.",
                 .energyImpactUnavailable: "Indisponible",
+                .powerFlowInput: "Entrée",
+                .powerFlowOutput: "Sortie",
+                .powerFlowEmpty: "Aucun point de terminaison actif",
+                .powerFlowUnavailable: "Puissance indisponible",
+                .powerFlowEndpointBattery: "Batterie",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "Interface externe inconnue",
+                .powerFlowRowAccessibility: "%1$@, %2$@, %3$@",
                 .preferencesProcessApplicationIdentifier: "Afficher l’identifiant d’app dans les listes de processus"
             ],
             "ja": [
@@ -389,6 +413,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "古いデータ",
                 .energyImpactEmpty: "エネルギー推定を報告している通常のアプリはありません。",
                 .energyImpactUnavailable: "利用不可",
+                .powerFlowInput: "入力",
+                .powerFlowOutput: "出力",
+                .powerFlowEmpty: "アクティブな端点はありません",
+                .powerFlowUnavailable: "電力を取得できません",
+                .powerFlowEndpointBattery: "バッテリー",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "不明な外部インターフェース",
+                .powerFlowRowAccessibility: "%1$@、%2$@、%3$@",
                 .preferencesProcessApplicationIdentifier: "プロセスリストにアプリIDを表示"
             ],
             "ko": [
@@ -409,6 +441,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "오래된 데이터",
                 .energyImpactEmpty: "에너지 추정치를 보고하는 일반 앱이 없습니다.",
                 .energyImpactUnavailable: "사용할 수 없음",
+                .powerFlowInput: "입력",
+                .powerFlowOutput: "출력",
+                .powerFlowEmpty: "활성 엔드포인트 없음",
+                .powerFlowUnavailable: "전력 정보를 사용할 수 없음",
+                .powerFlowEndpointBattery: "배터리",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "알 수 없는 외부 인터페이스",
+                .powerFlowRowAccessibility: "%1$@, %2$@, %3$@",
                 .preferencesProcessApplicationIdentifier: "프로세스 목록에 앱 ID 표시"
             ],
             "zh-Hans": [
@@ -429,6 +469,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "数据已过期",
                 .energyImpactEmpty: "当前没有普通应用报告能耗估算。",
                 .energyImpactUnavailable: "不可读取",
+                .powerFlowInput: "输入端",
+                .powerFlowOutput: "输出端",
+                .powerFlowEmpty: "没有活动端点",
+                .powerFlowUnavailable: "功率不可用",
+                .powerFlowEndpointBattery: "电池",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "未知外接接口",
+                .powerFlowRowAccessibility: "%1$@，%2$@，%3$@",
                 .preferencesProcessApplicationIdentifier: "在进程列表中显示应用 ID"
             ],
             "zh-Hant": [
@@ -449,6 +497,14 @@ final class LocalizationTests: XCTestCase {
                 .energyImpactStale: "資料已過期",
                 .energyImpactEmpty: "目前沒有一般應用程式回報能耗估算。",
                 .energyImpactUnavailable: "無法讀取",
+                .powerFlowInput: "輸入端",
+                .powerFlowOutput: "輸出端",
+                .powerFlowEmpty: "沒有活動端點",
+                .powerFlowUnavailable: "功率無法取得",
+                .powerFlowEndpointBattery: "電池",
+                .powerFlowEndpointMac: "Mac",
+                .powerFlowEndpointUnknownExternal: "未知外接介面",
+                .powerFlowRowAccessibility: "%1$@、%2$@、%3$@",
                 .preferencesProcessApplicationIdentifier: "在程序列表中顯示應用程式 ID"
             ],
         ]

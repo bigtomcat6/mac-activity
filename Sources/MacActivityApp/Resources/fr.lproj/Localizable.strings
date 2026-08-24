@@ -132,6 +132,16 @@
 "energyImpact.empty.expanded" = "Aucune app standard ou de barre des menus ne fournit d’estimation énergétique.";
 "energyImpact.unavailable" = "Indisponible";
 
+"powerFlow.input" = "Entrée";
+"powerFlow.output" = "Sortie";
+"powerFlow.empty" = "Aucun point de terminaison actif";
+"powerFlow.unavailable" = "Puissance indisponible";
+"powerFlow.endpoint.battery" = "Batterie";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "Interface externe inconnue";
+"powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
+
+
 "memoryRelease.action.release" = "Libérer";
 "memoryRelease.action.releasing" = "Libération en cours";
 "memoryRelease.title.idle" = "Mémoire";

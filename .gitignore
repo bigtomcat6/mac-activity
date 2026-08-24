@@ -17,6 +17,10 @@ xcuserdata/
 # Local machine config
 .netrc
 
+# Local agent worktrees
+/.worktrees/
+/.superpowers/
+
 # Python caches
 __pycache__/
 *.pyc

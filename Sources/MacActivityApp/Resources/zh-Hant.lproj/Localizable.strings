@@ -132,6 +132,16 @@
 "energyImpact.empty.expanded" = "目前沒有一般應用程式或選單列應用程式回報能耗估算。";
 "energyImpact.unavailable" = "無法讀取";
 
+"powerFlow.input" = "輸入端";
+"powerFlow.output" = "輸出端";
+"powerFlow.empty" = "沒有活動端點";
+"powerFlow.unavailable" = "功率無法取得";
+"powerFlow.endpoint.battery" = "電池";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "未知外接介面";
+"powerFlow.accessibility.row" = "%1$@、%2$@、%3$@";
+
+
 "memoryRelease.action.release" = "釋放";
 "memoryRelease.action.releasing" = "釋放中";
 "memoryRelease.title.idle" = "記憶體";

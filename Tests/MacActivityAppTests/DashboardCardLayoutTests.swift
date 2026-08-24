@@ -1125,7 +1125,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             quitApplication: {},
             initialSelectedTab: .energyImpact
         )
-        .frame(width: 360, height: 320)
+        .frame(width: 360, height: 560)
 
         XCTAssertNotNil(Self.renderedColor(of: content, atTopLeft: CGPoint(x: 180, y: 170)))
     }

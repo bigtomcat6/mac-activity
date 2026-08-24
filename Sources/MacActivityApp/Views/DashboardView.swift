@@ -641,6 +641,7 @@ struct DashboardView: View {
     @ObservedObject var preferencesController: PreferencesController
     @StateObject private var activeCleanupModel = ActiveCleanupModel()
     @StateObject private var energyImpactModel = EnergyImpactModel()
+    @StateObject private var powerFlowModel = PowerFlowModel()
     @ObservedObject var audioDashboardModel: AudioDashboardModel
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
@@ -764,6 +765,7 @@ struct DashboardView: View {
     private var energyImpactContent: some View {
         EnergyImpactView(
             model: energyImpactModel,
+            powerFlowModel: powerFlowModel,
             refreshTrigger: energyImpactRefreshTrigger,
             scope: preferencesController.state.energyImpactAppScope,
             showsApplicationIdentifier: preferencesController.state.showsProcessApplicationIdentifier

@@ -132,6 +132,16 @@
 "energyImpact.empty.expanded" = "エネルギー推定を報告している通常またはメニューバーアプリはありません。";
 "energyImpact.unavailable" = "利用不可";
 
+"powerFlow.input" = "入力";
+"powerFlow.output" = "出力";
+"powerFlow.empty" = "アクティブな端点はありません";
+"powerFlow.unavailable" = "電力を取得できません";
+"powerFlow.endpoint.battery" = "バッテリー";
+"powerFlow.endpoint.mac" = "Mac";
+"powerFlow.endpoint.unknownExternal" = "不明な外部インターフェース";
+"powerFlow.accessibility.row" = "%1$@、%2$@、%3$@";
+
+
 "memoryRelease.action.release" = "解放";
 "memoryRelease.action.releasing" = "解放中";
 "memoryRelease.title.idle" = "メモリ";

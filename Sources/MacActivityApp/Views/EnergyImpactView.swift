@@ -9,6 +9,7 @@ struct EnergyImpactRefreshTaskID: Equatable {
 
 struct EnergyImpactView: View {
     @ObservedObject var model: EnergyImpactModel
+    @ObservedObject var powerFlowModel: PowerFlowModel
     let refreshTrigger: Int
     var scope: EnergyImpactAppScope = .regularOnly
     let showsApplicationIdentifier: Bool
@@ -47,14 +48,22 @@ struct EnergyImpactView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-                HStack {
-                    Text(AppLocalization.string(.energyImpactAppColumn))
-                    Spacer()
-                    Text(AppLocalization.string(.energyImpactSustainedColumn))
-                }
-                .font(.caption2.weight(.semibold))
-                .foregroundStyle(.secondary)
             }
+            .padding(.horizontal, 12)
+
+            PowerFlowView(
+                model: powerFlowModel,
+                refreshTrigger: refreshTrigger
+            )
+            .padding(.horizontal, 12)
+
+            HStack {
+                Text(AppLocalization.string(.energyImpactAppColumn))
+                Spacer()
+                Text(AppLocalization.string(.energyImpactSustainedColumn))
+            }
+            .font(.caption2.weight(.semibold))
+            .foregroundStyle(.secondary)
             .padding(.horizontal, 12)
 
             if model.entries.isEmpty {
