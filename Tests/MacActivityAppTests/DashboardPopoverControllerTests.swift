@@ -179,10 +179,16 @@ final class DashboardPopoverControllerTests: XCTestCase {
             openPreferences: {},
             quitApplication: {}
         )
+        defer { withExtendedLifetime(controller) {} }
+
+        let staleSize = NSSize(width: 100, height: 100)
+        popover.contentSize = staleSize
 
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
 
+        XCTAssertNotEqual(popover.contentSizeAtShow, staleSize)
         XCTAssertEqual(popover.contentSizeAtShow, popover.contentSize)
+        XCTAssertEqual(popover.contentSizeAtShow?.width, DashboardPopoverLayout.contentWidth)
         XCTAssertGreaterThan(popover.contentSizeAtShow?.height ?? 0, 0)
     }
 
