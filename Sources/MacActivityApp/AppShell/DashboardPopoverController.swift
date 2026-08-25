@@ -5,6 +5,7 @@ import MacActivityCore
 @MainActor
 protocol DashboardPopoverHosting: AnyObject {
     var behavior: NSPopover.Behavior { get set }
+    var animates: Bool { get set }
     var contentSize: NSSize { get set }
     var contentViewController: NSViewController? { get set }
     var delegate: NSPopoverDelegate? { get set }
@@ -28,6 +29,20 @@ enum DashboardPopoverLayout {
         NSSize(
             width: contentWidth,
             height: min(maximumHeight, contentHeight(for: tab, metrics: metrics))
+        )
+    }
+
+    static func contentSize(for measuredSize: NSSize) -> NSSize? {
+        guard measuredSize.width.isFinite,
+              measuredSize.width > 0,
+              measuredSize.height.isFinite,
+              measuredSize.height > 0 else {
+            return nil
+        }
+
+        return NSSize(
+            width: contentWidth,
+            height: min(measuredSize.height, maximumHeight)
         )
     }
 
@@ -76,6 +91,57 @@ enum DashboardPopoverLayout {
             heights.append(DashboardOverviewLayout.batteryRowHeight)
         }
         return heights
+    }
+}
+
+@MainActor
+final class DashboardPopoverContentSizeCoordinator {
+    private weak var popover: DashboardPopoverHosting?
+    private var pendingContentSize: NSSize?
+    private var isUpdateScheduled = false
+
+    init(popover: DashboardPopoverHosting) {
+        self.popover = popover
+    }
+
+    func applyImmediately(measuredSize: NSSize) {
+        pendingContentSize = nil
+        guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
+            return
+        }
+        apply(contentSize)
+    }
+
+    func schedule(measuredSize: NSSize) {
+        guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
+            return
+        }
+
+        pendingContentSize = contentSize
+        guard !isUpdateScheduled else {
+            return
+        }
+
+        isUpdateScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else {
+                return
+            }
+
+            self.isUpdateScheduled = false
+            guard let contentSize = self.pendingContentSize else {
+                return
+            }
+            self.pendingContentSize = nil
+            self.apply(contentSize)
+        }
+    }
+
+    private func apply(_ contentSize: NSSize) {
+        guard let popover, popover.contentSize != contentSize else {
+            return
+        }
+        popover.contentSize = contentSize
     }
 }
 

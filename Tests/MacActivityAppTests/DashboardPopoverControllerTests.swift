@@ -6,6 +6,43 @@ import MacActivityCore
 
 @MainActor
 final class DashboardPopoverControllerTests: XCTestCase {
+    func testContentSizeCoordinatorUsesFixedWidthAndCapsMeasuredHeight() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        coordinator.applyImmediately(measuredSize: NSSize(width: 200, height: 700))
+
+        XCTAssertEqual(popover.contentSize, NSSize(width: 420, height: 560))
+        XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 560)])
+    }
+
+    func testContentSizeCoordinatorCoalescesMeasurementsInOneRunLoopTurn() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        coordinator.schedule(measuredSize: NSSize(width: 420, height: 190))
+        coordinator.schedule(measuredSize: NSSize(width: 420, height: 310))
+        Self.drainMainRunLoop()
+
+        XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 310)])
+    }
+
+    func testContentSizeCoordinatorIgnoresInvalidAndDuplicateMeasurements() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 240))
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 240))
+        coordinator.applyImmediately(measuredSize: NSSize(width: 0, height: 240))
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: CGFloat.nan))
+        Self.drainMainRunLoop()
+
+        XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 240)])
+    }
+
     func testShowingPopoverActivatesApplicationAndFocusesPresentedWindow() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
@@ -303,7 +340,13 @@ private final class DashboardPopoverEventRecorder {
 @MainActor
 private final class RecordingPopoverHost: DashboardPopoverHosting {
     var behavior: NSPopover.Behavior = .transient
-    var contentSize: NSSize = .zero
+    var animates = false
+    private(set) var contentSizeAssignments: [NSSize] = []
+    var contentSize: NSSize = .zero {
+        didSet {
+            contentSizeAssignments.append(contentSize)
+        }
+    }
     var contentViewController: NSViewController?
     weak var delegate: NSPopoverDelegate?
     var isShown = false
