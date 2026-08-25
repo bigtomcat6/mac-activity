@@ -25,13 +25,6 @@ enum DashboardPopoverLayout {
     static let overviewContentVerticalPadding: CGFloat = 36
     static let emptyStateVerticalPadding: CGFloat = 36
 
-    static func contentSize(for tab: DashboardTab, metrics: [DashboardMetric]) -> NSSize {
-        NSSize(
-            width: contentWidth,
-            height: min(maximumHeight, contentHeight(for: tab, metrics: metrics))
-        )
-    }
-
     static func contentSize(for measuredSize: NSSize) -> NSSize? {
         guard measuredSize.width.isFinite,
               measuredSize.width > 0,
@@ -44,53 +37,6 @@ enum DashboardPopoverLayout {
             width: contentWidth,
             height: min(measuredSize.height, maximumHeight)
         )
-    }
-
-    static func contentHeight(for tab: DashboardTab, metrics: [DashboardMetric]) -> CGFloat {
-        switch tab {
-        case .overview:
-            return overviewContentHeight(for: metrics) + fixedChromeHeight
-        case .actives, .energyImpact, .audio:
-            return maximumHeight
-        }
-    }
-
-    static func overviewContentHeight(for metrics: [DashboardMetric]) -> CGFloat {
-        if metrics.isEmpty {
-            return 120 + emptyStateVerticalPadding + overviewContentVerticalPadding
-        }
-
-        let rowHeights = overviewRowHeights(for: metrics)
-        guard !rowHeights.isEmpty else {
-            return 120 + overviewContentVerticalPadding
-        }
-
-        let rowsHeight = rowHeights.reduce(0, +)
-        let spacingHeight = DashboardOverviewLayout.sectionSpacing * CGFloat(max(0, rowHeights.count - 1))
-        return rowsHeight + spacingHeight + overviewContentVerticalPadding
-    }
-
-    private static var fixedChromeHeight: CGFloat {
-        DashboardHeaderChrome.topPadding
-            + headerTitleRowHeight
-            + DashboardHeaderChrome.bottomPadding
-            + footerHeight
-            + dividerHeight * 2
-    }
-
-    private static func overviewRowHeights(for metrics: [DashboardMetric]) -> [CGFloat] {
-        var heights: [CGFloat] = []
-        if !DashboardOverviewLayout.topRowSlots(for: metrics).isEmpty {
-            heights.append(DashboardOverviewLayout.topRowHeight)
-        }
-        if DashboardOverviewLayout.secondRowLeadingSlot(for: metrics) != nil ||
-            !DashboardOverviewLayout.secondRowTrailingSlots(for: metrics).isEmpty {
-            heights.append(DashboardOverviewLayout.secondRowHeight)
-        }
-        if !DashboardOverviewLayout.thirdRowSlots(for: metrics).isEmpty {
-            heights.append(DashboardOverviewLayout.batteryRowHeight)
-        }
-        return heights
     }
 }
 
@@ -170,10 +116,41 @@ final class SharedDashboardPopoverFocusController: DashboardPopoverFocusControll
 }
 
 @MainActor
+final class DashboardPopoverHostingController: NSHostingController<DashboardView> {
+    var onContentLayoutChange: (() -> Void)?
+
+    override var preferredContentSize: NSSize {
+        didSet {
+            onContentLayoutChange?()
+        }
+    }
+
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        onContentLayoutChange?()
+    }
+
+    func layoutAndMeasureContentSize() -> NSSize {
+        _ = view
+        view.layoutSubtreeIfNeeded()
+        return measuredContentSize()
+    }
+
+    func measuredContentSize() -> NSSize {
+        NSSize(
+            width: DashboardPopoverLayout.contentWidth,
+            height: preferredContentSize.height
+        )
+    }
+}
+
+@MainActor
 final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     private let popover: DashboardPopoverHosting
     private let focusController: DashboardPopoverFocusControlling
     private let onVisibilityChange: (Bool) -> Void
+    private let contentSizeCoordinator: DashboardPopoverContentSizeCoordinator
+    private let dashboardHostingController: DashboardPopoverHostingController
 
     convenience init(
         dashboardModel: DashboardModel,
@@ -209,12 +186,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.focusController = focusController
         self.onVisibilityChange = onVisibilityChange
 
-        popover.behavior = .transient
-        let updateContentSize: (DashboardTab, [DashboardMetric]) -> Void = { [weak popover] tab, metrics in
-            popover?.contentSize = DashboardPopoverLayout.contentSize(for: tab, metrics: metrics)
-        }
-        popover.contentSize = DashboardPopoverLayout.contentSize(for: .overview, metrics: dashboardModel.metrics)
-        popover.contentViewController = NSHostingController(
+        let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+        let dashboardHostingController = DashboardPopoverHostingController(
             rootView: DashboardView(
                 dashboardModel: dashboardModel,
                 preferencesController: preferencesController,
@@ -226,10 +199,27 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                 quitApplication: { [weak popover] in
                     popover?.performClose(nil)
                     quitApplication()
-                },
-                onPreferredContentSizeChange: updateContentSize
+                }
             )
         )
+
+        dashboardHostingController.sizingOptions = [.preferredContentSize]
+        dashboardHostingController.onContentLayoutChange = { [weak dashboardHostingController, weak contentSizeCoordinator] in
+            guard let dashboardHostingController else {
+                return
+            }
+            contentSizeCoordinator?.schedule(measuredSize: dashboardHostingController.measuredContentSize())
+        }
+
+        popover.behavior = .transient
+        popover.animates = true
+        popover.contentViewController = dashboardHostingController
+        contentSizeCoordinator.applyImmediately(
+            measuredSize: dashboardHostingController.layoutAndMeasureContentSize()
+        )
+
+        self.contentSizeCoordinator = contentSizeCoordinator
+        self.dashboardHostingController = dashboardHostingController
         super.init()
         popover.delegate = self
     }
@@ -243,6 +233,9 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             popover.performClose(nil)
         } else {
             focusController.activateApplication()
+            contentSizeCoordinator.applyImmediately(
+                measuredSize: dashboardHostingController.layoutAndMeasureContentSize()
+            )
             popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
             focusController.focusPresentedPopover(popover)
             onVisibilityChange(true)

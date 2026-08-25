@@ -648,7 +648,6 @@ struct DashboardView: View {
     @State private var energyImpactRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
-    let onPreferredContentSizeChange: (DashboardTab, [DashboardMetric]) -> Void
 
     init(
         dashboardModel: DashboardModel,
@@ -656,15 +655,13 @@ struct DashboardView: View {
         audioDashboardModel: AudioDashboardModel,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
-        initialSelectedTab: DashboardTab = .overview,
-        onPreferredContentSizeChange: @escaping (DashboardTab, [DashboardMetric]) -> Void = { _, _ in }
+        initialSelectedTab: DashboardTab = .overview
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
-        self.onPreferredContentSizeChange = onPreferredContentSizeChange
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
@@ -711,16 +708,12 @@ struct DashboardView: View {
             .padding(14)
             .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
-            reportPreferredContentSize()
         }
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
-        }
-        .onChange(of: dashboardModel.metrics) { _ in
-            reportPreferredContentSize()
         }
     }
 
@@ -791,7 +784,6 @@ struct DashboardView: View {
                     afterSelecting: newValue,
                     currentTrigger: energyImpactRefreshTrigger
                 )
-                reportPreferredContentSize(for: newValue)
             }
         )
     }
@@ -813,10 +805,6 @@ struct DashboardView: View {
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
         }
-    }
-
-    private func reportPreferredContentSize(for tab: DashboardTab? = nil) {
-        onPreferredContentSizeChange(tab ?? selectedTab, dashboardModel.metrics)
     }
 }
 

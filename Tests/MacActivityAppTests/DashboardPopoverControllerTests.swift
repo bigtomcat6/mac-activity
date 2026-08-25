@@ -144,29 +144,14 @@ final class DashboardPopoverControllerTests: XCTestCase {
         ])
     }
 
-    func testOverviewPopoverHeightFitsOverviewContentInsteadOfFixedTallFrame() {
+    func testDashboardPopoverConfiguresNativeAnimationAndAppliesInitialMeasuredSize() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
-        let store = MetricsStore()
-        store.apply(
-            [
-                .cpu(CPUReading(usagePercent: 13)),
-                .gpu(GPUReading(usagePercent: 35)),
-                .disk(DiskReading(usedBytes: 917, totalBytes: 1_000)),
-                .swap(SwapReading(usedBytes: 61, totalBytes: 1_000)),
-                .memory(MemoryReading(usedBytes: 30, totalBytes: 36)),
-                .network(NetworkReading(downloadBytesPerSecond: 221_300, uploadBytesPerSecond: 3_000)),
-                .temperature(TemperatureReading(celsius: 55.1, source: .smc)),
-                .fan(FanReading(rpm: 2_497)),
-                .battery(BatteryReading(percentage: 92, isCharging: true))
-            ],
-            timestamp: Date(timeIntervalSince1970: 30)
-        )
 
         _ = DashboardPopoverController(
             popover: popover,
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
-            dashboardModel: DashboardModel(store: store),
+            dashboardModel: DashboardModel(store: MetricsStore()),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
@@ -174,39 +159,31 @@ final class DashboardPopoverControllerTests: XCTestCase {
             quitApplication: {}
         )
 
-        XCTAssertEqual(popover.contentSize.width, 420)
-        XCTAssertEqual(popover.contentSize.height, 524)
-        XCTAssertLessThan(popover.contentSize.height, 560)
+        XCTAssertTrue(popover.animates)
+        XCTAssertEqual(popover.contentSize.width, DashboardPopoverLayout.contentWidth)
+        XCTAssertGreaterThan(popover.contentSize.height, 0)
+        XCTAssertLessThanOrEqual(popover.contentSize.height, DashboardPopoverLayout.maximumHeight)
+        XCTAssertFalse(popover.contentSizeAssignments.isEmpty)
     }
 
-    func testPopoverLayoutUsesMaximumHeightForActivesAndFallbackOverviewRows() {
-        XCTAssertEqual(
-            DashboardPopoverLayout.contentSize(for: .actives, metrics: []).height,
-            DashboardPopoverLayout.maximumHeight
+    func testDashboardPopoverMeasuresBeforeShowing() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore()),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
         )
-        XCTAssertEqual(
-            DashboardPopoverLayout.contentSize(for: .audio, metrics: []).height,
-            DashboardPopoverLayout.maximumHeight
-        )
-        XCTAssertEqual(
-            DashboardPopoverLayout.overviewContentHeight(for: []),
-            120
-                + DashboardPopoverLayout.emptyStateVerticalPadding
-                + DashboardPopoverLayout.overviewContentVerticalPadding
-        )
-        XCTAssertEqual(
-            DashboardPopoverLayout.overviewContentHeight(for: [
-                DashboardMetric(kind: .vram, title: "VRAM", value: "Collecting")
-            ]),
-            120 + DashboardPopoverLayout.overviewContentVerticalPadding
-        )
-    }
 
-    func testPopoverLayoutUsesMaximumHeightForEnergyImpactPage() {
-        XCTAssertEqual(
-            DashboardPopoverLayout.contentSize(for: .energyImpact, metrics: []).height,
-            DashboardPopoverLayout.maximumHeight
-        )
+        controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
+
+        XCTAssertEqual(popover.contentSizeAtShow, popover.contentSize)
+        XCTAssertGreaterThan(popover.contentSizeAtShow?.height ?? 0, 0)
     }
 
     func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
@@ -216,7 +193,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         store.apply([.cpu(CPUReading(usagePercent: 13))], timestamp: Date(timeIntervalSince1970: 31))
         let model = DashboardModel(store: store)
 
-        _ = DashboardPopoverController(
+        let controller = DashboardPopoverController(
             popover: popover,
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
             dashboardModel: model,
@@ -226,6 +203,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             openPreferences: {},
             quitApplication: {}
         )
+        defer { withExtendedLifetime(controller) {} }
 
         let hostingController = try XCTUnwrap(popover.contentViewController as? NSHostingController<DashboardView>)
         let window = NSWindow(contentViewController: hostingController)
@@ -233,6 +211,8 @@ final class DashboardPopoverControllerTests: XCTestCase {
         window.setContentSize(popover.contentSize)
         window.layoutIfNeeded()
         Self.drainMainRunLoop()
+
+        let initialHeight = popover.contentSize.height
 
         store.apply(
             [
@@ -248,13 +228,16 @@ final class DashboardPopoverControllerTests: XCTestCase {
             ],
             timestamp: Date(timeIntervalSince1970: 32)
         )
-        XCTAssertTrue(Self.waitUntil { popover.contentSize.height == 524 })
+
+        XCTAssertTrue(Self.waitUntil { popover.contentSize.height > initialHeight })
+        let overviewHeight = popover.contentSize.height
 
         let segmentedControl = try XCTUnwrap(Self.segmentedControl(in: window.contentView))
         segmentedControl.setSelected(true, forSegment: 1)
         _ = segmentedControl.target?.perform(segmentedControl.action, with: segmentedControl)
 
-        XCTAssertTrue(Self.waitUntil { popover.contentSize.height == DashboardPopoverLayout.maximumHeight })
+        XCTAssertTrue(Self.waitUntil { popover.contentSize.height != overviewHeight })
+        XCTAssertLessThanOrEqual(popover.contentSize.height, DashboardPopoverLayout.maximumHeight)
     }
 
     func testHostedDashboardActionsClosePopoverBeforeForwarding() throws {
@@ -330,6 +313,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         let deadline = Date().addingTimeInterval(timeout)
         while Date() < deadline {
             drainMainRunLoop()
+            drainMainRunLoop()
             if condition() { break }
         }
         return condition()
@@ -354,6 +338,7 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     var behavior: NSPopover.Behavior = .transient
     var animates = false
     private(set) var contentSizeAssignments: [NSSize] = []
+    private(set) var contentSizeAtShow: NSSize?
     var contentSize: NSSize = .zero {
         didSet {
             contentSizeAssignments.append(contentSize)
@@ -371,6 +356,7 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     }
 
     func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
+        contentSizeAtShow = contentSize
         isShown = true
         recorder.record("show-popover")
     }
