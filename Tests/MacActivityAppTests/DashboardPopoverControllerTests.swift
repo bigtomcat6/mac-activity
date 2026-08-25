@@ -43,6 +43,18 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 240)])
     }
 
+    func testInvalidImmediateMeasurementPreservesPendingScheduledSize() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        coordinator.schedule(measuredSize: NSSize(width: 420, height: 310))
+        coordinator.applyImmediately(measuredSize: NSSize(width: 0, height: 240))
+        Self.drainMainRunLoop()
+
+        XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 310)])
+    }
+
     func testShowingPopoverActivatesApplicationAndFocusesPresentedWindow() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)

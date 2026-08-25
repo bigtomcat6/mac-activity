@@ -105,10 +105,10 @@ final class DashboardPopoverContentSizeCoordinator {
     }
 
     func applyImmediately(measuredSize: NSSize) {
-        pendingContentSize = nil
         guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
             return
         }
+        pendingContentSize = nil
         apply(contentSize)
     }
 
