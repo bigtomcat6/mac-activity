@@ -19,11 +19,6 @@ extension NSPopover: DashboardPopoverHosting {}
 enum DashboardPopoverLayout {
     static let contentWidth: CGFloat = 420
     static let maximumHeight: CGFloat = 560
-    static let headerTitleRowHeight: CGFloat = 22
-    static let dividerHeight: CGFloat = 1
-    static let footerHeight: CGFloat = 56
-    static let overviewContentVerticalPadding: CGFloat = 36
-    static let emptyStateVerticalPadding: CGFloat = 36
 
     static func contentSize(for measuredSize: NSSize) -> NSSize? {
         guard measuredSize.width.isFinite,
