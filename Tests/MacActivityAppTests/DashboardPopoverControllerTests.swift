@@ -192,6 +192,35 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertGreaterThan(popover.contentSizeAtShow?.height ?? 0, 0)
     }
 
+    func testDashboardPopoverMeasuresNativePreferredContentSizeAtFixedWidth() throws {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore()),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
+        )
+        defer { withExtendedLifetime(controller) {} }
+
+        let hostingController = try XCTUnwrap(popover.contentViewController as? DashboardPopoverHostingController)
+        let window = NSWindow(contentViewController: hostingController)
+        defer { window.close() }
+        window.setContentSize(popover.contentSize)
+        window.layoutIfNeeded()
+        Self.drainMainRunLoop()
+
+        XCTAssertEqual(
+            hostingController.preferredContentSize.width,
+            DashboardPopoverLayout.contentWidth,
+            accuracy: 1
+        )
+    }
+
     func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
@@ -211,7 +240,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         )
         defer { withExtendedLifetime(controller) {} }
 
-        let hostingController = try XCTUnwrap(popover.contentViewController as? NSHostingController<DashboardView>)
+        let hostingController = try XCTUnwrap(popover.contentViewController as? DashboardPopoverHostingController)
         let window = NSWindow(contentViewController: hostingController)
         defer { window.close() }
         window.setContentSize(popover.contentSize)
@@ -263,7 +292,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         )
 
         let dashboardView = try XCTUnwrap(
-            (popover.contentViewController as? NSHostingController<DashboardView>)?.rootView
+            (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView
         )
         dashboardView.openPreferences()
         dashboardView.quitApplication()

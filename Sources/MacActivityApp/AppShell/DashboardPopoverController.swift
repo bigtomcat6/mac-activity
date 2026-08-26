@@ -116,7 +116,7 @@ final class SharedDashboardPopoverFocusController: DashboardPopoverFocusControll
 }
 
 @MainActor
-final class DashboardPopoverHostingController: NSHostingController<DashboardView> {
+final class DashboardPopoverHostingController: NSHostingController<DashboardPopoverRootView> {
     var onContentLayoutChange: (() -> Void)?
 
     override var preferredContentSize: NSSize {
@@ -141,6 +141,18 @@ final class DashboardPopoverHostingController: NSHostingController<DashboardView
             width: DashboardPopoverLayout.contentWidth,
             height: preferredContentSize.height
         )
+    }
+
+    var dashboardView: DashboardView {
+        rootView.content
+    }
+}
+
+struct DashboardPopoverRootView: View {
+    let content: DashboardView
+
+    var body: some View {
+        content.frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
     }
 }
 
@@ -188,18 +200,20 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
         let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
         let dashboardHostingController = DashboardPopoverHostingController(
-            rootView: DashboardView(
-                dashboardModel: dashboardModel,
-                preferencesController: preferencesController,
-                audioDashboardModel: audioDashboardModel,
-                openPreferences: { [weak popover] in
-                    popover?.performClose(nil)
-                    openPreferences()
-                },
-                quitApplication: { [weak popover] in
-                    popover?.performClose(nil)
-                    quitApplication()
-                }
+            rootView: DashboardPopoverRootView(
+                content: DashboardView(
+                    dashboardModel: dashboardModel,
+                    preferencesController: preferencesController,
+                    audioDashboardModel: audioDashboardModel,
+                    openPreferences: { [weak popover] in
+                        popover?.performClose(nil)
+                        openPreferences()
+                    },
+                    quitApplication: { [weak popover] in
+                        popover?.performClose(nil)
+                        quitApplication()
+                    }
+                )
             )
         )
 
@@ -248,7 +262,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
     #if DEBUG
     var testingAudioDashboardModel: AudioDashboardModel? {
-        (popover.contentViewController as? NSHostingController<DashboardView>)?.rootView.audioDashboardModel
+        (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView.audioDashboardModel
     }
     #endif
 }
