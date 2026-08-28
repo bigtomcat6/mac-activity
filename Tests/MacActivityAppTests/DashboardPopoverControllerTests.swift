@@ -103,6 +103,95 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
     }
 
+    func testReversalToCurrentSizeDuringAnimationConvergesToRequestedSize() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+        let initialMaxY = window.frame.maxY
+
+        let sizeB = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: sizeB)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let movementDeadline = Date().addingTimeInterval(1.0)
+        while Date() < movementDeadline, window.frame.height <= frameA.height + 1 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTAssertGreaterThan(window.frame.height, frameA.height + 1)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        coordinator.applyImmediately(measuredSize: sizeA)
+
+        let settleDeadline = Date().addingTimeInterval(1.0)
+        while Date() < settleDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            if popover.contentSize == sizeA, abs(window.frame.height - frameA.height) < 1 { break }
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeA)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+        XCTAssertEqual(window.frame.height, frameA.height, accuracy: 1)
+        XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
+    }
+
+    func testCloseAndReopenDuringAnimationDoesNotApplyStaleSize() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let sizeB = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: sizeB)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let movementDeadline = Date().addingTimeInterval(1.0)
+        while Date() < movementDeadline, window.frame.height <= frameA.height + 1 {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTAssertGreaterThan(window.frame.height, frameA.height + 1)
+
+        popover.performClose(nil)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        popover.show(
+            relativeTo: NSRect(x: 0, y: 0, width: 20, height: 20),
+            of: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)),
+            preferredEdge: .minY
+        )
+
+        let deadline = Date().addingTimeInterval(1.0)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeA)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+    }
+
     func testShowingPopoverActivatesApplicationAndFocusesPresentedWindow() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)

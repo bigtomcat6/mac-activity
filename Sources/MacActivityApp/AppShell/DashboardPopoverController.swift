@@ -81,11 +81,17 @@ final class DashboardPopoverContentSizeCoordinator {
     }
 
     private func apply(_ contentSize: NSSize) {
-        guard let popover, popover.contentSize != contentSize else {
+        guard let popover else {
+            return
+        }
+
+        if popover.contentSize == contentSize, animatingContentSize == nil {
             return
         }
 
         guard popover.isShown, let window = popover.contentViewController?.view.window else {
+            animationGeneration += 1
+            animatingContentSize = nil
             popover.contentSize = contentSize
             return
         }
@@ -111,6 +117,7 @@ final class DashboardPopoverContentSizeCoordinator {
             height: targetFrame.height
         )
         guard animatedFrame != currentFrame else {
+            animatingContentSize = nil
             popover.contentSize = contentSize
             return
         }
