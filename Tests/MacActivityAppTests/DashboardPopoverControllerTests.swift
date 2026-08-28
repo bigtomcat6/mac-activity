@@ -150,6 +150,95 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
     }
 
+    func testLiveReTargetToNewSizeDuringAnimationConvergesToFinalTarget() throws {
+        try Self.requireLiveWindowAnimation()
+
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+        let initialMaxY = window.frame.maxY
+
+        let sizeB = NSSize(width: 420, height: 400)
+        let frameB = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeB))
+        coordinator.applyImmediately(measuredSize: sizeB)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let movementDeadline = Date().addingTimeInterval(1.0)
+        while Date() < movementDeadline,
+              !(window.frame.height > frameA.height + 1 && window.frame.height < frameB.height - 1) {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.005))
+        }
+        XCTAssertGreaterThan(window.frame.height, frameA.height + 1)
+        XCTAssertLessThan(window.frame.height, frameB.height - 1)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let sizeC = NSSize(width: 420, height: 300)
+        let frameC = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeC))
+        coordinator.applyImmediately(measuredSize: sizeC)
+
+        let settleDeadline = Date().addingTimeInterval(1.0)
+        while Date() < settleDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            if popover.contentSize == sizeC, abs(window.frame.height - frameC.height) < 1 { break }
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeC)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+        XCTAssertEqual(window.frame.height, frameC.height, accuracy: 1)
+        XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
+    }
+
+    func testVisibleSameTurnSchedulesCoalesceToFinalSize() throws {
+        try Self.requireLiveWindowAnimation()
+
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+        let initialMaxY = window.frame.maxY
+
+        let sizeB = NSSize(width: 420, height: 400)
+        let sizeC = NSSize(width: 420, height: 300)
+        let frameC = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeC))
+        coordinator.schedule(measuredSize: sizeB)
+        coordinator.schedule(measuredSize: sizeC)
+
+        let settleDeadline = Date().addingTimeInterval(1.0)
+        while Date() < settleDeadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            if popover.contentSize == sizeC, abs(window.frame.height - frameC.height) < 1 { break }
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeC)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+        XCTAssertFalse(popover.contentSizeAssignments.contains(sizeB))
+        XCTAssertEqual(window.frame.height, frameC.height, accuracy: 1)
+        XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
+    }
+
     func testCloseAndReopenDuringAnimationDoesNotApplyStaleSize() throws {
         try Self.requireLiveWindowAnimation()
 
@@ -449,6 +538,41 @@ final class DashboardPopoverControllerTests: XCTestCase {
         )
     }
 
+    func testHostedDashboardRetainsScrollViewAtCappedPresentation() throws {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore()),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
+        )
+        defer { withExtendedLifetime(controller) {} }
+
+        let hostingController = try XCTUnwrap(popover.contentViewController as? DashboardPopoverHostingController)
+        let window = NSWindow(contentViewController: hostingController)
+        defer { window.close() }
+        window.setContentSize(NSSize(
+            width: DashboardPopoverLayout.contentWidth,
+            height: DashboardPopoverLayout.maximumHeight
+        ))
+        window.layoutIfNeeded()
+        Self.drainMainRunLoop()
+
+        let scrollView = try XCTUnwrap(
+            Self.firstScrollView(in: hostingController.view),
+            "Dashboard host must retain an NSScrollView at the 420x560 capped presentation"
+        )
+        XCTAssertGreaterThan(scrollView.frame.width, 0)
+        XCTAssertLessThanOrEqual(scrollView.frame.maxX, DashboardPopoverLayout.contentWidth + 1)
+        XCTAssertGreaterThan(scrollView.frame.height, 0)
+        XCTAssertLessThanOrEqual(scrollView.frame.height, DashboardPopoverLayout.maximumHeight + 1)
+    }
+
     func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
@@ -567,6 +691,18 @@ final class DashboardPopoverControllerTests: XCTestCase {
     private static func allSubviews(of view: NSView?) -> [NSView] {
         guard let view else { return [] }
         return view.subviews + view.subviews.flatMap(allSubviews)
+    }
+
+    private static func firstScrollView(in view: NSView) -> NSScrollView? {
+        if let scrollView = view as? NSScrollView {
+            return scrollView
+        }
+        for subview in view.subviews {
+            if let found = firstScrollView(in: subview) {
+                return found
+            }
+        }
+        return nil
     }
 
     private static func waitUntil(
