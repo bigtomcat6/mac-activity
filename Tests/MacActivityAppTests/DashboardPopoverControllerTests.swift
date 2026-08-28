@@ -55,6 +55,54 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 310)])
     }
 
+    func testVisiblePopoverAnimatesHeightAndSynchronizesContentSizeAtCompletion() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let initialContentSize = NSSize(width: 420, height: 200)
+        let initialFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: initialContentSize))
+        window.setFrame(NSRect(x: 100, y: 400, width: initialFrame.width, height: initialFrame.height), display: true)
+        coordinator.applyImmediately(measuredSize: initialContentSize)
+        XCTAssertEqual(popover.contentSize, initialContentSize)
+        let initialMaxY = window.frame.maxY
+
+        let targetContentSize = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: targetContentSize)
+        XCTAssertEqual(popover.contentSize, initialContentSize)
+
+        let targetFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: targetContentSize))
+        var observedIntermediateHeights: [CGFloat] = []
+        var contentSizeAtFirstIntermediateFrame: NSSize?
+        var synchronizedContentSize: NSSize?
+        let deadline = Date().addingTimeInterval(1.0)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+            if window.frame.height > initialFrame.height + 1, window.frame.height < targetFrame.height - 1 {
+                observedIntermediateHeights.append(window.frame.height)
+                if contentSizeAtFirstIntermediateFrame == nil {
+                    contentSizeAtFirstIntermediateFrame = popover.contentSize
+                }
+            }
+            if popover.contentSize == targetContentSize {
+                synchronizedContentSize = popover.contentSize
+                break
+            }
+        }
+
+        XCTAssertFalse(observedIntermediateHeights.isEmpty, "expected at least one intermediate native window frame")
+        XCTAssertEqual(contentSizeAtFirstIntermediateFrame, initialContentSize)
+        XCTAssertEqual(synchronizedContentSize, targetContentSize)
+        XCTAssertEqual(popover.contentSize, targetContentSize)
+        XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
+    }
+
     func testShowingPopoverActivatesApplicationAndFocusesPresentedWindow() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)

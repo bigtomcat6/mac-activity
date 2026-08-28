@@ -40,6 +40,8 @@ final class DashboardPopoverContentSizeCoordinator {
     private weak var popover: DashboardPopoverHosting?
     private var pendingContentSize: NSSize?
     private var isUpdateScheduled = false
+    private var animationGeneration = 0
+    private var animatingContentSize: NSSize?
 
     init(popover: DashboardPopoverHosting) {
         self.popover = popover
@@ -82,7 +84,57 @@ final class DashboardPopoverContentSizeCoordinator {
         guard let popover, popover.contentSize != contentSize else {
             return
         }
-        popover.contentSize = contentSize
+
+        guard popover.isShown, let window = popover.contentViewController?.view.window else {
+            popover.contentSize = contentSize
+            return
+        }
+
+        animateSizeChange(to: contentSize, in: window, popover: popover)
+    }
+
+    private func animateSizeChange(
+        to contentSize: NSSize,
+        in window: NSWindow,
+        popover: DashboardPopoverHosting
+    ) {
+        guard animatingContentSize != contentSize else {
+            return
+        }
+
+        let targetFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
+        let currentFrame = window.frame
+        let animatedFrame = NSRect(
+            x: currentFrame.minX,
+            y: currentFrame.maxY - targetFrame.height,
+            width: targetFrame.width,
+            height: targetFrame.height
+        )
+        guard animatedFrame != currentFrame else {
+            popover.contentSize = contentSize
+            return
+        }
+
+        animationGeneration += 1
+        animatingContentSize = contentSize
+        let generation = animationGeneration
+        let duration = window.animationResizeTime(animatedFrame)
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            window.animator().setFrame(animatedFrame, display: true)
+        } completionHandler: { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.animationGeneration == generation else {
+                    return
+                }
+                self.animatingContentSize = nil
+                guard let popover = self.popover else {
+                    return
+                }
+                popover.contentSize = contentSize
+            }
+        }
     }
 }
 
