@@ -55,7 +55,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(popover.contentSizeAssignments, [NSSize(width: 420, height: 310)])
     }
 
-    func testVisiblePopoverAnimatesHeightAndSynchronizesContentSizeAtCompletion() {
+    func testVisiblePopoverAnimatesHeightAndSynchronizesContentSizeAtCompletion() throws {
+        try Self.requireLiveWindowAnimation()
+
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let contentViewController = NSViewController()
@@ -103,7 +105,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
     }
 
-    func testReversalToCurrentSizeDuringAnimationConvergesToRequestedSize() {
+    func testReversalToCurrentSizeDuringAnimationConvergesToRequestedSize() throws {
+        try Self.requireLiveWindowAnimation()
+
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let contentViewController = NSViewController()
@@ -146,7 +150,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
     }
 
-    func testCloseAndReopenDuringAnimationDoesNotApplyStaleSize() {
+    func testCloseAndReopenDuringAnimationDoesNotApplyStaleSize() throws {
+        try Self.requireLiveWindowAnimation()
+
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let contentViewController = NSViewController()
@@ -192,7 +198,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertNotEqual(popover.contentSize, sizeB)
     }
 
-    func testImmediateReversalBeforeFrameMovementKeepsWindowAtRequestedSize() {
+    func testImmediateReversalBeforeFrameMovementKeepsWindowAtRequestedSize() throws {
+        try Self.requireLiveWindowAnimation()
+
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let contentViewController = NSViewController()
@@ -228,7 +236,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
     }
 
-    func testClosingThroughControllerLifecycleInvalidatesInFlightAnimation() {
+    func testClosingThroughControllerLifecycleInvalidatesInFlightAnimation() throws {
+        try Self.requireLiveWindowAnimation()
+
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let contentViewController = NSViewController()
@@ -572,8 +582,47 @@ final class DashboardPopoverControllerTests: XCTestCase {
         return condition()
     }
 
+    @MainActor
+    private static func requireLiveWindowAnimation() throws {
+        let window = NSWindow(contentViewController: NSViewController())
+        defer { window.close() }
+
+        let flag = LiveAnimationCompletionFlag()
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0.1
+            window.animator().setFrame(NSRect(x: 0, y: 0, width: 60, height: 60), display: true)
+        } completionHandler: {
+            flag.markCompleted()
+        }
+
+        let deadline = Date().addingTimeInterval(0.6)
+        while Date() < deadline, !flag.isCompleted {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.01))
+        }
+        guard flag.isCompleted else {
+            throw XCTSkip("Live NSWindow animation is unavailable (display asleep or window server not ticking).")
+        }
+    }
+
     private static func drainMainRunLoop() {
         RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+    }
+}
+
+private final class LiveAnimationCompletionFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var isCompleted: Bool {
+        lock.lock()
+        defer { lock.unlock() }
+        return value
+    }
+
+    func markCompleted() {
+        lock.lock()
+        value = true
+        lock.unlock()
     }
 }
 
