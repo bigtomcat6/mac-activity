@@ -47,6 +47,11 @@ final class DashboardPopoverContentSizeCoordinator {
         self.popover = popover
     }
 
+    func invalidateInFlightAnimation() {
+        animationGeneration += 1
+        animatingContentSize = nil
+    }
+
     func applyImmediately(measuredSize: NSSize) {
         guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
             return
@@ -90,8 +95,7 @@ final class DashboardPopoverContentSizeCoordinator {
         }
 
         guard popover.isShown, let window = popover.contentViewController?.view.window else {
-            animationGeneration += 1
-            animatingContentSize = nil
+            invalidateInFlightAnimation()
             popover.contentSize = contentSize
             return
         }
@@ -117,7 +121,8 @@ final class DashboardPopoverContentSizeCoordinator {
             height: targetFrame.height
         )
         guard animatedFrame != currentFrame else {
-            animatingContentSize = nil
+            invalidateInFlightAnimation()
+            window.animator().setFrame(currentFrame, display: true)
             popover.contentSize = contentSize
             return
         }
@@ -311,12 +316,17 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
+        contentSizeCoordinator.invalidateInFlightAnimation()
         onVisibilityChange(false)
     }
 
     #if DEBUG
     var testingAudioDashboardModel: AudioDashboardModel? {
         (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView.audioDashboardModel
+    }
+
+    var testingContentSizeCoordinator: DashboardPopoverContentSizeCoordinator {
+        contentSizeCoordinator
     }
     #endif
 }

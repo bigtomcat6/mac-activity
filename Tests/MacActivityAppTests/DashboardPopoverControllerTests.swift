@@ -192,6 +192,87 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertNotEqual(popover.contentSize, sizeB)
     }
 
+    func testImmediateReversalBeforeFrameMovementKeepsWindowAtRequestedSize() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+        popover.isShown = true
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+        let initialMaxY = window.frame.maxY
+
+        let sizeB = NSSize(width: 420, height: 400)
+        let frameB = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeB))
+
+        coordinator.applyImmediately(measuredSize: sizeB)
+        coordinator.applyImmediately(measuredSize: sizeA)
+
+        let deadline = Date().addingTimeInterval(1.0)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeA)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+        XCTAssertEqual(window.frame.height, frameA.height, accuracy: 1)
+        XCTAssertNotEqual(window.frame.height, frameB.height, accuracy: 1)
+        XCTAssertEqual(window.frame.maxY, initialMaxY, accuracy: 1)
+    }
+
+    func testClosingThroughControllerLifecycleInvalidatesInFlightAnimation() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {}
+        )
+        defer { withExtendedLifetime(controller) {} }
+        popover.contentViewController = contentViewController
+        popover.isShown = true
+
+        let coordinator = controller.testingContentSizeCoordinator
+
+        let sizeA = NSSize(width: 420, height: 200)
+        let frameA = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeA))
+        window.setFrame(NSRect(x: 100, y: 400, width: frameA.width, height: frameA.height), display: true)
+        coordinator.applyImmediately(measuredSize: sizeA)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        let sizeB = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: sizeB)
+        XCTAssertEqual(popover.contentSize, sizeA)
+
+        popover.performClose(nil)
+        XCTAssertEqual(recorder.events, ["close-popover"])
+
+        let deadline = Date().addingTimeInterval(1.0)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertEqual(popover.contentSize, sizeA)
+        XCTAssertNotEqual(popover.contentSize, sizeB)
+    }
+
     func testShowingPopoverActivatesApplicationAndFocusesPresentedWindow() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
@@ -536,6 +617,7 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     func performClose(_ sender: Any?) {
         isShown = false
         recorder.record("close-popover")
+        delegate?.popoverDidClose?(Notification(name: NSPopover.didCloseNotification, object: self))
     }
 }
 
