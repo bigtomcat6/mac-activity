@@ -648,6 +648,7 @@ struct DashboardView: View {
     @State private var energyImpactRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
+    let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
 
     init(
         dashboardModel: DashboardModel,
@@ -655,6 +656,7 @@ struct DashboardView: View {
         audioDashboardModel: AudioDashboardModel,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
+        onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         initialSelectedTab: DashboardTab = .overview
     ) {
         self.dashboardModel = dashboardModel
@@ -662,51 +664,38 @@ struct DashboardView: View {
         self.audioDashboardModel = audioDashboardModel
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
+        self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
-                .padding(.top, DashboardHeaderChrome.topPadding)
-                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+            DashboardMeasuredSegment(segment: .header, onHeightChange: onMeasuredSegmentHeight) {
+                header
+                    .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                    .padding(.top, DashboardHeaderChrome.topPadding)
+                    .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+            }
 
-            Divider()
+            DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: onMeasuredSegmentHeight) {
+                Divider()
+            }
 
             ScrollView {
-                switch selectedTab {
-                case .overview:
-                    overviewContent
-                case .actives:
-                    activesContent
-                case .energyImpact:
-                    energyImpactContent
-                case .audio:
-                    audioContent
+                DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+                    dashboardContent
+                        .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            Divider()
-
-            HStack(spacing: 12) {
-                Button(action: openPreferences) {
-                    Label(
-                        AppLocalization.string(.preferences),
-                        systemImage: DashboardFooterChrome.preferencesSystemImage
-                    )
-                }
-                Spacer(minLength: 12)
-                Button(action: quitApplication) {
-                    Label(
-                        AppLocalization.string(.quit),
-                        systemImage: DashboardFooterChrome.quitSystemImage
-                    )
-                }
+            DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
+                Divider()
             }
-            .frame(maxWidth: .infinity)
-            .padding(14)
-            .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
+
+            DashboardMeasuredSegment(segment: .footer, onHeightChange: onMeasuredSegmentHeight) {
+                footer
+            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
@@ -740,6 +729,20 @@ struct DashboardView: View {
         .labelsHidden()
     }
 
+    @ViewBuilder
+    private var dashboardContent: some View {
+        switch selectedTab {
+        case .overview:
+            overviewContent
+        case .actives:
+            activesContent
+        case .energyImpact:
+            energyImpactContent
+        case .audio:
+            audioContent
+        }
+    }
+
     private var overviewContent: some View {
         OverviewDashboardContent(metrics: dashboardModel.metrics)
             .padding(18)
@@ -769,6 +772,27 @@ struct DashboardView: View {
     private var audioContent: some View {
         AudioDashboardView(model: audioDashboardModel)
             .padding(18)
+    }
+
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Button(action: openPreferences) {
+                Label(
+                    AppLocalization.string(.preferences),
+                    systemImage: DashboardFooterChrome.preferencesSystemImage
+                )
+            }
+            Spacer(minLength: 12)
+            Button(action: quitApplication) {
+                Label(
+                    AppLocalization.string(.quit),
+                    systemImage: DashboardFooterChrome.quitSystemImage
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(14)
+        .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
     }
 
     private var selectedTabBinding: Binding<DashboardTab> {
@@ -805,6 +829,28 @@ struct DashboardView: View {
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
         }
+    }
+}
+
+struct DashboardMeasuredSegment<Content: View>: View {
+    let segment: DashboardContentMeasurementSegment
+    let onHeightChange: (DashboardContentMeasurementSegment, CGFloat) -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { report(proxy.size.height) }
+                        .onChange(of: proxy.size.height) { report($0) }
+                }
+            }
+    }
+
+    private func report(_ height: CGFloat) {
+        guard height.isFinite, height > 0 else { return }
+        onHeightChange(segment, height)
     }
 }
 

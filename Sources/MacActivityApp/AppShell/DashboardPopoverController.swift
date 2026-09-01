@@ -35,6 +35,69 @@ enum DashboardPopoverLayout {
     }
 }
 
+enum DashboardContentMeasurementSegment: CaseIterable, Hashable {
+    case header
+    case headerDivider
+    case scrollContent
+    case footerDivider
+    case footer
+}
+
+@MainActor
+final class DashboardPopoverContentMeasurement {
+    var onContentSizeChange: ((NSSize) -> Void)?
+    private(set) var latestContentSize: NSSize?
+    private var heights: [DashboardContentMeasurementSegment: CGFloat] = [:]
+    private var emissionGeneration = 0
+
+    func seedIfNeeded(_ size: NSSize) {
+        guard latestContentSize == nil,
+              DashboardPopoverLayout.contentSize(for: size) != nil else {
+            return
+        }
+        latestContentSize = size
+    }
+
+    func report(_ height: CGFloat, for segment: DashboardContentMeasurementSegment) {
+        guard height.isFinite, height > 0, heights[segment] != height else {
+            return
+        }
+        heights[segment] = height
+        guard let size = resolvedContentSize(), latestContentSize != size else {
+            return
+        }
+        latestContentSize = size
+        emissionGeneration += 1
+        let generation = emissionGeneration
+        DispatchQueue.main.async { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self,
+                      self.latestContentSize == size,
+                      self.emissionGeneration == generation else {
+                    return
+                }
+                self.onContentSizeChange?(size)
+            }
+        }
+    }
+
+    func invalidatePendingEmissions() {
+        emissionGeneration += 1
+    }
+
+    private func resolvedContentSize() -> NSSize? {
+        guard DashboardContentMeasurementSegment.allCases.allSatisfy({ heights[$0] != nil }) else {
+            return nil
+        }
+        return NSSize(
+            width: DashboardPopoverLayout.contentWidth,
+            height: DashboardContentMeasurementSegment.allCases.reduce(0) { total, segment in
+                total + (heights[segment] ?? 0)
+            }
+        )
+    }
+}
+
 @MainActor
 final class DashboardPopoverContentSizeCoordinator {
     private weak var popover: DashboardPopoverHosting?
@@ -42,9 +105,16 @@ final class DashboardPopoverContentSizeCoordinator {
     private var isUpdateScheduled = false
     private var animationGeneration = 0
     private var animatingContentSize: NSSize?
+    private let shouldReduceMotion: () -> Bool
 
-    init(popover: DashboardPopoverHosting) {
+    init(
+        popover: DashboardPopoverHosting,
+        shouldReduceMotion: @escaping () -> Bool = {
+            NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        }
+    ) {
         self.popover = popover
+        self.shouldReduceMotion = shouldReduceMotion
     }
 
     func invalidateInFlightAnimation() {
@@ -100,7 +170,33 @@ final class DashboardPopoverContentSizeCoordinator {
             return
         }
 
+        guard !shouldReduceMotion() else {
+            invalidateInFlightAnimation()
+            snapFrame(to: contentSize, in: window)
+            popover.contentSize = contentSize
+            return
+        }
+
         animateSizeChange(to: contentSize, in: window, popover: popover)
+    }
+
+    private func targetFrame(for contentSize: NSSize, in window: NSWindow) -> NSRect {
+        let contentFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
+        let currentFrame = window.frame
+        return NSRect(
+            x: currentFrame.minX,
+            y: currentFrame.maxY - contentFrame.height,
+            width: contentFrame.width,
+            height: contentFrame.height
+        )
+    }
+
+    private func snapFrame(to contentSize: NSSize, in window: NSWindow) {
+        let snappedFrame = targetFrame(for: contentSize, in: window)
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            window.animator().setFrame(snappedFrame, display: true)
+        }
     }
 
     private func animateSizeChange(
@@ -112,14 +208,8 @@ final class DashboardPopoverContentSizeCoordinator {
             return
         }
 
-        let targetFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: contentSize))
+        let animatedFrame = targetFrame(for: contentSize, in: window)
         let currentFrame = window.frame
-        let animatedFrame = NSRect(
-            x: currentFrame.minX,
-            y: currentFrame.maxY - targetFrame.height,
-            width: targetFrame.width,
-            height: targetFrame.height
-        )
         guard animatedFrame != currentFrame else {
             invalidateInFlightAnimation()
             window.animator().setFrame(currentFrame, display: true)
@@ -130,10 +220,8 @@ final class DashboardPopoverContentSizeCoordinator {
         animationGeneration += 1
         animatingContentSize = contentSize
         let generation = animationGeneration
-        let duration = window.animationResizeTime(animatedFrame)
 
-        NSAnimationContext.runAnimationGroup { context in
-            context.duration = duration
+        NSAnimationContext.runAnimationGroup { _ in
             window.animator().setFrame(animatedFrame, display: true)
         } completionHandler: { [weak self] in
             MainActor.assumeIsolated {
@@ -176,30 +264,18 @@ final class SharedDashboardPopoverFocusController: DashboardPopoverFocusControll
 
 @MainActor
 final class DashboardPopoverHostingController: NSHostingController<DashboardPopoverRootView> {
-    var onContentLayoutChange: (() -> Void)?
-
-    override var preferredContentSize: NSSize {
-        didSet {
-            onContentLayoutChange?()
-        }
-    }
-
-    override func viewDidLayout() {
-        super.viewDidLayout()
-        onContentLayoutChange?()
-    }
-
-    func layoutAndMeasureContentSize() -> NSSize {
+    func bootstrapContentSize() -> NSSize {
         _ = view
         view.layoutSubtreeIfNeeded()
-        return measuredContentSize()
-    }
-
-    func measuredContentSize() -> NSSize {
-        NSSize(
+        return NSSize(
             width: DashboardPopoverLayout.contentWidth,
             height: preferredContentSize.height
         )
+    }
+
+    func layoutContent() {
+        _ = view
+        view.layoutSubtreeIfNeeded()
     }
 
     var dashboardView: DashboardView {
@@ -222,6 +298,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     private let onVisibilityChange: (Bool) -> Void
     private let contentSizeCoordinator: DashboardPopoverContentSizeCoordinator
     private let dashboardHostingController: DashboardPopoverHostingController
+    private let contentMeasurement: DashboardPopoverContentMeasurement
 
     convenience init(
         dashboardModel: DashboardModel,
@@ -258,6 +335,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.onVisibilityChange = onVisibilityChange
 
         let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+        let measurement = DashboardPopoverContentMeasurement()
         let dashboardHostingController = DashboardPopoverHostingController(
             rootView: DashboardPopoverRootView(
                 content: DashboardView(
@@ -271,28 +349,33 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     quitApplication: { [weak popover] in
                         popover?.performClose(nil)
                         quitApplication()
+                    },
+                    onMeasuredSegmentHeight: { [weak measurement] segment, height in
+                        measurement?.report(height, for: segment)
                     }
                 )
             )
         )
+        measurement.onContentSizeChange = { [weak contentSizeCoordinator] size in
+            contentSizeCoordinator?.schedule(measuredSize: size)
+        }
 
         dashboardHostingController.sizingOptions = [.preferredContentSize]
-        dashboardHostingController.onContentLayoutChange = { [weak dashboardHostingController, weak contentSizeCoordinator] in
-            guard let dashboardHostingController else {
-                return
-            }
-            contentSizeCoordinator?.schedule(measuredSize: dashboardHostingController.measuredContentSize())
-        }
+        let bootstrapSize = dashboardHostingController.bootstrapContentSize()
+        measurement.seedIfNeeded(bootstrapSize)
+        dashboardHostingController.sizingOptions = []
 
         popover.behavior = .transient
         popover.animates = true
         popover.contentViewController = dashboardHostingController
+        measurement.invalidatePendingEmissions()
         contentSizeCoordinator.applyImmediately(
-            measuredSize: dashboardHostingController.layoutAndMeasureContentSize()
+            measuredSize: measurement.latestContentSize ?? bootstrapSize
         )
 
         self.contentSizeCoordinator = contentSizeCoordinator
         self.dashboardHostingController = dashboardHostingController
+        self.contentMeasurement = measurement
         super.init()
         popover.delegate = self
     }
@@ -306,9 +389,11 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             popover.performClose(nil)
         } else {
             focusController.activateApplication()
-            contentSizeCoordinator.applyImmediately(
-                measuredSize: dashboardHostingController.layoutAndMeasureContentSize()
-            )
+            dashboardHostingController.layoutContent()
+            contentMeasurement.invalidatePendingEmissions()
+            if let latestContentSize = contentMeasurement.latestContentSize {
+                contentSizeCoordinator.applyImmediately(measuredSize: latestContentSize)
+            }
             popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
             focusController.focusPresentedPopover(popover)
             onVisibilityChange(true)
