@@ -98,6 +98,12 @@ final class DashboardPopoverContentMeasurement {
     }
 }
 
+typealias DashboardPopoverFrameAnimator = @MainActor (
+    NSWindow,
+    NSRect,
+    @escaping @MainActor () -> Void
+) -> Void
+
 @MainActor
 final class DashboardPopoverContentSizeCoordinator {
     private weak var popover: DashboardPopoverHosting?
@@ -108,17 +114,28 @@ final class DashboardPopoverContentSizeCoordinator {
     private var isHeightTransitioning = false
     private let shouldReduceMotion: () -> Bool
     private let onHeightTransitionChange: (Bool) -> Void
+    private let animateFrame: DashboardPopoverFrameAnimator
 
     init(
         popover: DashboardPopoverHosting,
         shouldReduceMotion: @escaping () -> Bool = {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         },
-        onHeightTransitionChange: @escaping (Bool) -> Void = { _ in }
+        onHeightTransitionChange: @escaping (Bool) -> Void = { _ in },
+        animateFrame: @escaping DashboardPopoverFrameAnimator = { window, frame, completion in
+            NSAnimationContext.runAnimationGroup { _ in
+                window.animator().setFrame(frame, display: true)
+            } completionHandler: {
+                MainActor.assumeIsolated {
+                    completion()
+                }
+            }
+        }
     ) {
         self.popover = popover
         self.shouldReduceMotion = shouldReduceMotion
         self.onHeightTransitionChange = onHeightTransitionChange
+        self.animateFrame = animateFrame
     }
 
     private func setHeightTransitioning(_ isHeightTransitioning: Bool) {
@@ -233,20 +250,16 @@ final class DashboardPopoverContentSizeCoordinator {
         let generation = animationGeneration
         setHeightTransitioning(true)
 
-        NSAnimationContext.runAnimationGroup { _ in
-            window.animator().setFrame(animatedFrame, display: true)
-        } completionHandler: { [weak self] in
-            MainActor.assumeIsolated {
-                guard let self, self.animationGeneration == generation else {
-                    return
-                }
-                self.animatingContentSize = nil
-                guard let popover = self.popover else {
-                    return
-                }
-                popover.contentSize = contentSize
-                self.setHeightTransitioning(false)
+        animateFrame(window, animatedFrame) { [weak self] in
+            guard let self, self.animationGeneration == generation else {
+                return
             }
+            self.animatingContentSize = nil
+            guard let popover = self.popover else {
+                return
+            }
+            popover.contentSize = contentSize
+            self.setHeightTransitioning(false)
         }
     }
 }

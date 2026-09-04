@@ -145,6 +145,96 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(popover.contentSizeAssignments, [initialSize, targetSize])
     }
 
+    func testVisiblePopoverUsesWorkspaceReduceMotionByDefault() throws {
+        guard NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            throw XCTSkip("Workspace Reduce Motion is disabled.")
+        }
+
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+        let initialSize = NSSize(width: 420, height: 200)
+        let initialFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: initialSize))
+        window.setFrame(NSRect(x: 100, y: 400, width: initialFrame.width, height: initialFrame.height), display: true)
+        coordinator.applyImmediately(measuredSize: initialSize)
+        popover.isShown = true
+        let initialMaxY = window.frame.maxY
+
+        let targetSize = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: targetSize)
+
+        XCTAssertEqual(popover.contentSize, targetSize)
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, targetSize)
+        XCTAssertEqual(window.frame.maxY, initialMaxY)
+    }
+
+    func testAnimatedPathSynchronizesContentSizeAtInjectedCompletion() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+
+        var transitions: [Bool] = []
+        var animationRequestCount = 0
+        var animationCompletion: (@MainActor () -> Void)?
+        let coordinator = DashboardPopoverContentSizeCoordinator(
+            popover: popover,
+            shouldReduceMotion: { false },
+            onHeightTransitionChange: { transitions.append($0) },
+            animateFrame: { window, frame, completion in
+                animationRequestCount += 1
+                window.setFrame(frame, display: true)
+                animationCompletion = completion
+            }
+        )
+        let initialSize = NSSize(width: 420, height: 200)
+        let initialFrame = window.frameRect(forContentRect: NSRect(origin: .zero, size: initialSize))
+        window.setFrame(NSRect(x: 100, y: 400, width: initialFrame.width, height: initialFrame.height), display: true)
+        coordinator.applyImmediately(measuredSize: initialSize)
+        popover.isShown = true
+        let initialMaxY = window.frame.maxY
+
+        let targetSize = NSSize(width: 420, height: 400)
+        coordinator.applyImmediately(measuredSize: targetSize)
+        coordinator.applyImmediately(measuredSize: targetSize)
+
+        XCTAssertEqual(popover.contentSize, initialSize)
+        XCTAssertEqual(transitions, [true])
+        XCTAssertEqual(animationRequestCount, 1)
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, targetSize)
+        XCTAssertEqual(window.frame.maxY, initialMaxY)
+
+        let firstCompletion = animationCompletion
+        let finalSize = NSSize(width: 420, height: 300)
+        coordinator.applyImmediately(measuredSize: finalSize)
+        let finalCompletion = animationCompletion
+        firstCompletion?()
+
+        XCTAssertEqual(popover.contentSize, initialSize)
+        XCTAssertEqual(transitions, [true])
+        XCTAssertEqual(animationRequestCount, 2)
+        XCTAssertEqual(window.contentRect(forFrameRect: window.frame).size, finalSize)
+        XCTAssertEqual(window.frame.maxY, initialMaxY)
+
+        finalCompletion?()
+
+        XCTAssertEqual(popover.contentSize, finalSize)
+        XCTAssertEqual(transitions, [true, false])
+
+        popover.contentSize = initialSize
+        coordinator.applyImmediately(measuredSize: finalSize)
+
+        XCTAssertEqual(popover.contentSize, finalSize)
+        XCTAssertEqual(animationRequestCount, 2)
+    }
+
     func testReduceMotionLandingDuringInFlightAnimationSnapsFrameAndSynchronizesContentSize() throws {
         try Self.requireLiveWindowAnimation()
 
@@ -1001,6 +1091,8 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
         XCTAssertTrue(Self.waitUntil { popover.contentSize.height != initialSize.height })
         let updatedSize = popover.contentSize
+        XCTAssertEqual(updatedSize.width, DashboardPopoverLayout.contentWidth)
+        XCTAssertLessThanOrEqual(updatedSize.height, DashboardPopoverLayout.maximumHeight)
 
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
 
@@ -1157,11 +1249,11 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertLessThanOrEqual(scrollView.frame.height, DashboardPopoverLayout.maximumHeight + 1)
     }
 
-    func testHostedDashboardUpdatesPopoverHeightWhenMetricsAndTabChange() throws {
+    func testHostedDashboardUpdatesPopoverHeightWhenTabChanges() throws {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
         let store = MetricsStore()
-        store.apply([.cpu(CPUReading(usagePercent: 13))], timestamp: Date(timeIntervalSince1970: 31))
+        store.apply(Self.fullDashboardMetrics, timestamp: Date(timeIntervalSince1970: 31))
 
         let controller = Self.makeDashboardPopoverController(popover: popover, store: store)
         defer { withExtendedLifetime(controller) {} }
@@ -1173,11 +1265,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
         window.layoutIfNeeded()
         Self.drainMainRunLoop()
 
-        let initialHeight = popover.contentSize.height
-
-        store.apply(Self.fullDashboardMetrics, timestamp: Date(timeIntervalSince1970: 32))
-
-        XCTAssertTrue(Self.waitUntil { popover.contentSize.height > initialHeight })
         let overviewHeight = popover.contentSize.height
 
         let segmentedControl = try XCTUnwrap(Self.segmentedControl(in: window.contentView))
