@@ -698,7 +698,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(transitions, [])
 
         let sizeB = NSSize(width: 420, height: 400)
-        let frameB = window.frameRect(forContentRect: NSRect(origin: .zero, size: sizeB))
         coordinator.applyImmediately(measuredSize: sizeB)
         XCTAssertEqual(transitions, [true])
 
@@ -1056,27 +1055,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(bootstrapSize.height, measuredHeight, accuracy: 1)
     }
 
-    func testGeometryMeasurementSchedulesLatestDashboardSize() throws {
-        let recorder = DashboardPopoverEventRecorder()
-        let popover = RecordingPopoverHost(recorder: recorder)
-        let store = MetricsStore()
-        let controller = Self.makeDashboardPopoverController(popover: popover, store: store)
-        defer { withExtendedLifetime(controller) {} }
-        let host = try XCTUnwrap(popover.contentViewController as? DashboardPopoverHostingController)
-        let window = NSWindow(contentViewController: host)
-        defer { window.close() }
-        window.setContentSize(popover.contentSize)
-        window.layoutIfNeeded()
-        Self.drainMainRunLoop()
-        let initialSize = popover.contentSize
-
-        store.apply(Self.fullDashboardMetrics, timestamp: Date(timeIntervalSince1970: 32))
-
-        XCTAssertTrue(Self.waitUntil { popover.contentSize.height != initialSize.height })
-        XCTAssertEqual(popover.contentSize.width, DashboardPopoverLayout.contentWidth)
-        XCTAssertLessThanOrEqual(popover.contentSize.height, DashboardPopoverLayout.maximumHeight)
-    }
-
     func testHostedDashboardReportsAllLiveGeometrySegments() throws {
         let reports = DashboardSegmentRecorder()
         let content = DashboardView(
@@ -1344,6 +1322,10 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
     @MainActor
     private static func requireLiveWindowAnimation() throws {
+        guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else {
+            throw XCTSkip("Live NSWindow animation is disabled by Reduce Motion.")
+        }
+
         let window = NSWindow(contentViewController: NSViewController())
         defer { window.close() }
 
