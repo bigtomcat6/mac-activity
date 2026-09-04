@@ -648,7 +648,8 @@ struct DashboardView: View {
     @State private var energyImpactRefreshTrigger = 0
     let openPreferences: () -> Void
     let quitApplication: () -> Void
-    let onPreferredContentSizeChange: (DashboardTab, [DashboardMetric]) -> Void
+    let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
+    @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
     init(
         dashboardModel: DashboardModel,
@@ -656,71 +657,55 @@ struct DashboardView: View {
         audioDashboardModel: AudioDashboardModel,
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
-        initialSelectedTab: DashboardTab = .overview,
-        onPreferredContentSizeChange: @escaping (DashboardTab, [DashboardMetric]) -> Void = { _, _ in }
+        onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
+        scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
+        initialSelectedTab: DashboardTab = .overview
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
-        self.onPreferredContentSizeChange = onPreferredContentSizeChange
+        self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
+        self.scrollIndicatorState = scrollIndicatorState
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
-                .padding(.top, DashboardHeaderChrome.topPadding)
-                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+            DashboardMeasuredSegment(segment: .header, onHeightChange: onMeasuredSegmentHeight) {
+                header
+                    .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                    .padding(.top, DashboardHeaderChrome.topPadding)
+                    .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+            }
 
-            Divider()
+            DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: onMeasuredSegmentHeight) {
+                Divider()
+            }
 
-            ScrollView {
-                switch selectedTab {
-                case .overview:
-                    overviewContent
-                case .actives:
-                    activesContent
-                case .energyImpact:
-                    energyImpactContent
-                case .audio:
-                    audioContent
+            ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
+                DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+                    dashboardContent
+                        .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
 
-            Divider()
-
-            HStack(spacing: 12) {
-                Button(action: openPreferences) {
-                    Label(
-                        AppLocalization.string(.preferences),
-                        systemImage: DashboardFooterChrome.preferencesSystemImage
-                    )
-                }
-                Spacer(minLength: 12)
-                Button(action: quitApplication) {
-                    Label(
-                        AppLocalization.string(.quit),
-                        systemImage: DashboardFooterChrome.quitSystemImage
-                    )
-                }
+            DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
+                Divider()
             }
-            .frame(maxWidth: .infinity)
-            .padding(14)
-            .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
+
+            DashboardMeasuredSegment(segment: .footer, onHeightChange: onMeasuredSegmentHeight) {
+                footer
+            }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .frame(maxWidth: .infinity, alignment: .topLeading)
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
-            reportPreferredContentSize()
         }
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
-        }
-        .onChange(of: dashboardModel.metrics) { _ in
-            reportPreferredContentSize()
         }
     }
 
@@ -745,6 +730,20 @@ struct DashboardView: View {
         }
         .pickerStyle(.segmented)
         .labelsHidden()
+    }
+
+    @ViewBuilder
+    private var dashboardContent: some View {
+        switch selectedTab {
+        case .overview:
+            overviewContent
+        case .actives:
+            activesContent
+        case .energyImpact:
+            energyImpactContent
+        case .audio:
+            audioContent
+        }
     }
 
     private var overviewContent: some View {
@@ -778,6 +777,27 @@ struct DashboardView: View {
             .padding(18)
     }
 
+    private var footer: some View {
+        HStack(spacing: 12) {
+            Button(action: openPreferences) {
+                Label(
+                    AppLocalization.string(.preferences),
+                    systemImage: DashboardFooterChrome.preferencesSystemImage
+                )
+            }
+            Spacer(minLength: 12)
+            Button(action: quitApplication) {
+                Label(
+                    AppLocalization.string(.quit),
+                    systemImage: DashboardFooterChrome.quitSystemImage
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(14)
+        .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
+    }
+
     private var selectedTabBinding: Binding<DashboardTab> {
         Binding(
             get: { selectedTab },
@@ -791,7 +811,6 @@ struct DashboardView: View {
                     afterSelecting: newValue,
                     currentTrigger: energyImpactRefreshTrigger
                 )
-                reportPreferredContentSize(for: newValue)
             }
         )
     }
@@ -814,9 +833,27 @@ struct DashboardView: View {
             activesRefreshTrigger += 1
         }
     }
+}
 
-    private func reportPreferredContentSize(for tab: DashboardTab? = nil) {
-        onPreferredContentSizeChange(tab ?? selectedTab, dashboardModel.metrics)
+struct DashboardMeasuredSegment<Content: View>: View {
+    let segment: DashboardContentMeasurementSegment
+    let onHeightChange: (DashboardContentMeasurementSegment, CGFloat) -> Void
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { report(proxy.size.height) }
+                        .onChange(of: proxy.size.height) { report($0) }
+                }
+            }
+    }
+
+    private func report(_ height: CGFloat) {
+        guard height.isFinite, height > 0 else { return }
+        onHeightChange(segment, height)
     }
 }
 
