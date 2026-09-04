@@ -235,6 +235,138 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(animationRequestCount, 2)
     }
 
+    func testVisiblePopoverUsesPlacementAwareResizeWhenTargetWouldCrossVisibleScreen() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        popover.animates = true
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+
+        var transitions: [Bool] = []
+        var animationRequestCount = 0
+        let visibleFrame = NSRect(x: 0, y: 50, width: 1_000, height: 900)
+        let coordinator = DashboardPopoverContentSizeCoordinator(
+            popover: popover,
+            shouldReduceMotion: { false },
+            onHeightTransitionChange: { transitions.append($0) },
+            visibleFrameForWindow: { _ in visibleFrame },
+            animateFrame: { _, _, _ in animationRequestCount += 1 }
+        )
+        let initialSize = NSSize(width: 420, height: 200)
+        let initialFrameSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: initialSize)).size
+        window.setFrame(
+            NSRect(x: 100, y: 400, width: initialFrameSize.width, height: initialFrameSize.height),
+            display: true
+        )
+        coordinator.applyImmediately(measuredSize: initialSize)
+        popover.isShown = true
+        let originalWindowFrame = window.frame
+
+        let targetSize = NSSize(width: 420, height: 560)
+        let targetFrameHeight = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: targetSize)
+        ).height
+        XCTAssertLessThan(originalWindowFrame.maxY - targetFrameHeight, visibleFrame.minY)
+
+        coordinator.applyImmediately(measuredSize: targetSize)
+
+        XCTAssertEqual(popover.contentSize, targetSize)
+        XCTAssertEqual(popover.contentSizeAssignments, [initialSize, targetSize])
+        XCTAssertEqual(window.frame, originalWindowFrame)
+        XCTAssertTrue(popover.animates)
+        XCTAssertEqual(popover.animatesAtContentSizeAssignment, [true, false])
+
+        let laterSafeSize = NSSize(width: 420, height: 300)
+        coordinator.applyImmediately(measuredSize: laterSafeSize)
+
+        XCTAssertEqual(popover.contentSize, laterSafeSize)
+        XCTAssertEqual(popover.contentSizeAssignments, [initialSize, targetSize, laterSafeSize])
+        XCTAssertEqual(popover.animatesAtContentSizeAssignment, [true, false, false])
+        XCTAssertTrue(popover.animates)
+        XCTAssertEqual(animationRequestCount, 0)
+        XCTAssertEqual(transitions, [])
+
+        popover.isShown = false
+        coordinator.resetAfterPopoverCloses()
+        popover.isShown = true
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 400))
+
+        XCTAssertEqual(animationRequestCount, 1)
+        XCTAssertEqual(transitions, [true])
+    }
+
+    func testVisiblePopoverInvalidatesInFlightAnimationBeforeUnsafeResize() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        popover.animates = true
+        let contentViewController = NSViewController()
+        popover.contentViewController = contentViewController
+        let window = NSWindow(contentViewController: contentViewController)
+        defer { window.close() }
+
+        var transitions: [Bool] = []
+        var animationRequestCount = 0
+        var animationCompletion: (@MainActor () -> Void)?
+        var visibleFrame = NSRect(x: 0, y: 0, width: 1_000, height: 900)
+        let coordinator = DashboardPopoverContentSizeCoordinator(
+            popover: popover,
+            shouldReduceMotion: { false },
+            onHeightTransitionChange: { transitions.append($0) },
+            visibleFrameForWindow: { _ in visibleFrame },
+            animateFrame: { _, _, completion in
+                animationRequestCount += 1
+                animationCompletion = completion
+            }
+        )
+        let initialSize = NSSize(width: 420, height: 200)
+        let initialFrameSize = window.frameRect(forContentRect: NSRect(origin: .zero, size: initialSize)).size
+        window.setFrame(
+            NSRect(x: 100, y: 400, width: initialFrameSize.width, height: initialFrameSize.height),
+            display: true
+        )
+        coordinator.applyImmediately(measuredSize: initialSize)
+        XCTAssertEqual(popover.contentSize, initialSize)
+
+        popover.isShown = true
+        let safeTargetSize = NSSize(width: 420, height: 400)
+        let safeTargetFrameHeight = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: safeTargetSize)
+        ).height
+        XCTAssertGreaterThanOrEqual(window.frame.maxY - safeTargetFrameHeight, visibleFrame.minY)
+
+        coordinator.applyImmediately(measuredSize: safeTargetSize)
+
+        guard let staleCompletion = animationCompletion else {
+            return XCTFail("expected a completion from the safe-target animator")
+        }
+        XCTAssertEqual(animationRequestCount, 1)
+        XCTAssertEqual(transitions, [true])
+
+        visibleFrame = NSRect(x: 0, y: 50, width: 1_000, height: 900)
+        let unsafeTargetSize = NSSize(width: 420, height: 560)
+        let unsafeTargetFrameHeight = window.frameRect(
+            forContentRect: NSRect(origin: .zero, size: unsafeTargetSize)
+        ).height
+        XCTAssertLessThan(window.frame.maxY - unsafeTargetFrameHeight, visibleFrame.minY)
+
+        coordinator.applyImmediately(measuredSize: unsafeTargetSize)
+
+        XCTAssertEqual(popover.contentSize, unsafeTargetSize)
+        XCTAssertEqual(popover.contentSizeAssignments, [initialSize, unsafeTargetSize])
+        XCTAssertEqual(popover.animatesAtContentSizeAssignment, [true, false])
+        XCTAssertTrue(popover.animates)
+        XCTAssertEqual(animationRequestCount, 1)
+        XCTAssertEqual(transitions, [true, false])
+
+        staleCompletion()
+
+        XCTAssertEqual(popover.contentSize, unsafeTargetSize)
+        XCTAssertEqual(popover.contentSizeAssignments, [initialSize, unsafeTargetSize])
+        XCTAssertEqual(transitions, [true, false])
+    }
+
     func testReduceMotionLandingDuringInFlightAnimationSnapsFrameAndSynchronizesContentSize() throws {
         try Self.requireLiveWindowAnimation()
 
@@ -1480,10 +1612,12 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     var behavior: NSPopover.Behavior = .transient
     var animates = false
     private(set) var contentSizeAssignments: [NSSize] = []
+    private(set) var animatesAtContentSizeAssignment: [Bool] = []
     private(set) var contentSizeAtShow: NSSize?
     var contentSize: NSSize = .zero {
         didSet {
             contentSizeAssignments.append(contentSize)
+            animatesAtContentSizeAssignment.append(animates)
         }
     }
     var contentViewController: NSViewController?

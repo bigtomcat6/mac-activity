@@ -112,8 +112,10 @@ final class DashboardPopoverContentSizeCoordinator {
     private var animationGeneration = 0
     private var animatingContentSize: NSSize?
     private var isHeightTransitioning = false
+    private var usesPopoverPlacementUntilClose = false
     private let shouldReduceMotion: () -> Bool
     private let onHeightTransitionChange: (Bool) -> Void
+    private let visibleFrameForWindow: (NSWindow) -> NSRect?
     private let animateFrame: DashboardPopoverFrameAnimator
 
     init(
@@ -122,6 +124,7 @@ final class DashboardPopoverContentSizeCoordinator {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         },
         onHeightTransitionChange: @escaping (Bool) -> Void = { _ in },
+        visibleFrameForWindow: @escaping (NSWindow) -> NSRect? = { $0.screen?.visibleFrame },
         animateFrame: @escaping DashboardPopoverFrameAnimator = { window, frame, completion in
             NSAnimationContext.runAnimationGroup { _ in
                 window.animator().setFrame(frame, display: true)
@@ -135,6 +138,7 @@ final class DashboardPopoverContentSizeCoordinator {
         self.popover = popover
         self.shouldReduceMotion = shouldReduceMotion
         self.onHeightTransitionChange = onHeightTransitionChange
+        self.visibleFrameForWindow = visibleFrameForWindow
         self.animateFrame = animateFrame
     }
 
@@ -148,6 +152,11 @@ final class DashboardPopoverContentSizeCoordinator {
         animationGeneration += 1
         animatingContentSize = nil
         setHeightTransitioning(false)
+    }
+
+    func resetAfterPopoverCloses() {
+        usesPopoverPlacementUntilClose = false
+        invalidateInFlightAnimation()
     }
 
     func applyImmediately(measuredSize: NSSize) {
@@ -198,6 +207,18 @@ final class DashboardPopoverContentSizeCoordinator {
             return
         }
 
+        let proposedFrame = targetFrame(for: contentSize, in: window)
+        if usesPopoverPlacementUntilClose {
+            applyUsingPopoverPlacement(contentSize, in: window, popover: popover)
+            return
+        }
+
+        if let visibleFrame = visibleFrameForWindow(window),
+           proposedFrame.minY < visibleFrame.minY {
+            applyUsingPopoverPlacement(contentSize, in: window, popover: popover)
+            return
+        }
+
         guard !shouldReduceMotion() else {
             invalidateInFlightAnimation()
             snapFrame(to: contentSize, in: window)
@@ -206,6 +227,32 @@ final class DashboardPopoverContentSizeCoordinator {
         }
 
         animateSizeChange(to: contentSize, in: window, popover: popover)
+    }
+
+    private func applyUsingPopoverPlacement(
+        _ contentSize: NSSize,
+        in window: NSWindow,
+        popover: DashboardPopoverHosting
+    ) {
+        let wasAnimatingFrame = animatingContentSize != nil
+        invalidateInFlightAnimation()
+        if wasAnimatingFrame {
+            stopFrameAnimation(in: window)
+        }
+        usesPopoverPlacementUntilClose = true
+
+        let animates = popover.animates
+        popover.animates = false
+        popover.contentSize = contentSize
+        popover.animates = animates
+    }
+
+    private func stopFrameAnimation(in window: NSWindow) {
+        let currentFrame = window.frame
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            window.animator().setFrame(currentFrame, display: true)
+        }
     }
 
     private func targetFrame(for contentSize: NSSize, in window: NSWindow) -> NSRect {
@@ -446,7 +493,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     }
 
     func popoverDidClose(_ notification: Notification) {
-        contentSizeCoordinator.invalidateInFlightAnimation()
+        contentSizeCoordinator.resetAfterPopoverCloses()
         onVisibilityChange(false)
     }
 
