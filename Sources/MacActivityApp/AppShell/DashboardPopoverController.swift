@@ -105,21 +105,32 @@ final class DashboardPopoverContentSizeCoordinator {
     private var isUpdateScheduled = false
     private var animationGeneration = 0
     private var animatingContentSize: NSSize?
+    private var isHeightTransitioning = false
     private let shouldReduceMotion: () -> Bool
+    private let onHeightTransitionChange: (Bool) -> Void
 
     init(
         popover: DashboardPopoverHosting,
         shouldReduceMotion: @escaping () -> Bool = {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        }
+        },
+        onHeightTransitionChange: @escaping (Bool) -> Void = { _ in }
     ) {
         self.popover = popover
         self.shouldReduceMotion = shouldReduceMotion
+        self.onHeightTransitionChange = onHeightTransitionChange
+    }
+
+    private func setHeightTransitioning(_ isHeightTransitioning: Bool) {
+        guard self.isHeightTransitioning != isHeightTransitioning else { return }
+        self.isHeightTransitioning = isHeightTransitioning
+        onHeightTransitionChange(isHeightTransitioning)
     }
 
     func invalidateInFlightAnimation() {
         animationGeneration += 1
         animatingContentSize = nil
+        setHeightTransitioning(false)
     }
 
     func applyImmediately(measuredSize: NSSize) {
@@ -220,6 +231,7 @@ final class DashboardPopoverContentSizeCoordinator {
         animationGeneration += 1
         animatingContentSize = contentSize
         let generation = animationGeneration
+        setHeightTransitioning(true)
 
         NSAnimationContext.runAnimationGroup { _ in
             window.animator().setFrame(animatedFrame, display: true)
@@ -233,8 +245,19 @@ final class DashboardPopoverContentSizeCoordinator {
                     return
                 }
                 popover.contentSize = contentSize
+                self.setHeightTransitioning(false)
             }
         }
+    }
+}
+
+@MainActor
+final class DashboardPopoverScrollIndicatorState: ObservableObject {
+    @Published private(set) var isHeightTransitioning = false
+
+    func setHeightTransitioning(_ isHeightTransitioning: Bool) {
+        guard self.isHeightTransitioning != isHeightTransitioning else { return }
+        self.isHeightTransitioning = isHeightTransitioning
     }
 }
 
@@ -299,6 +322,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     private let contentSizeCoordinator: DashboardPopoverContentSizeCoordinator
     private let dashboardHostingController: DashboardPopoverHostingController
     private let contentMeasurement: DashboardPopoverContentMeasurement
+    private let scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
     convenience init(
         dashboardModel: DashboardModel,
@@ -334,7 +358,13 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.focusController = focusController
         self.onVisibilityChange = onVisibilityChange
 
-        let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(popover: popover)
+        let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
+        let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(
+            popover: popover,
+            onHeightTransitionChange: { [weak scrollIndicatorState] isHeightTransitioning in
+                scrollIndicatorState?.setHeightTransitioning(isHeightTransitioning)
+            }
+        )
         let measurement = DashboardPopoverContentMeasurement()
         let dashboardHostingController = DashboardPopoverHostingController(
             rootView: DashboardPopoverRootView(
@@ -352,7 +382,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     },
                     onMeasuredSegmentHeight: { [weak measurement] segment, height in
                         measurement?.report(height, for: segment)
-                    }
+                    },
+                    scrollIndicatorState: scrollIndicatorState
                 )
             )
         )
@@ -376,6 +407,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.contentSizeCoordinator = contentSizeCoordinator
         self.dashboardHostingController = dashboardHostingController
         self.contentMeasurement = measurement
+        self.scrollIndicatorState = scrollIndicatorState
         super.init()
         popover.delegate = self
     }
@@ -412,6 +444,10 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
     var testingContentSizeCoordinator: DashboardPopoverContentSizeCoordinator {
         contentSizeCoordinator
+    }
+
+    var testingScrollIndicatorState: DashboardPopoverScrollIndicatorState {
+        scrollIndicatorState
     }
     #endif
 }

@@ -649,6 +649,7 @@ struct DashboardView: View {
     let openPreferences: () -> Void
     let quitApplication: () -> Void
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
+    @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
     init(
         dashboardModel: DashboardModel,
@@ -657,6 +658,7 @@ struct DashboardView: View {
         openPreferences: @escaping () -> Void,
         quitApplication: @escaping () -> Void,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
+        scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
         initialSelectedTab: DashboardTab = .overview
     ) {
         self.dashboardModel = dashboardModel
@@ -665,6 +667,7 @@ struct DashboardView: View {
         self.openPreferences = openPreferences
         self.quitApplication = quitApplication
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
+        self.scrollIndicatorState = scrollIndicatorState
         self._selectedTab = State(initialValue: initialSelectedTab)
     }
 
@@ -681,7 +684,7 @@ struct DashboardView: View {
                 Divider()
             }
 
-            ScrollView {
+            ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
                 DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
                     dashboardContent
                         .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
