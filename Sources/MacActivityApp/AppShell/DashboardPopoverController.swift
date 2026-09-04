@@ -208,6 +208,7 @@ final class DashboardPopoverContentSizeCoordinator {
         }
 
         let proposedFrame = targetFrame(for: contentSize, in: window)
+        // AppKit may change the arrow edge while fitting, so keep placement ownership until the next show.
         if usesPopoverPlacementUntilClose {
             applyUsingPopoverPlacement(contentSize, in: window, popover: popover)
             return
