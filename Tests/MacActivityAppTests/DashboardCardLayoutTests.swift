@@ -716,7 +716,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesDualFanReadout(for: temperature))
     }
 
-    func testOverviewDualFanUsesTopReadoutAndShorterChartWithoutGrowingCard() {
+    func testOverviewFansUseTopReadoutAndShorterChartWithoutGrowingCard() {
         let dualFan = DashboardMetric(
             kind: .fan,
             value: "1800 RPM",
@@ -725,32 +725,25 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
         let singleFan = DashboardMetric(kind: .fan, value: "1800 RPM", style: .chart)
 
-        XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: dualFan))
-        XCTAssertFalse(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: singleFan))
-        XCTAssertTrue(
-            DashboardOverviewLayout.compactTrendShowsTopReadout(
-                for: dualFan,
-                isHovered: false
+        for metric in [singleFan, dualFan] {
+            XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopFanReadout(for: metric))
+            XCTAssertTrue(DashboardOverviewLayout.compactTrendUsesTopReadout(for: metric))
+            XCTAssertTrue(
+                DashboardOverviewLayout.compactTrendShowsTopReadout(for: metric, isHovered: false)
             )
-        )
-        XCTAssertFalse(
-            DashboardOverviewLayout.compactTrendShowsTopReadout(
-                for: dualFan,
-                isHovered: true
+            XCTAssertFalse(
+                DashboardOverviewLayout.compactTrendShowsTopReadout(for: metric, isHovered: true)
             )
-        )
-        XCTAssertEqual(
-            DashboardOverviewLayout.trendChartHeight(for: dualFan),
-            DashboardOverviewLayout.compactFanTrendChartHeight
-        )
-        XCTAssertEqual(
-            DashboardOverviewLayout.trendChartHeight(for: dualFan, isHovered: true),
-            DashboardOverviewLayout.compactTrendChartHeight
-        )
-        XCTAssertEqual(
-            DashboardOverviewLayout.trendChartHeight(for: singleFan),
-            DashboardOverviewLayout.compactTrendChartHeight
-        )
+            XCTAssertEqual(
+                DashboardOverviewLayout.trendChartHeight(for: metric),
+                DashboardOverviewLayout.compactFanTrendChartHeight
+            )
+            XCTAssertEqual(
+                DashboardOverviewLayout.trendChartHeight(for: metric, isHovered: true),
+                DashboardOverviewLayout.compactTrendChartHeight
+            )
+        }
+
         XCTAssertLessThan(
             DashboardOverviewLayout.compactFanTrendChartHeight,
             DashboardOverviewLayout.compactTrendChartHeight
