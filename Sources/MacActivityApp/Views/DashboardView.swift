@@ -465,7 +465,7 @@ enum DashboardOverviewLayout {
     }
 
     static func compactTrendUsesTopFanReadout(for metric: DashboardMetric) -> Bool {
-        compactTrendUsesDualFanReadout(for: metric)
+        metric.kind == .fan
     }
 
     static func compactTrendUsesTopReadout(for metric: DashboardMetric) -> Bool {
