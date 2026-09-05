@@ -106,7 +106,7 @@ enum SMCSensorReader {
         } ?? SMCSensorSnapshot()
     }
 
-    private static func withConnection<T>(_ body: (io_connect_t) -> T?) -> T? {
+    static func withConnection<T>(_ body: (io_connect_t) -> T?) -> T? {
         for serviceName in serviceMatchingNames {
             guard let matching = IOServiceMatching(serviceName) else {
                 continue
@@ -339,7 +339,7 @@ enum SMCSensorReader {
         }
     }
 
-    static func normalizedDataType(_ dataType: String) -> String {
+    private static func normalizedDataType(_ dataType: String) -> String {
         dataType.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
@@ -397,7 +397,7 @@ enum SMCSensorReader {
         return Double(value)
     }
 
-    private static func readKey(_ key: String, connection: io_connect_t) -> SMCReading? {
+    static func readKey(_ key: String, connection: io_connect_t) -> SMCReading? {
         guard let keyCode = keyCode(key) else {
             return nil
         }

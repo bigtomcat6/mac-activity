@@ -46,7 +46,12 @@ The Energy Impact page shows a physical power-flow panel above the app ranking:
 - Physical power flow shows active input and output endpoints above the app energy-impact ranking.
 - Battery appears as an input while discharging and an output while charging.
 - Connector labels can identify USB-C or MagSafe when Mac Activity can recognize the adapter; otherwise the app shows an unknown external interface.
-- Current watts appear only for hardware measurements that are directly available. Adapter ratings and negotiated limits are not shown as live power.
+- Input watts come directly from current SMC input voltage and current readings. Battery watts come directly from current SMC battery voltage and signed-current readings.
+- If a live SMC sensor is unavailable, its related flow remains unavailable. Mac Activity does not substitute adapter ratings, negotiated limits, or a cached earlier reading.
+- The Mac value is a derived allocation: external input plus battery discharge minus battery charging. It includes the non-battery residual in that flow and is not an independently measured system-load sensor.
+- The panel keeps its active input/output endpoint layout and uses mW for sub-watt readings.
+- App energy-impact CPU estimates are separate process estimates and are not inputs to physical power flow.
+- These readings do not claim exact AlDente parity for charging states that have not been validated.
 
 ## Actives
 
@@ -142,7 +147,9 @@ Some metrics are intentionally conditional:
 - Memory history improves after the app has been running long enough to collect
   samples.
 - Connector labels and direct power-flow values depend on hardware and system
-  APIs, and unavailable values are expected on some Macs.
+  APIs, and unavailable values are expected on some Macs. A Mac without an
+  internal battery has no battery endpoint; a present battery with unavailable
+  live SMC telemetry leaves its related allocation unavailable.
 
 ## Troubleshooting
 
