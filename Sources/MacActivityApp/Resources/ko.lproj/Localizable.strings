@@ -28,6 +28,10 @@
 "audio.process.ownedByAnotherInstance" = "다른 Mac Activity 인스턴스가 앱 오디오를 제어하고 있습니다.";
 "audio.process.runtimeUnavailable" = "앱 오디오 제어를 사용할 수 없습니다.";
 "audio.process.targetUnavailable" = "선택한 출력을 사용할 수 없어 원래 재생으로 복원했습니다.";
+"audio.access.checking" = "시스템 오디오 접근 권한을 확인하는 중...";
+"audio.access.permissionRequired" = "시스템 설정에서 Mac Activity가 시스템 오디오를 캡처하도록 허용한 후 다시 시도하세요.";
+"audio.access.failed" = "시스템 오디오 접근 권한을 확인할 수 없습니다. 다시 시도하세요.";
+"audio.access.openSettings" = "시스템 설정 열기";
 "audio.route.title" = "출력 경로";
 "audio.route.followOriginal" = "원래 출력 따르기";
 "audio.route.deviceUnavailable" = "%@ (사용할 수 없음)";

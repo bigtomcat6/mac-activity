@@ -1,6 +1,11 @@
 import Combine
 import CoreAudio
 import MacActivityCore
+import OSLog
+
+#if DEBUG
+private let audioDiscoveryLogger = Logger(subsystem: "com.how.macactivity", category: "AudioDiscovery")
+#endif
 
 enum AudioControlUserError: Equatable, Sendable {
     case deviceRead(AudioHALError)
@@ -100,11 +105,33 @@ struct AudioProcessControlSnapshot: Identifiable, Equatable, Sendable {
     var error: AudioControlUserError?
 }
 
+enum AudioSystemAccessState: Equatable, Sendable {
+    case notChecked
+    case checking
+    case available
+    case permissionRequired
+    case otherFailure(AudioSystemAccessFailure)
+
+    init(_ result: AudioSystemAccessResult) {
+        switch result {
+        case .available:
+            self = .available
+        case .permissionRequired:
+            self = .permissionRequired
+        case .otherFailure(let failure):
+            self = .otherFailure(failure)
+        case .shutdown:
+            self = .notChecked
+        }
+    }
+}
+
 struct AudioControlSnapshot: Equatable, Sendable {
     var devices: [AudioDeviceControlSnapshot]
     var processes: [AudioProcessControlSnapshot]
     var processControlsAreVisible: Bool = false
     var processRuntimeError: AudioControlUserError?
+    var systemAudioAccess: AudioSystemAccessState = .notChecked
 
     static let empty = AudioControlSnapshot(devices: [], processes: [])
 }
@@ -116,6 +143,8 @@ protocol AudioControlCoordinating: AnyObject {
     var snapshotPublisher: AnyPublisher<AudioControlSnapshot, Never> { get }
 
     func start() async
+    func checkSystemAudioAccess() async
+    func setSystemAudioAccessPageVisible(_ isVisible: Bool)
     func retryDevice(_ deviceUID: String)
     func setDeviceVolume(_ volume: Double, for deviceUID: String)
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String)
@@ -125,6 +154,10 @@ protocol AudioControlCoordinating: AnyObject {
     func retry(processObjectID: AudioObjectID)
     func reset(processObjectID: AudioObjectID)
     func shutdown() async
+}
+
+extension AudioControlCoordinating {
+    func setSystemAudioAccessPageVisible(_ isVisible: Bool) {}
 }
 
 @MainActor
@@ -153,6 +186,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private let planner: AudioRoutePlanner
     private let engine: any ProcessTapVolumeControlling
     private let preferences: PreferencesController
+    private let systemAudioAccessChecker: any AudioSystemAccessChecking
 
     private var routeDevices: [AudioRouteDevice] = []
     private var confirmedDevices: [String: AudioOutputDeviceSnapshot] = [:]
@@ -169,6 +203,12 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var nextTrackedTaskID: UInt64 = 0
     private var monitorTask: Task<Void, Never>?
     private var engineSnapshotTask: Task<Void, Never>?
+    private var systemAudioAccessTask: Task<Void, Never>?
+    private var systemAudioAccessTaskID: UUID?
+    private var invalidatedSystemAudioAccessTask: Task<Void, Never>?
+    private var invalidatedSystemAudioAccessTaskID: UUID?
+    private var systemAudioAccessGeneration: UInt64 = 0
+    private var systemAudioAccessPageIsVisible = false
     private var latestSnapshotOrders: [AudioObjectID: ProcessTapSnapshotOrder] = [:]
     #if DEBUG
     private var reconciliationOrdinal: UInt64 = 0
@@ -203,7 +243,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         monitor: any AudioSystemMonitoring,
         planner: AudioRoutePlanner = .init(),
         engine: any ProcessTapVolumeControlling,
-        preferences: PreferencesController
+        preferences: PreferencesController,
+        systemAudioAccessChecker: any AudioSystemAccessChecking
     ) {
         supportsProcessControls = availability.supportsProcessControls
         self.deviceProvider = deviceProvider
@@ -213,6 +254,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         self.planner = planner
         self.engine = engine
         self.preferences = preferences
+        self.systemAudioAccessChecker = systemAudioAccessChecker
     }
 
     deinit {
@@ -221,6 +263,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         trackedTasks.values.forEach { $0.cancel() }
         monitorTask?.cancel()
         engineSnapshotTask?.cancel()
+        systemAudioAccessTask?.cancel()
+        invalidatedSystemAudioAccessTask?.cancel()
     }
 
     func start() async {
@@ -229,6 +273,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         do {
             try monitor.start()
         } catch {
+            #if DEBUG
+            audioDiscoveryLogger.error("Audio monitor startup failed: \(String(describing: error), privacy: .public)")
+            #endif
             hasStarted = false
             return
         }
@@ -250,9 +297,14 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         do {
             try monitor.updateObservedObjects(
                 deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-                processObjectIDs: Set(snapshot.processes.map(\.id))
+                processObjectIDs: processRuntimeWasStarted
+                    ? processProvider.discoveredProcessObjectIDs
+                    : []
             )
         } catch {
+            #if DEBUG
+            audioDiscoveryLogger.error("Audio initial observation failed: \(String(describing: error), privacy: .public)")
+            #endif
             snapshot.processes = []
             snapshot.processControlsAreVisible = false
             monitor.stop()
@@ -278,6 +330,44 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             row.device = device
             row.error = Self.deviceError(in: device)
         }
+    }
+
+    func checkSystemAudioAccess() async {
+        guard supportsProcessControls, acceptsMutations else { return }
+        while true {
+            guard acceptsMutations else { return }
+            if let systemAudioAccessTask {
+                await systemAudioAccessTask.value
+                return
+            }
+            if let invalidatedSystemAudioAccessTask {
+                await invalidatedSystemAudioAccessTask.value
+                continue
+            }
+
+            systemAudioAccessGeneration &+= 1
+            let generation = systemAudioAccessGeneration
+            let taskID = UUID()
+            snapshot.systemAudioAccess = .checking
+            let checker = systemAudioAccessChecker
+            let task = Task { @MainActor [weak self, checker] in
+                let result = await checker.checkAccess()
+                guard let self else { return }
+                await self.finishSystemAudioAccessCheck(
+                    result,
+                    generation: generation,
+                    taskID: taskID
+                )
+            }
+            systemAudioAccessTask = task
+            systemAudioAccessTaskID = taskID
+            await task.value
+            return
+        }
+    }
+
+    func setSystemAudioAccessPageVisible(_ isVisible: Bool) {
+        systemAudioAccessPageIsVisible = isVisible
     }
 
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
@@ -579,6 +669,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     func requestShutdown() {
         guard shutdownWasRequested == false else { return }
         shutdownWasRequested = true
+        systemAudioAccessGeneration &+= 1
+        systemAudioAccessTask?.cancel()
+        invalidatedSystemAudioAccessTask?.cancel()
         for processObjectID in Array(gainTasks.keys) {
             _ = invalidateGainIntent(processObjectID)
             guard let confirmed = confirmedProcessValues[processObjectID] else { continue }
@@ -603,11 +696,20 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         deviceControlTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
         let workTasks = Array(trackedTasks.values)
+        let systemAudioAccessTask = self.systemAudioAccessTask
+        let invalidatedSystemAudioAccessTask = self.invalidatedSystemAudioAccessTask
+        self.systemAudioAccessTask = nil
+        self.systemAudioAccessTaskID = nil
+        self.invalidatedSystemAudioAccessTask = nil
+        self.invalidatedSystemAudioAccessTaskID = nil
         workTasks.forEach { $0.cancel() }
         monitorTask?.cancel()
         engineSnapshotTask?.cancel()
         monitor.stop()
+        await systemAudioAccessChecker.shutdown()
         for task in workTasks { await task.value }
+        await systemAudioAccessTask?.value
+        await invalidatedSystemAudioAccessTask?.value
         await monitorTask?.value
         await engineSnapshotTask?.value
         if processRuntimePreparationWasAttempted {
@@ -734,6 +836,9 @@ private extension AudioControlCoordinator {
         let previous = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.id, $0) })
         let audible = processProvider.audibleOutputProcesses()
         let validated = validatedProcesses(audible, previous: previous)
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio discovery: observed=\(String(describing: self.processProvider.discoveredProcessObjectIDs.sorted()), privacy: .public) audible=\(String(describing: audible.map(\.id)), privacy: .public) visible=\(String(describing: validated.map(\.id)), privacy: .public)")
+        #endif
         snapshot.processControlsAreVisible = validated.isEmpty == false
         snapshot.processes = validated.map { process in
             makeProcessSnapshot(
@@ -742,6 +847,22 @@ private extension AudioControlCoordinator {
                 resetSession: resetSessions
             )
         }
+    }
+
+    func refreshProcessesAfterSystemAudioAccessCheck() async {
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio post-access refresh: started=\(self.hasStarted) runtime=\(self.processRuntimeWasStarted) accepts=\(self.acceptsMutations) error=\(String(describing: self.snapshot.processRuntimeError), privacy: .public)")
+        #endif
+        guard acceptsMutations else { return }
+        if hasStarted == false {
+            guard snapshot.systemAudioAccess == .available else { return }
+            await start()
+            return
+        }
+        guard processRuntimeWasStarted else { return }
+        refreshRouteDescriptors()
+        refreshProcesses()
+        await updateMonitorObjects()
     }
 
     func processRoute(
@@ -1200,6 +1321,7 @@ private extension AudioControlCoordinator {
             row.pendingValues = requested
             row.error = error
         }
+        elevateSystemAudioAccess(for: error)
     }
 
     static func userError(_ error: ProcessTapEngineError?) -> AudioControlUserError {
@@ -1234,6 +1356,7 @@ private extension AudioControlCoordinator {
     }
 
     func accept(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
+        guard acceptsMutations else { return false }
         if let currentGeneration = generations[engineSnapshot.processObjectID],
            engineSnapshot.generation < currentGeneration {
             return false
@@ -1251,7 +1374,44 @@ private extension AudioControlCoordinator {
                 row.error = nil
             }
         }
+        if case .permissionDenied = engineSnapshot.error {
+            elevateSystemAudioAccess(for: .permissionDenied)
+        }
         return true
+    }
+
+    func elevateSystemAudioAccess(for error: AudioControlUserError) {
+        guard acceptsMutations, case .permissionDenied = error else { return }
+        systemAudioAccessGeneration &+= 1
+        let task = systemAudioAccessTask
+        let taskID = systemAudioAccessTaskID
+        systemAudioAccessTask = nil
+        systemAudioAccessTaskID = nil
+        task?.cancel()
+        if let task, let taskID {
+            invalidatedSystemAudioAccessTask = task
+            invalidatedSystemAudioAccessTaskID = taskID
+        }
+        snapshot.systemAudioAccess = .permissionRequired
+    }
+
+    func finishSystemAudioAccessCheck(
+        _ result: AudioSystemAccessResult,
+        generation: UInt64,
+        taskID: UUID
+    ) async {
+        let isCurrentTask = systemAudioAccessTaskID == taskID
+        if isCurrentTask {
+            systemAudioAccessTask = nil
+            systemAudioAccessTaskID = nil
+        }
+        if invalidatedSystemAudioAccessTaskID == taskID {
+            invalidatedSystemAudioAccessTask = nil
+            invalidatedSystemAudioAccessTaskID = nil
+        }
+        guard isCurrentTask, systemAudioAccessGeneration == generation, acceptsMutations else { return }
+        snapshot.systemAudioAccess = .init(result)
+        await refreshProcessesAfterSystemAudioAccessCheck()
     }
 
     func acceptResult(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
@@ -1394,8 +1554,10 @@ private extension AudioControlCoordinator {
 
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
+            let systemAudioAccessTask = beginSystemAudioAccessInvalidationAfterServiceRestart()
             invalidateAllDeviceControlLifetimes()
             invalidateAllProcessIntents()
+            await drainInvalidatedSystemAudioAccessTask(systemAudioAccessTask)
             if processRuntimeWasStarted {
                 await engine.stopAll()
             }
@@ -1417,6 +1579,9 @@ private extension AudioControlCoordinator {
                 }
             }
             await updateMonitorObjects()
+            if systemAudioAccessPageIsVisible {
+                await checkSystemAudioAccess()
+            }
             return
         }
 
@@ -1458,6 +1623,28 @@ private extension AudioControlCoordinator {
             await rebuildSessions(using: deviceID)
         }
         await updateMonitorObjects()
+    }
+
+    func beginSystemAudioAccessInvalidationAfterServiceRestart() -> Task<Void, Never>? {
+        systemAudioAccessGeneration &+= 1
+        snapshot.systemAudioAccess = .notChecked
+        let task = systemAudioAccessTask ?? invalidatedSystemAudioAccessTask
+        let taskID = systemAudioAccessTaskID ?? invalidatedSystemAudioAccessTaskID
+        systemAudioAccessTask = nil
+        systemAudioAccessTaskID = nil
+        if let task, let taskID {
+            invalidatedSystemAudioAccessTask = task
+            invalidatedSystemAudioAccessTaskID = taskID
+        }
+        task?.cancel()
+        return task
+    }
+
+    func drainInvalidatedSystemAudioAccessTask(
+        _ task: Task<Void, Never>?
+    ) async {
+        await task?.value
+        await systemAudioAccessChecker.drainRetainedResources()
     }
 
     func reconcileProcesses(changes: Set<AudioSystemChange>) async {
@@ -1543,7 +1730,9 @@ private extension AudioControlCoordinator {
         do {
             try monitor.updateObservedObjects(
                 deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-                processObjectIDs: Set(snapshot.processes.map(\.id))
+                processObjectIDs: processRuntimeWasStarted
+                    ? processProvider.discoveredProcessObjectIDs
+                    : []
             )
         } catch {
             processTasks.values.forEach { $0.cancel() }
