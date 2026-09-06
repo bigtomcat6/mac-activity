@@ -105,6 +105,8 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         var ioProcCreations: [IOProcCreation] = []
         var destroyedProcessTapIDs: [AudioObjectID] = []
         var destroyedAggregateDeviceIDs: [AudioDeviceID] = []
+        var destroyedIOProcDeviceIDs: [AudioDeviceID] = []
+        var stoppedDeviceIDs: [AudioDeviceID] = []
         var objectWriteStatus: OSStatus = noErr
         var createProcessTapStatus: OSStatus = noErr
         var destroyProcessTapStatus: OSStatus = noErr
@@ -114,9 +116,15 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         var destroyIOProcStatus: OSStatus = noErr
         var startDeviceStatus: OSStatus = noErr
         var stopDeviceStatus: OSStatus = noErr
+        var queuedStopDeviceStatuses: [OSStatus] = []
         var nextProcessTapID: AudioObjectID = kAudioObjectUnknown
         var nextAggregateDeviceID: AudioDeviceID = kAudioObjectUnknown
         var nextIOProcID: AudioDeviceIOProcID?
+        var aggregateDestructionDelayPolls = 0
+        var pendingAggregateDestructionPolls: [AudioDeviceID: Int] = [:]
+        var startDeviceBlocker: DispatchSemaphore?
+        var onStartDevice: (@Sendable () -> Void)?
+        var onDestroyProcessTap: (@Sendable () -> Void)?
     }
 
     private(set) var dataSizeCallCount = 0
@@ -155,6 +163,14 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
 
     var destroyedAggregateDeviceIDs: [AudioDeviceID] {
         withMutableState { $0.destroyedAggregateDeviceIDs }
+    }
+
+    var destroyedIOProcDeviceIDs: [AudioDeviceID] {
+        withMutableState { $0.destroyedIOProcDeviceIDs }
+    }
+
+    var stoppedDeviceIDs: [AudioDeviceID] {
+        withMutableState { $0.stoppedDeviceIDs }
     }
 
     var objectWriteStatus: OSStatus {
@@ -202,6 +218,10 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         set { withMutableState { $0.stopDeviceStatus = newValue } }
     }
 
+    func enqueueStopDeviceStatuses(_ statuses: [OSStatus]) {
+        withMutableState { $0.queuedStopDeviceStatuses.append(contentsOf: statuses) }
+    }
+
     var nextProcessTapID: AudioObjectID {
         get { withMutableState { $0.nextProcessTapID } }
         set { withMutableState { $0.nextProcessTapID = newValue } }
@@ -215,6 +235,26 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     var nextIOProcID: AudioDeviceIOProcID? {
         get { withMutableState { $0.nextIOProcID } }
         set { withMutableState { $0.nextIOProcID = newValue } }
+    }
+
+    var aggregateDestructionDelayPolls: Int {
+        get { withMutableState { $0.aggregateDestructionDelayPolls } }
+        set { withMutableState { $0.aggregateDestructionDelayPolls = newValue } }
+    }
+
+    var startDeviceBlocker: DispatchSemaphore? {
+        get { withMutableState { $0.startDeviceBlocker } }
+        set { withMutableState { $0.startDeviceBlocker = newValue } }
+    }
+
+    var onStartDevice: (@Sendable () -> Void)? {
+        get { withMutableState { $0.onStartDevice } }
+        set { withMutableState { $0.onStartDevice = newValue } }
+    }
+
+    var onDestroyProcessTap: (@Sendable () -> Void)? {
+        get { withMutableState { $0.onDestroyProcessTap } }
+        set { withMutableState { $0.onDestroyProcessTap = newValue } }
     }
 
     var activeListeners: [ListenerCall] {
@@ -286,6 +326,8 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         queuedSizes.append(
             SizeResult(status: noErr, byteCount: UInt32(announced.count * MemoryLayout<T>.stride))
         )
+        // AudioHALClient returns after a zero-sized property-data-size response.
+        guard announced.isEmpty == false else { return }
         let bytes = bytes(of: returned)
         queuedReads.append(
             ReadResult(
@@ -546,6 +588,9 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
                 returnedByteCount: property.payload.byteCount
             )
         }
+        if address.selector == kAudioDevicePropertyDeviceUID {
+            advancePendingAggregateDestruction(for: objectID)
+        }
         return noErr
     }
 
@@ -650,16 +695,28 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         }
         if result.0 == noErr {
             objectID = result.1
+            setScalar(
+                kAudioTapClassID,
+                objectID: objectID,
+                address: .init(selector: kAudioObjectPropertyClass)
+            )
+            setString(
+                description.uuid.uuidString,
+                objectID: objectID,
+                address: .init(selector: kAudioTapPropertyUID)
+            )
         }
         return result.0
     }
 
     func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
-        withMutableState { state in
+        let result = withMutableState { state -> (OSStatus, (@Sendable () -> Void)?) in
             state.operations.append(.destroyTap)
             state.destroyedProcessTapIDs.append(objectID)
-            return state.destroyProcessTapStatus
+            return (state.destroyProcessTapStatus, state.onDestroyProcessTap)
         }
+        result.1?()
+        return result.0
     }
 
     func createAggregateDevice(
@@ -673,16 +730,35 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         }
         if result.0 == noErr {
             objectID = result.1
+            if let uid = (description as NSDictionary)[kAudioAggregateDeviceUIDKey] as? String {
+                setScalar(
+                    kAudioAggregateDeviceClassID,
+                    objectID: objectID,
+                    address: .init(selector: kAudioObjectPropertyClass)
+                )
+                setString(
+                    uid,
+                    objectID: objectID,
+                    address: .init(selector: kAudioDevicePropertyDeviceUID)
+                )
+            }
         }
         return result.0
     }
 
     func destroyAggregateDevice(_ objectID: AudioObjectID) -> OSStatus {
-        withMutableState { state in
+        let result = withMutableState { state -> (OSStatus, Int) in
             state.operations.append(.destroyAggregate)
             state.destroyedAggregateDeviceIDs.append(objectID)
-            return state.destroyAggregateDeviceStatus
+            return (state.destroyAggregateDeviceStatus, state.aggregateDestructionDelayPolls)
         }
+        guard result.0 == noErr else { return result.0 }
+        if result.1 > 0 {
+            withMutableState { $0.pendingAggregateDestructionPolls[objectID] = result.1 }
+        } else {
+            removeAggregateIdentity(for: objectID)
+        }
+        return result.0
     }
 
     func createIOProc(
@@ -714,6 +790,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     ) -> OSStatus {
         withMutableState { state in
             state.operations.append(.destroyIOProc)
+            state.destroyedIOProcDeviceIDs.append(deviceID)
             return state.destroyIOProcStatus
         }
     }
@@ -722,10 +799,13 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         deviceID: AudioDeviceID,
         ioProcID: AudioDeviceIOProcID
     ) -> OSStatus {
-        withMutableState { state in
+        let result = withMutableState { state -> (OSStatus, DispatchSemaphore?, (@Sendable () -> Void)?) in
             state.operations.append(.startDevice)
-            return state.startDeviceStatus
+            return (state.startDeviceStatus, state.startDeviceBlocker, state.onStartDevice)
         }
+        result.2?()
+        result.1?.wait()
+        return result.0
     }
 
     func stopDevice(
@@ -734,8 +814,33 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     ) -> OSStatus {
         withMutableState { state in
             state.operations.append(.stopDevice)
-            return state.stopDeviceStatus
+            state.stoppedDeviceIDs.append(deviceID)
+            return state.queuedStopDeviceStatuses.isEmpty
+                ? state.stopDeviceStatus
+                : state.queuedStopDeviceStatuses.removeFirst()
         }
+    }
+
+    private func advancePendingAggregateDestruction(for objectID: AudioObjectID) {
+        let shouldRemove = withMutableState { state -> Bool in
+            guard let remaining = state.pendingAggregateDestructionPolls[objectID] else {
+                return false
+            }
+            if remaining <= 1 {
+                state.pendingAggregateDestructionPolls[objectID] = nil
+                return true
+            }
+            state.pendingAggregateDestructionPolls[objectID] = remaining - 1
+            return false
+        }
+        if shouldRemove {
+            removeAggregateIdentity(for: objectID)
+        }
+    }
+
+    private func removeAggregateIdentity(for objectID: AudioObjectID) {
+        removeProperty(objectID: objectID, address: .init(selector: kAudioObjectPropertyClass))
+        removeProperty(objectID: objectID, address: .init(selector: kAudioDevicePropertyDeviceUID))
     }
 
     private func withMutableState<Result>(

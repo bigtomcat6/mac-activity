@@ -46,6 +46,66 @@ final class AudioDashboardModelTests: XCTestCase {
         ])
     }
 
+    func testAudioPageActivationAndRetryForwardAccessChecks() async {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        await model.audioPageActivated()
+        await model.retrySystemAudioAccess()
+
+        XCTAssertEqual(coordinator.intents, [
+            .pageVisibility(true),
+            .checkSystemAudioAccess,
+            .checkSystemAudioAccess,
+        ])
+    }
+
+    func testPermissionRequiredDoesNotRetryOnOrdinaryAppActivation() async {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        await model.audioPageActivated()
+        coordinator.publish(Self.snapshot(systemAudioAccess: .permissionRequired))
+        await model.applicationDidBecomeActive()
+
+        XCTAssertEqual(coordinator.intents, [.pageVisibility(true), .checkSystemAudioAccess])
+    }
+
+    func testSettingsReturnPermitsExactlyOnePermissionRetry() async {
+        let coordinator = AudioControlCoordinatorSpy(
+            snapshot: Self.snapshot(systemAudioAccess: .permissionRequired)
+        )
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        await model.audioPageActivated()
+        model.systemAudioSettingsWasOpened()
+        await model.applicationDidBecomeActive()
+        await model.applicationDidBecomeActive()
+        await model.retrySystemAudioAccess()
+
+        XCTAssertEqual(coordinator.intents, [
+            .pageVisibility(true),
+            .checkSystemAudioAccess,
+            .checkSystemAudioAccess,
+            .checkSystemAudioAccess,
+        ])
+    }
+
+    func testHiddenAudioPageDoesNotRespondToAppActivation() async {
+        let coordinator = AudioControlCoordinatorSpy(snapshot: Self.snapshot())
+        let model = AudioDashboardModel(coordinator: coordinator)
+
+        await model.audioPageActivated()
+        model.audioPageDeactivated()
+        await model.applicationDidBecomeActive()
+
+        XCTAssertEqual(coordinator.intents, [
+            .pageVisibility(true),
+            .checkSystemAudioAccess,
+            .pageVisibility(false),
+        ])
+    }
+
     func testUnsupportedCoordinatorKeepsDeviceControlsButHidesProcessControls() {
         let coordinator = AudioControlCoordinatorSpy(
             supportsProcessControls: false,
@@ -74,7 +134,8 @@ final class AudioDashboardModelTests: XCTestCase {
 
     private static func snapshot(
         deviceVolume: Double = 0.4,
-        processVolume: Double = 0.7
+        processVolume: Double = 0.7,
+        systemAudioAccess: AudioSystemAccessState = .notChecked
     ) -> AudioControlSnapshot {
         AudioControlSnapshot(
             devices: [
@@ -114,7 +175,7 @@ final class AudioDashboardModelTests: XCTestCase {
                     error: nil
                 )
             ]
-        )
+        ).withSystemAudioAccess(systemAudioAccess)
     }
 }
 
@@ -129,6 +190,8 @@ private final class AudioControlCoordinatorSpy: AudioControlCoordinating {
         case processRoute(AudioRouteMode, AudioObjectID)
         case retryProcess(AudioObjectID)
         case resetProcess(AudioObjectID)
+        case checkSystemAudioAccess
+        case pageVisibility(Bool)
     }
 
     let supportsProcessControls: Bool
@@ -152,6 +215,10 @@ private final class AudioControlCoordinatorSpy: AudioControlCoordinating {
     }
 
     func start() async {}
+    func checkSystemAudioAccess() async { intents.append(.checkSystemAudioAccess) }
+    func setSystemAudioAccessPageVisible(_ isVisible: Bool) {
+        intents.append(.pageVisibility(isVisible))
+    }
     func retryDevice(_ deviceUID: String) { intents.append(.retryDevice(deviceUID)) }
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
         intents.append(.deviceVolume(volume, deviceUID))
@@ -171,4 +238,12 @@ private final class AudioControlCoordinatorSpy: AudioControlCoordinating {
     func retry(processObjectID: AudioObjectID) { intents.append(.retryProcess(processObjectID)) }
     func reset(processObjectID: AudioObjectID) { intents.append(.resetProcess(processObjectID)) }
     func shutdown() async { shutdownCallCount += 1 }
+}
+
+private extension AudioControlSnapshot {
+    func withSystemAudioAccess(_ state: AudioSystemAccessState) -> Self {
+        var snapshot = self
+        snapshot.systemAudioAccess = state
+        return snapshot
+    }
 }

@@ -8,6 +8,43 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    func testSystemAudioAccessBannerDistinguishesCheckingPermissionAndOtherFailures() {
+        XCTAssertNil(AudioSystemAccessBannerPresentation(state: .notChecked))
+        XCTAssertNil(AudioSystemAccessBannerPresentation(state: .available))
+        XCTAssertEqual(
+            AudioSystemAccessBannerPresentation(state: .checking),
+            .checking
+        )
+        XCTAssertEqual(
+            AudioSystemAccessBannerPresentation(state: .permissionRequired),
+            .permissionRequired
+        )
+        XCTAssertEqual(
+            AudioSystemAccessBannerPresentation(state: .otherFailure(.unsupported)),
+            .otherFailure
+        )
+        XCTAssertTrue(AudioSystemAccessBannerPresentation.permissionRequired.showsRetry)
+        XCTAssertTrue(AudioSystemAccessBannerPresentation.permissionRequired.showsSettings)
+        XCTAssertTrue(AudioSystemAccessBannerPresentation.otherFailure.showsRetry)
+        XCTAssertFalse(AudioSystemAccessBannerPresentation.otherFailure.showsSettings)
+        XCTAssertFalse(AudioSystemAccessBannerPresentation.checking.showsRetry)
+    }
+
+    func testAudioAccessBannerIsAboveDevicesAndDashboardOwnsPageLifecycleHooks() throws {
+        let source = try audioDashboardViewSource()
+        let viewSource = try XCTUnwrap(source.components(separatedBy: "struct AudioDashboardView").last)
+        let bannerIndex = try XCTUnwrap(viewSource.range(of: "AudioSystemAccessBanner"))
+        let devicesIndex = try XCTUnwrap(viewSource.range(of: "title: AppLocalization.string(.audioDevicesTitle)"))
+        let dashboardSource = try dashboardViewSource()
+
+        XCTAssertLessThan(bannerIndex.lowerBound, devicesIndex.lowerBound)
+        XCTAssertFalse(viewSource.contains("NSApplication.didBecomeActiveNotification"))
+        XCTAssertTrue(dashboardSource.contains("await audioDashboardModel.audioPageActivated()"))
+        XCTAssertTrue(dashboardSource.contains("audioDashboardModel.audioPageDeactivated()"))
+        XCTAssertTrue(dashboardSource.contains("selectedTab == .audio"))
+        XCTAssertTrue(dashboardSource.contains("audioDashboardModel.applicationDidBecomeActive()"))
+    }
+
     func testEffectiveVolumeStatePreservesRestoreVolumeAcrossMuteAndUnmute() throws {
         let audible = AudioEffectiveVolumeState(rawVolume: 0.6, isMuted: false)
         let muted = audible.settingDisplayVolume(0)
@@ -136,6 +173,66 @@ final class AudioDashboardViewTests: XCTestCase {
         }
         XCTAssertEqual(source.components(separatedBy: "AudioMuteGlyph(").count - 1, 3)
         XCTAssertEqual(source.components(separatedBy: "AudioAnimatedVolumeSlider(").count - 1, 2)
+    }
+
+    func testProcessRowUsesBundleIconBeforeItsTitleAndHidesTheIconFromAccessibility() throws {
+        let bundleURL = URL(fileURLWithPath: "/Applications/Safari.app")
+        let process = AudioProcessEntry(
+            processObjectID: 11,
+            processIdentifier: 101,
+            name: "Safari",
+            bundleIdentifier: "com.apple.Safari",
+            bundleURL: bundleURL
+        )
+
+        XCTAssertEqual(
+            AudioProcessControlRow.iconSource(for: process, fileExists: { _ in true }),
+            .bundle(bundleURL)
+        )
+
+        let source = try audioDashboardViewSource()
+        let rowSource = try XCTUnwrap(source.components(separatedBy: "struct AudioProcessControlRow").last)
+        let iconIndex = try XCTUnwrap(rowSource.range(of: "processIcon\n"))
+        let titleIndex = try XCTUnwrap(rowSource.range(of: "Text(snapshot.process.name)"))
+        XCTAssertLessThan(iconIndex.lowerBound, titleIndex.lowerBound)
+        XCTAssertTrue(rowSource.contains("ActiveProcessIconCache.shared.icon(for: bundleURL)"))
+        XCTAssertTrue(rowSource.contains(".accessibilityHidden(true)"))
+    }
+
+    func testProcessRowFallsBackToTheSystemAppIconWithoutAUsableBundle() {
+        let noBundle = AudioProcessEntry(
+            processObjectID: 11,
+            processIdentifier: 101,
+            name: "Process 101",
+            bundleIdentifier: nil,
+            bundleURL: nil
+        )
+        let missingBundle = AudioProcessEntry(
+            processObjectID: 12,
+            processIdentifier: 102,
+            name: "Missing",
+            bundleIdentifier: "com.example.missing",
+            bundleURL: URL(fileURLWithPath: "/Applications/Missing.app")
+        )
+
+        XCTAssertEqual(
+            AudioProcessControlRow.iconSource(for: noBundle),
+            .fallbackSystemSymbol
+        )
+        XCTAssertEqual(
+            AudioProcessControlRow.iconSource(for: missingBundle, fileExists: { _ in false }),
+            .fallbackSystemSymbol
+        )
+    }
+
+    func testProcessRowIconPresentationUsesGenericFallbackAndTwentyPointFrames() throws {
+        let source = try audioDashboardViewSource()
+        let rowSource = try XCTUnwrap(source.components(separatedBy: "struct AudioProcessControlRow").last)
+        let iconSource = try XCTUnwrap(rowSource.components(separatedBy: "private var volumeBinding").first)
+
+        XCTAssertTrue(iconSource.contains("case .bundle(let bundleURL):"))
+        XCTAssertTrue(iconSource.contains("case .fallbackSystemSymbol:\n            Image(systemName: \"app\")"))
+        XCTAssertEqual(iconSource.components(separatedBy: ".frame(width: 20, height: 20)").count - 1, 2)
     }
 
     func testDeviceVolumeControlReservesAndCentersTheSliderLaneForUnavailableText() throws {
@@ -870,6 +967,16 @@ final class AudioDashboardViewTests: XCTestCase {
         )
     }
 
+    private func dashboardViewSource() throws -> String {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let root = testURL.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent("Sources/MacActivityApp/Views/DashboardView.swift"),
+            encoding: .utf8
+        )
+    }
+
     private func hostingAXEvidence(for view: NSView) -> HostingAXEvidence {
         let typedChildren = view.accessibilityChildren() ?? []
         let navigationChildren = view.accessibilityChildrenInNavigationOrder() ?? []
@@ -945,6 +1052,7 @@ private final class AudioViewCoordinatorSpy: AudioControlCoordinating {
     }
 
     func start() async {}
+    func checkSystemAudioAccess() async {}
     func retryDevice(_ deviceUID: String) { intentCount += 1 }
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
         deviceVolumes.append((deviceUID, volume)); intentCount += 1

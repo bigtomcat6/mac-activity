@@ -66,6 +66,93 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
+    func testInitialMonitorObservationIncludesDormantDiscoveredProcessWithoutShowingRow() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        fixture.processProvider.scriptedProcesses = [[]]
+        fixture.processProvider.scriptedDiscoveredProcessObjectIDs = [[22]]
+
+        await fixture.coordinator.start()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [22])
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
+    }
+
+    func testRunningOutputChangeAddsPreviouslyDormantProcessWithMetadata() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        let dormant = AudioProcessEntry(
+            processObjectID: 22,
+            processIdentifier: 202,
+            name: "Dormant Player",
+            bundleIdentifier: "com.example.Dormant",
+            bundleURL: URL(fileURLWithPath: "/Applications/Dormant Player.app"),
+            outputDeviceIDs: [10]
+        )
+        fixture.processProvider.scriptedProcesses = [[], [dormant]]
+        fixture.processProvider.scriptedDiscoveredProcessObjectIDs = [[22], [22]]
+
+        await fixture.coordinator.start()
+        await fixture.emit([.process(22, .runningOutput)])
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.process), [dormant])
+        XCTAssertEqual(
+            fixture.monitor.observationCalls.map(\.processObjectIDs),
+            [Set<AudioObjectID>([22]), Set<AudioObjectID>([22])]
+        )
+    }
+
+    func testRunningOutputChangeDuringInitialObservationAddsDormantProcess() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        let dormant = AudioProcessEntry(
+            processObjectID: 22,
+            processIdentifier: 202,
+            name: "Dormant Player",
+            bundleIdentifier: "com.example.Dormant",
+            bundleURL: URL(fileURLWithPath: "/Applications/Dormant Player.app"),
+            outputDeviceIDs: [10]
+        )
+        fixture.processProvider.scriptedProcesses = [[], [dormant]]
+        fixture.processProvider.scriptedDiscoveredProcessObjectIDs = [[22], [22]]
+        fixture.monitor.changesOnNextObservation = [.process(22, .runningOutput)]
+        let appeared = expectation(description: "Dormant process becomes audible")
+        let cancellable = fixture.coordinator.snapshotPublisher
+            .filter { $0.processes.map(\.id) == [22] }
+            .first()
+            .sink { _ in appeared.fulfill() }
+
+        await fixture.coordinator.start()
+        await fulfillment(of: [appeared], timeout: 0.1)
+
+        XCTAssertEqual(fixture.monitor.observationCalls.first?.processObjectIDs, [22])
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.process), [dormant])
+        withExtendedLifetime(cancellable) {}
+    }
+
+    func testDormantProcessRemainsObservedAfterItsRowIsRemovedAndResumes() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        let dormant = AudioProcessEntry(
+            processObjectID: 22,
+            processIdentifier: 202,
+            name: "Dormant Player",
+            bundleIdentifier: "com.example.Dormant",
+            bundleURL: URL(fileURLWithPath: "/Applications/Dormant Player.app"),
+            outputDeviceIDs: [10]
+        )
+        fixture.processProvider.scriptedProcesses = [[dormant], [], [dormant]]
+        fixture.processProvider.scriptedDiscoveredProcessObjectIDs = [[22], [22], [22]]
+
+        await fixture.coordinator.start()
+        await fixture.emit([.process(22, .runningOutput)])
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes, [])
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [22])
+
+        await fixture.emit([.process(22, .runningOutput)])
+
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.process), [dormant])
+        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [22])
+    }
+
     func testDeviceVolumeSafelyClampsNonFiniteInput() async {
         let deviceProvider = DeviceProviderFake()
         let processProvider = ProcessProviderFake()
@@ -82,7 +169,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
             routeDeviceProvider: deviceProvider,
             monitor: monitor,
             engine: engine,
-            preferences: preferences
+            preferences: preferences,
+            systemAudioAccessChecker: AudioSystemAccessCheckerFake()
         )
 
         await coordinator.start()
@@ -652,6 +740,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.coordinator.testingWaitUntilIdle()
         let session = fixture.coordinator.snapshot.processes[0].session
         let prepareRuntimeCount = fixture.engine.prepareRuntimeCount
+        let processEnumerationCount = fixture.processProvider.callCount
 
         fixture.coordinator.setProcessVolume(0.6, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
@@ -665,6 +754,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         ])
         XCTAssertEqual(fixture.engine.stopCalls, [])
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, prepareRuntimeCount)
+        XCTAssertEqual(fixture.processProvider.callCount, processEnumerationCount)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].session, session)
         XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.6)
         XCTAssertTrue(fixture.coordinator.snapshot.processes[0].isMuted)

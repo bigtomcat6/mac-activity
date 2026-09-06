@@ -13,6 +13,7 @@ final class CoordinatorFixture {
     let deviceProvider = DeviceProviderFake()
     let processProvider = ProcessProviderFake()
     let monitor = MonitorFake()
+    let systemAudioAccessChecker: any AudioSystemAccessChecking
     let engine: EngineFake
     let store = PreferencesStoreFake()
     let lifecycle = LifecycleRecorder()
@@ -23,9 +24,11 @@ final class CoordinatorFixture {
         bundleIdentifier: String? = "com.example.music",
         savedProfiles: [String: AudioProcessProfile] = [:],
         engine: EngineFake = EngineFake(),
-        planner: AudioRoutePlanner? = nil
+        planner: AudioRoutePlanner? = nil,
+        systemAudioAccessChecker: any AudioSystemAccessChecking = AudioSystemAccessCheckerFake()
     ) {
         self.engine = engine
+        self.systemAudioAccessChecker = systemAudioAccessChecker
         processProvider.bundleIdentifier = bundleIdentifier
         store.savedPreferences.audioProcessProfiles = savedProfiles
         monitor.lifecycle = lifecycle
@@ -45,7 +48,8 @@ final class CoordinatorFixture {
             monitor: monitor,
             planner: planner,
             engine: engine,
-            preferences: preferences
+            preferences: preferences,
+            systemAudioAccessChecker: systemAudioAccessChecker
         )
     }
 
@@ -76,6 +80,7 @@ final class AudioControlComponentFixture {
     let lifecycle: LifecycleRecorder
     let deviceProvider: DeviceProviderFake
     let processProvider: ProcessProviderFake
+    let systemAudioAccessChecker: AudioSystemAccessCheckerFake
 
     private var pendingReconciliationTokens: [UInt64] = []
 
@@ -94,7 +99,10 @@ final class AudioControlComponentFixture {
         set { processProvider.processes = newValue }
     }
 
-    init(savedProfile: AudioProcessProfile? = nil) {
+    init(
+        savedProfile: AudioProcessProfile? = nil,
+        systemAudioAccessChecker: AudioSystemAccessCheckerFake = .init()
+    ) {
         let player = AudioProcessEntry(
             processObjectID: 11,
             processIdentifier: 101,
@@ -141,6 +149,7 @@ final class AudioControlComponentFixture {
         self.player = player
         self.deviceProvider = deviceProvider
         self.processProvider = processProvider
+        self.systemAudioAccessChecker = systemAudioAccessChecker
         self.monitor = monitor
         self.engine = engine
         self.store = store
@@ -154,7 +163,8 @@ final class AudioControlComponentFixture {
             monitor: monitor,
             planner: AudioRoutePlanner(),
             engine: engine,
-            preferences: preferences
+            preferences: preferences,
+            systemAudioAccessChecker: systemAudioAccessChecker
         )
     }
 
@@ -368,25 +378,33 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
 @MainActor
 final class ProcessProviderFake: AudioProcessProviding {
     private(set) var callCount = 0
+    private(set) var discoveredProcessObjectIDs: Set<AudioObjectID> = []
     var bundleIdentifier: String? = "com.example.music"
     var processes: [AudioProcessEntry]?
     var scriptedProcesses: [[AudioProcessEntry]] = []
+    var scriptedDiscoveredProcessObjectIDs: [Set<AudioObjectID>] = []
     var lifecycle: LifecycleRecorder?
 
     func audibleOutputProcesses() -> [AudioProcessEntry] {
         callCount += 1
         lifecycle?.events.append("processes.read")
+        let result: [AudioProcessEntry]
         if scriptedProcesses.isEmpty == false {
-            return scriptedProcesses.removeFirst()
+            result = scriptedProcesses.removeFirst()
+        } else {
+            result = processes ?? [.init(
+                processObjectID: 11,
+                processIdentifier: 101,
+                name: "Music",
+                bundleIdentifier: bundleIdentifier,
+                bundleURL: nil,
+                outputDeviceIDs: [10]
+            )]
         }
-        return processes ?? [.init(
-            processObjectID: 11,
-            processIdentifier: 101,
-            name: "Music",
-            bundleIdentifier: bundleIdentifier,
-            bundleURL: nil,
-            outputDeviceIDs: [10]
-        )]
+        discoveredProcessObjectIDs = scriptedDiscoveredProcessObjectIDs.isEmpty
+            ? Set(result.map(\.processObjectID))
+            : scriptedDiscoveredProcessObjectIDs.removeFirst()
+        return result
     }
 }
 
@@ -470,6 +488,158 @@ final class FakeAudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendable {
 }
 
 typealias MonitorFake = FakeAudioSystemMonitor
+
+final class AudioSystemAccessCheckerFake: AudioSystemAccessChecking, @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = ControlledCallGate()
+    private var results: [AudioSystemAccessResult]
+    private var fallbackResult: AudioSystemAccessResult
+    private var checks = 0
+    private var drains = 0
+    private var shutdowns = 0
+    private var isShutdown = false
+    private var checkStartObserver: (@Sendable (Int) -> Void)?
+
+    init(results: [AudioSystemAccessResult] = [.available]) {
+        self.results = results
+        self.fallbackResult = results.last ?? .available
+    }
+
+    var checkCount: Int {
+        lock.withLock { checks }
+    }
+
+    var drainCount: Int {
+        lock.withLock { drains }
+    }
+
+    var shutdownCount: Int {
+        lock.withLock { shutdowns }
+    }
+
+    func setResults(_ results: [AudioSystemAccessResult]) {
+        lock.withLock {
+            self.results = results
+            fallbackResult = results.last ?? .available
+        }
+    }
+
+    func observeCheckStarts(_ observer: @escaping @Sendable (Int) -> Void) {
+        lock.withLock { checkStartObserver = observer }
+    }
+
+    func checkAccess() async -> AudioSystemAccessResult {
+        let check = lock.withLock { () -> (count: Int, observer: (@Sendable (Int) -> Void)?)? in
+            guard self.isShutdown == false else { return nil }
+            checks += 1
+            return (checks, checkStartObserver)
+        }
+        guard let check else { return .shutdown }
+        check.observer?(check.count)
+        await gate.enter()
+        let result = lock.withLock {
+            results.isEmpty ? fallbackResult : results.removeFirst()
+        }
+        return result
+    }
+
+    func drainRetainedResources() async {
+        lock.withLock { drains += 1 }
+    }
+
+    func shutdown() async {
+        lock.withLock {
+            shutdowns += 1
+            isShutdown = true
+        }
+        await drainRetainedResources()
+    }
+
+    func block() async { await gate.block() }
+    func resume() async { await gate.resumeAll() }
+}
+
+final class SingleFlightAudioSystemAccessCheckerFake: AudioSystemAccessChecking, @unchecked Sendable {
+    private struct Check {
+        let id: UUID
+        let task: Task<AudioSystemAccessResult, Never>
+    }
+
+    private let lock = NSLock()
+    private let probeGate = ControlledIndexedCallGate()
+    private var results: [AudioSystemAccessResult]
+    private var fallbackResult: AudioSystemAccessResult
+    private var probes = 0
+    private var drains = 0
+    private var shutdowns = 0
+    private var isShutdown = false
+    private var currentCheck: Check?
+    private var probeStartObserver: (@Sendable (Int) -> Void)?
+
+    init(results: [AudioSystemAccessResult]) {
+        self.results = results
+        fallbackResult = results.last ?? .available
+    }
+
+    var probeCount: Int {
+        lock.withLock { probes }
+    }
+
+    var drainCount: Int {
+        lock.withLock { drains }
+    }
+
+    var shutdownCount: Int {
+        lock.withLock { shutdowns }
+    }
+
+    func observeProbeStarts(_ observer: @escaping @Sendable (Int) -> Void) {
+        lock.withLock { probeStartObserver = observer }
+    }
+
+    func checkAccess() async -> AudioSystemAccessResult {
+        let check = lock.withLock { () -> Check? in
+            guard isShutdown == false else { return nil }
+            if let currentCheck { return currentCheck }
+
+            probes += 1
+            let result = results.isEmpty ? fallbackResult : results.removeFirst()
+            let task = Task.detached { [probeGate, probeStartObserver] in
+                await probeGate.enter(probeStartObserver)
+                return result
+            }
+            let check = Check(id: UUID(), task: task)
+            currentCheck = check
+            return check
+        }
+        guard let check else { return .shutdown }
+        return await finish(check)
+    }
+
+    func drainRetainedResources() async {
+        lock.withLock { drains += 1 }
+    }
+
+    func shutdown() async {
+        lock.withLock {
+            shutdowns += 1
+            isShutdown = true
+        }
+        await drainRetainedResources()
+    }
+
+    func blockProbe(_ probe: Int) async { await probeGate.block(probe) }
+    func resumeProbe(_ probe: Int) async { await probeGate.resume(probe) }
+
+    private func finish(_ check: Check) async -> AudioSystemAccessResult {
+        let result = await check.task.value
+        lock.withLock {
+            guard currentCheck?.id == check.id else { return }
+            currentCheck = nil
+        }
+        return result
+    }
+}
 
 struct RecordingEngineStopCall: Equatable {
     let processObjectID: AudioObjectID
@@ -758,21 +928,22 @@ actor ControlledCallGate {
 actor ControlledIndexedCallGate {
     private var blockedEntries: Set<Int> = []
     private var enteredCount = 0
-    private var blockedCalls: [CheckedContinuation<Void, Never>] = []
+    private var blockedCalls: [(Int, CheckedContinuation<Void, Never>)] = []
     private var enteredWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     func block(_ entry: Int) {
         blockedEntries.insert(entry)
     }
 
-    func enter() async {
+    func enter(_ observer: (@Sendable (Int) -> Void)? = nil) async {
         enteredCount += 1
         let current = enteredCount
+        observer?(current)
         let ready = enteredWaiters.filter { enteredCount >= $0.0 }
         enteredWaiters.removeAll { enteredCount >= $0.0 }
         ready.forEach { $0.1.resume() }
         guard blockedEntries.contains(current) else { return }
-        await withCheckedContinuation { blockedCalls.append($0) }
+        await withCheckedContinuation { blockedCalls.append((current, $0)) }
     }
 
     func waitUntilEntered(_ count: Int) async {
@@ -784,6 +955,13 @@ actor ControlledIndexedCallGate {
         blockedEntries.removeAll()
         let calls = blockedCalls
         blockedCalls.removeAll()
-        calls.forEach { $0.resume() }
+        calls.forEach { $0.1.resume() }
+    }
+
+    func resume(_ entry: Int) {
+        blockedEntries.remove(entry)
+        let calls = blockedCalls.filter { $0.0 == entry }
+        blockedCalls.removeAll { $0.0 == entry }
+        calls.forEach { $0.1.resume() }
     }
 }

@@ -194,6 +194,47 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testAudibleOutputProcessesCachesEveryNonOwnDiscoveredProcessWithoutAnotherRead() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        var snapshotReadCount = 0
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                snapshotReadCount += 1
+                return [
+                    AudioProcessSnapshot(
+                        processObjectID: 10,
+                        processIdentifier: ownPID,
+                        bundleIdentifier: "com.example.MacActivity",
+                        isRunningOutput: false
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: ownPID + 1,
+                        bundleIdentifier: "com.example.Player",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: ownPID + 2,
+                        bundleIdentifier: "com.example.Dormant",
+                        isRunningOutput: false
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses().map(\.processObjectID), [11])
+        XCTAssertEqual(service.discoveredProcessObjectIDs, Set<AudioObjectID>([11, 12]))
+        XCTAssertEqual(snapshotReadCount, 1)
+    }
+
+    @MainActor
     func testAudibleOutputProcessesExcludesCurrentPIDWithoutWorkspaceMetadata() {
         let ownPID = ProcessInfo.processInfo.processIdentifier
         let otherPID = ownPID + 1
@@ -529,6 +570,527 @@ final class AudioProcessServiceTests: XCTestCase {
     }
 
     @MainActor
+    func testAudibleOutputProcessesResolvesMissingWorkspaceMetadataFromBundleIdentifier() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Resolver Fixture",
+            info: [
+                "CFBundleDisplayName": "Localized Player",
+                "CFBundleName": "Fallback Player",
+            ]
+        )
+        let bundleIdentifier = "com.example.resolved-player"
+        var resolvedIdentifiers: [String] = []
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { identifier in
+                resolvedIdentifiers.append(identifier)
+                return identifier == bundleIdentifier ? bundle.bundleURL : nil
+            }
+        )
+
+        let entry = try XCTUnwrap(service.audibleOutputProcesses().first)
+
+        XCTAssertEqual(resolvedIdentifiers, [bundleIdentifier])
+        XCTAssertEqual(entry.processObjectID, 11)
+        XCTAssertEqual(entry.processIdentifier, 101)
+        XCTAssertEqual(entry.name, "Localized Player")
+        XCTAssertEqual(entry.bundleIdentifier, bundleIdentifier)
+        XCTAssertEqual(entry.bundleURL, bundle.bundleURL)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesReadsKnownWorkspaceBundleBeforeApplicationLookup() throws {
+        let knownBundle = try makeApplicationBundle(
+            named: "Known Bundle File",
+            info: ["CFBundleDisplayName": "Known Bundle Display"]
+        )
+        let differentBundle = try makeApplicationBundle(
+            named: "Different Bundle File",
+            info: ["CFBundleDisplayName": "Different Bundle Display"]
+        )
+        let bundleIdentifier = "com.example.known-bundle"
+
+        for lookupURL in [nil, differentBundle.bundleURL] as [URL?] {
+            var lookupCount = 0
+            var executableLookupCount = 0
+            let service = AudioProcessService(
+                availability: .init(operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                )),
+                processSnapshotReader: {
+                    [
+                        AudioProcessSnapshot(
+                            processObjectID: 11,
+                            processIdentifier: 101,
+                            bundleIdentifier: bundleIdentifier,
+                            isRunningOutput: true
+                        ),
+                    ]
+                },
+                appSnapshotReader: {
+                    [
+                        AudioProcessAppSnapshot(
+                            processIdentifier: 101,
+                            name: "",
+                            bundleIdentifier: bundleIdentifier,
+                            bundleURL: knownBundle.bundleURL
+                        ),
+                    ]
+                },
+                applicationURLReader: { _ in
+                    lookupCount += 1
+                    return lookupURL
+                },
+                processExecutableURLReader: { _ in
+                    executableLookupCount += 1
+                    return differentBundle.bundleURL
+                }
+            )
+
+            let entry = try XCTUnwrap(service.audibleOutputProcesses().first)
+
+            XCTAssertEqual(entry.name, "Known Bundle Display")
+            XCTAssertEqual(entry.bundleURL, knownBundle.bundleURL)
+            XCTAssertEqual(lookupCount, 0)
+            XCTAssertEqual(executableLookupCount, 0)
+        }
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesUsesBundleMetadataWhenWorkspaceNameIsWhitespace() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Workspace Bundle File",
+            info: ["CFBundleDisplayName": "Workspace Bundle Display"]
+        )
+        let bundleIdentifier = "com.example.workspace-whitespace"
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 101,
+                        name: " \n\t",
+                        bundleIdentifier: bundleIdentifier,
+                        bundleURL: bundle.bundleURL
+                    ),
+                ]
+            },
+            applicationURLReader: { _ in
+                XCTFail("Known workspace bundle should avoid application lookup")
+                return nil
+            }
+        )
+
+        XCTAssertEqual(
+            service.audibleOutputProcesses().first?.name,
+            "Workspace Bundle Display"
+        )
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesFallsBackPastBlankBundleMetadata() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Bundle Filename",
+            info: [
+                "CFBundleDisplayName": " \n",
+                "CFBundleName": "",
+            ]
+        )
+        let bundleIdentifier = "com.example.blank-bundle-metadata"
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { _ in bundle.bundleURL }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses().first?.name, "Bundle Filename")
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesUsesLocalizedBundleDisplayName() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Localized Bundle File",
+            info: [
+                "CFBundleDisplayName": "Raw Player",
+                "CFBundleName": "Raw Name",
+            ],
+            localizedInfo: ["CFBundleDisplayName": "English Player"]
+        )
+        let bundleIdentifier = "com.example.localized-player"
+        XCTAssertEqual(bundle.infoDictionary?["CFBundleDisplayName"] as? String, "Raw Player")
+        XCTAssertEqual(
+            bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String,
+            "English Player"
+        )
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { _ in bundle.bundleURL }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses().first?.name, "English Player")
+    }
+
+    func testLiveWorkspaceSnapshotLeavesMissingLocalizedNameForBundleResolution() throws {
+        let source = try audioProcessServiceSource()
+
+        XCTAssertTrue(source.contains("name: $0.localizedName ?? \"\""))
+        XCTAssertFalse(source.contains("name: $0.localizedName ?? $0.bundleIdentifier"))
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesKeepsWorkspaceNameWhileResolvingMissingBundleURL() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Resolver Fixture",
+            info: ["CFBundleDisplayName": "Bundle Player"]
+        )
+        let bundleIdentifier = "com.example.workspace-player"
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 101,
+                        name: "Workspace Player",
+                        bundleIdentifier: nil,
+                        bundleURL: nil
+                    ),
+                ]
+            },
+            applicationURLReader: { identifier in
+                identifier == bundleIdentifier ? bundle.bundleURL : nil
+            }
+        )
+
+        let entry = try XCTUnwrap(service.audibleOutputProcesses().first)
+
+        XCTAssertEqual(entry.name, "Workspace Player")
+        XCTAssertEqual(entry.bundleIdentifier, bundleIdentifier)
+        XCTAssertEqual(entry.bundleURL, bundle.bundleURL)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesUsesBundleNameWhenDisplayNameIsUnavailable() throws {
+        let bundle = try makeApplicationBundle(
+            named: "Resolver Fixture",
+            info: ["CFBundleName": "Bundle Player"]
+        )
+        let bundleIdentifier = "com.example.bundle-name"
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { _ in bundle.bundleURL }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses().first?.name, "Bundle Player")
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesUsesBundleFilenameWhenBundleHasNoDisplayMetadata() throws {
+        let bundle = try makeApplicationBundle(named: "Bundle Filename", info: [:])
+        let bundleIdentifier = "com.example.bundle-filename"
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: bundleIdentifier,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { _ in bundle.bundleURL }
+        )
+
+        XCTAssertEqual(service.audibleOutputProcesses().first?.name, "Bundle Filename")
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesKeepsHonestFallbacksAndExcludesOwnPIDBeforeResolution() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let unresolvedPID = ownPID + 1
+        let processPID = ownPID + 2
+        let nonFilePID = ownPID + 3
+        let dormantPID = ownPID + 4
+        var resolvedIdentifiers: [String] = []
+        var executablePIDs: [pid_t] = []
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: ownPID,
+                        bundleIdentifier: "com.example.self",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: unresolvedPID,
+                        bundleIdentifier: "com.example.unresolved",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 13,
+                        processIdentifier: processPID,
+                        bundleIdentifier: nil,
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 14,
+                        processIdentifier: nonFilePID,
+                        bundleIdentifier: "com.example.non-file",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 15,
+                        processIdentifier: dormantPID,
+                        bundleIdentifier: "com.example.dormant",
+                        isRunningOutput: false
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { identifier in
+                resolvedIdentifiers.append(identifier)
+                return nil
+            },
+            processExecutableURLReader: { processIdentifier in
+                executablePIDs.append(processIdentifier)
+                switch processIdentifier {
+                case unresolvedPID:
+                    return URL(fileURLWithPath: "/tmp/not-an-application")
+                case processPID:
+                    return nil
+                case nonFilePID:
+                    return URL(string: "https://example.invalid/process")
+                default:
+                    XCTFail("Only audible non-self process IDs may be looked up")
+                    return nil
+                }
+            }
+        )
+
+        let entriesByObjectID = Dictionary(
+            uniqueKeysWithValues: service.audibleOutputProcesses().map { ($0.processObjectID, $0) }
+        )
+
+        XCTAssertEqual(
+            resolvedIdentifiers,
+            ["com.example.unresolved", "com.example.non-file"]
+        )
+        XCTAssertEqual(executablePIDs, [unresolvedPID, processPID, nonFilePID])
+        XCTAssertNil(entriesByObjectID[11])
+        XCTAssertEqual(entriesByObjectID[12]?.name, "com.example.unresolved")
+        XCTAssertEqual(entriesByObjectID[12]?.bundleIdentifier, "com.example.unresolved")
+        XCTAssertNil(entriesByObjectID[12]?.bundleURL)
+        XCTAssertEqual(entriesByObjectID[13]?.name, "Process \(processPID)")
+        XCTAssertNil(entriesByObjectID[13]?.bundleIdentifier)
+        XCTAssertNil(entriesByObjectID[13]?.bundleURL)
+        XCTAssertEqual(entriesByObjectID[14]?.name, "com.example.non-file")
+        XCTAssertEqual(entriesByObjectID[14]?.bundleIdentifier, "com.example.non-file")
+        XCTAssertNil(entriesByObjectID[14]?.bundleURL)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesResolvesMissingHelperMetadataFromContainingApplicationBundle() throws {
+        let edgeBundle = try makeApplicationBundle(
+            named: "Microsoft Edge",
+            info: ["CFBundleDisplayName": "Microsoft Edge"]
+        )
+        let helperBundleIdentifier = "com.microsoft.edgemac.helper"
+        let helperPID: pid_t = 97_526
+        let staleHelperExecutableURL = edgeBundle.bundleURL
+            .appendingPathComponent("Contents/Frameworks/Microsoft Edge Framework.framework")
+            .appendingPathComponent("Versions/151.0.4129.86/Helpers/Microsoft Edge Helper.app")
+            .appendingPathComponent("Contents/MacOS/Microsoft Edge Helper")
+        var resolvedIdentifiers: [String] = []
+        var executablePIDs: [pid_t] = []
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 121,
+                        processIdentifier: helperPID,
+                        bundleIdentifier: helperBundleIdentifier,
+                        isRunningOutput: true,
+                        outputDeviceIDs: [82]
+                    ),
+                ]
+            },
+            appSnapshotReader: { [] },
+            applicationURLReader: { identifier in
+                resolvedIdentifiers.append(identifier)
+                return nil
+            },
+            processExecutableURLReader: { processIdentifier in
+                executablePIDs.append(processIdentifier)
+                return processIdentifier == helperPID ? staleHelperExecutableURL : nil
+            }
+        )
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: staleHelperExecutableURL.path))
+
+        let entry = try XCTUnwrap(service.audibleOutputProcesses().first)
+
+        XCTAssertEqual(resolvedIdentifiers, [helperBundleIdentifier])
+        XCTAssertEqual(executablePIDs, [helperPID])
+        XCTAssertEqual(entry.processObjectID, 121)
+        XCTAssertEqual(entry.processIdentifier, helperPID)
+        XCTAssertEqual(entry.bundleIdentifier, helperBundleIdentifier)
+        XCTAssertEqual(entry.outputDeviceIDs, [82])
+        XCTAssertEqual(entry.name, "Microsoft Edge")
+        XCTAssertEqual(entry.bundleURL, edgeBundle.bundleURL)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesUsesWorkspaceIdentifierWhenMetadataCannotResolve() throws {
+        let bundleIdentifier = "com.example.workspace-unresolved"
+        var resolvedIdentifiers: [String] = []
+        let service = AudioProcessService(
+            availability: .init(operatingSystemVersion: .init(
+                majorVersion: 14,
+                minorVersion: 2,
+                patchVersion: 0
+            )),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: 101,
+                        bundleIdentifier: nil,
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: 101,
+                        name: "",
+                        bundleIdentifier: bundleIdentifier,
+                        bundleURL: nil
+                    ),
+                ]
+            },
+            applicationURLReader: { identifier in
+                resolvedIdentifiers.append(identifier)
+                return nil
+            }
+        )
+
+        let entry = try XCTUnwrap(service.audibleOutputProcesses().first)
+
+        XCTAssertEqual(resolvedIdentifiers, [bundleIdentifier])
+        XCTAssertEqual(entry.name, bundleIdentifier)
+        XCTAssertEqual(entry.bundleIdentifier, bundleIdentifier)
+        XCTAssertNil(entry.bundleURL)
+    }
+
+    @MainActor
     func testAudibleOutputProcessesSortInjectedEntriesCaseInsensitively() {
         let service = AudioProcessService(
             availability: AudioFeatureAvailability(
@@ -587,6 +1149,58 @@ final class AudioProcessServiceTests: XCTestCase {
         XCTAssertEqual(
             service.audibleOutputProcesses().map(\.name),
             ["Alpha", "music", "zebra"]
+        )
+    }
+
+    private func makeApplicationBundle(
+        named name: String,
+        info: [String: String],
+        localizedInfo: [String: String] = [:]
+    ) throws -> Bundle {
+        let bundleURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+            .appendingPathComponent(name)
+            .appendingPathExtension("app")
+        let contentsURL = bundleURL.appendingPathComponent("Contents")
+        try FileManager.default.createDirectory(at: contentsURL, withIntermediateDirectories: true)
+        let infoPlist = NSMutableDictionary(dictionary: [
+            "CFBundleExecutable": "Fixture",
+            "CFBundleDevelopmentRegion": "en",
+            "CFBundleIdentifier": "com.example.fixture",
+            "CFBundleInfoDictionaryVersion": "6.0",
+            "CFBundlePackageType": "APPL",
+        ])
+        infoPlist.addEntries(from: info)
+        XCTAssertTrue(infoPlist.write(
+            to: contentsURL.appendingPathComponent("Info.plist"),
+            atomically: true
+        ))
+        if !localizedInfo.isEmpty {
+            let localizationURL = contentsURL
+                .appendingPathComponent("Resources")
+                .appendingPathComponent("en.lproj")
+            try FileManager.default.createDirectory(at: localizationURL, withIntermediateDirectories: true)
+            let contents = localizedInfo.map { "\"\($0.key)\" = \"\($0.value)\";" }
+                .sorted()
+                .joined(separator: "\n")
+            try contents.write(
+                to: localizationURL.appendingPathComponent("InfoPlist.strings"),
+                atomically: true,
+                encoding: .utf8
+            )
+        }
+        return try XCTUnwrap(Bundle(url: bundleURL))
+    }
+
+    private func audioProcessServiceSource() throws -> String {
+        let testURL = URL(fileURLWithPath: #filePath)
+        let root = testURL.deletingLastPathComponent().deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: root.appendingPathComponent(
+                "Sources/MacActivityCore/Audio/AudioProcessService.swift"
+            ),
+            encoding: .utf8
         )
     }
 }
