@@ -307,7 +307,7 @@ final class AudioControlComponentTests: XCTestCase {
 
         XCTAssertEqual(fixture.engine.stopAllCount, 1)
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, 2)
-        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 2])
+        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 3])
         XCTAssertEqual(fixture.engine.plans.map(\.selectedTargetUIDs), [["BuiltIn"], ["BuiltIn"]])
         XCTAssertEqual(
             Array(fixture.lifecycle.events.dropFirst(eventOffset)),
@@ -329,6 +329,98 @@ final class AudioControlComponentTests: XCTestCase {
             fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
             fixture.profile(volume: 0.5)
         )
+    }
+
+    func testHALRestartDropsStopAllSupersededRouteBeforeRestoringConfirmedRule() async {
+        let savedProfile = AudioProcessProfile(
+            bundleIdentifier: "com.example.Player",
+            volume: 0.4
+        )
+        let fixture = AudioControlComponentFixture(savedProfile: savedProfile)
+        await fixture.start()
+        XCTAssertEqual(fixture.store.saveCount, 1)
+        fixture.engine.cancelApplyOnStopAll(2)
+
+        fixture.coordinator.setProcessRoute(
+            .explicit(targetDeviceUIDs: ["USB"]),
+            for: fixture.player.processObjectID
+        )
+        await fixture.engine.waitUntilApplyPendingForStopAll(1)
+        await fixture.engine.blockPrepareRuntime()
+
+        fixture.emit([.serviceRestarted])
+        await fixture.engine.waitUntilPrepareRuntimeCount(2)
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let duringRestart = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(duringRestart.volume, 0.4)
+        XCTAssertEqual(duringRestart.route, .followOriginal)
+        XCTAssertNil(duringRestart.pendingValues)
+        XCTAssertNil(duringRestart.error)
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
+            fixture.profile(volume: 0.4)
+        )
+        XCTAssertEqual(fixture.store.saveCount, 1)
+
+        await fixture.engine.resumePrepareRuntime()
+        await fixture.finishPendingCommands()
+
+        let restored = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(restored.volume, 0.4)
+        XCTAssertEqual(restored.route, .followOriginal)
+        XCTAssertNil(restored.pendingValues)
+        XCTAssertNil(restored.error)
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
+            fixture.profile(volume: 0.4)
+        )
+        XCTAssertEqual(fixture.store.saveCount, 2)
+    }
+
+    func testHALRestartDropsLateGainBeforeItCanOverwriteConfirmedProfile() async {
+        let savedProfile = AudioProcessProfile(
+            bundleIdentifier: "com.example.Player",
+            volume: 0.4
+        )
+        let fixture = AudioControlComponentFixture(savedProfile: savedProfile)
+        await fixture.start()
+        XCTAssertEqual(fixture.store.saveCount, 1)
+        await fixture.engine.blockGainUpdateCall(1)
+
+        fixture.coordinator.setProcessVolume(0.6, for: fixture.player.processObjectID)
+        await fixture.engine.waitUntilGainUpdateCount(1)
+        await fixture.engine.blockPrepareRuntime()
+
+        fixture.emit([.serviceRestarted])
+        await fixture.engine.waitUntilPrepareRuntimeCount(2)
+        await fixture.engine.resumeGainUpdates()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        let duringRestart = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(duringRestart.volume, 0.4)
+        XCTAssertEqual(duringRestart.route, .followOriginal)
+        XCTAssertNil(duringRestart.pendingValues)
+        XCTAssertNil(duringRestart.error)
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
+            fixture.profile(volume: 0.4)
+        )
+        XCTAssertEqual(fixture.store.saveCount, 1)
+
+        await fixture.engine.resumePrepareRuntime()
+        await fixture.finishPendingCommands()
+
+        let restored = fixture.coordinator.snapshot.processes[0]
+        XCTAssertEqual(restored.volume, 0.4)
+        XCTAssertEqual(restored.route, .followOriginal)
+        XCTAssertNil(restored.pendingValues)
+        XCTAssertNil(restored.error)
+        XCTAssertEqual(
+            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
+            fixture.profile(volume: 0.4)
+        )
+        XCTAssertEqual(fixture.store.saveCount, 2)
     }
 
     func testStaleGenerationCannotOverwriteNewerRuleOrProfile() async {

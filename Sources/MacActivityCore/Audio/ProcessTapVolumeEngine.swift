@@ -2,6 +2,7 @@ import CoreAudio
 import Darwin
 import Dispatch
 import Foundation
+import OSLog
 
 public enum ProcessTapSessionState: Equatable, Sendable {
     case idle
@@ -141,6 +142,12 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     private static let preparationTimeout: DispatchTimeInterval = .seconds(2)
     private static let callbackObservationInterval: DispatchTimeInterval = .milliseconds(10)
+    // Retained cleanup continues after this limit; only the awaiting apply is bounded.
+    private static let pendingCleanupRetryLimit = 8
+    private static let lifecycleLogger = Logger(
+        subsystem: "com.how.macactivity",
+        category: "ProcessTapVolumeEngine"
+    )
 
     private let hardware: (any AudioTapHardware)?
     private let availability: AudioFeatureAvailability
@@ -162,6 +169,8 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     private var pendingRetryDelay: DispatchTimeInterval?
     private var pendingRetryCancellation: (any ProcessTapRetryCancellation)?
     private var isRetryPassRunning = false
+    private var isResumingPendingApplies = false
+    private var pendingApplies: [AudioObjectID: PendingProcessTapApply] = [:]
     #if DEBUG
     private var concurrentRetryPasses = 0
     private var retryPassCount = 0
@@ -251,11 +260,21 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
             generation: plan.generation
         )
         return await withTaskCancellationHandler {
-            await enqueue { [self] in
-                applyOnQueue(plan: plan, gain: gain, token: token)
+            await withCheckedContinuation { continuation in
+                queue.async { [self] in
+                    beginApplyOnQueue(
+                        plan: plan,
+                        gain: gain,
+                        token: token,
+                        continuation: continuation
+                    )
+                }
             }
-        } onCancel: { [generations] in
+        } onCancel: { [weak self, generations] in
             generations.cancel(token)
+            self?.queue.async { [weak self] in
+                self?.cancelPendingApply(token)
+            }
         }
     }
 
@@ -298,6 +317,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     public func stopAll() async {
         generations.cancelAll()
         await enqueue { [self] in
+            cancelAllPendingApplies()
             guard availability.supportsProcessControls,
                   #available(macOS 14.2, *),
                   let hardware
@@ -320,6 +340,7 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
         generations.cancelAll()
         await enqueue { [self] in
             isDraining = true
+            cancelAllPendingApplies()
             guard availability.supportsProcessControls,
                   #available(macOS 14.2, *),
                   let hardware
@@ -478,11 +499,238 @@ private extension ProcessTapVolumeEngine {
         scheduleRetryIfNeeded()
     }
 
+    func beginApplyOnQueue(
+        plan: AudioRoutePlan,
+        gain: ProcessGainState,
+        token: ProcessTapGenerationRegistry.Token,
+        continuation: CheckedContinuation<ProcessTapSessionSnapshot, Never>
+    ) {
+        guard generations.isCurrent(token) else {
+            continuation.resume(returning: snapshot(
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                state: .failed,
+                error: .routeSuperseded,
+                token: token
+            ))
+            return
+        }
+        cancelSupersededPendingApply(
+            for: plan.processObjectID,
+            replacing: token
+        )
+        if let terminal = applyOnQueue(plan: plan, gain: gain, token: token) {
+            continuation.resume(returning: terminal)
+            return
+        }
+        guard let cleanupAcquisitionID = normalAggregateCleanupAcquisitionID(
+            for: plan.processObjectID
+        ) else {
+            continuation.resume(returning: publishFailure(
+                .cleanupBacklogFull,
+                processObjectID: plan.processObjectID,
+                generation: plan.generation,
+                token: token
+            ))
+            return
+        }
+        pendingApplies[plan.processObjectID] = PendingProcessTapApply(
+            plan: plan,
+            gain: gain,
+            token: token,
+            cleanupAcquisitionID: cleanupAcquisitionID,
+            cleanupRetryCount: 0,
+            continuation: continuation
+        )
+        recordLifecycleDiagnostic(
+            acquisitionID: cleanupAcquisitionID,
+            operation: .getData,
+            objectID: bundles[cleanupAcquisitionID]?.resources.aggregate?.objectID
+                ?? kAudioObjectUnknown,
+            rawStatus: noErr,
+            detail: "pendingApply"
+        )
+        scheduleRetryIfNeeded()
+    }
+
+    func cancelSupersededPendingApply(
+        for processObjectID: AudioObjectID,
+        replacing token: ProcessTapGenerationRegistry.Token
+    ) {
+        guard let pending = pendingApplies[processObjectID], pending.token != token else {
+            return
+        }
+        pendingApplies.removeValue(forKey: processObjectID)
+        resumePendingApplyAsSuperseded(pending)
+    }
+
+    func cancelPendingApply(_ token: ProcessTapGenerationRegistry.Token) {
+        guard let pending = pendingApplies[token.processObjectID], pending.token == token else {
+            return
+        }
+        pendingApplies.removeValue(forKey: token.processObjectID)
+        resumePendingApplyAsSuperseded(pending)
+    }
+
+    func cancelAllPendingApplies() {
+        let pending = pendingApplies.values
+        pendingApplies.removeAll()
+        for apply in pending {
+            resumePendingApplyAsSuperseded(apply)
+        }
+    }
+
+    func resumePendingApplyAsSuperseded(_ pending: PendingProcessTapApply) {
+        pending.continuation.resume(returning: snapshot(
+            processObjectID: pending.plan.processObjectID,
+            generation: pending.plan.generation,
+            state: .failed,
+            error: .routeSuperseded,
+            token: pending.token
+        ))
+    }
+
+    func failPendingApply(
+        _ pending: PendingProcessTapApply,
+        error: ProcessTapEngineError
+    ) {
+        let terminal: ProcessTapSessionSnapshot
+        if generations.isCurrent(pending.token) {
+            terminal = publishFailure(
+                error,
+                processObjectID: pending.plan.processObjectID,
+                generation: pending.plan.generation,
+                token: pending.token
+            )
+        } else {
+            terminal = snapshot(
+                processObjectID: pending.plan.processObjectID,
+                generation: pending.plan.generation,
+                state: .failed,
+                error: .routeSuperseded,
+                token: pending.token
+            )
+        }
+        pending.continuation.resume(returning: terminal)
+    }
+
+    func normalAggregateCleanupAcquisitionID(
+        for processObjectID: AudioObjectID
+    ) -> UUID? {
+        let matches = bundles.values.filter {
+            $0.resources.processObjectID == processObjectID
+                && $0.state == .retainedBundle
+                && $0.stage == .waitForAggregateDisappearance
+                && $0.resources.aggregate != nil
+                && $0.failures.isEmpty
+        }
+        guard matches.count == 1 else { return nil }
+        return matches[0].acquisitionID
+    }
+
+    func resumeReadyPendingApplies() {
+        guard isResumingPendingApplies == false else { return }
+        isResumingPendingApplies = true
+        defer { isResumingPendingApplies = false }
+
+        let pending = pendingApplies.values.sorted {
+            $0.plan.processObjectID < $1.plan.processObjectID
+        }
+        for apply in pending {
+            guard let current = pendingApplies[apply.plan.processObjectID],
+                  current.token == apply.token
+            else {
+                continue
+            }
+            guard generations.isCurrent(current.token) else {
+                pendingApplies.removeValue(forKey: current.plan.processObjectID)
+                resumePendingApplyAsSuperseded(current)
+                continue
+            }
+            guard bundles[current.cleanupAcquisitionID] == nil else {
+                if normalAggregateCleanupAcquisitionID(
+                    for: current.plan.processObjectID
+                ) == current.cleanupAcquisitionID {
+                    continue
+                }
+                pendingApplies.removeValue(forKey: current.plan.processObjectID)
+                failPendingApply(current, error: .cleanupBacklogFull)
+                continue
+            }
+
+            pendingApplies.removeValue(forKey: current.plan.processObjectID)
+            if let terminal = applyOnQueue(
+                plan: current.plan,
+                gain: current.gain,
+                token: current.token
+            ) {
+                current.continuation.resume(returning: terminal)
+                continue
+            }
+            guard let cleanupAcquisitionID = normalAggregateCleanupAcquisitionID(
+                for: current.plan.processObjectID
+            ) else {
+                failPendingApply(current, error: .cleanupBacklogFull)
+                continue
+            }
+            pendingApplies[current.plan.processObjectID] = PendingProcessTapApply(
+                plan: current.plan,
+                gain: current.gain,
+                token: current.token,
+                cleanupAcquisitionID: cleanupAcquisitionID,
+                cleanupRetryCount: current.cleanupRetryCount,
+                continuation: current.continuation
+            )
+        }
+    }
+
+    func advancePendingCleanupWaitsAfterRetry() {
+        let pending = pendingApplies.values.sorted {
+            $0.plan.processObjectID < $1.plan.processObjectID
+        }
+        for apply in pending {
+            guard let current = pendingApplies[apply.plan.processObjectID],
+                  current.token == apply.token
+            else {
+                continue
+            }
+            guard generations.isCurrent(current.token) else {
+                pendingApplies.removeValue(forKey: current.plan.processObjectID)
+                resumePendingApplyAsSuperseded(current)
+                continue
+            }
+            guard bundles[current.cleanupAcquisitionID] != nil else {
+                continue
+            }
+            guard normalAggregateCleanupAcquisitionID(
+                for: current.plan.processObjectID
+            ) == current.cleanupAcquisitionID else {
+                pendingApplies.removeValue(forKey: current.plan.processObjectID)
+                failPendingApply(current, error: .cleanupBacklogFull)
+                continue
+            }
+            let cleanupRetryCount = current.cleanupRetryCount + 1
+            if cleanupRetryCount >= Self.pendingCleanupRetryLimit {
+                pendingApplies.removeValue(forKey: current.plan.processObjectID)
+                failPendingApply(current, error: .cleanupBacklogFull)
+                continue
+            }
+            pendingApplies[current.plan.processObjectID] = PendingProcessTapApply(
+                plan: current.plan,
+                gain: current.gain,
+                token: current.token,
+                cleanupAcquisitionID: current.cleanupAcquisitionID,
+                cleanupRetryCount: cleanupRetryCount,
+                continuation: current.continuation
+            )
+        }
+    }
+
     func applyOnQueue(
         plan: AudioRoutePlan,
         gain: ProcessGainState,
         token: ProcessTapGenerationRegistry.Token
-    ) -> ProcessTapSessionSnapshot {
+    ) -> ProcessTapSessionSnapshot? {
         guard generations.isCurrent(token) else {
             return snapshot(
                 processObjectID: plan.processObjectID,
@@ -645,6 +893,11 @@ private extension ProcessTapVolumeEngine {
                 )
             }
             if bundles[current.acquisitionID] != nil {
+                if normalAggregateCleanupAcquisitionID(
+                    for: plan.processObjectID
+                ) == current.acquisitionID {
+                    return nil
+                }
                 return publishFailure(
                     .cleanupBacklogFull,
                     processObjectID: plan.processObjectID,
@@ -654,10 +907,31 @@ private extension ProcessTapVolumeEngine {
             }
         }
 
-        guard bundles.values.contains(where: {
+        let hasLiveBundleForProcess = bundles.values.contains {
             $0.resources.processObjectID == plan.processObjectID
                 && $0.state != .released
-        }) == false else {
+        }
+        guard hasLiveBundleForProcess == false else {
+            if normalAggregateCleanupAcquisitionID(
+                for: plan.processObjectID
+            ) != nil {
+                guard publishSnapshot(
+                    processObjectID: plan.processObjectID,
+                    generation: plan.generation,
+                    state: .rebuilding,
+                    error: nil,
+                    token: token
+                ) != nil else {
+                    return snapshot(
+                        processObjectID: plan.processObjectID,
+                        generation: plan.generation,
+                        state: .failed,
+                        error: .routeSuperseded,
+                        token: token
+                    )
+                }
+                return nil
+            }
             return publishFailure(
                 .cleanupBacklogFull,
                 processObjectID: plan.processObjectID,
@@ -879,6 +1153,10 @@ private extension ProcessTapVolumeEngine {
                 token: token
             )
         }
+        cancelSupersededPendingApply(
+            for: processObjectID,
+            replacing: token
+        )
         guard availability.supportsProcessControls,
               #available(macOS 14.2, *),
               let hardware
@@ -1043,9 +1321,10 @@ private extension ProcessTapVolumeEngine {
                 if let bundle = bundles[acquisitionID],
                    bundle.didStartIOProc,
                    let ioProc = bundle.resources.ioProc {
-                    let status = hardware.stop(ioProc)
+                    let rawStatus = hardware.stop(ioProc)
                     recordBundleStatus(
-                        status == kAudioHardwareBadObjectError ? noErr : status,
+                        rawStatus == kAudioHardwareBadObjectError ? noErr : rawStatus,
+                        rawStatus: rawStatus,
                         operation: .stopDevice,
                         objectID: ioProc.aggregateDeviceID,
                         acquisitionID: acquisitionID
@@ -1060,6 +1339,7 @@ private extension ProcessTapVolumeEngine {
                         : rawStatus
                     recordBundleStatus(
                         status,
+                        rawStatus: rawStatus,
                         operation: .destroyIOProc,
                         objectID: ioProc.aggregateDeviceID,
                         acquisitionID: acquisitionID
@@ -1080,6 +1360,7 @@ private extension ProcessTapVolumeEngine {
                     let status = hardware.destroyAggregate(aggregate)
                     recordBundleStatus(
                         status,
+                        rawStatus: status,
                         operation: .destroyAggregate,
                         objectID: aggregate.objectID,
                         acquisitionID: acquisitionID
@@ -1093,20 +1374,33 @@ private extension ProcessTapVolumeEngine {
             case .waitForAggregateDisappearance:
                 if let aggregate = bundles[acquisitionID]?.resources.aggregate {
                     do {
-                        guard try hardware.aggregateIdentityIsPresent(aggregate) == false else {
+                        let isPresent = try hardware.aggregateIdentityIsPresent(aggregate)
+                        recordLifecycleDiagnostic(
+                            acquisitionID: acquisitionID,
+                            operation: .getData,
+                            objectID: aggregate.objectID,
+                            rawStatus: noErr,
+                            detail: isPresent ? "aggregatePresent" : "aggregateAbsent"
+                        )
+                        guard isPresent == false else {
                             retainBundle(acquisitionID)
                             return bundles[acquisitionID]?.failures ?? []
                         }
                     } catch {
-                        setBundleFailure(
-                            teardownFailure(
-                                from: error,
-                                fallbackOperation: .getData,
-                                objectID: aggregate.objectID,
-                                processObjectID: bundles[acquisitionID]?.resources.processObjectID
-                            ),
-                            acquisitionID: acquisitionID
+                        let failure = teardownFailure(
+                            from: error,
+                            fallbackOperation: .getData,
+                            objectID: aggregate.objectID,
+                            processObjectID: bundles[acquisitionID]?.resources.processObjectID
                         )
+                        recordLifecycleDiagnostic(
+                            acquisitionID: acquisitionID,
+                            operation: failure.operation,
+                            objectID: failure.objectID,
+                            rawStatus: failure.status,
+                            detail: "aggregateProbeError"
+                        )
+                        setBundleFailure(failure, acquisitionID: acquisitionID)
                         retainBundle(acquisitionID)
                         return bundles[acquisitionID]?.failures ?? []
                     }
@@ -1191,10 +1485,18 @@ private extension ProcessTapVolumeEngine {
 
     func recordBundleStatus(
         _ status: OSStatus,
+        rawStatus: OSStatus? = nil,
         operation: AudioHALOperation,
         objectID: AudioObjectID,
         acquisitionID: UUID
     ) {
+        recordLifecycleDiagnostic(
+            acquisitionID: acquisitionID,
+            operation: operation,
+            objectID: objectID,
+            rawStatus: rawStatus ?? status,
+            detail: "teardown"
+        )
         guard status != noErr else {
             removeBundleFailures(
                 acquisitionID,
@@ -1212,6 +1514,28 @@ private extension ProcessTapVolumeEngine {
             ),
             acquisitionID: acquisitionID
         )
+    }
+
+    func recordLifecycleDiagnostic(
+        acquisitionID: UUID,
+        operation: AudioHALOperation,
+        objectID: AudioObjectID,
+        rawStatus: OSStatus,
+        detail: String
+    ) {
+        let bundle = bundles[acquisitionID]
+        let identity: String
+        if let aggregate = bundle?.resources.aggregate, aggregate.objectID == objectID {
+            identity = aggregate.uid
+        } else if let tap = bundle?.resources.taps.first(where: { $0.objectID == objectID }) {
+            identity = tap.uuid.uuidString
+        } else {
+            identity = "unknown"
+        }
+        let stage = bundle.map { String(describing: $0.stage) } ?? "released"
+        let processObjectID = bundle?.resources.processObjectID ?? kAudioObjectUnknown
+        let message = "audio lifecycle detail=\(detail) stage=\(stage) process=\(processObjectID) acquisition=\(acquisitionID.uuidString) operation=\(operation.rawValue) object=\(objectID) identity=\(identity) status=\(rawStatus)"
+        Self.lifecycleLogger.debug("\(message, privacy: .public)")
     }
 
     func setBundleFailure(
@@ -1259,6 +1583,7 @@ private extension ProcessTapVolumeEngine {
             ).didProgress || didProgress
         }
         scheduleRetryIfNeeded()
+        resumeReadyPendingApplies()
         return didProgress
     }
 
@@ -1328,6 +1653,7 @@ private extension ProcessTapVolumeEngine {
            #available(macOS 14.2, *),
            let hardware {
             advanceRetainedBundles(using: hardware)
+            advancePendingCleanupWaitsAfterRetry()
         }
         #if DEBUG
         concurrentRetryPasses -= 1
@@ -1620,6 +1946,15 @@ private struct ProcessTapSession {
     let processObjectID: AudioObjectID
     let generation: UInt64
     let acquisitionID: UUID
+}
+
+private struct PendingProcessTapApply {
+    let plan: AudioRoutePlan
+    let gain: ProcessGainState
+    let token: ProcessTapGenerationRegistry.Token
+    let cleanupAcquisitionID: UUID
+    let cleanupRetryCount: Int
+    let continuation: CheckedContinuation<ProcessTapSessionSnapshot, Never>
 }
 
 private struct ProcessTapSessionResources {

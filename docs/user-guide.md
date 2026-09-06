@@ -48,6 +48,23 @@ The Energy Impact page shows a physical power-flow panel above the app ranking:
 - Connector labels can identify USB-C or MagSafe when Mac Activity can recognize the adapter; otherwise the app shows an unknown external interface.
 - Current watts appear only for hardware measurements that are directly available. Adapter ratings and negotiated limits are not shown as live power.
 
+## Audio
+
+Output-device sliders apply volume changes while you drag, rather than waiting
+for you to release the slider. Sliders are available when the device exposes
+writable volume and mute controls. Dragging to zero mutes the device; dragging
+up restores audible output at the selected volume.
+
+Application audio controls require macOS 14.2 or later and system audio capture
+permission. The application list includes processes currently producing audio
+output and excludes MacActivity's own process.
+
+Changing an application's output can briefly show a rebuilding state while the
+previous route's audio resources are released. A newer selection replaces a
+pending selection. If cleanup cannot complete or the route is unavailable, the
+control reports a failure; use Retry after the underlying problem is resolved.
+Device and route compatibility still depend on the hardware and macOS APIs.
+
 ## Actives
 
 The Actives surface focuses on cleanup work and process memory.

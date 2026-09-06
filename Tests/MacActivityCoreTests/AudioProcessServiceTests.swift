@@ -1,4 +1,5 @@
 import CoreAudio
+import Foundation
 import XCTest
 @testable import MacActivityCore
 
@@ -190,6 +191,113 @@ final class AudioProcessServiceTests: XCTestCase {
         XCTAssertEqual(entries.map(\.name), ["Music"])
         XCTAssertEqual(entries[0].processObjectID, 11)
         XCTAssertEqual(entries[0].processIdentifier, 101)
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesExcludesCurrentPIDWithoutWorkspaceMetadata() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let otherPID = ownPID + 1
+        let nonRunningPID = ownPID + 2
+        let service = AudioProcessService(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                )
+            ),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: ownPID,
+                        bundleIdentifier: nil,
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: otherPID,
+                        bundleIdentifier: "com.example.Other",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 13,
+                        processIdentifier: nonRunningPID,
+                        bundleIdentifier: "com.example.Inactive",
+                        isRunningOutput: false
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: otherPID,
+                        name: "Mac Activity",
+                        bundleIdentifier: "com.example.Other",
+                        bundleURL: nil
+                    ),
+                ]
+            }
+        )
+
+        let entries = service.audibleOutputProcesses()
+
+        XCTAssertEqual(entries.map(\.processObjectID), [12])
+        XCTAssertEqual(entries.map(\.processIdentifier), [otherPID])
+        XCTAssertEqual(entries.map(\.name), ["Mac Activity"])
+    }
+
+    @MainActor
+    func testAudibleOutputProcessesExcludesCurrentPIDWithWorkspaceMetadataAndSameNamedProcess() {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let otherPID = ownPID + 1
+        let service = AudioProcessService(
+            availability: AudioFeatureAvailability(
+                operatingSystemVersion: .init(
+                    majorVersion: 14,
+                    minorVersion: 2,
+                    patchVersion: 0
+                )
+            ),
+            processSnapshotReader: {
+                [
+                    AudioProcessSnapshot(
+                        processObjectID: 11,
+                        processIdentifier: ownPID,
+                        bundleIdentifier: "com.example.MacActivity",
+                        isRunningOutput: true
+                    ),
+                    AudioProcessSnapshot(
+                        processObjectID: 12,
+                        processIdentifier: otherPID,
+                        bundleIdentifier: "com.example.Other",
+                        isRunningOutput: true
+                    ),
+                ]
+            },
+            appSnapshotReader: {
+                [
+                    AudioProcessAppSnapshot(
+                        processIdentifier: ownPID,
+                        name: "Mac Activity",
+                        bundleIdentifier: "com.example.MacActivity",
+                        bundleURL: nil
+                    ),
+                    AudioProcessAppSnapshot(
+                        processIdentifier: otherPID,
+                        name: "Mac Activity",
+                        bundleIdentifier: "com.example.Other",
+                        bundleURL: nil
+                    ),
+                ]
+            }
+        )
+
+        let entries = service.audibleOutputProcesses()
+
+        XCTAssertEqual(entries.map(\.processObjectID), [12])
+        XCTAssertEqual(entries.map(\.processIdentifier), [otherPID])
+        XCTAssertEqual(entries.map(\.name), ["Mac Activity"])
     }
 
     func testEntriesKeepOnlyRunningOutputProcesses() {

@@ -127,12 +127,10 @@ protocol AudioControlCoordinating: AnyObject {
     func shutdown() async
 }
 
-typealias AudioControlDelay = @Sendable (Duration) async -> Void
-
 @MainActor
 final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject {
     private enum DeviceControlIntent {
-        case effectiveState(AudioEffectiveVolumeState, debounceVolume: Bool)
+        case effectiveState(AudioEffectiveVolumeState)
         case muteOnly(Bool)
     }
 
@@ -155,7 +153,6 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private let planner: AudioRoutePlanner
     private let engine: any ProcessTapVolumeControlling
     private let preferences: PreferencesController
-    private let delay: AudioControlDelay
 
     private var routeDevices: [AudioRouteDevice] = []
     private var confirmedDevices: [String: AudioOutputDeviceSnapshot] = [:]
@@ -176,6 +173,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     #if DEBUG
     private var reconciliationOrdinal: UInt64 = 0
     private var reconciliationWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
+    private var deviceControlStartWaiters: [(String, CheckedContinuation<Void, Never>)] = []
     private var processedEngineSnapshotOrders: [AudioObjectID: [ProcessTapSnapshotOrder]] = [:]
     private var engineSnapshotWaiters: [(
         AudioObjectID,
@@ -205,10 +203,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         monitor: any AudioSystemMonitoring,
         planner: AudioRoutePlanner = .init(),
         engine: any ProcessTapVolumeControlling,
-        preferences: PreferencesController,
-        delay: @escaping AudioControlDelay = { duration in
-            try? await Task.sleep(for: duration)
-        }
+        preferences: PreferencesController
     ) {
         supportsProcessControls = availability.supportsProcessControls
         self.deviceProvider = deviceProvider
@@ -218,7 +213,6 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         self.planner = planner
         self.engine = engine
         self.preferences = preferences
-        self.delay = delay
     }
 
     deinit {
@@ -292,11 +286,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
               let device = snapshot.devices.first(where: { $0.id == deviceUID })?.device,
               let stateSource = requested == 0 ? confirmedDevices[deviceUID] : device,
               let current = writableDeviceState(stateSource) else { return }
-        submitDeviceState(
-            current.settingDisplayVolume(requested),
-            for: deviceUID,
-            debounceVolume: requested > 0
-        )
+        submitDeviceState(current.settingDisplayVolume(requested), for: deviceUID)
     }
 
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {
@@ -306,7 +296,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
         if let current = writableDeviceState(device),
            let target = current.settingMuted(isMuted) {
-            submitDeviceState(target, for: deviceUID, debounceVolume: false)
+            submitDeviceState(target, for: deviceUID)
             return
         }
         guard let current = writableMuteOnlyDeviceState(device),
@@ -354,15 +344,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             && isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime)
     }
 
-    func submitDeviceState(
-        _ target: AudioEffectiveVolumeState,
-        for uid: String,
-        debounceVolume: Bool
-    ) {
-        submitDeviceControl(
-            .effectiveState(target, debounceVolume: debounceVolume),
-            for: uid
-        )
+    func submitDeviceState(_ target: AudioEffectiveVolumeState, for uid: String) {
+        submitDeviceControl(.effectiveState(target), for: uid)
     }
 
     private func submitDeviceControl(_ intent: DeviceControlIntent, for uid: String) {
@@ -376,7 +359,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         previous?.cancel()
         updateDevice(uid) { row in
             switch intent {
-            case .effectiveState(let target, _):
+            case .effectiveState(let target):
                 row.device = Self.device(row.device, state: target)
             case .muteOnly(let muted):
                 row.device = Self.device(
@@ -396,6 +379,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                     lifetime: lifetime,
                     ordinal: ordinal
                   ) else { return }
+            #if DEBUG
+            acknowledgeDeviceControlStart(uid)
+            #endif
             do {
                 guard let confirmed = try await executeDeviceControl(
                     intent,
@@ -446,14 +432,13 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         ordinal: UInt64
     ) async throws -> AudioOutputDeviceSnapshot? {
         switch intent {
-        case .effectiveState(let target, let debounceVolume):
+        case .effectiveState(let target):
             return try await executeEffectiveDeviceControl(
                 target,
                 uid: uid,
                 objectID: objectID,
                 lifetime: lifetime,
-                ordinal: ordinal,
-                debounceVolume: debounceVolume
+                ordinal: ordinal
             )
         case .muteOnly(let targetMuted):
             guard let latest = confirmedDevices[uid],
@@ -485,44 +470,28 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         uid: String,
         objectID: AudioObjectID,
         lifetime: UInt64,
-        ordinal: UInt64,
-        debounceVolume: Bool
+        ordinal: UInt64
     ) async throws -> AudioOutputDeviceSnapshot? {
         guard var confirmed = confirmedDevices[uid],
               var current = writableDeviceState(confirmed) else { return nil }
         if current.rawVolume != target.rawVolume {
-            if debounceVolume {
-                await delay(.milliseconds(75))
-                guard isCurrentDeviceOperation(
-                        uid,
-                        objectID: objectID,
-                        lifetime: lifetime,
-                        ordinal: ordinal
-                      ),
-                      let latest = confirmedDevices[uid],
-                      let latestState = writableDeviceState(latest) else { return nil }
-                confirmed = latest
-                current = latestState
-            }
-            if current.rawVolume != target.rawVolume {
-                guard isCurrentDeviceOperation(
-                    uid,
-                    objectID: objectID,
-                    lifetime: lifetime,
-                    ordinal: ordinal
-                ) else { return nil }
-                let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
-                guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
-                      let latest = confirmedDevices[uid] else { return nil }
-                confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
-                confirmedDevices[uid] = confirmed
-                guard let merged = writableDeviceState(confirmed) else {
-                    guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
-                    return confirmed
-                }
-                current = merged
+            guard isCurrentDeviceOperation(
+                uid,
+                objectID: objectID,
+                lifetime: lifetime,
+                ordinal: ordinal
+            ) else { return nil }
+            let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
+            guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
+                  let latest = confirmedDevices[uid] else { return nil }
+            confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
+            confirmedDevices[uid] = confirmed
+            guard let merged = writableDeviceState(confirmed) else {
                 guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+                return confirmed
             }
+            current = merged
+            guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
         }
         if current.isMuted != target.isMuted {
             guard isCurrentDeviceOperation(
@@ -663,6 +632,14 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         await deviceControlTasks[deviceUID]?.value
     }
 
+    func testingWaitForDeviceControlStart(_ deviceUID: String) async {
+        await withCheckedContinuation { deviceControlStartWaiters.append((deviceUID, $0)) }
+    }
+
+    func testingHandle(_ changes: Set<AudioSystemChange>) async {
+        await handle(changes)
+    }
+
     func testingWaitForProcessTask(_ processObjectID: AudioObjectID) async {
         await processTasks[processObjectID]?.value
     }
@@ -727,6 +704,29 @@ private extension AudioControlCoordinator {
     func invalidateAllDeviceControlLifetimes() {
         for uid in confirmedDevices.keys {
             invalidateDeviceControlLifetime(uid)
+        }
+    }
+
+    func invalidateAllProcessIntents() {
+        let processObjectIDs = Set(snapshot.processes.map(\.id))
+            .union(processTasks.keys)
+            .union(gainTasks.keys)
+        for processObjectID in processObjectIDs {
+            _ = invalidateGainIntent(processObjectID)
+            processTasks[processObjectID]?.cancel()
+            generations[processObjectID] = (generations[processObjectID] ?? 0) &+ 1
+        }
+        for row in snapshot.processes {
+            let confirmed = confirmedProcessValues[row.id] ?? .default
+            let routeOptions = makeRouteOptions(for: confirmed.route, process: row.process)
+            updateProcess(row.id) { row in
+                row.volume = confirmed.volume
+                row.isMuted = confirmed.isMuted
+                row.route = confirmed.route
+                row.routeOptions = routeOptions
+                row.pendingValues = nil
+                row.error = nil
+            }
         }
     }
 
@@ -818,6 +818,12 @@ private extension AudioControlCoordinator {
         reconciliationOrdinal &+= 1
         let ready = reconciliationWaiters.filter { reconciliationOrdinal >= $0.0 }
         reconciliationWaiters.removeAll { reconciliationOrdinal >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func acknowledgeDeviceControlStart(_ deviceUID: String) {
+        let ready = deviceControlStartWaiters.filter { $0.0 == deviceUID }
+        deviceControlStartWaiters.removeAll { $0.0 == deviceUID }
         ready.forEach { $0.1.resume() }
     }
 
@@ -1389,6 +1395,7 @@ private extension AudioControlCoordinator {
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
             invalidateAllDeviceControlLifetimes()
+            invalidateAllProcessIntents()
             if processRuntimeWasStarted {
                 await engine.stopAll()
             }

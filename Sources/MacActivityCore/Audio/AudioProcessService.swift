@@ -115,8 +115,12 @@ public final class AudioProcessService: AudioProcessProviding {
             return []
         }
 
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        let snapshots = processSnapshotReader().filter {
+            $0.processIdentifier != ownPID
+        }
         return Self.makeEntries(
-            processObjects: processSnapshotReader(),
+            processObjects: snapshots,
             apps: appSnapshotReader()
         )
     }

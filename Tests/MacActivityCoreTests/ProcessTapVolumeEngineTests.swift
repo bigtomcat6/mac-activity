@@ -968,6 +968,593 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         XCTAssertNil(oldContext.value)
     }
 
+    func testDelayedAggregateDisappearanceCompletesSameRebuildWithoutFailure() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        let first = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(first.state, .running)
+        recorder.clear()
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2, targetUIDs: ["replacement"]),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(recorder.snapshots.contains {
+            $0.generation == 2 && $0.state == .failed
+        })
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let replacement = await replacementTask.value
+
+        XCTAssertEqual(replacement.state, .running)
+        XCTAssertNil(replacement.error)
+        XCTAssertFalse(recorder.snapshots.contains {
+            $0.generation == 2 && $0.state == .failed
+        })
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testPendingRebuildRevalidatesRouteBeforePreparingReplacement() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2, targetUIDs: ["replacement"]),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        fixture.hardware.routePlanFreshness = .stale
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let replacement = await replacementTask.value
+
+        XCTAssertEqual(replacement.error, .routeStale)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testNewestRebuildSupersedesPendingRebuildDuringAggregateCleanup() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        recorder.clear()
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let secondTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2, targetUIDs: ["second"]),
+                gain: ProcessGainState(volume: 0.2)
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        let thirdTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3, targetUIDs: ["third"]),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+        let observedSecondProbe = await waitUntilCondition {
+            fixture.hardware.aggregateIdentityProbeCount >= 2
+        }
+        XCTAssertTrue(observedSecondProbe)
+        await fixture.engine.waitUntilIdleForTesting()
+
+        let superseded = await secondTask.value
+        XCTAssertEqual(superseded.error, .routeSuperseded)
+        XCTAssertTrue(recorder.snapshots.contains {
+            $0.generation == 3 && $0.state == .rebuilding && $0.error == nil
+        })
+        XCTAssertFalse(recorder.snapshots.contains {
+            $0.generation == 3 && $0.state == .failed
+        })
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let latest = await thirdTask.value
+
+        XCTAssertEqual(latest.state, .running)
+        XCTAssertEqual(
+            fixture.hardware.createdTapResources.count,
+            2
+        )
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testCancellingPendingRebuildReleasesCallerAndRetainsCleanupOwnership() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        replacementTask.cancel()
+        let cancelled = await replacementTask.value
+
+        XCTAssertEqual(cancelled.error, .routeSuperseded)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testShutdownReleasesPendingRebuildCallerWhileCleanupRemainsOwned() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        await fixture.engine.shutdown()
+        let cancelled = await replacementTask.value
+
+        XCTAssertEqual(cancelled.error, .routeSuperseded)
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testStopSupersedesPendingRebuildAndRetainsCleanupUntilAggregateDisappears() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let fixture = EngineFixture(
+            leaseAcquirer: broker.acquirer(owner: "owner")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "contender")
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let pendingResults = SnapshotRecorder()
+        let pendingTask = Task {
+            let result = await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+            pendingResults.record(result)
+            return result
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        let stopped = await fixture.engine.stop(processObjectID: 77, generation: 2)
+        let superseded = await pendingTask.value
+
+        XCTAssertEqual(stopped.state, .idle)
+        XCTAssertEqual(superseded.error, .routeSuperseded)
+        XCTAssertEqual(pendingResults.snapshots.count, 1)
+        XCTAssertEqual(pendingResults.snapshots.first?.error, .routeSuperseded)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0)))
+        XCTAssertEqual(fixture.hardware.createdTapResources.count, 1)
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(broker.currentOwner, "owner")
+        let contenderPreparation = await contender.prepareRuntime()
+        XCTAssertEqual(
+            contenderPreparation,
+            .unavailable(.leaseUnavailable)
+        )
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        await fixture.engine.shutdown()
+        XCTAssertNil(broker.currentOwner)
+    }
+
+    func testStopAllSupersedesPendingRebuildAndRetainsCleanupUntilAggregateDisappears() async {
+        let broker = FakeAudioProcessOwnershipLeaseBroker()
+        let fixture = EngineFixture(
+            leaseAcquirer: broker.acquirer(owner: "owner")
+        )
+        let contenderHardware = FakeAudioTapHardware()
+        let contender = makeInjectedEngine(
+            hardware: contenderHardware,
+            leaseAcquirer: broker.acquirer(owner: "contender")
+        )
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let pendingResults = SnapshotRecorder()
+        let pendingTask = Task {
+            let result = await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+            pendingResults.record(result)
+            return result
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        await fixture.engine.stopAll()
+        let superseded = await pendingTask.value
+
+        XCTAssertEqual(superseded.error, .routeSuperseded)
+        XCTAssertEqual(pendingResults.snapshots.count, 1)
+        XCTAssertEqual(pendingResults.snapshots.first?.error, .routeSuperseded)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(fixture.hardware.calls.contains(.destroyTap(sourceIndex: 0)))
+        XCTAssertEqual(fixture.hardware.createdTapResources.count, 1)
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(broker.currentOwner, "owner")
+        let contenderPreparation = await contender.prepareRuntime()
+        XCTAssertEqual(
+            contenderPreparation,
+            .unavailable(.leaseUnavailable)
+        )
+        XCTAssertTrue(contenderHardware.calls.isEmpty)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        await fixture.engine.shutdown()
+        XCTAssertNil(broker.currentOwner)
+    }
+
+    func testPendingRebuildTimesOutAfterBoundedCleanupRetries() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        recorder.clear()
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        XCTAssertFalse(recorder.snapshots.contains {
+            $0.generation == 2 && $0.state == .failed
+        })
+        for _ in 0..<8 {
+            fixture.scheduler.runNext()
+            await fixture.engine.waitUntilIdleForTesting()
+        }
+        let timedOut = await replacementTask.value
+
+        XCTAssertEqual(timedOut.error, .cleanupBacklogFull)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testPendingRebuildFailsClosedWhenAggregateProbeErrorsOnLaterRetry() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        fixture.hardware.setPersistentStatus(
+            kAudioHardwareUnspecifiedError,
+            at: .aggregateIdentityIsPresent
+        )
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let failed = await replacementTask.value
+
+        XCTAssertEqual(failed.error, .cleanupBacklogFull)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertEqual(fixture.hardware.createdTapResources.count, 1)
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+        switch await fixture.engine.prepareRuntime() {
+        case .ready(let failures):
+            XCTAssertEqual(failures.count, 1)
+            XCTAssertEqual(failures.first?.processObjectID, 77)
+            XCTAssertEqual(failures.first?.operation, .getData)
+            XCTAssertEqual(
+                failures.first?.status,
+                kAudioHardwareUnspecifiedError
+            )
+        case .unavailable(let error):
+            XCTFail("Unexpected unavailable preparation: \(error)")
+        }
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+
+        fixture.hardware.setPersistentStatus(
+            nil,
+            at: .aggregateIdentityIsPresent
+        )
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+    }
+
+    func testRetryAfterTimedOutRebuildPublishesCurrentRebuildingProgress() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        recorder.clear()
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let timedOutTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 2),
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        for _ in 0..<8 {
+            fixture.scheduler.runNext()
+            await fixture.engine.waitUntilIdleForTesting()
+        }
+        let timedOut = await timedOutTask.value
+        XCTAssertEqual(timedOut.error, .cleanupBacklogFull)
+        XCTAssertEqual(recorder.snapshots.last?.generation, 2)
+        XCTAssertEqual(recorder.snapshots.last?.state, .failed)
+        XCTAssertEqual(recorder.snapshots.last?.error, .cleanupBacklogFull)
+
+        fixture.hardware.clearCalls()
+        let retryTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(generation: 3),
+                gain: ProcessGainState()
+            )
+        }
+        await fixture.hardware.waitUntilCall(.validateFreshRoutePlan)
+        await fixture.engine.waitUntilIdleForTesting()
+
+        XCTAssertEqual(recorder.snapshots.last?.generation, 3)
+        XCTAssertEqual(recorder.snapshots.last?.state, .rebuilding)
+        XCTAssertNil(recorder.snapshots.last?.error)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let retried = await retryTask.value
+
+        XCTAssertEqual(retried.state, .running)
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testDelayedRebuildWithReusedAggregateObjectIDKeepsReplacementIdentity() async {
+        let fixture = EngineFixture()
+        fixture.hardware.forcedAggregateObjectID = 2_400
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        fixture.hardware.deferAggregateDisappearance = true
+        let replacementPlan = fixture.plan(generation: 2, targetUIDs: ["replacement"])
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: replacementPlan,
+                gain: ProcessGainState()
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let replacement = await replacementTask.value
+
+        XCTAssertEqual(replacement.state, .running)
+        XCTAssertEqual(
+            fixture.hardware.liveOwnedObjects.filter {
+                $0.classID == kAudioAggregateDeviceClassID
+            },
+            [AudioOwnedObject(
+                id: 2_400,
+                classID: kAudioAggregateDeviceClassID,
+                uid: replacementPlan.aggregateUID,
+                name: nil
+            )]
+        )
+
+        fixture.scheduler.fireCapturedAction(at: 0)
+        await fixture.engine.waitUntilIdleForTesting()
+        XCTAssertEqual(
+            fixture.hardware.liveOwnedObjects.filter {
+                $0.classID == kAudioAggregateDeviceClassID
+            }.map(\.uid),
+            [replacementPlan.aggregateUID]
+        )
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testTwentyDelayedRebuildsCompleteWithoutManualRetry() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        recorder.clear()
+
+        for generation in 2...21 {
+            fixture.hardware.deferAggregateDisappearance = true
+            fixture.hardware.clearCalls()
+            let replacementTask = Task {
+                await fixture.engine.apply(
+                    plan: fixture.plan(generation: UInt64(generation)),
+                    gain: ProcessGainState()
+                )
+            }
+            await fixture.hardware.waitUntilCall(.destroyAggregate)
+            await fixture.engine.waitUntilIdleForTesting()
+            XCTAssertFalse(recorder.snapshots.contains {
+                $0.generation == UInt64(generation) && $0.state == .failed
+            }, "generation \(generation)")
+
+            fixture.hardware.confirmAggregateDisappearance()
+            fixture.scheduler.runNext()
+            await fixture.engine.waitUntilIdleForTesting()
+            let replacement = await replacementTask.value
+
+            let didComplete = replacement.state == .running
+            XCTAssertTrue(didComplete, "generation \(generation)")
+            guard didComplete else { return }
+        }
+
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
+    func testDelayedRebuildDoesNotCorruptUnrelatedRunningSession() async {
+        let fixture = EngineFixture()
+        _ = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 77, generation: 1),
+            gain: ProcessGainState()
+        )
+        let other = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 88, generation: 1),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(other.state, .running)
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        let replacementTask = Task {
+            await fixture.engine.apply(
+                plan: fixture.plan(processObjectID: 77, generation: 2),
+                gain: ProcessGainState(volume: 0.4)
+            )
+        }
+
+        await fixture.hardware.waitUntilCall(.destroyAggregate)
+        await fixture.engine.waitUntilIdleForTesting()
+        let unchangedOther = await fixture.engine.apply(
+            plan: fixture.plan(processObjectID: 88, generation: 1),
+            gain: ProcessGainState(volume: 0.6)
+        )
+        XCTAssertEqual(unchangedOther.state, .running)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        let replacement = await replacementTask.value
+
+        XCTAssertEqual(replacement.state, .running)
+        fixture.hardware.deferAggregateDisappearance = false
+        let stoppedOther = await fixture.engine.stop(processObjectID: 88, generation: 2)
+        XCTAssertEqual(stoppedOther.state, .idle)
+        await fixture.engine.stopAll()
+    }
+
     func testStaleStopCannotTearDownNewerGeneration() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(

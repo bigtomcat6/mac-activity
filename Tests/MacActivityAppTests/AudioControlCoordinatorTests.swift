@@ -66,7 +66,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
-    func testDefaultDelaySafelyClampsNonFiniteDeviceVolume() async {
+    func testDeviceVolumeSafelyClampsNonFiniteInput() async {
         let deviceProvider = DeviceProviderFake()
         let processProvider = ProcessProviderFake()
         let monitor = MonitorFake()
@@ -397,11 +397,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testRapidDeviceSliderIntentsCoalesceAndRollbackWithoutProcessEnumeration() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(
-            availability: .supported,
-            delay: delay.callAsFunction
-        )
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.deviceProvider.volumeWriteError = FixtureError.writeFailed
 
@@ -410,10 +406,6 @@ final class AudioControlCoordinatorTests: XCTestCase {
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.8)
 
-        for _ in 0..<12 { await Task.yield() }
-        let delayCallCount = await delay.callCount
-        XCTAssertEqual(delayCallCount, 1)
-        await delay.resumeAll()
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.8])
@@ -422,15 +414,27 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].error, .deviceWrite)
     }
 
+    func testDeviceVolumeWritesDuringContinuousDrag() async {
+        let fixture = CoordinatorFixture(availability: .unsupported)
+        await fixture.coordinator.start()
+
+        fixture.coordinator.setDeviceVolume(0.6, for: "BuiltIn")
+        await fixture.coordinator.testingWaitForDeviceControlStart("BuiltIn")
+        XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.6])
+
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        await fixture.coordinator.testingWaitForDeviceControlStart("BuiltIn")
+        XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.6, 0.8])
+        await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.coordinator.shutdown()
+    }
+
     func testRapidDeviceIntentsCommitOnlyLatestEffectiveState() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.deviceProvider.confirmedMute = true
         fixture.coordinator.setDeviceVolume(0.2, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
         fixture.coordinator.setDeviceVolume(0, for: "BuiltIn")
-        await delay.resumeAll()
         await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
         XCTAssertEqual(fixture.deviceProvider.writes, [.mute(true)])
@@ -1863,11 +1867,9 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testQueuedMixedMuteStopsWhenLatestRefreshMakesMuteNonWritable() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
 
         fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
             id: "BuiltIn",
@@ -1888,8 +1890,6 @@ final class AudioControlCoordinatorTests: XCTestCase {
         )
         fixture.deviceProvider.outputSnapshots = [refreshed]
         fixture.coordinator.retryDevice("BuiltIn")
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.writes, [])
@@ -1974,43 +1974,10 @@ final class AudioControlCoordinatorTests: XCTestCase {
         }
     }
 
-    func testQueuedMixedMuteDoesNotWriteAfterFullRefreshRemovesDevice() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+    func testPendingDeviceControlDoesNotWriteToReplacementObject() async {
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
-        fixture.deviceProvider.outputSnapshots = [AudioOutputDeviceSnapshot(
-            id: "BuiltIn",
-            objectID: 10,
-            name: "Speakers",
-            volume: .value(0.61, isWritable: false),
-            mute: .value(false, isWritable: true)
-        )]
-        fixture.coordinator.retryDevice("BuiltIn")
-        fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
-
-        fixture.deviceProvider.outputSnapshots = []
-        await fixture.emit([.deviceList])
-        XCTAssertTrue(fixture.coordinator.snapshot.devices.isEmpty)
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
-        await fixture.coordinator.testingWaitUntilIdle()
-
-        XCTAssertEqual(fixture.deviceProvider.writes, [])
-        XCTAssertTrue(fixture.coordinator.snapshot.devices.isEmpty)
-    }
-
-    func testPendingDeviceIntentDoesNotCrossRemovedAndReaddedUIDLifetime() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
-        await fixture.coordinator.start()
-        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
-        fixture.deviceProvider.outputSnapshots = []
-        await fixture.emit([.deviceList])
         let replacement = AudioOutputDeviceSnapshot(
             id: "BuiltIn",
             objectID: 20,
@@ -2019,40 +1986,49 @@ final class AudioControlCoordinatorTests: XCTestCase {
             mute: .value(true, isWritable: true)
         )
         fixture.deviceProvider.outputSnapshots = [replacement]
-        await fixture.emit([.deviceList])
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
+        fixture.coordinator.retryDevice("BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.writes, [])
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device, replacement)
     }
 
-    func testPendingDeviceIntentIsRevokedWhenDeviceEnumerationFails() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+    func testPendingDeviceControlDoesNotCrossRemovedAndReaddedUIDLifetime() async {
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
-        fixture.deviceProvider.outputSnapshotsError = FixtureError.writeFailed
-        await fixture.emit([.deviceList])
+        fixture.deviceProvider.outputSnapshots = []
+        await fixture.coordinator.testingHandle([.deviceList])
         XCTAssertTrue(fixture.coordinator.snapshot.devices.isEmpty)
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
+        let replacement = AudioOutputDeviceSnapshot(
+            id: "BuiltIn",
+            objectID: 20,
+            name: "Replacement",
+            volume: .value(0.31, isWritable: true),
+            mute: .value(true, isWritable: true)
+        )
+        fixture.deviceProvider.outputSnapshots = [replacement]
+        await fixture.coordinator.testingHandle([.deviceList])
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.deviceProvider.writes, [])
+        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device, replacement)
+    }
+
+    func testPendingDeviceControlDoesNotWriteAfterDeviceEnumerationFailure() async {
+        let fixture = CoordinatorFixture(availability: .supported)
+        await fixture.coordinator.start()
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        fixture.deviceProvider.outputSnapshotsError = FixtureError.writeFailed
+        await fixture.coordinator.testingHandle([.deviceList])
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.writes, [])
         XCTAssertTrue(fixture.coordinator.snapshot.devices.isEmpty)
     }
 
-    func testPendingDeviceIntentIsRevokedByServiceRestart() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
-        await fixture.coordinator.start()
-        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
+    func testPendingDeviceControlDoesNotWriteAfterServiceRestart() async {
+        let fixture = CoordinatorFixture(availability: .supported)
         let restarted = AudioOutputDeviceSnapshot(
             id: "BuiltIn",
             objectID: 10,
@@ -2060,10 +2036,10 @@ final class AudioControlCoordinatorTests: XCTestCase {
             volume: .value(0.27, isWritable: true),
             mute: .value(false, isWritable: true)
         )
+        await fixture.coordinator.start()
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
         fixture.deviceProvider.outputSnapshots = [restarted]
-        await fixture.emit([.serviceRestarted])
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
+        await fixture.coordinator.testingHandle([.serviceRestarted])
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.writes, [])
@@ -2117,33 +2093,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertNil(fixture.coordinator.snapshot.devices[0].error)
     }
 
-    func testDeviceRefreshDuringDebounceStopsIntentWhenDeviceIsNoLongerFullyWritable() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
-        await fixture.coordinator.start()
-        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
-        let refreshed = AudioOutputDeviceSnapshot(
-            id: "BuiltIn",
-            objectID: 10,
-            name: "Speakers",
-            volume: .value(0.61, isWritable: true),
-            mute: .value(true, isWritable: false)
-        )
-        fixture.deviceProvider.outputSnapshots = [refreshed]
-        fixture.coordinator.retryDevice("BuiltIn")
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
-        await fixture.coordinator.testingWaitUntilIdle()
-
-        XCTAssertEqual(fixture.deviceProvider.writes, [])
-        XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device, refreshed)
-    }
-
     func testDeviceVolumeReadbackMergesIntoLatestRefreshSnapshot() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         fixture.deviceProvider.snapshotMute = true
         fixture.deviceProvider.confirmedVolume = 0.73
         await fixture.coordinator.start()
@@ -2160,8 +2111,6 @@ final class AudioControlCoordinatorTests: XCTestCase {
             fixture.coordinator.retryDevice("BuiltIn")
         }
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-        await delay.resumeAll()
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.writes, [.volume(0.8)])
@@ -2194,8 +2143,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testDeviceVolumeReadbackSurvivesLatestNonWritableMuteRefresh() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         fixture.deviceProvider.snapshotMute = true
         fixture.deviceProvider.confirmedVolume = 0.73
         await fixture.coordinator.start()
@@ -2211,8 +2159,6 @@ final class AudioControlCoordinatorTests: XCTestCase {
             fixture.coordinator.retryDevice("BuiltIn")
         }
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-        await delay.resumeAll()
         await fixture.coordinator.testingWaitUntilIdle()
 
         let device = fixture.coordinator.snapshot.devices[0].device
@@ -2475,17 +2421,13 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testDeviceVolumeAndMuteShareTaskAndMergeLatestConfirmation() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.deviceProvider.confirmedVolume = 0.73
         fixture.deviceProvider.confirmedMute = true
 
         fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
         fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
-        await delay.resumeAll()
-        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.8])
@@ -2494,15 +2436,14 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testFailedDeviceWritesRestoreLatestRefreshInsteadOfCapturedProperties() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.deviceProvider.volumeWriteError = FixtureError.writeFailed
-        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
         fixture.deviceProvider.snapshotVolume = 0.61
-        fixture.coordinator.retryDevice("BuiltIn")
-        await delay.resumeAll()
+        fixture.deviceProvider.onVolumeWrite = {
+            fixture.coordinator.retryDevice("BuiltIn")
+        }
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
         await fixture.coordinator.testingWaitUntilIdle()
         XCTAssertEqual(fixture.coordinator.snapshot.devices[0].device.volume.value, 0.61)
 
@@ -2529,32 +2470,21 @@ final class AudioControlCoordinatorTests: XCTestCase {
     }
 
     func testShutdownCancelsPendingSliderWrite() async {
-        let delay = ControlledAudioDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setDeviceVolume(0.9, for: "BuiltIn")
-        await delay.waitUntilCallCount(1)
-
-        let shutdown = Task { @MainActor in await fixture.coordinator.shutdown() }
-        await delay.resumeAll()
-        await shutdown.value
+        await fixture.coordinator.shutdown()
 
         XCTAssertEqual(fixture.deviceProvider.volumeWrites, [])
     }
 
-    func testShutdownAwaitsCanceledDeviceTaskBeforeStoppingEngine() async {
-        let delay = ControlledShutdownDelay()
-        let fixture = CoordinatorFixture(availability: .supported, delay: delay.callAsFunction)
+    func testShutdownCancelsQueuedDeviceTaskBeforeStoppingEngine() async {
+        let fixture = CoordinatorFixture(availability: .supported)
         await fixture.coordinator.start()
         fixture.coordinator.setDeviceVolume(0.9, for: "BuiltIn")
-        await delay.waitUntilEntered()
+        await fixture.coordinator.shutdown()
 
-        let shutdown = Task { @MainActor in await fixture.coordinator.shutdown() }
-        await delay.waitUntilCanceled()
-
-        XCTAssertFalse(fixture.lifecycle.events.contains("engine.shutdown"))
-        await delay.release()
-        await shutdown.value
+        XCTAssertEqual(fixture.deviceProvider.volumeWrites, [])
         XCTAssertTrue(fixture.lifecycle.events.contains("engine.shutdown"))
         XCTAssertEqual(fixture.engine.shutdownCount, 1)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)

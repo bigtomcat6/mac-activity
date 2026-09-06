@@ -23,8 +23,7 @@ final class CoordinatorFixture {
         bundleIdentifier: String? = "com.example.music",
         savedProfiles: [String: AudioProcessProfile] = [:],
         engine: EngineFake = EngineFake(),
-        planner: AudioRoutePlanner? = nil,
-        delay: @escaping AudioControlDelay = { _ in }
+        planner: AudioRoutePlanner? = nil
     ) {
         self.engine = engine
         processProvider.bundleIdentifier = bundleIdentifier
@@ -46,8 +45,7 @@ final class CoordinatorFixture {
             monitor: monitor,
             planner: planner,
             engine: engine,
-            preferences: preferences,
-            delay: delay
+            preferences: preferences
         )
     }
 
@@ -156,8 +154,7 @@ final class AudioControlComponentFixture {
             monitor: monitor,
             planner: AudioRoutePlanner(),
             engine: engine,
-            preferences: preferences,
-            delay: { _ in }
+            preferences: preferences
         )
     }
 
@@ -501,6 +498,11 @@ final class PlannerQueryCounter: @unchecked Sendable {
 }
 
 final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    private struct PendingStopAllApply {
+        let plan: AudioRoutePlan
+        let continuation: CheckedContinuation<ProcessTapSessionSnapshot, Never>
+    }
+
     let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
     private let continuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
     private(set) var applyCount = 0
@@ -534,6 +536,9 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private var deferredObserverCalls: Set<Int> = []
     private var deferredStopObserverCalls: Set<Int> = []
     private var deferredObservers: [ProcessTapSessionSnapshot] = []
+    private var appliesToCancelOnStopAll: Set<Int> = []
+    private var pendingStopAllApplies: [PendingStopAllApply] = []
+    private var pendingStopAllApplyWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init() {
         let stream = AsyncStream<ProcessTapSessionSnapshot>.makeStream()
@@ -544,10 +549,23 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func apply(plan: AudioRoutePlan, gain: ProcessGainState) async -> ProcessTapSessionSnapshot {
         lifecycle?.events.append("engine.apply")
         applyCount += 1
+        let applyCall = applyCount
         authorizationAttemptCount += 1
         plans.append(plan)
         gains.append(gain)
         await applyGate.enter()
+        if appliesToCancelOnStopAll.contains(applyCall) {
+            return await withCheckedContinuation { continuation in
+                pendingStopAllApplies.append(.init(plan: plan, continuation: continuation))
+                let ready = pendingStopAllApplyWaiters.filter {
+                    pendingStopAllApplies.count >= $0.0
+                }
+                pendingStopAllApplyWaiters.removeAll {
+                    pendingStopAllApplies.count >= $0.0
+                }
+                ready.forEach { $0.1.resume() }
+            }
+        }
         let scripted = scriptedApplyResultsByCommand.removeValue(forKey: .init(
             processObjectID: plan.processObjectID,
             generation: plan.generation
@@ -565,7 +583,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
             emissionOrdinal: 1
         )
         lastProducedSnapshot = snapshot
-        if deferredObserverCalls.contains(applyCount) {
+        if deferredObserverCalls.contains(applyCall) {
             deferredObservers.append(snapshot)
         } else {
             continuation.yield(snapshot)
@@ -606,6 +624,22 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func stopAll() async {
         stopAllCount += 1
         lifecycle?.events.append("engine.stopAll")
+        let pending = pendingStopAllApplies
+        pendingStopAllApplies.removeAll()
+        for apply in pending {
+            nextCommandSequence += 1
+            let snapshot = ProcessTapSessionSnapshot(
+                processObjectID: apply.plan.processObjectID,
+                generation: apply.plan.generation,
+                state: .failed,
+                error: .routeSuperseded,
+                commandSequence: nextCommandSequence,
+                emissionOrdinal: 1
+            )
+            lastProducedSnapshot = snapshot
+            continuation.yield(snapshot)
+            apply.continuation.resume(returning: snapshot)
+        }
     }
     func prepareRuntime() async -> ProcessTapRuntimePreparation {
         prepareRuntimeCount += 1
@@ -647,6 +681,13 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func waitUntilGainUpdateCount(_ count: Int) async {
         await gainUpdateGate.waitUntilEntered(count)
     }
+    func cancelApplyOnStopAll(_ call: Int) {
+        appliesToCancelOnStopAll.insert(call)
+    }
+    func waitUntilApplyPendingForStopAll(_ count: Int) async {
+        guard pendingStopAllApplies.count < count else { return }
+        await withCheckedContinuation { pendingStopAllApplyWaiters.append((count, $0)) }
+    }
     func deferApplyObserver(_ call: Int) { deferredObserverCalls.insert(call) }
     func deferStopObserver(_ call: Int) { deferredStopObserverCalls.insert(call) }
     func deliverDeferredObservers() {
@@ -680,80 +721,6 @@ final class PreferencesStoreFake: PreferencesStoring, @unchecked Sendable {
 
 final class LifecycleRecorder: @unchecked Sendable {
     var events: [String] = []
-}
-
-actor ControlledAudioDelay {
-    private var continuations: [CheckedContinuation<Void, Never>] = []
-    private(set) var callCount = 0
-    private var callCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-    func callAsFunction(_ duration: Duration) async {
-        callCount += 1
-        let ready = callCountWaiters.filter { callCount >= $0.0 }
-        callCountWaiters.removeAll { callCount >= $0.0 }
-        ready.forEach { $0.1.resume() }
-        await withCheckedContinuation { continuation in
-            continuations.append(continuation)
-        }
-    }
-
-    func waitUntilCallCount(_ count: Int) async {
-        guard callCount < count else { return }
-        await withCheckedContinuation { callCountWaiters.append((count, $0)) }
-    }
-
-    func resumeAll() {
-        let pending = continuations
-        continuations.removeAll()
-        pending.forEach { $0.resume() }
-    }
-}
-
-actor ControlledShutdownDelay {
-    private var enteredContinuation: CheckedContinuation<Void, Never>?
-    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
-    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-    private var entered = false
-    private var canceled = false
-    private var released = false
-
-    func callAsFunction(_ duration: Duration) async {
-        entered = true
-        entryWaiters.forEach { $0.resume() }
-        entryWaiters.removeAll()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { enteredContinuation = $0 }
-        } onCancel: {
-            Task { await self.cancel() }
-        }
-        guard released == false else { return }
-        await withCheckedContinuation { releaseContinuation = $0 }
-    }
-
-    func waitUntilEntered() async {
-        guard entered == false else { return }
-        await withCheckedContinuation { entryWaiters.append($0) }
-    }
-
-    func waitUntilCanceled() async {
-        guard canceled == false else { return }
-        await withCheckedContinuation { cancellationWaiters.append($0) }
-    }
-
-    func release() {
-        released = true
-        releaseContinuation?.resume()
-        releaseContinuation = nil
-    }
-
-    private func cancel() {
-        canceled = true
-        enteredContinuation?.resume()
-        enteredContinuation = nil
-        cancellationWaiters.forEach { $0.resume() }
-        cancellationWaiters.removeAll()
-    }
 }
 
 actor ControlledCallGate {
