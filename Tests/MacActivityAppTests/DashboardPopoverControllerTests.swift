@@ -8,6 +8,7 @@ import MacActivityCore
 final class DashboardPopoverControllerTests: XCTestCase {
     func testContentMeasurementEmitsFixedWidthAfterEveryLiveSegmentReports() {
         let measurement = DashboardPopoverContentMeasurement()
+        let expectedSize = NSSize(width: 420, height: 372)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
@@ -16,10 +17,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         measurement.report(280, for: .scrollContent)
         measurement.report(1, for: .footerDivider)
         measurement.report(48, for: .footer)
-        Self.drainMainRunLoop()
 
-        XCTAssertEqual(sizes, [NSSize(width: 420, height: 372)])
-        XCTAssertEqual(measurement.latestContentSize, NSSize(width: 420, height: 372))
+        XCTAssertTrue(Self.waitUntil { sizes == [expectedSize] })
+        XCTAssertEqual(measurement.latestContentSize, expectedSize)
     }
 
     func testContentMeasurementIgnoresInvalidSegmentsAndKeepsLastValidSize() {
@@ -52,6 +52,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
     func testContentMeasurementDropsSupersededQueuedEmission() {
         let measurement = DashboardPopoverContentMeasurement()
+        let expectedSize = NSSize(width: 420, height: 392)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
@@ -61,14 +62,14 @@ final class DashboardPopoverControllerTests: XCTestCase {
         measurement.report(1, for: .footerDivider)
         measurement.report(48, for: .footer)
         measurement.report(300, for: .scrollContent)
-        Self.drainMainRunLoop()
 
-        XCTAssertEqual(sizes, [NSSize(width: 420, height: 392)])
-        XCTAssertEqual(measurement.latestContentSize, NSSize(width: 420, height: 392))
+        XCTAssertTrue(Self.waitUntil { sizes == [expectedSize] })
+        XCTAssertEqual(measurement.latestContentSize, expectedSize)
     }
 
     func testContentMeasurementEmitsNewMeasurementAfterInvalidation() {
         let measurement = DashboardPopoverContentMeasurement()
+        let expectedSize = NSSize(width: 420, height: 392)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
@@ -79,10 +80,9 @@ final class DashboardPopoverControllerTests: XCTestCase {
         measurement.report(48, for: .footer)
         measurement.invalidatePendingEmissions()
         measurement.report(300, for: .scrollContent)
-        Self.drainMainRunLoop()
 
-        XCTAssertEqual(sizes, [NSSize(width: 420, height: 392)])
-        XCTAssertEqual(measurement.latestContentSize, NSSize(width: 420, height: 392))
+        XCTAssertTrue(Self.waitUntil { sizes == [expectedSize] })
+        XCTAssertEqual(measurement.latestContentSize, expectedSize)
     }
 
     func testContentSizeCoordinatorUsesFixedWidthAndCapsMeasuredHeight() {

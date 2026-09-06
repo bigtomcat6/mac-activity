@@ -2726,7 +2726,7 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         await fixture.engine.stopAll()
     }
 
-    func testStopAdvanceSupersededByNewApply() async {
+    func testStopAdvancePublishSupersessionReturnsSuperseded() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(
             plan: fixture.plan(generation: 1),
@@ -2738,22 +2738,23 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         )
         _ = await fixture.engine.stop(processObjectID: 77, generation: 1)
         fixture.hardware.setPersistentStatus(nil, at: .destroyTap(0))
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 3
+        )
         fixture.hardware.blockCalls(at: .destroyTap(0))
 
         let stopping = Task {
             await fixture.engine.stop(processObjectID: 77, generation: 2)
         }
         await fixture.hardware.waitUntilBlocked(at: .destroyTap(0))
-        let newest = Task {
-            await fixture.engine.apply(
-                plan: fixture.plan(generation: 3),
-                gain: ProcessGainState(volume: 0.4)
-            )
-        }
         fixture.hardware.releaseCalls(at: .destroyTap(0))
 
         let stale = await stopping.value
-        let current = await newest.value
+        let current = await fixture.engine.apply(
+            plan: fixture.plan(generation: 3),
+            gain: ProcessGainState(volume: 0.4)
+        )
 
         XCTAssertEqual(stale.error, .routeSuperseded)
         XCTAssertEqual(current.state, .running)
