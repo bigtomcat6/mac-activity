@@ -56,8 +56,17 @@ writable volume and mute controls. Dragging to zero mutes the device; dragging
 up restores audible output at the selected volume.
 
 Application audio controls require macOS 14.2 or later and system audio capture
-permission. The application list includes processes currently producing audio
-output and excludes MacActivity's own process.
+permission. On the first visit to the Audio page, MacActivity checks access to
+system audio. If macOS requires permission, the page shows a banner with Retry
+and Open System Settings actions; return to the Audio page after granting
+access to check again. Other access failures are reported separately and are
+not labeled as a permission denial.
+
+The application list includes processes currently producing audio output and
+excludes MacActivity's own process. Each application row shows its localized
+application name and icon when its bundle can be resolved. If no applications
+are playing audio after access is available, the page shows that empty state;
+it does not indicate whether permission was granted.
 
 Changing an application's output can briefly show a rebuilding state while the
 previous route's audio resources are released. A newer selection replaces a
