@@ -685,10 +685,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.string(.preferencesCurrentVersion, bundle: simplifiedChinese), "当前版本")
         XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: english), "Check for Updates")
         XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: simplifiedChinese), "检查更新")
-        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: english), "Show update channel")
-        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: simplifiedChinese), "显示更新频道")
-        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: english), "Hide update channel")
-        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: simplifiedChinese), "隐藏更新频道")
 
         XCTAssertEqual(AppLocalization.string(.live, bundle: english), "Live")
         XCTAssertEqual(AppLocalization.string(.live, bundle: simplifiedChinese), "实时")
@@ -740,6 +736,23 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userCaches, bundle: simplifiedChinese), "缓存")
         XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .trash, bundle: simplifiedChinese), "废纸篓")
         XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: simplifiedChinese), "日志")
+    }
+
+    func testSettingsCategoryTitlesHaveEnglishAndSimplifiedChineseTranslations() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let chinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+        let expected: [(AppLocalization.Key, String, String)] = [
+            (.preferencesCategoryGeneral, "General", "通用"),
+            (.preferencesCategoryMenuBar, "Menu Bar", "菜单栏"),
+            (.preferencesCategoryMonitoring, "Monitoring & Display", "监控与显示"),
+            (.preferencesCategoryCleanup, "Disk Cleanup", "磁盘清理"),
+            (.preferencesCategoryAboutUpdates, "About & Updates", "关于与更新")
+        ]
+
+        for (key, englishTitle, chineseTitle) in expected {
+            XCTAssertEqual(AppLocalization.string(key, bundle: english), englishTitle)
+            XCTAssertEqual(AppLocalization.string(key, bundle: chinese), chineseTitle)
+        }
     }
 
     func testCleanReleaseStringsResolveWithArguments() throws {
