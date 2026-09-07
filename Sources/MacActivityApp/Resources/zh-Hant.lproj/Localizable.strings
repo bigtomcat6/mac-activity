@@ -83,10 +83,13 @@
 "temperature.dashboard.battery" = "電池溫度";
 
 "preferences.launchAtLogin" = "登入時啟動";
+"preferences.category.general" = "通用";
+"preferences.category.menuBar" = "選單列";
+"preferences.category.monitoring" = "監控與顯示";
+"preferences.category.cleanup" = "磁碟清理";
+"preferences.category.aboutUpdates" = "關於與更新";
 "preferences.currentVersion" = "目前版本";
 "preferences.checkForUpdates" = "檢查更新";
-"preferences.showUpdateChannel" = "顯示更新頻道";
-"preferences.hideUpdateChannel" = "隱藏更新頻道";
 "preferences.updateChannel" = "更新頻道";
 "preferences.language" = "語言";
 "preferences.languageHelp" = "控制偏好設定與儀表板的顯示語言。";

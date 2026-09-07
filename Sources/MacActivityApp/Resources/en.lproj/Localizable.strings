@@ -83,10 +83,13 @@
 "temperature.dashboard.battery" = "Battery Temp";
 
 "preferences.launchAtLogin" = "Launch at login";
+"preferences.category.general" = "General";
+"preferences.category.menuBar" = "Menu Bar";
+"preferences.category.monitoring" = "Monitoring & Display";
+"preferences.category.cleanup" = "Disk Cleanup";
+"preferences.category.aboutUpdates" = "About & Updates";
 "preferences.currentVersion" = "Current version";
 "preferences.checkForUpdates" = "Check for Updates";
-"preferences.showUpdateChannel" = "Show update channel";
-"preferences.hideUpdateChannel" = "Hide update channel";
 "preferences.updateChannel" = "Update channel";
 "preferences.language" = "Language";
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";

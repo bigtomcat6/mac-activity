@@ -83,10 +83,13 @@
 "temperature.dashboard.battery" = "Akku-Temperatur";
 
 "preferences.launchAtLogin" = "Beim Anmelden starten";
+"preferences.category.general" = "Allgemein";
+"preferences.category.menuBar" = "Menüleiste";
+"preferences.category.monitoring" = "Überwachung & Anzeige";
+"preferences.category.cleanup" = "Festplattenbereinigung";
+"preferences.category.aboutUpdates" = "Info & Updates";
 "preferences.currentVersion" = "Aktuelle Version";
 "preferences.checkForUpdates" = "Nach Updates suchen";
-"preferences.showUpdateChannel" = "Update-Kanal anzeigen";
-"preferences.hideUpdateChannel" = "Update-Kanal ausblenden";
 "preferences.updateChannel" = "Update-Kanal";
 "preferences.language" = "Sprache";
 "preferences.languageHelp" = "Steuert die Anzeigesprache für Einstellungen und Dashboard.";
