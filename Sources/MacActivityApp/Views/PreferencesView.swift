@@ -1,23 +1,47 @@
 import SwiftUI
 import MacActivityCore
 
-@MainActor
-final class PreferencesViewState: ObservableObject {
-    @Published var isUpdateChannelExpanded: Bool
+enum PreferencesCategory: String, CaseIterable, Hashable {
+    case general
+    case menuBar
+    case monitoring
+    case cleanup
+    case aboutUpdates
 
-    init(isUpdateChannelExpanded: Bool = false) {
-        self.isUpdateChannelExpanded = isUpdateChannelExpanded
+    var titleKey: AppLocalization.Key {
+        switch self {
+        case .general: .preferencesCategoryGeneral
+        case .menuBar: .preferencesCategoryMenuBar
+        case .monitoring: .preferencesCategoryMonitoring
+        case .cleanup: .preferencesCategoryCleanup
+        case .aboutUpdates: .preferencesCategoryAboutUpdates
+        }
     }
 
-    func collapseUpdateChannel() {
-        isUpdateChannelExpanded = false
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .menuBar: "menubar.rectangle"
+        case .monitoring: "gauge"
+        case .cleanup: "externaldrive"
+        case .aboutUpdates: "info.circle"
+        }
+    }
+}
+
+@MainActor
+final class PreferencesViewState: ObservableObject {
+    @Published var selectedCategory: PreferencesCategory
+
+    init(selectedCategory: PreferencesCategory = .general) {
+        self.selectedCategory = selectedCategory
     }
 }
 
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
     @ObservedObject private var localizationController = AppLocalizationController.shared
-    @ObservedObject private var viewState: PreferencesViewState
+    @ObservedObject var viewState: PreferencesViewState
 
     private let versionInfo: PreferencesVersionInfo
     private let checkForUpdates: () -> Void
@@ -26,12 +50,11 @@ struct PreferencesView: View {
         preferencesController: PreferencesController,
         versionInfo: PreferencesVersionInfo = .current(),
         viewState: PreferencesViewState? = nil,
-        isUpdateChannelExpanded: Bool = false,
         checkForUpdates: @escaping () -> Void
     ) {
         self.preferencesController = preferencesController
         self.versionInfo = versionInfo
-        self.viewState = viewState ?? PreferencesViewState(isUpdateChannelExpanded: isUpdateChannelExpanded)
+        self.viewState = viewState ?? PreferencesViewState()
         self.checkForUpdates = checkForUpdates
     }
 
@@ -44,10 +67,93 @@ struct PreferencesView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                updateHeader
+        NavigationSplitView {
+            VStack(spacing: 0) {
+                List(selection: sidebarSelection) {
+                    ForEach(PreferencesCategory.allCases.filter { $0 != .aboutUpdates }, id: \.self) { category in
+                        sidebarRow(category)
+                    }
+                }
+                List(selection: sidebarSelection) {
+                    sidebarRow(.aboutUpdates)
+                }
+                .frame(height: 52)
+                .scrollDisabled(true)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 180, ideal: 200, max: 240)
+        } detail: {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 10) {
+                    Image(systemName: viewState.selectedCategory.systemImage)
+                        .font(.system(size: 20, weight: .medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 32, height: 32)
+                        .background(.quaternary, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .accessibilityHidden(true)
 
+                    Text(AppLocalization.string(viewState.selectedCategory.titleKey))
+                        .font(.title2.weight(.semibold))
+                        .accessibilityAddTraits(.isHeader)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 20)
+                .padding(.top, 20)
+                .padding(.bottom, 8)
+
+                Form {
+                    selectedPage
+                }
+                .formStyle(.grouped)
+                .toggleStyle(.switch)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .navigationSplitViewStyle(.balanced)
+    }
+
+    private var sidebarSelection: Binding<PreferencesCategory?> {
+        Binding(
+            get: { viewState.selectedCategory },
+            set: { category in
+                guard let category else { return }
+                // Native lists can report selection while SwiftUI is updating their views.
+                DispatchQueue.main.async { [viewState] in
+                    guard viewState.selectedCategory != category else { return }
+                    viewState.selectedCategory = category
+                }
+            }
+        )
+    }
+
+    private func sidebarRow(_ category: PreferencesCategory) -> some View {
+        let isSelected = viewState.selectedCategory == category
+        return Label(AppLocalization.string(category.titleKey), systemImage: category.systemImage)
+            .foregroundStyle(isSelected ? Color.blue : Color.primary)
+            .fontWeight(isSelected ? .semibold : .regular)
+            .listItemTint(isSelected ? Color.blue : Color.primary)
+            .listRowBackground(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(isSelected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear)
+                    .padding(.horizontal, 10)
+            )
+            .tag(category)
+    }
+
+    @ViewBuilder
+    private var selectedPage: some View {
+        switch viewState.selectedCategory {
+        case .general: generalPage
+        case .menuBar: menuBarPage
+        case .monitoring: monitoringPage
+        case .cleanup: cleanupPage
+        case .aboutUpdates: aboutUpdatesPage
+        }
+    }
+
+    private var generalPage: some View {
+        Group {
+            Section {
                 Toggle(
                     AppLocalization.string(.preferencesLaunchAtLogin),
                     isOn: Binding(
@@ -55,150 +161,6 @@ struct PreferencesView: View {
                         set: { preferencesController.setLaunchAtLoginEnabled($0) }
                     )
                 )
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalization.string(.preferencesLanguage))
-                        .font(.headline)
-
-                    Picker(
-                        AppLocalization.string(.preferencesLanguage),
-                        selection: Binding(
-                            get: {
-                                AppLanguage(
-                                    preferredLanguageIdentifier: preferencesController.state.preferredLanguageIdentifier
-                                )
-                            },
-                            set: { language in
-                                preferencesController.setPreferredLanguageIdentifier(language.preferredLanguageIdentifier)
-                            }
-                        )
-                    ) {
-                        ForEach(AppLanguage.supportedLanguages()) { language in
-                            Text(AppLocalization.languageTitle(for: language))
-                                .tag(language)
-                        }
-                    }
-                    .pickerStyle(.menu)
-                    .id("language-\(localizationRefreshID)")
-
-                    Text(AppLocalization.string(.preferencesLanguageHelp))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalization.string(.preferencesTemperatureSource))
-                        .font(.headline)
-
-                    Picker(
-                        AppLocalization.string(.preferencesTemperatureSource),
-                        selection: Binding(
-                            get: { preferencesController.state.temperatureSource },
-                            set: { preferencesController.setTemperatureSource($0) }
-                        )
-                    ) {
-                        ForEach(TemperatureSource.allCases, id: \.self) { source in
-                            Text(AppLocalization.temperatureSourceTitle(for: source))
-                                .tag(source)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .id("temperature-\(localizationRefreshID)")
-
-                    Text(AppLocalization.string(.preferencesTemperatureHelp))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Toggle(
-                        AppLocalization.string(.preferencesHardwareBatteryPercentage),
-                        isOn: Binding(
-                            get: { preferencesController.state.showsHardwareBatteryPercentage },
-                            set: { preferencesController.setShowsHardwareBatteryPercentage($0) }
-                        )
-                    )
-
-                    Text(AppLocalization.string(.preferencesHardwareBatteryPercentageHelp))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Toggle(
-                    AppLocalization.string(.preferencesProcessApplicationIdentifier),
-                    isOn: Binding(
-                        get: { preferencesController.state.showsProcessApplicationIdentifier },
-                        set: { preferencesController.setShowsProcessApplicationIdentifier($0) }
-                    )
-                )
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalization.string(.preferencesEnergyImpactAppScope))
-                        .font(.headline)
-
-                    Picker(
-                        AppLocalization.string(.preferencesEnergyImpactAppScope),
-                        selection: Binding(
-                            get: { preferencesController.state.energyImpactAppScope },
-                            set: { preferencesController.setEnergyImpactAppScope($0) }
-                        )
-                    ) {
-                        ForEach(EnergyImpactAppScope.allCases, id: \.rawValue) { scope in
-                            Text(AppLocalization.energyImpactScopeTitle(for: scope)).tag(scope)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .id("energy-impact-scope-\(localizationRefreshID)")
-                }
-
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(AppLocalization.string(.preferencesDiskCleanupScope))
-                        .font(.headline)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(AppPreferences.diskCleanupCategoryOrder, id: \.self) { category in
-                            Toggle(
-                                AppLocalization.diskCleanupCategoryTitle(for: category),
-                                isOn: Binding(
-                                    get: { preferencesController.state.diskCleanupCategories.contains(category) },
-                                    set: { preferencesController.setDiskCleanupCategory(category, isSelected: $0) }
-                                )
-                            )
-                        }
-                    }
-
-                    Text(AppLocalization.string(.preferencesDiskCleanupHelp))
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(AppLocalization.string(.preferencesMenuBarMetrics))
-                    .font(.headline)
-
-                Text(AppLocalization.string(.preferencesMetricsFixedOrder))
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-
-                ForEach(metricRows, id: \.self) { metric in
-                    Toggle(
-                        AppLocalization.metricTitle(for: metric),
-                        isOn: Binding(
-                            get: {
-                                preferencesController.state.selectedSummaryMetrics.contains(metric)
-                            },
-                            set: { isSelected in
-                                var nextSelection = Set(preferencesController.state.selectedSummaryMetrics)
-                                if isSelected {
-                                    nextSelection.insert(metric)
-                                } else {
-                                    nextSelection.remove(metric)
-                                }
-                                preferencesController.setSummarySelection(nextSelection)
-                            }
-                        )
-                    )
-                }
-
                 if let error = preferencesController.launchAtLoginError {
                     Text(error)
                         .font(.footnote)
@@ -206,72 +168,158 @@ struct PreferencesView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(20)
-            .frame(maxWidth: .infinity, alignment: .topLeading)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    }
 
-    private var updateHeader: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text(AppLocalization.string(.preferencesCurrentVersion))
-                    .foregroundStyle(.secondary)
-
-                Text(versionInfo.displayText)
-                    .monospacedDigit()
-
-                Button {
-                    toggleUpdateChannelExpanded()
-                } label: {
-                    Image(systemName: viewState.isUpdateChannelExpanded ? "chevron.up" : "chevron.down")
-                        .imageScale(.small)
-                }
-                .buttonStyle(.borderless)
-                .help(
-                    AppLocalization.string(
-                        viewState.isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
-                    )
-                )
-                .accessibilityLabel(
-                    AppLocalization.string(
-                        viewState.isUpdateChannelExpanded ? .preferencesHideUpdateChannel : .preferencesShowUpdateChannel
-                    )
-                )
-
-                Spacer(minLength: 12)
-
-                Button(AppLocalization.string(.preferencesCheckForUpdates), action: checkForUpdates)
-            }
-
-            if viewState.isUpdateChannelExpanded {
-                HStack(spacing: 8) {
-                    Text(AppLocalization.string(.preferencesUpdateChannel))
-
-                    Picker(
-                        AppLocalization.string(.preferencesUpdateChannel),
-                        selection: Binding(
-                            get: { preferencesController.state.updateChannel },
-                            set: { preferencesController.setUpdateChannel($0) }
-                        )
-                    ) {
-                        ForEach(UpdateChannel.allCases, id: \.self) { channel in
-                            updateChannelOption(for: channel)
+            Section {
+                Picker(
+                    AppLocalization.string(.preferencesLanguage),
+                    selection: Binding(
+                        get: {
+                            AppLanguage(
+                                preferredLanguageIdentifier: preferencesController.state.preferredLanguageIdentifier
+                            )
+                        },
+                        set: { language in
+                            preferencesController.setPreferredLanguageIdentifier(language.preferredLanguageIdentifier)
                         }
+                    )
+                ) {
+                    ForEach(AppLanguage.supportedLanguages()) { language in
+                        Text(AppLocalization.languageTitle(for: language)).tag(language)
                     }
-                    .labelsHidden()
-                    .pickerStyle(.menu)
-                    .frame(width: 120)
-                    .id("update-channel-\(localizationRefreshID)")
                 }
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .pickerStyle(.menu)
+                .id("language-\(localizationRefreshID)")
+            } footer: {
+                Text(AppLocalization.string(.preferencesLanguageHelp))
             }
         }
     }
 
-    func toggleUpdateChannelExpanded() {
-        withAnimation(.easeInOut(duration: 0.16)) {
-            viewState.isUpdateChannelExpanded.toggle()
+    private var menuBarPage: some View {
+        Section {
+            ForEach(metricRows, id: \.self) { metric in
+                Toggle(
+                    AppLocalization.metricTitle(for: metric),
+                    isOn: Binding(
+                        get: { preferencesController.state.selectedSummaryMetrics.contains(metric) },
+                        set: { isSelected in
+                            var selection = Set(preferencesController.state.selectedSummaryMetrics)
+                            if isSelected {
+                                selection.insert(metric)
+                            } else {
+                                selection.remove(metric)
+                            }
+                            preferencesController.setSummarySelection(selection)
+                        }
+                    )
+                )
+            }
+        } header: {
+            Text(AppLocalization.string(.preferencesMenuBarMetrics))
+        } footer: {
+            Text(AppLocalization.string(.preferencesMetricsFixedOrder))
+        }
+    }
+
+    private var monitoringPage: some View {
+        Group {
+            Section {
+                Picker(
+                    AppLocalization.string(.preferencesTemperatureSource),
+                    selection: Binding(
+                        get: { preferencesController.state.temperatureSource },
+                        set: { preferencesController.setTemperatureSource($0) }
+                    )
+                ) {
+                    ForEach(TemperatureSource.allCases, id: \.self) { source in
+                        Text(AppLocalization.temperatureSourceTitle(for: source)).tag(source)
+                    }
+                }
+                .pickerStyle(.menu)
+                .id("temperature-\(localizationRefreshID)")
+            } footer: {
+                Text(AppLocalization.string(.preferencesTemperatureHelp))
+            }
+
+            Section {
+                Toggle(
+                    AppLocalization.string(.preferencesHardwareBatteryPercentage),
+                    isOn: Binding(
+                        get: { preferencesController.state.showsHardwareBatteryPercentage },
+                        set: { preferencesController.setShowsHardwareBatteryPercentage($0) }
+                    )
+                )
+            } footer: {
+                Text(AppLocalization.string(.preferencesHardwareBatteryPercentageHelp))
+            }
+
+            Section {
+                Toggle(
+                    AppLocalization.string(.preferencesProcessApplicationIdentifier),
+                    isOn: Binding(
+                        get: { preferencesController.state.showsProcessApplicationIdentifier },
+                        set: { preferencesController.setShowsProcessApplicationIdentifier($0) }
+                    )
+                )
+            }
+
+            Section {
+                Picker(
+                    AppLocalization.string(.preferencesEnergyImpactAppScope),
+                    selection: Binding(
+                        get: { preferencesController.state.energyImpactAppScope },
+                        set: { preferencesController.setEnergyImpactAppScope($0) }
+                    )
+                ) {
+                    ForEach(EnergyImpactAppScope.allCases, id: \.rawValue) { scope in
+                        Text(AppLocalization.energyImpactScopeTitle(for: scope)).tag(scope)
+                    }
+                }
+                .pickerStyle(.menu)
+                .id("energy-impact-scope-\(localizationRefreshID)")
+            }
+        }
+    }
+
+    private var cleanupPage: some View {
+        Section {
+            ForEach(AppPreferences.diskCleanupCategoryOrder, id: \.self) { category in
+                Toggle(
+                    AppLocalization.diskCleanupCategoryTitle(for: category),
+                    isOn: Binding(
+                        get: { preferencesController.state.diskCleanupCategories.contains(category) },
+                        set: { preferencesController.setDiskCleanupCategory(category, isSelected: $0) }
+                    )
+                )
+            }
+        } header: {
+            Text(AppLocalization.string(.preferencesDiskCleanupScope))
+        } footer: {
+            Text(AppLocalization.string(.preferencesDiskCleanupHelp))
+        }
+    }
+
+    private var aboutUpdatesPage: some View {
+        Section {
+            LabeledContent(AppLocalization.string(.preferencesCurrentVersion)) {
+                Text(versionInfo.displayText).monospacedDigit()
+            }
+
+            Picker(
+                AppLocalization.string(.preferencesUpdateChannel),
+                selection: Binding(
+                    get: { preferencesController.state.updateChannel },
+                    set: { preferencesController.setUpdateChannel($0) }
+                )
+            ) {
+                ForEach(UpdateChannel.allCases, id: \.self) { channel in
+                    updateChannelOption(for: channel)
+                }
+            }
+            .pickerStyle(.menu)
+            .id("update-channel-\(localizationRefreshID)")
+
+            Button(AppLocalization.string(.preferencesCheckForUpdates), action: checkForUpdates)
         }
     }
 
