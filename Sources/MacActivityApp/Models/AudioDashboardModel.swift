@@ -11,7 +11,6 @@ final class AudioDashboardModel: ObservableObject {
     private let coordinator: any AudioControlCoordinating
     private var snapshotCancellable: AnyCancellable?
     private var isAudioPageVisible = false
-    private var systemAudioSettingsReturnPending = false
 
     init(coordinator: any AudioControlCoordinating) {
         self.coordinator = coordinator
@@ -26,34 +25,24 @@ final class AudioDashboardModel: ObservableObject {
 
     func audioPageActivated() async {
         isAudioPageVisible = true
-        systemAudioSettingsReturnPending = false
-        coordinator.setSystemAudioAccessPageVisible(true)
-        await coordinator.checkSystemAudioAccess()
+        await coordinator.refreshSystemAudioAuthorization()
     }
 
     func audioPageDeactivated() {
         isAudioPageVisible = false
-        systemAudioSettingsReturnPending = false
-        coordinator.setSystemAudioAccessPageVisible(false)
     }
 
     func applicationDidBecomeActive() async {
         guard isAudioPageVisible else { return }
-        if snapshot.systemAudioAccess == .permissionRequired {
-            guard systemAudioSettingsReturnPending else { return }
-            systemAudioSettingsReturnPending = false
-        }
-        await coordinator.checkSystemAudioAccess()
+        await coordinator.refreshSystemAudioAuthorization()
     }
 
-    func systemAudioSettingsWasOpened() {
-        guard isAudioPageVisible else { return }
-        systemAudioSettingsReturnPending = true
+    func requestSystemAudioAccess() async {
+        await coordinator.requestSystemAudioAccess()
     }
 
-    func retrySystemAudioAccess() async {
-        systemAudioSettingsReturnPending = false
-        await coordinator.checkSystemAudioAccess()
+    func refreshSystemAudioAuthorization() async {
+        await coordinator.refreshSystemAudioAuthorization()
     }
 
     func setDeviceVolume(_ value: Double, for uid: String) {
