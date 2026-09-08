@@ -247,6 +247,27 @@ final class AudioSystemAccessServiceTests: XCTestCase {
         )
     }
 
+    func testAggregateDisappearanceTimeoutReportsDestroyAggregateFailure() async {
+        let backend = configuredBackend()
+        backend.aggregateDestructionDelayPolls = 2
+        let service = makeService(backend, cleanupPollCount: 1)
+
+        let result = await awaitResult(from: service)
+
+        guard case .otherFailure(.cleanupFailed(let failures)) = result else {
+            return XCTFail("aggregate disappearance timeout must retain the probe for draining")
+        }
+        XCTAssertEqual(failures.map(\.operation), [.destroyAggregate])
+        XCTAssertEqual(failures.map(\.objectID), [702])
+        XCTAssertEqual(failures.map(\.status), [kAudioHardwareUnspecifiedError])
+
+        await service.drainRetainedResources()
+        XCTAssertTrue(backend.destroyedProcessTapIDs.isEmpty)
+        await service.drainRetainedResources()
+
+        XCTAssertEqual(backend.destroyedProcessTapIDs, [701])
+    }
+
     func testCleanupFailureIsNotReportedAsOperationalAccessAndIsRetriedBeforeAnotherProbe() async {
         let backend = configuredBackend()
         backend.stopDeviceStatus = -105
@@ -525,6 +546,46 @@ final class AudioSystemAccessServiceTests: XCTestCase {
         XCTAssertEqual(backend.destroyedIOProcDeviceIDs, [702])
         XCTAssertEqual(backend.destroyedAggregateDeviceIDs, [702])
         XCTAssertEqual(backend.destroyedProcessTapIDs, [701])
+    }
+
+    func testShutdownDuringInFlightProbeWaitsForProbeAndCleanup() async {
+        let backend = configuredBackend()
+        let started = expectation(description: "native start entered")
+        let shutdownEntered = expectation(description: "shutdown entered actor")
+        let cleanupEntered = expectation(description: "tap cleanup entered")
+        let releaseStart = DispatchSemaphore(value: 0)
+        let releaseCleanup = DispatchSemaphore(value: 0)
+        backend.startDeviceBlocker = releaseStart
+        backend.destroyProcessTapBlocker = releaseCleanup
+        backend.onStartDevice = { started.fulfill() }
+        backend.onDestroyProcessTap = { cleanupEntered.fulfill() }
+        let service = makeService(backend)
+
+        let check = Task { await service.checkAccess() }
+        await fulfillment(of: [started], timeout: 1)
+        await service.testingObserveShutdownEntry {
+            shutdownEntered.fulfill()
+        }
+        let shutdown = Task { await service.shutdown() }
+        await fulfillment(of: [shutdownEntered], timeout: 1)
+        releaseStart.signal()
+        await fulfillment(of: [cleanupEntered], timeout: 1)
+        let didCompleteBeforeCleanupRelease = await service.testingDidCompleteShutdown()
+        XCTAssertFalse(didCompleteBeforeCleanupRelease)
+        releaseCleanup.signal()
+
+        let result = await check.value
+        await shutdown.value
+        let didCompleteAfterCleanupRelease = await service.testingDidCompleteShutdown()
+
+        XCTAssertEqual(result, .available)
+        XCTAssertEqual(backend.stoppedDeviceIDs, [702])
+        XCTAssertEqual(backend.destroyedIOProcDeviceIDs, [702])
+        XCTAssertEqual(backend.destroyedAggregateDeviceIDs, [702])
+        XCTAssertEqual(backend.destroyedProcessTapIDs, [701])
+        XCTAssertTrue(didCompleteAfterCleanupRelease)
+        let terminalResult = await service.checkAccess()
+        XCTAssertEqual(terminalResult, .shutdown)
     }
 
     func testConcurrentChecksShareOneNativeProbe() async {

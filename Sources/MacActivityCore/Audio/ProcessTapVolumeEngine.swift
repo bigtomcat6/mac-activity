@@ -186,7 +186,8 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
     )?
     private var snapshotPublishSupersessionForTesting: (
         processObjectID: AudioObjectID,
-        generation: UInt64
+        generation: UInt64,
+        state: ProcessTapSessionState?
     )?
     #endif
 
@@ -444,12 +445,14 @@ public final class ProcessTapVolumeEngine: ProcessTapVolumeControlling, @uncheck
 
     func supersedeNextSnapshotPublishForTesting(
         processObjectID: AudioObjectID,
-        generation: UInt64
+        generation: UInt64,
+        state: ProcessTapSessionState? = nil
     ) async {
         await enqueue { [self] in
             snapshotPublishSupersessionForTesting = (
                 processObjectID,
-                generation
+                generation,
+                state
             )
         }
     }
@@ -1776,7 +1779,8 @@ private extension ProcessTapVolumeEngine {
         token: ProcessTapGenerationRegistry.Token
     ) -> ProcessTapSessionSnapshot? {
         #if DEBUG
-        if let supersession = snapshotPublishSupersessionForTesting {
+        if let supersession = snapshotPublishSupersessionForTesting,
+           supersession.state == nil || supersession.state == state {
             snapshotPublishSupersessionForTesting = nil
             _ = generations.register(
                 processObjectID: supersession.processObjectID,

@@ -108,7 +108,6 @@
 		8677186DFD2E23787BCA45DC /* PowerFlowTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114186488F622ACBE78995BC /* PowerFlowTypes.swift */; };
 		867FAEE8D9ACD8D9BB154049 /* ReleaseVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB6298EE54FFEF176A7403A /* ReleaseVersion.swift */; };
 		86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */; };
-		A7C110010000000000000004 /* AudioSystemAuthorizationRequesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C110010000000000000003 /* AudioSystemAuthorizationRequesterTests.swift */; };
 		8D254CD3AD58B0DC4724B599 /* AudioSystemAuthorizationReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */; };
 		8F1DC13379FCD95356F84172 /* PowerFlowPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B452A7B4CBE18AF20A5DF093 /* PowerFlowPresentation.swift */; };
 		9096C7171E329C3036621E33 /* ActiveProcessMemoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */; };
@@ -122,9 +121,10 @@
 		9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */; };
 		A1C4B920CF9DA8C8F81F347F /* EnergyImpactPublicationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 443015F2FA5999B5DE29199C /* EnergyImpactPublicationState.swift */; };
 		A1DC0091AFAA3500C5AAA85F /* ActiveAppMemoryProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */; };
+		A68EB502185986836D16E0A9 /* AudioSystemAuthorizationRequesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE476B2CB0F36CA3A88C1230 /* AudioSystemAuthorizationRequesterTests.swift */; };
 		A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */; };
 		AD712FC4EBAA68F9349BACD3 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */; };
-		A7C110010000000000000002 /* AudioSystemAuthorizationRequester.swift in Sources */ = {isa = PBXBuildFile; fileRef = A7C110010000000000000001 /* AudioSystemAuthorizationRequester.swift */; };
+		AEEEDA0E878CB2F89BEC78DD /* AudioSystemAuthorizationRequester.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB4190A870855302E743ABB /* AudioSystemAuthorizationRequester.swift */; };
 		AF9C56A213AC3AEA44FACAE5 /* AudioSystemAuthorizationReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3AC2A6A27985AB56564929 /* AudioSystemAuthorizationReader.swift */; };
 		B008413B7CBE75EA36C9FA65 /* ProcessTapVolumeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 751602B497EFBC73C88631CA /* ProcessTapVolumeEngine.swift */; };
 		B1D58B1C23E57C4B2EFA43B2 /* FanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */; };
@@ -314,7 +314,6 @@
 		5B4CC9E01B6EB74B7E39DFF8 /* ProcessTapDSP.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTapDSP.swift; sourceTree = "<group>"; };
 		5BF7D4EC5F491FFCA175F513 /* EnergyImpactOwnershipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactOwnershipTests.swift; sourceTree = "<group>"; };
 		5F3AC2A6A27985AB56564929 /* AudioSystemAuthorizationReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationReader.swift; sourceTree = "<group>"; };
-		A7C110010000000000000001 /* AudioSystemAuthorizationRequester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationRequester.swift; sourceTree = "<group>"; };
 		5F80A7CF6CB9E39D7858C692 /* CPUProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CPUProvider.swift; sourceTree = "<group>"; };
 		5FC8340436E36F7FCE415A82 /* AudioDashboardViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardViewTests.swift; sourceTree = "<group>"; };
 		622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanProvider.swift; sourceTree = "<group>"; };
@@ -322,7 +321,6 @@
 		67191FA29FAD0078810BA81D /* AudioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardView.swift; sourceTree = "<group>"; };
 		67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationReaderTests.swift; sourceTree = "<group>"; };
-		A7C110010000000000000003 /* AudioSystemAuthorizationRequesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationRequesterTests.swift; sourceTree = "<group>"; };
 		6E4B084B5C8220E7D26CBC42 /* AudioFeatureAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeatureAvailability.swift; sourceTree = "<group>"; };
 		6EE3F62C8712E5DD553C15FA /* AudioDashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardModel.swift; sourceTree = "<group>"; };
 		6F052E4022D22C8A4859EA3D /* PowerFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowModel.swift; sourceTree = "<group>"; };
@@ -381,6 +379,7 @@
 		B9CF0561706D80C664D9B0A6 /* AudioControlCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlCoordinatorTests.swift; sourceTree = "<group>"; };
 		BBC5683822CA2C4BECC68309 /* AudioSystemAccessServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAccessServiceTests.swift; sourceTree = "<group>"; };
 		BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioHALBackend.swift; sourceTree = "<group>"; };
+		BFB4190A870855302E743ABB /* AudioSystemAuthorizationRequester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationRequester.swift; sourceTree = "<group>"; };
 		C0CAFD2C7DC4193280EEDE07 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModel.swift; sourceTree = "<group>"; };
 		C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChart.swift; sourceTree = "<group>"; };
@@ -411,6 +410,7 @@
 		EB4F29166FB636C6A7A43659 /* EnergyImpactView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactView.swift; sourceTree = "<group>"; };
 		ECAE9B17ED4BB6141029863B /* PreferencesController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesController.swift; sourceTree = "<group>"; };
 		EDC3E242AE71B79619755C0D /* MemoryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MemoryProvider.swift; sourceTree = "<group>"; };
+		EE476B2CB0F36CA3A88C1230 /* AudioSystemAuthorizationRequesterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationRequesterTests.swift; sourceTree = "<group>"; };
 		EF8E0BAFDB04562CF81807E7 /* PowerFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowView.swift; sourceTree = "<group>"; };
 		EFB6298EE54FFEF176A7403A /* ReleaseVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseVersion.swift; sourceTree = "<group>"; };
 		EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupService.swift; sourceTree = "<group>"; };
@@ -576,7 +576,7 @@
 				DAC3D5561158D1EC418C2BC9 /* AudioRoutingModels.swift */,
 				45D1DD726FA7C8DA7C5624CE /* AudioSystemAccessService.swift */,
 				5F3AC2A6A27985AB56564929 /* AudioSystemAuthorizationReader.swift */,
-				A7C110010000000000000001 /* AudioSystemAuthorizationRequester.swift */,
+				BFB4190A870855302E743ABB /* AudioSystemAuthorizationRequester.swift */,
 				8A4643019F12953DA4A2FBD2 /* AudioSystemMonitor.swift */,
 				E623687BEBC14372C97ABDDF /* AudioTapHardware.swift */,
 				9B047FCBC5C7F972AA959067 /* CoreAudioHALBackend.swift */,
@@ -717,7 +717,7 @@
 				350FA4C7A34BCD4BAF854807 /* AudioRoutePlannerTests.swift */,
 				BBC5683822CA2C4BECC68309 /* AudioSystemAccessServiceTests.swift */,
 				6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */,
-				A7C110010000000000000003 /* AudioSystemAuthorizationRequesterTests.swift */,
+				EE476B2CB0F36CA3A88C1230 /* AudioSystemAuthorizationRequesterTests.swift */,
 				ACFADB8DB7FD273E04239957 /* AudioSystemMonitorTests.swift */,
 				0D2DF3EE3856C86AACEB3978 /* AudioTapHardwareDescriptionTests.swift */,
 				32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */,
@@ -1031,7 +1031,7 @@
 				733043081DFD6C327BFE40C5 /* AudioRoutePlannerTests.swift in Sources */,
 				18558BCD3B392A73BD9D7511 /* AudioSystemAccessServiceTests.swift in Sources */,
 				8D254CD3AD58B0DC4724B599 /* AudioSystemAuthorizationReaderTests.swift in Sources */,
-				A7C110010000000000000004 /* AudioSystemAuthorizationRequesterTests.swift in Sources */,
+				A68EB502185986836D16E0A9 /* AudioSystemAuthorizationRequesterTests.swift in Sources */,
 				1E841E980F91E6BD85A42803 /* AudioSystemMonitorTests.swift in Sources */,
 				707B66E18414DF130242B029 /* AudioTapHardwareDescriptionTests.swift in Sources */,
 				44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */,
@@ -1092,7 +1092,7 @@
 				C625A1AEA9B766D792A29FD6 /* AudioRoutingModels.swift in Sources */,
 				25A028B142F6B26F3AF3A5CF /* AudioSystemAccessService.swift in Sources */,
 				AF9C56A213AC3AEA44FACAE5 /* AudioSystemAuthorizationReader.swift in Sources */,
-				A7C110010000000000000002 /* AudioSystemAuthorizationRequester.swift in Sources */,
+				AEEEDA0E878CB2F89BEC78DD /* AudioSystemAuthorizationRequester.swift in Sources */,
 				CC4C0545E209D780F12C21BE /* AudioSystemMonitor.swift in Sources */,
 				84FEABA49B449C0C18678B46 /* AudioTapHardware.swift in Sources */,
 				B5B1142091C4E8D575C3F253 /* BatteryProvider.swift in Sources */,

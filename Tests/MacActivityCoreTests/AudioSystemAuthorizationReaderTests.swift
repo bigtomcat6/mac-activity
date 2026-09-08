@@ -3,6 +3,15 @@ import XCTest
 @testable import MacActivityCore
 
 final class AudioSystemAuthorizationReaderTests: XCTestCase {
+    func testDefaultReaderPerformsPassivePreflight() async {
+        let status = await AudioSystemAuthorizationReader().authorizationStatus()
+
+        switch status {
+        case .authorized, .denied, .notDetermined, .unavailable:
+            break
+        }
+    }
+
     func testZeroPreflightResultIsAuthorized() async {
         let calls = PreflightCallCounter()
         let reader = supportedReader {

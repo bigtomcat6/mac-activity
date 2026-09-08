@@ -59,6 +59,50 @@ final class AudioSystemAccessCoordinatorTests: XCTestCase {
         }
     }
 
+    func testPassiveAuthorizationRefreshBeforeStartBootstrapsProcessRuntime() async {
+        let requester = AudioSystemAuthorizationRequesterFake()
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake(statuses: [.authorized]),
+            systemAudioAuthorizationRequester: requester
+        )
+
+        await fixture.coordinator.refreshSystemAudioAuthorization()
+        await fixture.coordinator.testingWaitUntilIdle()
+
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .authorized)
+        XCTAssertEqual(fixture.coordinator.snapshot.processes.map(\.id), [11])
+        XCTAssertEqual(fixture.monitor.startCount, 1)
+        XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
+        XCTAssertEqual(requester.requestCount, 0)
+        await fixture.coordinator.shutdown()
+    }
+
+    func testProcessReconciliationIsBlockedWhenPreflightRevokesAuthorization() async {
+        let reader = AudioSystemAuthorizationReaderFake(statuses: [
+            .authorized,
+            .authorized,
+            .authorized,
+            .denied,
+        ])
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            systemAudioAuthorizationReader: reader
+        )
+        await fixture.coordinator.start()
+
+        await fixture.emit([.processList])
+
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .denied)
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
+        XCTAssertEqual(fixture.processProvider.callCount, 1)
+        XCTAssertEqual(fixture.engine.stopAllCount, 1)
+        XCTAssertEqual(reader.readCount, 4)
+        await fixture.coordinator.shutdown()
+    }
+
     func testSavedProfileDoesNotStartATapWithoutCurrentAuthorization() async {
         let profile = AudioProcessProfile(
             bundleIdentifier: "com.example.music",

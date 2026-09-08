@@ -133,6 +133,10 @@ public actor AudioSystemAccessService: AudioSystemAccessChecking {
     private var cleanupRetry: (id: UUID, cancellation: any AudioSystemAccessRetryCancellation)?
     private var cleanupRetention: AudioSystemAccessService?
     private var isShuttingDown = false
+    #if DEBUG
+    private var shutdownEntryObserver: (@Sendable () -> Void)?
+    private var didCompleteShutdownForTesting = false
+    #endif
 
     public init(availability: AudioFeatureAvailability = .current) {
         self.init(
@@ -198,7 +202,14 @@ public actor AudioSystemAccessService: AudioSystemAccessChecking {
     }
 
     public func shutdown() async {
+        #if DEBUG
+        didCompleteShutdownForTesting = false
+        defer { didCompleteShutdownForTesting = true }
+        #endif
         isShuttingDown = true
+        #if DEBUG
+        shutdownEntryObserver?()
+        #endif
         while true {
             if let currentCheck {
                 _ = await finish(currentCheck.task, id: currentCheck.id)
@@ -302,6 +313,14 @@ public actor AudioSystemAccessService: AudioSystemAccessChecking {
     }
 
     #if DEBUG
+    func testingObserveShutdownEntry(_ observer: @escaping @Sendable () -> Void) {
+        shutdownEntryObserver = observer
+    }
+
+    func testingDidCompleteShutdown() -> Bool {
+        didCompleteShutdownForTesting
+    }
+
     func waitUntilIdleForTesting() async {
         while true {
             if let currentCheck {

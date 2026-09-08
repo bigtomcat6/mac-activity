@@ -123,6 +123,7 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
         var aggregateDestructionDelayPolls = 0
         var pendingAggregateDestructionPolls: [AudioDeviceID: Int] = [:]
         var startDeviceBlocker: DispatchSemaphore?
+        var destroyProcessTapBlocker: DispatchSemaphore?
         var onStartDevice: (@Sendable () -> Void)?
         var onDestroyProcessTap: (@Sendable () -> Void)?
     }
@@ -245,6 +246,11 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     var startDeviceBlocker: DispatchSemaphore? {
         get { withMutableState { $0.startDeviceBlocker } }
         set { withMutableState { $0.startDeviceBlocker = newValue } }
+    }
+
+    var destroyProcessTapBlocker: DispatchSemaphore? {
+        get { withMutableState { $0.destroyProcessTapBlocker } }
+        set { withMutableState { $0.destroyProcessTapBlocker = newValue } }
     }
 
     var onStartDevice: (@Sendable () -> Void)? {
@@ -710,12 +716,18 @@ final class FakeAudioHALBackend: AudioHALBackend, @unchecked Sendable {
     }
 
     func destroyProcessTap(_ objectID: AudioObjectID) -> OSStatus {
-        let result = withMutableState { state -> (OSStatus, (@Sendable () -> Void)?) in
+        let result = withMutableState {
+            state -> (OSStatus, (@Sendable () -> Void)?, DispatchSemaphore?) in
             state.operations.append(.destroyTap)
             state.destroyedProcessTapIDs.append(objectID)
-            return (state.destroyProcessTapStatus, state.onDestroyProcessTap)
+            return (
+                state.destroyProcessTapStatus,
+                state.onDestroyProcessTap,
+                state.destroyProcessTapBlocker
+            )
         }
         result.1?()
+        result.2?.wait()
         return result.0
     }
 

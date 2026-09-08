@@ -1011,6 +1011,56 @@ final class ProcessTapVolumeEngineTests: XCTestCase {
         await fixture.engine.stopAll()
     }
 
+    func testSupersededRetainedCleanupRebuildFailsClosed() async {
+        let recorder = SnapshotRecorder()
+        let fixture = EngineFixture(recorder: recorder)
+        let initial = await fixture.engine.apply(
+            plan: fixture.plan(generation: 1),
+            gain: ProcessGainState()
+        )
+        XCTAssertEqual(initial.state, .running)
+        XCTAssertNil(initial.error)
+        recorder.clear()
+        fixture.hardware.deferAggregateDisappearance = true
+        fixture.hardware.clearCalls()
+        await fixture.engine.supersedeNextSnapshotPublishForTesting(
+            processObjectID: 77,
+            generation: 2,
+            state: .rebuilding
+        )
+        let stopped = await fixture.engine.stop(processObjectID: 77, generation: 1)
+        XCTAssertEqual(stopped.state, .idle)
+        XCTAssertNil(stopped.error)
+        XCTAssertFalse(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(fixture.scheduler.capturedActionCount, 1)
+        recorder.clear()
+
+        let result = await fixture.engine.apply(
+            plan: fixture.plan(generation: 2),
+            gain: ProcessGainState()
+        )
+
+        XCTAssertEqual(result.state, .failed)
+        XCTAssertEqual(result.error, .routeSuperseded)
+        XCTAssertFalse(fixture.hardware.calls.contains(
+            .createTap(sourceIndex: 0, initiallyMuted: false)
+        ))
+        XCTAssertFalse(recorder.snapshots.contains {
+            $0.generation == 2 && $0.state == .rebuilding && $0.error == nil
+        })
+        XCTAssertEqual(fixture.scheduler.pendingCount, 1)
+        XCTAssertEqual(fixture.scheduler.capturedActionCount, 1)
+
+        fixture.hardware.confirmAggregateDisappearance()
+        fixture.scheduler.runNext()
+        await fixture.engine.waitUntilIdleForTesting()
+        XCTAssertTrue(fixture.hardware.liveOwnedObjects.isEmpty)
+        XCTAssertEqual(fixture.scheduler.pendingCount, 0)
+        fixture.hardware.deferAggregateDisappearance = false
+        await fixture.engine.stopAll()
+    }
+
     func testPendingRebuildRevalidatesRouteBeforePreparingReplacement() async {
         let fixture = EngineFixture()
         _ = await fixture.engine.apply(
