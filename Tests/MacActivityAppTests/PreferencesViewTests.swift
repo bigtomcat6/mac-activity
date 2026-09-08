@@ -260,6 +260,52 @@ final class PreferencesViewTests: XCTestCase {
         }
     }
 
+    func testPreferencesDetailContentUsesTopChromeAreaAtMinimumHeight() throws {
+        _ = NSApplication.shared
+        let localization = AppLocalizationController.shared
+        let previousLanguage = localization.preferredLanguageIdentifier
+        defer { localization.applyPreferredLanguageIdentifier(previousLanguage) }
+        localization.applyPreferredLanguageIdentifier("en")
+        let controller = PreferencesController(
+            store: InMemoryPreferencesStore(initial: .default),
+            launchService: NoopLaunchAtLoginService()
+        )
+        let windowController = PreferencesWindowController(
+            preferencesController: controller,
+            checkForUpdates: {}
+        )
+        defer { windowController.close() }
+        windowController.showWindow(nil)
+        let window = try XCTUnwrap(windowController.window)
+        let contentView = try XCTUnwrap(window.contentView)
+        for height in [CGFloat(600), 470] {
+            window.setContentSize(NSSize(width: 723, height: height))
+            window.contentView?.layoutSubtreeIfNeeded()
+            window.displayIfNeeded()
+            let detailContent = try XCTUnwrap(
+                allSubviews(of: contentView).first {
+                    String(describing: type(of: $0)).contains("DocumentView")
+                }
+            )
+            let detailContentFrame = detailContent.convert(detailContent.bounds, to: contentView)
+
+            XCTAssertEqual(detailContentFrame.minY, 68, accuracy: 0.5)
+        }
+    }
+
+    func testSidebarHoverPresentationDoesNotChangeSelection() {
+        let state = PreferencesViewState()
+
+        state.hoveredCategory = .menuBar
+
+        XCTAssertEqual(state.selectedCategory, .general)
+        XCTAssertEqual(state.hoveredCategory, .menuBar)
+
+        state.hoveredCategory = nil
+
+        XCTAssertNil(state.hoveredCategory)
+    }
+
     func testPreferencesSidebarChromeKeepsControlsInsetWhenResized() throws {
         _ = NSApplication.shared
         let controller = PreferencesController(
@@ -356,6 +402,9 @@ final class PreferencesViewTests: XCTestCase {
         let main = try XCTUnwrap(tables.first { $0.numberOfRows == 4 })
         let footer = try XCTUnwrap(tables.first { $0.numberOfRows == 1 })
 
+        XCTAssertEqual(main.selectionHighlightStyle, .none)
+        XCTAssertEqual(footer.selectionHighlightStyle, .none)
+
         let aboutSelected = expectation(description: "About selection published")
         let mainSelected = expectation(description: "Main selection published")
         var updatingNativeViews = false
@@ -370,6 +419,9 @@ final class PreferencesViewTests: XCTestCase {
 
         updatingNativeViews = true
         footer.selectRowIndexes(IndexSet(integer: 0), byExtendingSelection: false)
+        // Check before the deferred SwiftUI selection catches up, not just after layout.
+        XCTAssertEqual(footer.selectionHighlightStyle, .none)
+        XCTAssertEqual(try XCTUnwrap(footer.rowView(atRow: 0, makeIfNecessary: true)).selectionHighlightStyle, .none)
         window.contentView?.layoutSubtreeIfNeeded()
         updatingNativeViews = false
         await fulfillment(of: [aboutSelected], timeout: 1)
@@ -380,6 +432,8 @@ final class PreferencesViewTests: XCTestCase {
 
         updatingNativeViews = true
         main.selectRowIndexes(IndexSet(integer: 1), byExtendingSelection: false)
+        XCTAssertEqual(main.selectionHighlightStyle, .none)
+        XCTAssertEqual(try XCTUnwrap(main.rowView(atRow: 1, makeIfNecessary: true)).selectionHighlightStyle, .none)
         window.contentView?.layoutSubtreeIfNeeded()
         updatingNativeViews = false
         await fulfillment(of: [mainSelected], timeout: 1)
@@ -387,8 +441,58 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertEqual(host.rootView.viewState.selectedCategory, .menuBar)
         XCTAssertEqual(main.selectedRow, 1)
         XCTAssertEqual(footer.selectedRow, -1)
+        XCTAssertEqual(main.selectionHighlightStyle, .none)
+        XCTAssertEqual(footer.selectionHighlightStyle, .none)
         XCTAssertEqual(store.saveCount, 0)
         XCTAssertEqual(publishedSelections, [.aboutUpdates, .menuBar])
+    }
+
+    func testSidebarRapidAndKeyboardSelectionKeepNativeHighlightDisabled() async throws {
+        _ = NSApplication.shared
+        let store = InMemoryPreferencesStore(initial: .default)
+        let controller = PreferencesWindowController(
+            preferencesController: PreferencesController(store: store, launchService: NoopLaunchAtLoginService()),
+            checkForUpdates: {}
+        )
+        defer { controller.close() }
+        controller.showWindow(nil)
+        let window = try XCTUnwrap(controller.window)
+        window.contentView?.layoutSubtreeIfNeeded()
+        let host = try XCTUnwrap(window.contentViewController as? NSHostingController<PreferencesView>)
+        let table = try XCTUnwrap(allSubviews(of: window.contentView)
+            .compactMap { $0 as? NSTableView }.first { $0.numberOfRows == 4 })
+        let finalSelection = expectation(description: "Rapid selection ends on Menu Bar")
+        let keyboardSelection = expectation(description: "Down arrow selects Monitoring")
+        let observation = host.rootView.viewState.$selectedCategory.dropFirst().sink {
+            if $0 == .menuBar { finalSelection.fulfill() }
+            if $0 == .monitoring { keyboardSelection.fulfill() }
+        }
+        defer { observation.cancel() }
+
+        for row in [3, 0, 3, 1] {
+            table.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            XCTAssertEqual(table.selectionHighlightStyle, .none)
+            XCTAssertEqual(try XCTUnwrap(table.rowView(atRow: row, makeIfNecessary: true)).selectionHighlightStyle, .none)
+        }
+        await fulfillment(of: [finalSelection], timeout: 1)
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(host.rootView.viewState.selectedCategory, .menuBar)
+        XCTAssertEqual(table.selectedRow, 1)
+
+        XCTAssertTrue(window.makeFirstResponder(table))
+        let downArrow = try XCTUnwrap(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, characters: "\u{F701}", charactersIgnoringModifiers: "\u{F701}",
+            isARepeat: false, keyCode: 125
+        ))
+        table.keyDown(with: downArrow)
+        await fulfillment(of: [keyboardSelection], timeout: 1)
+        window.contentView?.layoutSubtreeIfNeeded()
+        XCTAssertEqual(table.selectedRow, 2)
+        XCTAssertEqual(table.selectionHighlightStyle, .none)
+        XCTAssertEqual(host.rootView.viewState.selectedCategory, .monitoring)
+        XCTAssertEqual(store.saveCount, 0)
     }
 
     func testPreferencesWindowRetainsCategoryWhenShownAndReopened() throws {
@@ -423,6 +527,7 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertTrue(shownHost === originalHost)
         XCTAssertTrue(shownHost.rootView.viewState === originalState)
         XCTAssertEqual(shownHost.rootView.viewState.selectedCategory, .monitoring)
+        shownHost.rootView.viewState.hoveredCategory = .menuBar
 
         shownWindow.close()
         windowController.showWindow(nil)
@@ -435,6 +540,7 @@ final class PreferencesViewTests: XCTestCase {
         XCTAssertTrue(reopenedHost === originalHost)
         XCTAssertTrue(reopenedHost.rootView.viewState === originalState)
         XCTAssertEqual(reopenedHost.rootView.viewState.selectedCategory, .monitoring)
+        XCTAssertNil(reopenedHost.rootView.viewState.hoveredCategory)
         XCTAssertEqual(store.saveCount, 0)
     }
 
