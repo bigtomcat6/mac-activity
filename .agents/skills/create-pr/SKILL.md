@@ -1,21 +1,31 @@
 ---
 name: create-pr
-description: Use when creating or drafting a MacActivity pull request
+description: Use when creating or drafting a MacActivity pull request, optionally targeting the next-version branch via `/create-pr next`
 ---
 
 # Create Pull Request
 
 Use this when creating or drafting a PR for MacActivity.
 
+## Target
+
+Resolve the base branch from the invocation argument and assign `BASE`:
+
+- `next` -> `next-version`
+- `main` or no argument -> `main`
+
+Example: `/create-pr next` sets `BASE=next-version`.
+
 ## Steps
 
-1. Inspect the branch:
+1. Inspect the branch against the base:
 
 ```bash
+BASE=main # or BASE=next-version
 git status --short
-git diff --stat origin/main...HEAD
-git log --oneline origin/main..HEAD
-git log --format='%s' origin/main..HEAD
+git diff --stat "origin/${BASE}...HEAD"
+git log --oneline "origin/${BASE}..HEAD"
+git log --format='%s' "origin/${BASE}..HEAD"
 ```
 
 2. Pick a title from `.github/pull_request_title_conventions.md`:
@@ -69,20 +79,20 @@ python3 .github/scripts/check_pr_metadata.py \
   --body-file /tmp/macactivity-pr-body.md
 ```
 
-6. Create the draft PR with the chosen label:
+6. Create the draft PR against the resolved base with the chosen label:
 
 ```bash
-gh pr create --draft --base main \
+gh pr create --draft --base "${BASE}" \
   --title "<title>" \
   --body-file /tmp/macactivity-pr-body.md \
   --label "<release-note-label>"
 ```
 
-7. Verify the created PR has the intended label:
+7. Verify the created PR has the intended label and base:
 
 ```bash
-gh pr view --json number,title,labels \
-  --jq '{number, title, labels: [.labels[].name]}'
+gh pr view --json number,title,baseRefName,labels \
+  --jq '{number, title, base: .baseRefName, labels: [.labels[].name]}'
 ```
 
 ## Security Note

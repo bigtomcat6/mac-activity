@@ -114,11 +114,15 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("--current-tag", notes_section)
         self.assertIn("steps.release.outputs.tag", notes_section)
 
-    def test_release_workflow_requires_main_before_ci_and_packaging(self):
+    def test_release_workflow_requires_release_branch_before_ci_and_packaging(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
         self.assertIn("preflight:", workflow)
-        self.assertIn('GITHUB_REF_NAME}" != "main"', workflow)
+        self.assertIn(
+            'if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "next-version" ]]; then',
+            workflow,
+        )
+        self.assertIn("Release workflow must run from main or next-version.", workflow)
         self.assertIn("needs: [preflight]", workflow)
         self.assertIn("needs: [preflight, ci]", workflow)
 
@@ -217,7 +221,9 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Checkout trusted tooling", appcast_section)
         self.assertIn("ref: main", appcast_section)
         self.assertIn("git merge-base --is-ancestor", appcast_section)
-        self.assertIn("reachable from main", appcast_section)
+        self.assertIn('"+refs/heads/next-version:refs/remotes/origin/next-version"', appcast_section)
+        self.assertIn('! git merge-base --is-ancestor "${tag_commit}" origin/main && ! git merge-base --is-ancestor "${tag_commit}" origin/next-version', appcast_section)
+        self.assertIn("reachable from main or next-version", appcast_section)
         self.assertIn("Validate release archive", appcast_section)
         self.assertIn("actions: read", appcast_section)
         self.assertIn("-SHA256SUMS.txt", appcast_section)
@@ -571,6 +577,48 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Release versions are injected only in the runner workspace", skill)
         self.assertNotIn("source version committed", skill)
         self.assertNotIn("make a normal PR for\n`Configuration/Shared.xcconfig`", skill)
+
+    def test_ci_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        trigger_section = workflow.split("on:", 1)[1].split("permissions:", 1)[0]
+
+        self.assertEqual(trigger_section.count('branches: ["main", "next-version"]'), 2)
+
+    def test_pr_quality_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "pr-quality.yml").read_text()
+
+        self.assertIn('branches: ["main", "next-version"]', workflow)
+
+    def test_docs_links_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "docs-links.yml").read_text()
+
+        self.assertEqual(workflow.count('branches: ["main", "next-version"]'), 2)
+
+    def test_localization_workflow_triggers_on_next_version_without_badge_publish(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "localization.yml").read_text()
+        trigger_section = workflow.split("on:", 1)[1].split("permissions:", 1)[0]
+
+        self.assertEqual(trigger_section.count('branches: ["main", "next-version"]'), 2)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
+
+    def test_create_pr_skill_supports_next_version_target(self):
+        skill = (REPO_ROOT / ".agents" / "skills" / "create-pr" / "SKILL.md").read_text()
+
+        self.assertIn("`next` -> `next-version`", skill)
+        self.assertIn("`main` or no argument -> `main`", skill)
+        self.assertIn('origin/${BASE}...HEAD', skill)
+        self.assertEqual(skill.count('origin/${BASE}..HEAD'), 2)
+        self.assertIn('gh pr create --draft --base "${BASE}"', skill)
+        self.assertIn("/create-pr next", skill)
+        self.assertNotIn("origin/main", skill)
+        self.assertNotIn("--base main", skill)
+
+    def test_release_docs_allow_main_and_next_version_source_branches(self):
+        doc = (REPO_ROOT / ".github" / "release-workflows.md").read_text()
+        release_doc = (REPO_ROOT / "docs" / "release.md").read_text()
+
+        self.assertIn("`main` or `next-version`", doc)
+        self.assertIn("`main` or `next-version`", release_doc)
 
 
 if __name__ == "__main__":
