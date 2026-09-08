@@ -2,9 +2,9 @@ name: Localization
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "next-version"]
   push:
-    branches: ["main"]
+    branches: ["main", "next-version"]
   workflow_dispatch:
 
 permissions:
