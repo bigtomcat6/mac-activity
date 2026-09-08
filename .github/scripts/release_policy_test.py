@@ -596,8 +596,9 @@ class ReleasePolicyTests(unittest.TestCase):
 
     def test_localization_workflow_triggers_on_next_version_without_badge_publish(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "localization.yml").read_text()
+        trigger_section = workflow.split("on:", 1)[1].split("permissions:", 1)[0]
 
-        self.assertIn('branches: ["main", "next-version"]', workflow)
+        self.assertEqual(trigger_section.count('branches: ["main", "next-version"]'), 2)
         self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
 
     def test_create_pr_skill_supports_next_version_target(self):
@@ -606,8 +607,11 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("`next` -> `next-version`", skill)
         self.assertIn("`main` or no argument -> `main`", skill)
         self.assertIn('origin/${BASE}...HEAD', skill)
+        self.assertEqual(skill.count('origin/${BASE}..HEAD'), 2)
         self.assertIn('gh pr create --draft --base "${BASE}"', skill)
         self.assertIn("/create-pr next", skill)
+        self.assertNotIn("origin/main", skill)
+        self.assertNotIn("--base main", skill)
 
     def test_release_docs_allow_main_and_next_version_source_branches(self):
         doc = (REPO_ROOT / ".github" / "release-workflows.md").read_text()
