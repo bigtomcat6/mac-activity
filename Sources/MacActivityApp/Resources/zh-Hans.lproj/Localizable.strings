@@ -29,9 +29,13 @@
 "audio.process.runtimeUnavailable" = "应用音频控制当前不可用。";
 "audio.process.targetUnavailable" = "所选输出不可用；已恢复原始播放。";
 "audio.access.checking" = "正在检查系统音频访问权限...";
-"audio.access.permissionRequired" = "请在系统设置中允许 Mac Activity 捕获系统音频，然后重试。";
+"audio.access.permissionRequired" = "请在系统设置中允许 Mac Activity 捕获系统音频。";
 "audio.access.failed" = "无法检查系统音频访问权限。请重试。";
 "audio.access.openSettings" = "打开系统设置";
+"audio.access.permissionTitle" = "允许录制系统音频";
+"audio.access.permissionDescription" = "请允许 Mac Activity 录制系统音频，然后再控制各个应用。";
+"audio.access.grant" = "授予访问权限";
+"audio.access.unavailableTitle" = "系统音频访问不可用";
 "audio.route.title" = "输出路由";
 "audio.route.followOriginal" = "跟随原始输出";
 "audio.route.deviceUnavailable" = "%@（不可用）";
