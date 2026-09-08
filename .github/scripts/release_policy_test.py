@@ -600,6 +600,15 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn('branches: ["main", "next-version"]', workflow)
         self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
 
+    def test_create_pr_skill_supports_next_version_target(self):
+        skill = (REPO_ROOT / ".agents" / "skills" / "create-pr" / "SKILL.md").read_text()
+
+        self.assertIn("`next` -> `next-version`", skill)
+        self.assertIn("`main` or no argument -> `main`", skill)
+        self.assertIn('origin/${BASE}...HEAD', skill)
+        self.assertIn('gh pr create --draft --base "${BASE}"', skill)
+        self.assertIn("/create-pr next", skill)
+
 
 if __name__ == "__main__":
     unittest.main()
