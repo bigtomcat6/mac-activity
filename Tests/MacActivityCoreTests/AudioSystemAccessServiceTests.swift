@@ -332,7 +332,8 @@ final class AudioSystemAccessServiceTests: XCTestCase {
         backend.stopDeviceStatus = noErr
         retryScheduler.runNext()
         await fulfillment(of: [cleanupFinished], timeout: 1)
-        await retainedService.value?.waitUntilIdleForTesting()
+        await waitUntilIdle(retainedService)
+        await waitForDeallocation(retainedService)
 
         XCTAssertNil(retainedService.value)
         XCTAssertEqual(retryScheduler.pendingCount, 0)
@@ -595,6 +596,23 @@ private let audioAccessTestIOProcID: AudioDeviceIOProcID = { _, _, _, _, _, _, _
 
 private let fixedProbeUUID: @Sendable () -> UUID = {
     UUID(uuidString: "4D414341-0000-4000-8000-000000000001")!
+}
+
+private func waitUntilIdle(
+    _ reference: WeakObjectReference<AudioSystemAccessService>
+) async {
+    guard let service = reference.value else { return }
+    await service.waitUntilIdleForTesting()
+}
+
+private func waitForDeallocation(
+    _ reference: WeakObjectReference<AudioSystemAccessService>
+) async {
+    let clock = ContinuousClock()
+    let deadline = clock.now.advanced(by: .seconds(1))
+    while reference.value != nil && clock.now < deadline {
+        await Task.yield()
+    }
 }
 
 private final class WeakObjectReference<Object: AnyObject> {
