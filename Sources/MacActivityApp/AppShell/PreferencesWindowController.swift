@@ -3,7 +3,7 @@ import SwiftUI
 import MacActivityCore
 
 @MainActor
-final class PreferencesWindowController: NSWindowController {
+final class PreferencesWindowController: NSWindowController, NSWindowDelegate {
     private let viewState = PreferencesViewState()
 
     init(
@@ -39,10 +39,15 @@ final class PreferencesWindowController: NSWindowController {
         window.setContentSize(NSSize(width: 723, height: 600))
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        viewState.hoveredCategory = nil
     }
 }

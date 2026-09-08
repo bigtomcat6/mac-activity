@@ -32,6 +32,7 @@ enum PreferencesCategory: String, CaseIterable, Hashable {
 @MainActor
 final class PreferencesViewState: ObservableObject {
     @Published var selectedCategory: PreferencesCategory
+    @Published var hoveredCategory: PreferencesCategory?
 
     init(selectedCategory: PreferencesCategory = .general) {
         self.selectedCategory = selectedCategory
@@ -42,6 +43,7 @@ struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
     @ObservedObject private var localizationController = AppLocalizationController.shared
     @ObservedObject var viewState: PreferencesViewState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     private let versionInfo: PreferencesVersionInfo
     private let checkForUpdates: () -> Void
@@ -98,7 +100,7 @@ struct PreferencesView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.top, 28)
                 .padding(.bottom, 8)
 
                 Form {
@@ -108,6 +110,7 @@ struct PreferencesView: View {
                 .toggleStyle(.switch)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .ignoresSafeArea(.container, edges: .top)
         }
         .navigationSplitViewStyle(.balanced)
     }
@@ -128,15 +131,30 @@ struct PreferencesView: View {
 
     private func sidebarRow(_ category: PreferencesCategory) -> some View {
         let isSelected = viewState.selectedCategory == category
+        let isHovered = viewState.hoveredCategory == category
+        let isHighlighted = isSelected || isHovered
         return Label(AppLocalization.string(category.titleKey), systemImage: category.systemImage)
             .foregroundStyle(isSelected ? Color.blue : Color.primary)
             .fontWeight(isSelected ? .semibold : .regular)
             .listItemTint(isSelected ? Color.blue : Color.primary)
+            .background(SidebarSelectionHighlight().allowsHitTesting(false))
             .listRowBackground(
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(isSelected ? Color(nsColor: .unemphasizedSelectedContentBackgroundColor) : Color.clear)
+                    .fill(Color(nsColor: .unemphasizedSelectedContentBackgroundColor))
+                    .opacity(isHighlighted ? 1 : 0)
                     .padding(.horizontal, 10)
+                    .animation(
+                        reduceMotion ? nil : .easeInOut(duration: 0.14),
+                        value: isHovered
+                    )
             )
+            .onHover { isHovering in
+                if isHovering {
+                    viewState.hoveredCategory = category
+                } else if viewState.hoveredCategory == category {
+                    viewState.hoveredCategory = nil
+                }
+            }
             .tag(category)
     }
 
@@ -327,6 +345,34 @@ struct PreferencesView: View {
     func updateChannelOption(for channel: UpdateChannel) -> some View {
         Text(AppLocalization.updateChannelTitle(for: channel))
             .tag(channel)
+    }
+}
+
+// List's native mouse-down highlight precedes its SwiftUI selection binding.
+// Keep native selection, but let the shared gray row background own its appearance.
+private struct SidebarSelectionHighlight: NSViewRepresentable {
+    func makeNSView(context: Context) -> SelectionView { SelectionView() }
+
+    func updateNSView(_ view: SelectionView, context: Context) {
+        view.disableNativeHighlight()
+    }
+
+    final class SelectionView: NSView {
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            disableNativeHighlight()
+        }
+
+        func disableNativeHighlight() {
+            var ancestor = superview
+            while let view = ancestor {
+                if let table = view as? NSTableView {
+                    table.selectionHighlightStyle = .none
+                    return
+                }
+                ancestor = view.superview
+            }
+        }
     }
 }
 
