@@ -322,6 +322,19 @@ final class AudioSystemAccessServiceTests: XCTestCase {
         XCTAssertTrue(backend.mutableOperations.isEmpty)
     }
 
+    func testDefaultInitializerCanShutdownWithoutStartingProbe() async {
+        let service = AudioSystemAccessService(
+            availability: .init(
+                operatingSystemVersion: .init(majorVersion: 14, minorVersion: 2, patchVersion: 0)
+            )
+        )
+
+        await service.shutdown()
+        let result = await service.checkAccess()
+
+        XCTAssertEqual(result, .shutdown)
+    }
+
     func testShutdownRetainsCleanupUntilRecoveryRetryDrainsWithoutAnotherProbe() async {
         let backend = configuredBackend()
         let retryScheduler = FakeAudioSystemAccessRetryScheduler()
