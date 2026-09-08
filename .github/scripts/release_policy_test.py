@@ -114,11 +114,15 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("--current-tag", notes_section)
         self.assertIn("steps.release.outputs.tag", notes_section)
 
-    def test_release_workflow_requires_main_before_ci_and_packaging(self):
+    def test_release_workflow_requires_release_branch_before_ci_and_packaging(self):
         workflow = (REPO_ROOT / ".github" / "workflows" / "release.yml").read_text()
 
         self.assertIn("preflight:", workflow)
-        self.assertIn('GITHUB_REF_NAME}" != "main"', workflow)
+        self.assertIn(
+            'if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "next-version" ]]; then',
+            workflow,
+        )
+        self.assertIn("Release workflow must run from main or next-version.", workflow)
         self.assertIn("needs: [preflight]", workflow)
         self.assertIn("needs: [preflight, ci]", workflow)
 
@@ -217,7 +221,9 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("Checkout trusted tooling", appcast_section)
         self.assertIn("ref: main", appcast_section)
         self.assertIn("git merge-base --is-ancestor", appcast_section)
-        self.assertIn("reachable from main", appcast_section)
+        self.assertIn('"+refs/heads/next-version:refs/remotes/origin/next-version"', appcast_section)
+        self.assertIn('! git merge-base --is-ancestor "${tag_commit}" origin/main && ! git merge-base --is-ancestor "${tag_commit}" origin/next-version', appcast_section)
+        self.assertIn("reachable from main or next-version", appcast_section)
         self.assertIn("Validate release archive", appcast_section)
         self.assertIn("actions: read", appcast_section)
         self.assertIn("-SHA256SUMS.txt", appcast_section)

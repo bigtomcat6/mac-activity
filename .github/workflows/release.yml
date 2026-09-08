@@ -71,10 +71,10 @@ jobs:
     timeout-minutes: 5
 
     steps:
-      - name: Require main branch
+      - name: Require release branch
         run: |
-          if [[ "${GITHUB_REF_NAME}" != "main" ]]; then
-            echo "::error::Release workflow must run from main. Current ref is ${GITHUB_REF_NAME}."
+          if [[ "${GITHUB_REF_NAME}" != "main" && "${GITHUB_REF_NAME}" != "next-version" ]]; then
+            echo "::error::Release workflow must run from main or next-version. Current ref is ${GITHUB_REF_NAME}."
             exit 1
           fi
 
