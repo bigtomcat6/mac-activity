@@ -56,11 +56,23 @@ writable volume and mute controls. Dragging to zero mutes the device; dragging
 up restores audible output at the selected volume.
 
 Application audio controls require macOS 14.2 or later and system audio capture
-permission. On the first visit to the Audio page, MacActivity checks access to
-system audio. If macOS requires permission, the page shows a banner with Retry
-and Open System Settings actions; return to the Audio page after granting
-access to check again. Other access failures are reported separately and are
-not labeled as a permission denial.
+permission. MacActivity silently checks the current status when the Audio page
+opens or becomes active; this check does not request permission. Until access
+is available, the application region is replaced by a recording-permission view
+with a `record.circle` icon while output-device controls remain available.
+Choose **Grant Access** before macOS has made a decision. If access was denied,
+the action opens System Settings instead of repeatedly requesting permission.
+The manual **Grant Access** button is the only place MacActivity uses the
+private `TCCAccessRequest` callback. When macOS allows access, the application
+list updates immediately; restarting MacActivity is not required. Page entry,
+focus changes, and service restarts continue to use only the silent status
+check and never request permission.
+
+The silent status check and the manual callback use macOS private TCC
+interfaces. Apple may change or remove either interface in a future macOS
+release; if one is unavailable, MacActivity shows an honest unavailable state
+rather than application controls. No system-audio recording request is made
+until you choose **Grant Access**.
 
 The application list includes processes currently producing audio output and
 excludes MacActivity's own process. Each application row shows its localized
