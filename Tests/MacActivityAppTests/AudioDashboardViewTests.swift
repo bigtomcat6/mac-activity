@@ -8,37 +8,101 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
-    func testSystemAudioAccessBannerDistinguishesCheckingPermissionAndOtherFailures() {
-        XCTAssertNil(AudioSystemAccessBannerPresentation(state: .notChecked))
-        XCTAssertNil(AudioSystemAccessBannerPresentation(state: .available))
+    func testPermissionGateReplacesTheApplicationRegionWithoutATopBanner() throws {
+        let source = try audioDashboardViewSource()
+
+        XCTAssertFalse(source.contains("AudioSystemAccessBanner"))
+        XCTAssertTrue(source.contains("record.circle"))
+        XCTAssertTrue(source.contains("audio.permission.gate"))
+    }
+
+    func testPermissionGateHidesKnownProcessRowsForEveryUnauthorizedState() {
+        for state in [
+            AudioSystemAccessState.checking,
+            .requesting,
+            .notDetermined,
+            .denied,
+            .unavailable,
+        ] {
+            var snapshot = AudioControlSnapshot.fixture()
+            snapshot.systemAudioAccess = state
+
+            let presentation = AudioDashboardPresentation(
+                snapshot: snapshot,
+                supportsProcessControls: true
+            )
+
+            XCTAssertNil(presentation.processSection)
+            XCTAssertNotNil(presentation.permissionGate)
+        }
+    }
+
+    func testPermissionGateDistinguishesAuthorizationStatesAndActions() {
         XCTAssertEqual(
-            AudioSystemAccessBannerPresentation(state: .checking),
+            AudioSystemAccessPermissionGatePresentation(state: .notChecked),
             .checking
         )
         XCTAssertEqual(
-            AudioSystemAccessBannerPresentation(state: .permissionRequired),
-            .permissionRequired
+            AudioSystemAccessPermissionGatePresentation(state: .requesting),
+            .requesting
         )
         XCTAssertEqual(
-            AudioSystemAccessBannerPresentation(state: .otherFailure(.unsupported)),
-            .otherFailure
+            AudioSystemAccessPermissionGatePresentation(state: .notDetermined),
+            .notDetermined
         )
-        XCTAssertTrue(AudioSystemAccessBannerPresentation.permissionRequired.showsRetry)
-        XCTAssertTrue(AudioSystemAccessBannerPresentation.permissionRequired.showsSettings)
-        XCTAssertTrue(AudioSystemAccessBannerPresentation.otherFailure.showsRetry)
-        XCTAssertFalse(AudioSystemAccessBannerPresentation.otherFailure.showsSettings)
-        XCTAssertFalse(AudioSystemAccessBannerPresentation.checking.showsRetry)
+        XCTAssertEqual(
+            AudioSystemAccessPermissionGatePresentation(state: .denied),
+            .denied
+        )
+        XCTAssertEqual(
+            AudioSystemAccessPermissionGatePresentation(state: .unavailable),
+            .unavailable
+        )
+        XCTAssertNil(AudioSystemAccessPermissionGatePresentation(state: .authorized))
+        XCTAssertEqual(AudioSystemAccessPermissionGatePresentation.notDetermined.action, .requestAccess)
+        XCTAssertEqual(AudioSystemAccessPermissionGatePresentation.denied.action, .openSettings)
+        XCTAssertEqual(AudioSystemAccessPermissionGatePresentation.unavailable.action, .refresh)
+        XCTAssertEqual(AudioSystemAccessPermissionGatePresentation.requesting.action, .none)
     }
 
-    func testAudioAccessBannerIsAboveDevicesAndDashboardOwnsPageLifecycleHooks() throws {
+    func testPermissionGateAccessibilityContractsDescribeBlockedRegionAndPrimaryAction() throws {
+        let gate = try XCTUnwrap(
+            AudioSystemAccessPermissionGatePresentation(state: .notDetermined)
+        )
+
+        XCTAssertEqual(gate.accessibility.identifier, "audio.permission.gate")
+        XCTAssertEqual(gate.accessibility.label, gate.title)
+        XCTAssertEqual(gate.accessibility.value, gate.message)
+        XCTAssertEqual(gate.action, .requestAccess)
+        XCTAssertEqual(gate.actionTitle, AppLocalization.string(.audioAccessGrant))
+        XCTAssertNotEqual(gate.action, .none)
+
+        let requesting = try XCTUnwrap(
+            AudioSystemAccessPermissionGatePresentation(state: .requesting)
+        )
+        XCTAssertEqual(requesting.action, .none)
+
+        var blockedSnapshot = AudioControlSnapshot.fixture()
+        blockedSnapshot.systemAudioAccess = .notDetermined
+        let blockedPresentation = AudioDashboardPresentation(
+            snapshot: blockedSnapshot,
+            supportsProcessControls: true
+        )
+        XCTAssertNil(blockedPresentation.processSection)
+        XCTAssertEqual(blockedPresentation.permissionGate?.accessibility, gate.accessibility)
+    }
+
+    func testPermissionGateFollowsDevicesAndDashboardOwnsPageLifecycleHooks() throws {
         let source = try audioDashboardViewSource()
         let viewSource = try XCTUnwrap(source.components(separatedBy: "struct AudioDashboardView").last)
-        let bannerIndex = try XCTUnwrap(viewSource.range(of: "AudioSystemAccessBanner"))
+        let gateIndex = try XCTUnwrap(viewSource.range(of: "AudioSystemAccessPermissionGate"))
         let devicesIndex = try XCTUnwrap(viewSource.range(of: "title: AppLocalization.string(.audioDevicesTitle)"))
         let dashboardSource = try dashboardViewSource()
 
-        XCTAssertLessThan(bannerIndex.lowerBound, devicesIndex.lowerBound)
+        XCTAssertLessThan(devicesIndex.lowerBound, gateIndex.lowerBound)
         XCTAssertFalse(viewSource.contains("NSApplication.didBecomeActiveNotification"))
+        XCTAssertTrue(viewSource.contains("await model.requestSystemAudioAccess()"))
+        XCTAssertTrue(viewSource.contains("await model.refreshSystemAudioAuthorization()"))
         XCTAssertTrue(dashboardSource.contains("await audioDashboardModel.audioPageActivated()"))
         XCTAssertTrue(dashboardSource.contains("audioDashboardModel.audioPageDeactivated()"))
         XCTAssertTrue(dashboardSource.contains("selectedTab == .audio"))
@@ -709,8 +773,10 @@ final class AudioDashboardViewTests: XCTestCase {
                 patchVersion: 0
             )
         )
+        var snapshot = AudioControlSnapshot.fixture()
+        snapshot.systemAudioAccess = .authorized
         let presentation = AudioDashboardPresentation(
-            snapshot: .fixture(),
+            snapshot: snapshot,
             supportsProcessControls: availability.supportsProcessControls
         )
 
@@ -718,7 +784,7 @@ final class AudioDashboardViewTests: XCTestCase {
         XCTAssertEqual(presentation.devices.count, 1)
     }
 
-    func testUnprovenEmptyStateHidesProcessSectionAndCreatesNoApplyIntent() {
+    func testUncheckedAuthorizationShowsThePermissionGateInsteadOfAnEmptyProcessSection() {
         let coordinator = AudioViewCoordinatorSpy(
             supportsProcessControls: true,
             snapshot: AudioControlSnapshot(
@@ -732,6 +798,7 @@ final class AudioDashboardViewTests: XCTestCase {
             supportsProcessControls: coordinator.supportsProcessControls
         )
         XCTAssertNil(presentation.processSection)
+        XCTAssertEqual(presentation.permissionGate, .checking)
         XCTAssertEqual(coordinator.intentCount, 0)
     }
 
@@ -744,12 +811,13 @@ final class AudioDashboardViewTests: XCTestCase {
         ]
 
         for (error, expectedText) in cases {
-            let snapshot = AudioControlSnapshot(
+            var snapshot = AudioControlSnapshot(
                 devices: [.fixture()],
                 processes: [],
                 processControlsAreVisible: false,
                 processRuntimeError: .operationFailed(error)
             )
+            snapshot.systemAudioAccess = .authorized
             let presentation = AudioDashboardPresentation(
                 snapshot: snapshot,
                 supportsProcessControls: true
@@ -1052,7 +1120,8 @@ private final class AudioViewCoordinatorSpy: AudioControlCoordinating {
     }
 
     func start() async {}
-    func checkSystemAudioAccess() async {}
+    func refreshSystemAudioAuthorization() async {}
+    func requestSystemAudioAccess() async {}
     func retryDevice(_ deviceUID: String) { intentCount += 1 }
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
         deviceVolumes.append((deviceUID, volume)); intentCount += 1

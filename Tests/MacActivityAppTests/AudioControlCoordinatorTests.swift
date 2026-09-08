@@ -170,7 +170,8 @@ final class AudioControlCoordinatorTests: XCTestCase {
             monitor: monitor,
             engine: engine,
             preferences: preferences,
-            systemAudioAccessChecker: AudioSystemAccessCheckerFake()
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake(),
+            systemAudioAuthorizationRequester: AudioSystemAuthorizationRequesterFake()
         )
 
         await coordinator.start()
@@ -249,7 +250,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         await fixture.emit([.processList])
 
         XCTAssertNil(fixture.coordinator.snapshot.processRuntimeError)
-        XCTAssertNil(AudioDashboardPresentation(
+        XCTAssertNotNil(AudioDashboardPresentation(
             snapshot: fixture.coordinator.snapshot,
             supportsProcessControls: fixture.coordinator.supportsProcessControls
         ).processSection)
@@ -423,7 +424,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(fixture.engine.applyCount, 1)
     }
 
-    func testSupportedRuntimeWithNoAudibleProcessesPreparesOnceAndStaysHidden() async {
+    func testSupportedRuntimeWithNoAudibleProcessesPreparesOnceAndShowsTheEmptyState() async {
         let fixture = CoordinatorFixture(availability: .supported)
         fixture.processProvider.processes = []
 
@@ -433,7 +434,7 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertEqual(fixture.engine.prepareRuntimeCount, 1)
         XCTAssertEqual(fixture.engine.applyCount, 0)
-        XCTAssertNil(AudioDashboardPresentation(
+        XCTAssertNotNil(AudioDashboardPresentation(
             snapshot: fixture.coordinator.snapshot,
             supportsProcessControls: fixture.coordinator.supportsProcessControls
         ).processSection)
@@ -642,45 +643,54 @@ final class AudioControlCoordinatorTests: XCTestCase {
         XCTAssertEqual(defaultFixture.engine.plans.count, 0)
     }
 
-    func testPermissionFailureRetainsPendingRequestAndRetrySucceeds() async {
-        let fixture = CoordinatorFixture(availability: .supported)
+    func testPermissionFailureRefreshesAuthorizationBeforeShowingApplicationControls() async {
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake(statuses: [
+                .authorized,
+                .authorized,
+                .authorized,
+                .denied,
+            ])
+        )
         await fixture.coordinator.start()
         fixture.engine.nextError = .permissionDenied(-1)
 
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
+        await fixture.coordinator.refreshSystemAudioAuthorization()
 
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 1)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.4)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .permissionDenied)
-
-        fixture.engine.nextError = nil
-        fixture.coordinator.retry(processObjectID: 11)
-        await fixture.coordinator.testingWaitUntilIdle()
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
-        XCTAssertNil(fixture.coordinator.snapshot.processes[0].pendingValues)
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .denied)
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+        XCTAssertEqual(fixture.engine.plans.count, 1)
     }
 
-    func testPermissionFailureCanRetrySameValueThroughControl() async {
-        let fixture = CoordinatorFixture(availability: .supported)
+    func testPermissionFailureDoesNotStartAnotherTapBeforePreflightCompletes() async {
+        let reader = AudioSystemAuthorizationReaderFake(statuses: [
+            .authorized,
+            .authorized,
+            .authorized,
+            .denied,
+        ])
+        let fixture = CoordinatorFixture(
+            availability: .supported,
+            systemAudioAuthorizationReader: reader
+        )
         await fixture.coordinator.start()
+        await reader.block()
         fixture.engine.nextError = .permissionDenied(-1)
 
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
 
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 1)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.4)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .permissionDenied)
-
         fixture.engine.nextError = nil
         fixture.coordinator.setProcessVolume(0.4, for: 11)
         await fixture.coordinator.testingWaitUntilIdle()
 
-        let row = fixture.coordinator.snapshot.processes[0]
-        XCTAssertEqual(row.volume, 0.4)
-        XCTAssertNil(row.pendingValues)
-        XCTAssertNil(row.error)
+        XCTAssertEqual(fixture.engine.plans.count, 1)
+        await reader.resume()
+        await fixture.coordinator.refreshSystemAudioAuthorization()
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .denied)
     }
 
     func testResetStopsNonDefaultSessionWithoutApplyingDefaultProfile() async {

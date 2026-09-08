@@ -157,34 +157,26 @@ final class AudioControlComponentTests: XCTestCase {
         ])
     }
 
-    func testPermissionDenialRequiresExplicitRetryBeforeCommittingProfile() async {
-        let fixture = AudioControlComponentFixture()
+    func testPermissionDenialRefreshesAuthorizationBeforeShowingApplicationControls() async {
+        let fixture = AudioControlComponentFixture(
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake(statuses: [
+                .authorized,
+                .authorized,
+                .authorized,
+                .denied,
+            ])
+        )
         await fixture.start()
         fixture.engine.nextError = .permissionDenied(-1)
 
         fixture.coordinator.setProcessVolume(0.4, for: fixture.player.processObjectID)
         await fixture.finishPendingCommands()
+        await fixture.coordinator.refreshSystemAudioAuthorization()
 
         XCTAssertEqual(fixture.engine.applyCount, 1)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 1)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].pendingValues?.volume, 0.4)
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].error, .permissionDenied)
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .denied)
+        XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
         XCTAssertNil(fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier])
-
-        fixture.engine.nextError = nil
-        fixture.coordinator.retry(processObjectID: fixture.player.processObjectID)
-        await fixture.finishPendingCommands()
-
-        XCTAssertEqual(fixture.engine.plans.map(\.generation), [1, 2])
-        XCTAssertEqual(fixture.coordinator.snapshot.processes[0].volume, 0.4)
-        XCTAssertNil(fixture.coordinator.snapshot.processes[0].pendingValues)
-        XCTAssertNil(fixture.coordinator.snapshot.processes[0].error)
-        XCTAssertEqual(
-            fixture.preferences.state.audioProcessProfiles[fixture.bundleIdentifier],
-            fixture.profile(volume: 0.4)
-        )
-        XCTAssertEqual(fixture.monitor.observedDeviceIDs, [10, 20, 30])
-        XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
     func testGenericNativeFailureIsTypedAndExplicitRetryCommits() async {

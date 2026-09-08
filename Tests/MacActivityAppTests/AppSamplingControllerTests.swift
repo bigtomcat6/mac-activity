@@ -126,7 +126,8 @@ final class AppSamplingControllerTests: XCTestCase {
             planner: AudioRoutePlanner(),
             engine: audioEngine,
             preferences: preferences,
-            systemAudioAccessChecker: AudioSystemAccessCheckerFake()
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake(),
+            systemAudioAuthorizationRequester: AudioSystemAuthorizationRequesterFake()
         )
         let metricsProvider = AppTerminationMetricProvider()
         let scheduler = MetricsScheduler(
@@ -269,7 +270,8 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
     }
 
     func start() async {}
-    func checkSystemAudioAccess() async {}
+    func refreshSystemAudioAuthorization() async {}
+    func requestSystemAudioAccess() async {}
     func retryDevice(_ deviceUID: String) {}
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {}
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {}
