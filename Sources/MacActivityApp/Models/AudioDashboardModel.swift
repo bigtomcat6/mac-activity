@@ -10,6 +10,7 @@ final class AudioDashboardModel: ObservableObject {
 
     private let coordinator: any AudioControlCoordinating
     private var snapshotCancellable: AnyCancellable?
+    private var isAudioPageVisible = false
 
     init(coordinator: any AudioControlCoordinating) {
         self.coordinator = coordinator
@@ -21,6 +22,28 @@ final class AudioDashboardModel: ObservableObject {
     }
 
     func retryDevice(_ uid: String) { coordinator.retryDevice(uid) }
+
+    func audioPageActivated() async {
+        isAudioPageVisible = true
+        await coordinator.refreshSystemAudioAuthorization()
+    }
+
+    func audioPageDeactivated() {
+        isAudioPageVisible = false
+    }
+
+    func applicationDidBecomeActive() async {
+        guard isAudioPageVisible else { return }
+        await coordinator.refreshSystemAudioAuthorization()
+    }
+
+    func requestSystemAudioAccess() async {
+        await coordinator.requestSystemAudioAccess()
+    }
+
+    func refreshSystemAudioAuthorization() async {
+        await coordinator.refreshSystemAudioAuthorization()
+    }
 
     func setDeviceVolume(_ value: Double, for uid: String) {
         coordinator.setDeviceVolume(value, for: uid)

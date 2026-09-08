@@ -394,7 +394,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             monitor: AudioSystemMonitor(availability: availability),
             planner: AudioRoutePlanner(),
             engine: ProcessTapVolumeEngine(availability: availability),
-            preferences: preferencesController
+            preferences: preferencesController,
+            systemAudioAuthorizationReader: AudioSystemAuthorizationReader(availability: availability),
+            systemAudioAuthorizationRequester: AudioSystemAuthorizationRequester(availability: availability)
         )
     }
 

@@ -13,6 +13,8 @@ final class CoordinatorFixture {
     let deviceProvider = DeviceProviderFake()
     let processProvider = ProcessProviderFake()
     let monitor = MonitorFake()
+    let systemAudioAuthorizationReader: any AudioSystemAuthorizationReading
+    let systemAudioAuthorizationRequester: any AudioSystemAuthorizationRequesting
     let engine: EngineFake
     let store = PreferencesStoreFake()
     let lifecycle = LifecycleRecorder()
@@ -24,9 +26,14 @@ final class CoordinatorFixture {
         savedProfiles: [String: AudioProcessProfile] = [:],
         engine: EngineFake = EngineFake(),
         planner: AudioRoutePlanner? = nil,
-        delay: @escaping AudioControlDelay = { _ in }
+        systemAudioAuthorizationReader: any AudioSystemAuthorizationReading =
+            AudioSystemAuthorizationReaderFake(),
+        systemAudioAuthorizationRequester: any AudioSystemAuthorizationRequesting =
+            AudioSystemAuthorizationRequesterFake()
     ) {
         self.engine = engine
+        self.systemAudioAuthorizationReader = systemAudioAuthorizationReader
+        self.systemAudioAuthorizationRequester = systemAudioAuthorizationRequester
         processProvider.bundleIdentifier = bundleIdentifier
         store.savedPreferences.audioProcessProfiles = savedProfiles
         monitor.lifecycle = lifecycle
@@ -47,7 +54,8 @@ final class CoordinatorFixture {
             planner: planner,
             engine: engine,
             preferences: preferences,
-            delay: delay
+            systemAudioAuthorizationReader: systemAudioAuthorizationReader,
+            systemAudioAuthorizationRequester: systemAudioAuthorizationRequester
         )
     }
 
@@ -78,6 +86,8 @@ final class AudioControlComponentFixture {
     let lifecycle: LifecycleRecorder
     let deviceProvider: DeviceProviderFake
     let processProvider: ProcessProviderFake
+    let systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake
+    let systemAudioAuthorizationRequester: AudioSystemAuthorizationRequesterFake
 
     private var pendingReconciliationTokens: [UInt64] = []
 
@@ -96,7 +106,11 @@ final class AudioControlComponentFixture {
         set { processProvider.processes = newValue }
     }
 
-    init(savedProfile: AudioProcessProfile? = nil) {
+    init(
+        savedProfile: AudioProcessProfile? = nil,
+        systemAudioAuthorizationReader: AudioSystemAuthorizationReaderFake = .init(),
+        systemAudioAuthorizationRequester: AudioSystemAuthorizationRequesterFake = .init()
+    ) {
         let player = AudioProcessEntry(
             processObjectID: 11,
             processIdentifier: 101,
@@ -143,6 +157,8 @@ final class AudioControlComponentFixture {
         self.player = player
         self.deviceProvider = deviceProvider
         self.processProvider = processProvider
+        self.systemAudioAuthorizationReader = systemAudioAuthorizationReader
+        self.systemAudioAuthorizationRequester = systemAudioAuthorizationRequester
         self.monitor = monitor
         self.engine = engine
         self.store = store
@@ -157,7 +173,8 @@ final class AudioControlComponentFixture {
             planner: AudioRoutePlanner(),
             engine: engine,
             preferences: preferences,
-            delay: { _ in }
+            systemAudioAuthorizationReader: systemAudioAuthorizationReader,
+            systemAudioAuthorizationRequester: systemAudioAuthorizationRequester
         )
     }
 
@@ -371,25 +388,33 @@ final class DeviceProviderFake: AudioDeviceControlProviding, AudioRouteDevicePro
 @MainActor
 final class ProcessProviderFake: AudioProcessProviding {
     private(set) var callCount = 0
+    private(set) var discoveredProcessObjectIDs: Set<AudioObjectID> = []
     var bundleIdentifier: String? = "com.example.music"
     var processes: [AudioProcessEntry]?
     var scriptedProcesses: [[AudioProcessEntry]] = []
+    var scriptedDiscoveredProcessObjectIDs: [Set<AudioObjectID>] = []
     var lifecycle: LifecycleRecorder?
 
     func audibleOutputProcesses() -> [AudioProcessEntry] {
         callCount += 1
         lifecycle?.events.append("processes.read")
+        let result: [AudioProcessEntry]
         if scriptedProcesses.isEmpty == false {
-            return scriptedProcesses.removeFirst()
+            result = scriptedProcesses.removeFirst()
+        } else {
+            result = processes ?? [.init(
+                processObjectID: 11,
+                processIdentifier: 101,
+                name: "Music",
+                bundleIdentifier: bundleIdentifier,
+                bundleURL: nil,
+                outputDeviceIDs: [10]
+            )]
         }
-        return processes ?? [.init(
-            processObjectID: 11,
-            processIdentifier: 101,
-            name: "Music",
-            bundleIdentifier: bundleIdentifier,
-            bundleURL: nil,
-            outputDeviceIDs: [10]
-        )]
+        discoveredProcessObjectIDs = scriptedDiscoveredProcessObjectIDs.isEmpty
+            ? Set(result.map(\.processObjectID))
+            : scriptedDiscoveredProcessObjectIDs.removeFirst()
+        return result
     }
 }
 
@@ -474,6 +499,179 @@ final class FakeAudioSystemMonitor: AudioSystemMonitoring, @unchecked Sendable {
 
 typealias MonitorFake = FakeAudioSystemMonitor
 
+final class AudioSystemAuthorizationReaderFake: AudioSystemAuthorizationReading, @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = ControlledCallGate()
+    private var statuses: [AudioSystemAuthorizationStatus]
+    private var fallbackStatus: AudioSystemAuthorizationStatus
+    private var reads = 0
+    private var readStartObserver: (@Sendable (Int) -> Void)?
+
+    init(statuses: [AudioSystemAuthorizationStatus] = [.authorized]) {
+        self.statuses = statuses
+        fallbackStatus = statuses.last ?? .authorized
+    }
+
+    var readCount: Int {
+        lock.withLock { reads }
+    }
+
+    func setStatuses(_ statuses: [AudioSystemAuthorizationStatus]) {
+        lock.withLock {
+            self.statuses = statuses
+            fallbackStatus = statuses.last ?? .authorized
+        }
+    }
+
+    func observeReadStarts(_ observer: @escaping @Sendable (Int) -> Void) {
+        lock.withLock { readStartObserver = observer }
+    }
+
+    func authorizationStatus() async -> AudioSystemAuthorizationStatus {
+        let read = lock.withLock {
+            () -> (count: Int, observer: (@Sendable (Int) -> Void)?, status: AudioSystemAuthorizationStatus) in
+            reads += 1
+            let status = statuses.isEmpty ? fallbackStatus : statuses.removeFirst()
+            return (reads, readStartObserver, status)
+        }
+        read.observer?(read.count)
+        await gate.enter()
+        return read.status
+    }
+
+    func block() async { await gate.block() }
+    func resume() async { await gate.resumeAll() }
+}
+
+final class AudioSystemAuthorizationRequesterFake: AudioSystemAuthorizationRequesting, @unchecked Sendable {
+    private let lock = NSLock()
+    private var waiters: [UUID: AudioSystemAuthorizationRequestWaiterFake] = [:]
+    private var requests = 0
+    private var callbacks = 0
+    private var shutdowns = 0
+    private var isShutdown = false
+    private var requestStartObserver: (@Sendable (Int) -> Void)?
+
+    var requestCount: Int {
+        lock.withLock { requests }
+    }
+
+    var shutdownCount: Int {
+        lock.withLock { shutdowns }
+    }
+
+    var callbackCount: Int {
+        lock.withLock { callbacks }
+    }
+
+    func observeRequestStarts(_ observer: @escaping @Sendable (Int) -> Void) {
+        lock.withLock { requestStartObserver = observer }
+    }
+
+    func requestAuthorization() async -> AudioSystemAuthorizationStatus {
+        let waiter = AudioSystemAuthorizationRequestWaiterFake()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                waiter.install(continuation)
+                register(waiter)
+            }
+        } onCancel: {
+            waiter.cancel()
+            removeCancelledWaiter(waiter)
+        }
+    }
+
+    func shutdown() async {
+        let pending = lock.withLock { () -> [AudioSystemAuthorizationRequestWaiterFake] in
+            shutdowns += 1
+            isShutdown = true
+            let pending = Array(waiters.values)
+            waiters.removeAll()
+            return pending
+        }
+        pending.forEach { $0.finish(with: .unavailable) }
+    }
+
+    func complete(_ status: AudioSystemAuthorizationStatus) {
+        let pending = lock.withLock { () -> [AudioSystemAuthorizationRequestWaiterFake] in
+            callbacks += 1
+            let pending = Array(waiters.values)
+            waiters.removeAll()
+            return pending
+        }
+        pending.forEach { $0.finish(with: status) }
+    }
+
+    private func register(_ waiter: AudioSystemAuthorizationRequestWaiterFake) {
+        let registration = lock.withLock {
+            () -> (count: Int, observer: (@Sendable (Int) -> Void)?)? in
+            guard isShutdown == false, waiter.isCancelled == false else { return nil }
+            requests += 1
+            waiters[waiter.id] = waiter
+            return (requests, requestStartObserver)
+        }
+        guard let registration else {
+            waiter.finish(with: .unavailable)
+            return
+        }
+        registration.observer?(registration.count)
+    }
+
+    private func removeCancelledWaiter(_ waiter: AudioSystemAuthorizationRequestWaiterFake) {
+        _ = lock.withLock { waiters.removeValue(forKey: waiter.id) }
+    }
+
+}
+
+private final class AudioSystemAuthorizationRequestWaiterFake: @unchecked Sendable {
+    let id = UUID()
+
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<AudioSystemAuthorizationStatus, Never>?
+    private var cancelled = false
+
+    var isCancelled: Bool {
+        lock.withLock { cancelled }
+    }
+
+    func install(_ continuation: CheckedContinuation<AudioSystemAuthorizationStatus, Never>) {
+        lock.lock()
+        if cancelled {
+            lock.unlock()
+            continuation.resume(returning: .unavailable)
+            return
+        }
+        self.continuation = continuation
+        lock.unlock()
+    }
+
+    func finish(with status: AudioSystemAuthorizationStatus) {
+        let result = takeContinuation(markingCancelled: false)
+        result.continuation?.resume(returning: result.cancelled ? .unavailable : status)
+    }
+
+    func cancel() {
+        let result = takeContinuation(markingCancelled: true)
+        result.continuation?.resume(returning: .unavailable)
+    }
+
+    private func takeContinuation(
+        markingCancelled: Bool
+    ) -> (
+        continuation: CheckedContinuation<AudioSystemAuthorizationStatus, Never>?,
+        cancelled: Bool
+    ) {
+        lock.withLock {
+            if markingCancelled {
+                cancelled = true
+            }
+            let continuation = continuation
+            self.continuation = nil
+            return (continuation, cancelled)
+        }
+    }
+}
+
 struct RecordingEngineStopCall: Equatable {
     let processObjectID: AudioObjectID
     let generation: UInt64
@@ -501,6 +699,11 @@ final class PlannerQueryCounter: @unchecked Sendable {
 }
 
 final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked Sendable {
+    private struct PendingStopAllApply {
+        let plan: AudioRoutePlan
+        let continuation: CheckedContinuation<ProcessTapSessionSnapshot, Never>
+    }
+
     let sessionSnapshots: AsyncStream<ProcessTapSessionSnapshot>
     private let continuation: AsyncStream<ProcessTapSessionSnapshot>.Continuation
     private(set) var applyCount = 0
@@ -524,6 +727,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     var scriptedStopResults: [(ProcessTapSessionState, ProcessTapEngineError?)] = []
     var scriptedPreparationResults: [ProcessTapRuntimePreparation] = []
     var lifecycle: LifecycleRecorder?
+    private var applyStartObserver: (@Sendable (Int) -> Void)?
     private var nextCommandSequence: UInt64 = 0
     private let stopGate = ControlledCallGate()
     private let prepareRuntimeGate = ControlledCallGate()
@@ -534,6 +738,9 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     private var deferredObserverCalls: Set<Int> = []
     private var deferredStopObserverCalls: Set<Int> = []
     private var deferredObservers: [ProcessTapSessionSnapshot] = []
+    private var appliesToCancelOnStopAll: Set<Int> = []
+    private var pendingStopAllApplies: [PendingStopAllApply] = []
+    private var pendingStopAllApplyWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     init() {
         let stream = AsyncStream<ProcessTapSessionSnapshot>.makeStream()
@@ -544,10 +751,24 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func apply(plan: AudioRoutePlan, gain: ProcessGainState) async -> ProcessTapSessionSnapshot {
         lifecycle?.events.append("engine.apply")
         applyCount += 1
+        let applyCall = applyCount
+        applyStartObserver?(applyCall)
         authorizationAttemptCount += 1
         plans.append(plan)
         gains.append(gain)
         await applyGate.enter()
+        if appliesToCancelOnStopAll.contains(applyCall) {
+            return await withCheckedContinuation { continuation in
+                pendingStopAllApplies.append(.init(plan: plan, continuation: continuation))
+                let ready = pendingStopAllApplyWaiters.filter {
+                    pendingStopAllApplies.count >= $0.0
+                }
+                pendingStopAllApplyWaiters.removeAll {
+                    pendingStopAllApplies.count >= $0.0
+                }
+                ready.forEach { $0.1.resume() }
+            }
+        }
         let scripted = scriptedApplyResultsByCommand.removeValue(forKey: .init(
             processObjectID: plan.processObjectID,
             generation: plan.generation
@@ -565,7 +786,7 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
             emissionOrdinal: 1
         )
         lastProducedSnapshot = snapshot
-        if deferredObserverCalls.contains(applyCount) {
+        if deferredObserverCalls.contains(applyCall) {
             deferredObservers.append(snapshot)
         } else {
             continuation.yield(snapshot)
@@ -606,6 +827,22 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func stopAll() async {
         stopAllCount += 1
         lifecycle?.events.append("engine.stopAll")
+        let pending = pendingStopAllApplies
+        pendingStopAllApplies.removeAll()
+        for apply in pending {
+            nextCommandSequence += 1
+            let snapshot = ProcessTapSessionSnapshot(
+                processObjectID: apply.plan.processObjectID,
+                generation: apply.plan.generation,
+                state: .failed,
+                error: .routeSuperseded,
+                commandSequence: nextCommandSequence,
+                emissionOrdinal: 1
+            )
+            lastProducedSnapshot = snapshot
+            continuation.yield(snapshot)
+            apply.continuation.resume(returning: snapshot)
+        }
     }
     func prepareRuntime() async -> ProcessTapRuntimePreparation {
         prepareRuntimeCount += 1
@@ -647,6 +884,13 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     func waitUntilGainUpdateCount(_ count: Int) async {
         await gainUpdateGate.waitUntilEntered(count)
     }
+    func cancelApplyOnStopAll(_ call: Int) {
+        appliesToCancelOnStopAll.insert(call)
+    }
+    func waitUntilApplyPendingForStopAll(_ count: Int) async {
+        guard pendingStopAllApplies.count < count else { return }
+        await withCheckedContinuation { pendingStopAllApplyWaiters.append((count, $0)) }
+    }
     func deferApplyObserver(_ call: Int) { deferredObserverCalls.insert(call) }
     func deferStopObserver(_ call: Int) { deferredStopObserverCalls.insert(call) }
     func deliverDeferredObservers() {
@@ -656,6 +900,9 @@ final class RecordingProcessTapEngine: ProcessTapVolumeControlling, @unchecked S
     }
     func onStreamTermination(_ action: @escaping @Sendable () -> Void) {
         continuation.onTermination = { _ in action() }
+    }
+    func observeApplyStarts(_ observer: @escaping @Sendable (Int) -> Void) {
+        applyStartObserver = observer
     }
 }
 
@@ -680,80 +927,6 @@ final class PreferencesStoreFake: PreferencesStoring, @unchecked Sendable {
 
 final class LifecycleRecorder: @unchecked Sendable {
     var events: [String] = []
-}
-
-actor ControlledAudioDelay {
-    private var continuations: [CheckedContinuation<Void, Never>] = []
-    private(set) var callCount = 0
-    private var callCountWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
-
-    func callAsFunction(_ duration: Duration) async {
-        callCount += 1
-        let ready = callCountWaiters.filter { callCount >= $0.0 }
-        callCountWaiters.removeAll { callCount >= $0.0 }
-        ready.forEach { $0.1.resume() }
-        await withCheckedContinuation { continuation in
-            continuations.append(continuation)
-        }
-    }
-
-    func waitUntilCallCount(_ count: Int) async {
-        guard callCount < count else { return }
-        await withCheckedContinuation { callCountWaiters.append((count, $0)) }
-    }
-
-    func resumeAll() {
-        let pending = continuations
-        continuations.removeAll()
-        pending.forEach { $0.resume() }
-    }
-}
-
-actor ControlledShutdownDelay {
-    private var enteredContinuation: CheckedContinuation<Void, Never>?
-    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
-    private var cancellationWaiters: [CheckedContinuation<Void, Never>] = []
-    private var releaseContinuation: CheckedContinuation<Void, Never>?
-    private var entered = false
-    private var canceled = false
-    private var released = false
-
-    func callAsFunction(_ duration: Duration) async {
-        entered = true
-        entryWaiters.forEach { $0.resume() }
-        entryWaiters.removeAll()
-        await withTaskCancellationHandler {
-            await withCheckedContinuation { enteredContinuation = $0 }
-        } onCancel: {
-            Task { await self.cancel() }
-        }
-        guard released == false else { return }
-        await withCheckedContinuation { releaseContinuation = $0 }
-    }
-
-    func waitUntilEntered() async {
-        guard entered == false else { return }
-        await withCheckedContinuation { entryWaiters.append($0) }
-    }
-
-    func waitUntilCanceled() async {
-        guard canceled == false else { return }
-        await withCheckedContinuation { cancellationWaiters.append($0) }
-    }
-
-    func release() {
-        released = true
-        releaseContinuation?.resume()
-        releaseContinuation = nil
-    }
-
-    private func cancel() {
-        canceled = true
-        enteredContinuation?.resume()
-        enteredContinuation = nil
-        cancellationWaiters.forEach { $0.resume() }
-        cancellationWaiters.removeAll()
-    }
 }
 
 actor ControlledCallGate {
@@ -791,21 +964,22 @@ actor ControlledCallGate {
 actor ControlledIndexedCallGate {
     private var blockedEntries: Set<Int> = []
     private var enteredCount = 0
-    private var blockedCalls: [CheckedContinuation<Void, Never>] = []
+    private var blockedCalls: [(Int, CheckedContinuation<Void, Never>)] = []
     private var enteredWaiters: [(Int, CheckedContinuation<Void, Never>)] = []
 
     func block(_ entry: Int) {
         blockedEntries.insert(entry)
     }
 
-    func enter() async {
+    func enter(_ observer: (@Sendable (Int) -> Void)? = nil) async {
         enteredCount += 1
         let current = enteredCount
+        observer?(current)
         let ready = enteredWaiters.filter { enteredCount >= $0.0 }
         enteredWaiters.removeAll { enteredCount >= $0.0 }
         ready.forEach { $0.1.resume() }
         guard blockedEntries.contains(current) else { return }
-        await withCheckedContinuation { blockedCalls.append($0) }
+        await withCheckedContinuation { blockedCalls.append((current, $0)) }
     }
 
     func waitUntilEntered(_ count: Int) async {
@@ -817,6 +991,13 @@ actor ControlledIndexedCallGate {
         blockedEntries.removeAll()
         let calls = blockedCalls
         blockedCalls.removeAll()
-        calls.forEach { $0.resume() }
+        calls.forEach { $0.1.resume() }
+    }
+
+    func resume(_ entry: Int) {
+        blockedEntries.remove(entry)
+        let calls = blockedCalls.filter { $0.0 == entry }
+        blockedCalls.removeAll { $0.0 == entry }
+        calls.forEach { $0.1.resume() }
     }
 }
