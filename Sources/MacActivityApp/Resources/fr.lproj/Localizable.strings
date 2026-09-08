@@ -83,10 +83,13 @@
 "temperature.dashboard.battery" = "Température batterie";
 
 "preferences.launchAtLogin" = "Lancer à la connexion";
+"preferences.category.general" = "Général";
+"preferences.category.menuBar" = "Barre des menus";
+"preferences.category.monitoring" = "Surveillance et affichage";
+"preferences.category.cleanup" = "Nettoyage du disque";
+"preferences.category.aboutUpdates" = "À propos et mises à jour";
 "preferences.currentVersion" = "Version actuelle";
 "preferences.checkForUpdates" = "Vérifier les mises à jour";
-"preferences.showUpdateChannel" = "Afficher le canal de mise à jour";
-"preferences.hideUpdateChannel" = "Masquer le canal de mise à jour";
 "preferences.updateChannel" = "Canal de mise à jour";
 "preferences.language" = "Langue";
 "preferences.languageHelp" = "Contrôle la langue d’affichage des préférences et du tableau de bord.";

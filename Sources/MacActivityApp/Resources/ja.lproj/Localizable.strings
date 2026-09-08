@@ -83,10 +83,13 @@
 "temperature.dashboard.battery" = "バッテリー温度";
 
 "preferences.launchAtLogin" = "ログイン時に起動";
+"preferences.category.general" = "一般";
+"preferences.category.menuBar" = "メニューバー";
+"preferences.category.monitoring" = "監視と表示";
+"preferences.category.cleanup" = "ディスクのクリーンアップ";
+"preferences.category.aboutUpdates" = "情報とアップデート";
 "preferences.currentVersion" = "現在のバージョン";
 "preferences.checkForUpdates" = "アップデートを確認";
-"preferences.showUpdateChannel" = "更新チャンネルを表示";
-"preferences.hideUpdateChannel" = "更新チャンネルを非表示";
 "preferences.updateChannel" = "更新チャンネル";
 "preferences.language" = "言語";
 "preferences.languageHelp" = "環境設定とダッシュボードの表示言語を制御します。";
