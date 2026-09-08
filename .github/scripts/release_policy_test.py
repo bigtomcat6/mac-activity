@@ -572,6 +572,28 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertNotIn("source version committed", skill)
         self.assertNotIn("make a normal PR for\n`Configuration/Shared.xcconfig`", skill)
 
+    def test_ci_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "ci.yml").read_text()
+        trigger_section = workflow.split("on:", 1)[1].split("permissions:", 1)[0]
+
+        self.assertEqual(trigger_section.count('branches: ["main", "next-version"]'), 2)
+
+    def test_pr_quality_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "pr-quality.yml").read_text()
+
+        self.assertIn('branches: ["main", "next-version"]', workflow)
+
+    def test_docs_links_workflow_triggers_on_main_and_next_version(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "docs-links.yml").read_text()
+
+        self.assertEqual(workflow.count('branches: ["main", "next-version"]'), 2)
+
+    def test_localization_workflow_triggers_on_next_version_without_badge_publish(self):
+        workflow = (REPO_ROOT / ".github" / "workflows" / "localization.yml").read_text()
+
+        self.assertIn('branches: ["main", "next-version"]', workflow)
+        self.assertIn("github.event_name == 'push' && github.ref == 'refs/heads/main'", workflow)
+
 
 if __name__ == "__main__":
     unittest.main()
