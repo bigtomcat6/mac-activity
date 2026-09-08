@@ -14,6 +14,10 @@ Release automation lives in this git repository:
 
 Use the `Release` workflow from GitHub Actions or the GitHub CLI.
 
+The workflow only runs from `main` or `next-version`; the preflight job rejects
+any other ref. The Sparkle appcast publisher accepts release tags whose commits
+are reachable from either branch.
+
 | Channel | Tag shape | GitHub release state |
 | --- | --- | --- |
 | `alpha` | `v26.0.0-alpha.1` | prerelease |

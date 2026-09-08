@@ -34,6 +34,10 @@ The workflow injects release versions into the runner workspace only. It does
 not commit release version changes back to the repository. The checked-in
 development placeholder remains in `Configuration/Shared.xcconfig`.
 
+The workflow only runs from `main` or `next-version`; the preflight job rejects
+any other ref. Release tags must point to a commit reachable from one of those
+branches for the Sparkle appcast publisher to accept them.
+
 ## Signing Policy
 
 The release workflow supports three signing inputs:

@@ -609,6 +609,13 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn('gh pr create --draft --base "${BASE}"', skill)
         self.assertIn("/create-pr next", skill)
 
+    def test_release_docs_allow_main_and_next_version_source_branches(self):
+        doc = (REPO_ROOT / ".github" / "release-workflows.md").read_text()
+        release_doc = (REPO_ROOT / "docs" / "release.md").read_text()
+
+        self.assertIn("`main` or `next-version`", doc)
+        self.assertIn("`main` or `next-version`", release_doc)
+
 
 if __name__ == "__main__":
     unittest.main()
