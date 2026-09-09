@@ -45,7 +45,7 @@ private struct PowerFlowColumn: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(10)
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .dashboardCardChrome()
     }
 }
 

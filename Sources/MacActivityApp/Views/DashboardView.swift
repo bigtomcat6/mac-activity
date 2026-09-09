@@ -507,7 +507,7 @@ enum DashboardOverviewLayout {
 }
 
 enum DashboardFooterChrome {
-    static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
+    static let backgroundOpacity = 0.55
     static let preferencesSystemImage = "gearshape"
     static let quitSystemImage = "power"
 }
@@ -647,6 +647,7 @@ struct DashboardView: View {
     @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
+    @Environment(\.colorScheme) private var colorScheme
     let openPreferences: () -> Void
     let quitApplication: () -> Void
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
@@ -692,6 +693,7 @@ struct DashboardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .background(DashboardCardChrome.canvasColor(for: colorScheme))
 
             DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
                 Divider()

@@ -49,6 +49,7 @@ struct ActiveProcessMemoryList: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .activeCleanupCardChrome()
     }
 
     private var processRows: some View {
@@ -65,12 +66,6 @@ struct ActiveProcessMemoryList: View {
                 }
             }
         }
-        .clipShape(
-            RoundedRectangle(
-                cornerRadius: ActiveProcessMemoryLayout.outerCornerRadius,
-                style: .continuous
-            )
-        )
     }
 
     static func processActionMessage(for state: ProcessActionState, bundle: Bundle? = nil) -> String? {

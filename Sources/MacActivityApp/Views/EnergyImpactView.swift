@@ -17,7 +17,7 @@ struct EnergyImpactView: View {
     @State private var showsInfoPopover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
             VStack(alignment: .leading, spacing: 4) {
                 HStack {
                     Text(AppLocalization.string(.energyImpactTitle))
@@ -57,27 +57,28 @@ struct EnergyImpactView: View {
             )
             .padding(.horizontal, 12)
 
-            HStack {
-                Text(AppLocalization.string(.energyImpactAppColumn))
-                Spacer()
-                Text(AppLocalization.string(.energyImpactSustainedColumn))
-            }
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
+            VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                HStack {
+                    Text(AppLocalization.string(.energyImpactAppColumn))
+                    Spacer()
+                    Text(AppLocalization.string(.energyImpactSustainedColumn))
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
 
-            if model.entries.isEmpty {
-                Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: ActiveProcessMemoryLayout.rowHeight,
-                        alignment: .leading
-                    )
-                    .padding(.horizontal, 12)
-            } else {
-                VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                if model.entries.isEmpty {
+                    Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(
+                            maxWidth: .infinity,
+                            minHeight: ActiveProcessMemoryLayout.rowHeight,
+                            alignment: .leading
+                        )
+                        .padding(.horizontal, 12)
+                } else {
                     ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                         EnergyImpactRow(
                             entry: entry,
@@ -86,13 +87,8 @@ struct EnergyImpactView: View {
                         )
                     }
                 }
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: ActiveProcessMemoryLayout.outerCornerRadius,
-                        style: .continuous
-                    )
-                )
             }
+            .dashboardCardChrome()
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope)) {
