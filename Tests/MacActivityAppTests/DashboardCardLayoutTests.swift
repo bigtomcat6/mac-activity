@@ -14,17 +14,14 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testDashboardTabsUseStableIconSymbolPairs() {
-        let expectations: [(DashboardTab, String, String)] = [
-            (.overview, "square.grid.2x2", "square.grid.2x2.fill"),
-            (.actives, "list.bullet.rectangle", "list.bullet.rectangle.fill"),
-            (.energyImpact, "bolt", "bolt.fill"),
-            (.audio, "speaker.wave.2", "speaker.wave.2.fill")
-        ]
-
-        for (tab, idleSymbol, selectedSymbol) in expectations {
-            XCTAssertEqual(tab.systemImage, idleSymbol, "Unexpected idle symbol for \(tab)")
-            XCTAssertEqual(tab.selectedSystemImage, selectedSymbol, "Unexpected selected symbol for \(tab)")
-        }
+        XCTAssertEqual(DashboardTab.overview.systemImage, "square.grid.2x2")
+        XCTAssertEqual(DashboardTab.overview.selectedSystemImage, "square.grid.2x2.fill")
+        XCTAssertEqual(DashboardTab.actives.systemImage, "list.bullet.rectangle")
+        XCTAssertEqual(DashboardTab.actives.selectedSystemImage, "list.bullet.rectangle.fill")
+        XCTAssertEqual(DashboardTab.energyImpact.systemImage, "bolt")
+        XCTAssertEqual(DashboardTab.energyImpact.selectedSystemImage, "bolt.fill")
+        XCTAssertEqual(DashboardTab.audio.systemImage, "speaker.wave.2")
+        XCTAssertEqual(DashboardTab.audio.selectedSystemImage, "speaker.wave.2.fill")
     }
 
     func testDashboardMotionDefinesTabSelectionDuration() {
