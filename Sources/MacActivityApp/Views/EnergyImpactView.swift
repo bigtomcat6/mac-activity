@@ -57,7 +57,6 @@ struct EnergyImpactView: View {
                 model: powerFlowModel,
                 refreshTrigger: refreshTrigger
             )
-            .padding(.horizontal, 12)
 
             VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
                 HStack {
