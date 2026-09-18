@@ -859,6 +859,25 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardTabChrome.focusRingWidth, 2)
     }
 
+    func testDashboardTabBarUsesIconButtonsWithAccessibilityAndMotion() throws {
+        let dashboardSource = try Self.dashboardViewSource()
+
+        XCTAssertTrue(dashboardSource.contains("DashboardTabBar(selection: selectedTabBinding)"))
+        XCTAssertFalse(dashboardSource.contains(".pickerStyle(.segmented)"))
+        XCTAssertTrue(dashboardSource.contains("matchedGeometryEffect(id: \"tabSelection\""))
+        XCTAssertTrue(dashboardSource.contains("DashboardMotion.tabSelectionAnimation"))
+        XCTAssertTrue(dashboardSource.contains(".help(tab.title)"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityLabel(Text(tab.title))"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityAddTraits(selection == tab ? .isSelected : [])"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityElement(children: .contain)"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityHidden(true)"))
+        XCTAssertTrue(dashboardSource.contains("accessibilityReduceMotion"))
+        XCTAssertTrue(dashboardSource.contains(".onMoveCommand"))
+        XCTAssertTrue(dashboardSource.contains("focusEffectDisabled()"))
+        XCTAssertTrue(dashboardSource.contains("contentTransition(.symbolEffect(.replace))"))
+        XCTAssertTrue(dashboardSource.contains("#available(macOS 14.0, *)"))
+    }
+
     func testDashboardHeaderKeepsOnlyAppNameAndInlineTabPicker() throws {
         let dashboardSource = try Self.dashboardViewSource()
 

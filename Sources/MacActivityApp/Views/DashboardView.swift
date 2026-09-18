@@ -756,13 +756,7 @@ struct DashboardView: View {
     }
 
     private var tabPicker: some View {
-        Picker(AppLocalization.string(.dashboardSection), selection: selectedTabBinding) {
-            ForEach(DashboardTab.allCases) { tab in
-                Text(tab.title).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        DashboardTabBar(selection: selectedTabBinding)
     }
 
     @ViewBuilder
@@ -870,6 +864,129 @@ struct DashboardView: View {
         activeCleanupModel.setDiskCleanupCategories(categories)
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
+        }
+    }
+}
+
+private struct DashboardTabBar: View {
+    @Binding var selection: DashboardTab
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedTab: DashboardTab?
+    @State private var hoveredTab: DashboardTab?
+
+    var body: some View {
+        HStack(spacing: DashboardTabChrome.itemSpacing) {
+            ForEach(DashboardTab.allCases) { tab in
+                tabButton(for: tab)
+            }
+        }
+        .padding(DashboardTabChrome.trackPadding)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(DashboardTabChrome.trackFillOpacity))
+        )
+        .animation(reduceMotion ? nil : DashboardMotion.tabSelectionAnimation, value: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(AppLocalization.string(.dashboardSection)))
+    }
+
+    private func tabButton(for tab: DashboardTab) -> some View {
+        Button {
+            guard selection != tab else { return }
+            selection = tab
+        } label: {
+            ZStack {
+                if selection == tab {
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(DashboardTabChrome.selectedFillOpacity))
+                        .matchedGeometryEffect(id: "tabSelection", in: selectionNamespace)
+                } else if hoveredTab == tab {
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(DashboardTabChrome.hoverFillOpacity))
+                }
+
+                Image(systemName: selection == tab ? tab.selectedSystemImage : tab.systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(selection == tab ? Color.primary : Color.secondary)
+                    .dashboardSymbolReplaceTransition(reduceMotion: reduceMotion)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: DashboardTabChrome.iconButtonWidth, height: DashboardTabChrome.iconButtonHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DashboardTabButtonStyle())
+        .focused($focusedTab, equals: tab)
+        .dashboardTabFocusEffectDisabled()
+        .overlay {
+            if focusedTab == tab {
+                Capsule(style: .continuous)
+                    .stroke(Color.accentColor, lineWidth: DashboardTabChrome.focusRingWidth)
+            }
+        }
+        .help(tab.title)
+        .accessibilityLabel(Text(tab.title))
+        .accessibilityAddTraits(selection == tab ? .isSelected : [])
+        .onMoveCommand { direction in
+            moveSelection(from: tab, direction: direction)
+        }
+        .onHover { isHovered in
+            if isHovered {
+                hoveredTab = tab
+            } else if hoveredTab == tab {
+                hoveredTab = nil
+            }
+        }
+    }
+
+    private func moveSelection(from tab: DashboardTab, direction: MoveCommandDirection) {
+        let tabs = DashboardTab.allCases
+        guard let index = tabs.firstIndex(of: tab) else { return }
+
+        let offset: Int
+        switch direction {
+        case .left:
+            offset = -1
+        case .right:
+            offset = 1
+        default:
+            return
+        }
+
+        let nextTab = tabs[(index + offset + tabs.count) % tabs.count]
+        guard nextTab != tab else { return }
+        selection = nextTab
+        focusedTab = nextTab
+    }
+}
+
+private struct DashboardTabButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .animation(.easeOut(duration: DashboardMotion.hoverDuration), value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func dashboardSymbolReplaceTransition(reduceMotion: Bool) -> some View {
+        if #available(macOS 14.0, *), !reduceMotion {
+            contentTransition(.symbolEffect(.replace))
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func dashboardTabFocusEffectDisabled() -> some View {
+        if #available(macOS 14.0, *) {
+            focusEffectDisabled()
+        } else {
+            self
         }
     }
 }
