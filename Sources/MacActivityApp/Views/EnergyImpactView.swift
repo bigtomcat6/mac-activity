@@ -5,11 +5,13 @@ import MacActivityCore
 struct EnergyImpactRefreshTaskID: Equatable {
     let trigger: Int
     let scope: EnergyImpactAppScope
+    var presented: Bool = true
 }
 
 struct EnergyImpactView: View {
     @ObservedObject var model: EnergyImpactModel
     @ObservedObject var powerFlowModel: PowerFlowModel
+    @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     let refreshTrigger: Int
     var scope: EnergyImpactAppScope = .regularOnly
     let showsApplicationIdentifier: Bool
@@ -91,7 +93,8 @@ struct EnergyImpactView: View {
             .dashboardCardChrome()
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope)) {
+        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope, presented: dashboardIsPresented)) {
+            guard dashboardIsPresented else { return }
             await model.refreshWhileVisible(scope: scope)
         }
     }

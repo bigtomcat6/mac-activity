@@ -26,12 +26,39 @@ enum DashboardCardChrome {
         Color(.sRGB, white: colorScheme == .dark ? 0.20 : 0.98, opacity: 1)
     }
 
-    static func canvasColor(for colorScheme: ColorScheme) -> Color {
-        Color(.sRGB, white: colorScheme == .dark ? 0.14 : 0.92, opacity: 1)
-    }
-
     static func shadowOpacity(for colorScheme: ColorScheme) -> Double {
         colorScheme == .dark ? 0.20 : 0.10
+    }
+}
+
+struct DashboardFallbackCardSurface: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
+            .fill(reduceTransparency
+                ? AnyShapeStyle(DashboardCardChrome.surfaceColor(for: colorScheme))
+                : AnyShapeStyle(.ultraThinMaterial))
+            .shadow(
+                color: .black.opacity(DashboardCardChrome.shadowOpacity(for: colorScheme)),
+                radius: DashboardCardChrome.shadowRadius,
+                x: 0,
+                y: DashboardCardChrome.shadowOffsetY
+            )
+    }
+}
+
+struct DashboardGlassContainerModifier: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(macOS 26.0, *) {
+            GlassEffectContainer(spacing: 0) {
+                content
+            }
+        } else {
+            content
+        }
     }
 }
 
@@ -49,8 +76,14 @@ enum ActiveCleanupChrome {
     static let activeProgressFill = Color.accentColor.opacity(0.12)
     static let inactiveProgressFill = Color.black.opacity(0.22)
 
-    static func progressFillColor(appearsActive: Bool) -> Color {
-        appearsActive ? activeProgressFill : inactiveProgressFill
+    static func progressFillColor(
+        appearsActive: Bool,
+        appearance: DashboardStyleAppearance = .standardAppearance
+    ) -> Color {
+        guard appearsActive == false else { return activeProgressFill }
+        return appearance.usesTranslucentChrome
+            ? DashboardOverviewChrome.translucentInactiveEmphasisFill
+            : inactiveProgressFill
     }
 }
 
@@ -69,35 +102,46 @@ enum ActiveProcessQuitButtonStyling {
 }
 
 private struct DashboardCardChromeModifier: ViewModifier {
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dashboardStyleAppearance) private var appearance
     let isHovered: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(
-            cornerRadius: DashboardCardChrome.cornerRadius,
+            cornerRadius: appearance.moduleCornerRadius,
             style: .continuous
         )
-        let borderOpacity = contrast == .increased
-            ? DashboardCardChrome.increasedContrastBorderOpacity + (isHovered ? 0.10 : 0)
-            : DashboardCardChrome.borderOpacity(isHovered: isHovered)
+        let borderOpacity = resolvedBorderOpacity
+        let clippedContent = content.contentShape(shape).clipShape(shape)
 
-        content
-            .contentShape(shape)
-            .clipShape(shape)
-            .background {
-                shape
-                    .fill(DashboardCardChrome.surfaceColor(for: colorScheme))
-                    .shadow(
-                        color: .black.opacity(DashboardCardChrome.shadowOpacity(for: colorScheme)),
-                        radius: DashboardCardChrome.shadowRadius,
-                        x: 0,
-                        y: DashboardCardChrome.shadowOffsetY
-                    )
+        Group {
+            if #available(macOS 26.0, *), !reduceTransparency {
+                if appearance.usesRootGlass {
+                    clippedContent
+                        .background(shape.fill(Color.primary.opacity(appearance.moduleFillOpacity)))
+                } else {
+                    clippedContent.glassEffect(.regular, in: shape)
+                }
+            } else {
+                clippedContent.background {
+                    DashboardFallbackCardSurface()
+                }
             }
-            .overlay {
-                shape.strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
-            }
+        }
+        .overlay {
+            shape.strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+        }
+    }
+
+    private var resolvedBorderOpacity: Double {
+        if appearance.usesTranslucentChrome {
+            return appearance.strokeOpacity + (isHovered ? 0.10 : 0)
+        }
+        if contrast == .increased {
+            return DashboardCardChrome.increasedContrastBorderOpacity + (isHovered ? 0.10 : 0)
+        }
+        return DashboardCardChrome.borderOpacity(isHovered: isHovered)
     }
 }
 
