@@ -39,6 +39,28 @@ final class PreferencesViewState: ObservableObject {
     }
 }
 
+enum PreferencesDashboardStyleSupport {
+    static var currentMajorVersion: Int {
+        ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+    }
+
+    static func isTransparentOptionEnabled(majorVersion: Int) -> Bool {
+        DashboardStyle.isTransparentSupported(majorVersion: majorVersion)
+    }
+
+    static var isTransparentOptionEnabled: Bool {
+        isTransparentOptionEnabled(majorVersion: currentMajorVersion)
+    }
+
+    static func descriptionKey(isTransparentSupported: Bool) -> AppLocalization.Key {
+        isTransparentSupported ? .preferencesDashboardStyleHelp : .preferencesDashboardStyleUnavailable
+    }
+
+    static var descriptionKey: AppLocalization.Key {
+        descriptionKey(isTransparentSupported: isTransparentOptionEnabled)
+    }
+}
+
 struct PreferencesView: View {
     @ObservedObject var preferencesController: PreferencesController
     @ObservedObject private var localizationController = AppLocalizationController.shared
@@ -209,6 +231,26 @@ struct PreferencesView: View {
                 .id("language-\(localizationRefreshID)")
             } footer: {
                 Text(AppLocalization.string(.preferencesLanguageHelp))
+            }
+
+            Section {
+                Picker(
+                    AppLocalization.string(.preferencesDashboardStyle),
+                    selection: Binding(
+                        get: { preferencesController.state.dashboardStyle },
+                        set: { preferencesController.setDashboardStyle($0) }
+                    )
+                ) {
+                    ForEach(DashboardStyle.allCases, id: \.self) { style in
+                        Text(AppLocalization.dashboardStyleTitle(for: style))
+                            .tag(style)
+                            .disabled(style == .transparent && !PreferencesDashboardStyleSupport.isTransparentOptionEnabled)
+                    }
+                }
+                .pickerStyle(.menu)
+                .id("dashboard-style-\(localizationRefreshID)")
+            } footer: {
+                Text(AppLocalization.string(PreferencesDashboardStyleSupport.descriptionKey))
             }
         }
     }

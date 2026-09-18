@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "업데이트 채널";
 "preferences.language" = "언어";
 "preferences.languageHelp" = "환경설정과 대시보드 표시 언어를 제어합니다.";
+"preferences.dashboardStyle" = "대시보드 스타일";
+"preferences.dashboardStyle.standard" = "표준";
+"preferences.dashboardStyle.transparent" = "투명";
+"preferences.dashboardStyle.help" = "‘투명’은 macOS 26 이상에서 투명한 테두리 없는 패널을 사용합니다. ‘투명도 낮추기’가 켜져 있으면 ‘표준’ 모양을 유지합니다.";
+"preferences.dashboardStyle.unavailable" = "‘투명’은 macOS 26 이상이 필요합니다. 이 Mac에서는 ‘표준’ 모양을 유지합니다.";
 "preferences.temperatureSource" = "온도 소스";
 "preferences.temperatureHelp" = "상태 막대와 대시보드의 온도 지표를 제어합니다.";
 "preferences.hardwareBatteryPercentage" = "하드웨어 배터리 퍼센트 표시";

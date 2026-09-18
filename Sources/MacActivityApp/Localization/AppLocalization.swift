@@ -107,6 +107,11 @@ enum AppLocalization {
         case preferencesUpdateChannel = "preferences.updateChannel"
         case preferencesLanguage = "preferences.language"
         case preferencesLanguageHelp = "preferences.languageHelp"
+        case preferencesDashboardStyle = "preferences.dashboardStyle"
+        case preferencesDashboardStyleStandard = "preferences.dashboardStyle.standard"
+        case preferencesDashboardStyleTransparent = "preferences.dashboardStyle.transparent"
+        case preferencesDashboardStyleHelp = "preferences.dashboardStyle.help"
+        case preferencesDashboardStyleUnavailable = "preferences.dashboardStyle.unavailable"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
         case preferencesHardwareBatteryPercentage = "preferences.hardwareBatteryPercentage"
@@ -581,6 +586,15 @@ enum AppLocalization {
             return string(.temperatureSourceCPUSMC, bundle: bundle)
         case .battery:
             return string(.temperatureSourceBattery, bundle: bundle)
+        }
+    }
+
+    static func dashboardStyleTitle(for style: DashboardStyle, bundle: Bundle? = nil) -> String {
+        switch style {
+        case .standard:
+            return string(.preferencesDashboardStyleStandard, bundle: bundle)
+        case .transparent:
+            return string(.preferencesDashboardStyleTransparent, bundle: bundle)
         }
     }
 

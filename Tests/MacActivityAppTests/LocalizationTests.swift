@@ -892,6 +892,46 @@ final class LocalizationTests: XCTestCase {
         )
     }
 
+    func testDashboardStyleStringsExistForAllSupportedLanguages() throws {
+        let styleKeys: [AppLocalization.Key] = [
+            .preferencesDashboardStyle,
+            .preferencesDashboardStyleStandard,
+            .preferencesDashboardStyleTransparent,
+            .preferencesDashboardStyleHelp,
+            .preferencesDashboardStyleUnavailable,
+        ]
+
+        for language in AppLanguage.supportedLanguages() {
+            guard let languageIdentifier = language.preferredLanguageIdentifier else {
+                continue
+            }
+            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: languageIdentifier))
+            for key in styleKeys {
+                let localized = AppLocalization.string(key, bundle: bundle)
+                XCTAssertNotEqual(localized, key.rawValue, "Missing \(key.rawValue) in \(languageIdentifier)")
+                XCTAssertFalse(localized.isEmpty, "\(key.rawValue) in \(languageIdentifier) must not be empty")
+            }
+        }
+    }
+
+    func testDashboardStyleTitlesUseSharedCopy() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+
+        XCTAssertEqual(
+            AppLocalization.string(.preferencesDashboardStyle, bundle: english),
+            "Dashboard style"
+        )
+        XCTAssertEqual(
+            AppLocalization.dashboardStyleTitle(for: .standard, bundle: simplifiedChinese),
+            "标准"
+        )
+        XCTAssertEqual(
+            AppLocalization.dashboardStyleTitle(for: .transparent, bundle: simplifiedChinese),
+            "通透"
+        )
+    }
+
     private func infoPlistStrings(forLanguageIdentifier language: String) throws -> [String: String] {
         let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: language))
         let path = try XCTUnwrap(bundle.path(forResource: "InfoPlist", ofType: "strings"))

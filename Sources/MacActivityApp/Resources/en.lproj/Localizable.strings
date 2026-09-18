@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "Update channel";
 "preferences.language" = "Language";
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
+"preferences.dashboardStyle" = "Dashboard style";
+"preferences.dashboardStyle.standard" = "Standard";
+"preferences.dashboardStyle.transparent" = "Transparent";
+"preferences.dashboardStyle.help" = "Transparent uses a clear, borderless panel on macOS 26 or later. If Reduce Transparency is enabled, the Standard appearance is kept.";
+"preferences.dashboardStyle.unavailable" = "Transparent requires macOS 26 or later. This Mac keeps the Standard appearance.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
 "preferences.hardwareBatteryPercentage" = "Show hardware battery percentage";
