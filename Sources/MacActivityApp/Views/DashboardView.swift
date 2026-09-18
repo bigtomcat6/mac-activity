@@ -2,6 +2,15 @@ import AppKit
 import SwiftUI
 import MacActivityCore
 
+@MainActor
+final class DashboardTabSelectionState: ObservableObject {
+    @Published var selectedTab: DashboardTab
+
+    init(initialTab: DashboardTab = .overview) {
+        self.selectedTab = initialTab
+    }
+}
+
 enum DashboardMotion {
     static let hoverDuration: Double = 0.14
     static let sampleDuration: Double = 0.32
@@ -672,7 +681,7 @@ struct DashboardView: View {
     @StateObject private var energyImpactModel = EnergyImpactModel()
     @StateObject private var powerFlowModel = PowerFlowModel()
     @ObservedObject var audioDashboardModel: AudioDashboardModel
-    @State private var selectedTab: DashboardTab = .overview
+    @ObservedObject var tabSelectionState: DashboardTabSelectionState
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
     let openPreferences: () -> Void
@@ -688,7 +697,8 @@ struct DashboardView: View {
         quitApplication: @escaping () -> Void,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
-        initialSelectedTab: DashboardTab = .overview
+        initialSelectedTab: DashboardTab = .overview,
+        tabSelectionState: DashboardTabSelectionState? = nil
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
@@ -697,7 +707,7 @@ struct DashboardView: View {
         self.quitApplication = quitApplication
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self.scrollIndicatorState = scrollIndicatorState
-        self._selectedTab = State(initialValue: initialSelectedTab)
+        self.tabSelectionState = tabSelectionState ?? DashboardTabSelectionState(initialTab: initialSelectedTab)
     }
 
     var body: some View {
@@ -831,11 +841,13 @@ struct DashboardView: View {
         .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
     }
 
+    private var selectedTab: DashboardTab { tabSelectionState.selectedTab }
+
     private var selectedTabBinding: Binding<DashboardTab> {
         Binding(
-            get: { selectedTab },
+            get: { tabSelectionState.selectedTab },
             set: { newValue in
-                selectedTab = newValue
+                tabSelectionState.selectedTab = newValue
                 activesRefreshTrigger = Self.activesRefreshTrigger(
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger

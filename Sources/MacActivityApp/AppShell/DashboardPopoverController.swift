@@ -365,6 +365,10 @@ final class DashboardPopoverHostingController: NSHostingController<DashboardPopo
     var dashboardView: DashboardView {
         rootView.content
     }
+
+    var dashboardTabSelection: DashboardTabSelectionState {
+        rootView.content.tabSelectionState
+    }
 }
 
 struct DashboardPopoverRootView: View {
@@ -420,6 +424,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.onVisibilityChange = onVisibilityChange
 
         let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
+        let tabSelectionState = DashboardTabSelectionState()
         let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(
             popover: popover,
             onHeightTransitionChange: { [weak scrollIndicatorState] isHeightTransitioning in
@@ -444,7 +449,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     onMeasuredSegmentHeight: { [weak measurement] segment, height in
                         measurement?.report(height, for: segment)
                     },
-                    scrollIndicatorState: scrollIndicatorState
+                    scrollIndicatorState: scrollIndicatorState,
+                    tabSelectionState: tabSelectionState
                 )
             )
         )

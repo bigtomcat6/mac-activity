@@ -1399,9 +1399,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
         let overviewHeight = popover.contentSize.height
 
-        let segmentedControl = try XCTUnwrap(Self.segmentedControl(in: window.contentView))
-        segmentedControl.setSelected(true, forSegment: 1)
-        _ = segmentedControl.target?.perform(segmentedControl.action, with: segmentedControl)
+        hostingController.dashboardTabSelection.selectedTab = .actives
 
         XCTAssertTrue(Self.waitUntil { popover.contentSize.height != overviewHeight })
         XCTAssertLessThanOrEqual(popover.contentSize.height, DashboardPopoverLayout.maximumHeight)
@@ -1492,15 +1490,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             store: DashboardPopoverPreferencesStore(initial: .default),
             launchService: NoopLaunchAtLoginService()
         )
-    }
-
-    private static func segmentedControl(in view: NSView?) -> NSSegmentedControl? {
-        allSubviews(of: view).first { $0 is NSSegmentedControl } as? NSSegmentedControl
-    }
-
-    private static func allSubviews(of view: NSView?) -> [NSView] {
-        guard let view else { return [] }
-        return view.subviews + view.subviews.flatMap(allSubviews)
     }
 
     private static func firstScrollView(in view: NSView) -> NSScrollView? {
