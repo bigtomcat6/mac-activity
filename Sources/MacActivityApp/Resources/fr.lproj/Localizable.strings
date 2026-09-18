@@ -28,6 +28,14 @@
 "audio.process.ownedByAnotherInstance" = "Une autre instance de Mac Activity contrôle l’audio des apps.";
 "audio.process.runtimeUnavailable" = "Le contrôle audio des apps est indisponible.";
 "audio.process.targetUnavailable" = "La sortie sélectionnée est indisponible ; la lecture d’origine est rétablie.";
+"audio.access.checking" = "Vérification de l’accès à l’audio système...";
+"audio.access.permissionRequired" = "Autorisez Mac Activity à capturer l’audio système dans Réglages Système.";
+"audio.access.failed" = "Impossible de vérifier l’accès à l’audio système. Réessayez.";
+"audio.access.openSettings" = "Ouvrir Réglages Système";
+"audio.access.permissionTitle" = "Autoriser l’enregistrement de l’audio système";
+"audio.access.permissionDescription" = "Autorisez Mac Activity à enregistrer l’audio système avant de contrôler chaque app.";
+"audio.access.grant" = "Autoriser l’accès";
+"audio.access.unavailableTitle" = "Accès à l’audio système indisponible";
 "audio.route.title" = "Routage de sortie";
 "audio.route.followOriginal" = "Suivre la sortie d’origine";
 "audio.route.deviceUnavailable" = "%@ (indisponible)";

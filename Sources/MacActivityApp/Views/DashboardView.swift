@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import MacActivityCore
 
@@ -707,6 +708,10 @@ struct DashboardView: View {
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            guard selectedTab == .audio else { return }
+            Task { await audioDashboardModel.applicationDidBecomeActive() }
+        }
     }
 
     private var header: some View {
@@ -775,6 +780,12 @@ struct DashboardView: View {
     private var audioContent: some View {
         AudioDashboardView(model: audioDashboardModel)
             .padding(18)
+            .task {
+                await audioDashboardModel.audioPageActivated()
+            }
+            .onDisappear {
+                audioDashboardModel.audioPageDeactivated()
+            }
     }
 
     private var footer: some View {

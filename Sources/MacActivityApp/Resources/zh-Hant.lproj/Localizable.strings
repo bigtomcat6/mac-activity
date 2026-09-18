@@ -28,6 +28,14 @@
 "audio.process.ownedByAnotherInstance" = "另一個 Mac Activity 實例正在控制 App 音訊。";
 "audio.process.runtimeUnavailable" = "App 音訊控制目前無法使用。";
 "audio.process.targetUnavailable" = "所選輸出無法使用；已還原原始播放。";
+"audio.access.checking" = "正在檢查系統音訊存取權限...";
+"audio.access.permissionRequired" = "請在系統設定中允許 Mac Activity 擷取系統音訊。";
+"audio.access.failed" = "無法檢查系統音訊存取權限。請再試一次。";
+"audio.access.openSettings" = "開啟系統設定";
+"audio.access.permissionTitle" = "允許錄製系統音訊";
+"audio.access.permissionDescription" = "請允許 Mac Activity 錄製系統音訊，然後再控制個別 App。";
+"audio.access.grant" = "授予存取權限";
+"audio.access.unavailableTitle" = "系統音訊存取無法使用";
 "audio.route.title" = "輸出路由";
 "audio.route.followOriginal" = "跟隨原始輸出";
 "audio.route.deviceUnavailable" = "%@（無法使用）";

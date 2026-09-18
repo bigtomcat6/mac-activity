@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import CoreAudio
 import MacActivityCore
@@ -369,7 +370,9 @@ struct AudioDashboardView: View {
                 }
             }
 
-            if let processSection = presentation.processSection {
+            if let permissionGate = presentation.permissionGate {
+                AudioSystemAccessPermissionGate(presentation: permissionGate, model: model)
+            } else if let processSection = presentation.processSection {
                 AudioDashboardSection(
                     title: AppLocalization.string(.audioProcessesTitle),
                     accessibility: processSection.accessibility
@@ -554,7 +557,7 @@ private struct AudioDeviceControlRow: View {
     }
 }
 
-private struct AudioProcessControlRow: View {
+struct AudioProcessControlRow: View {
     let presentation: AudioProcessRowPresentation
     @ObservedObject var model: AudioDashboardModel
     @State private var muteMotion: AudioVolumeMotionTrigger?
@@ -567,6 +570,8 @@ private struct AudioProcessControlRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 10) {
+                processIcon
+
                 Text(snapshot.process.name)
                     .font(.subheadline.weight(.medium))
                     .lineLimit(1)
@@ -609,6 +614,35 @@ private struct AudioProcessControlRow: View {
         .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
         .accessibilityElement(children: .contain)
         .audioAccessibility(presentation.rowAccessibility)
+    }
+
+    @ViewBuilder
+    private var processIcon: some View {
+        switch Self.iconSource(for: snapshot.process) {
+        case .bundle(let bundleURL):
+            Image(nsImage: ActiveProcessIconCache.shared.icon(for: bundleURL))
+                .resizable()
+                .scaledToFit()
+                .frame(width: 20, height: 20)
+                .cornerRadius(4)
+                .accessibilityHidden(true)
+        case .fallbackSystemSymbol:
+            Image(systemName: "app")
+                .font(.body)
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .accessibilityHidden(true)
+        }
+    }
+
+    static func iconSource(
+        for process: AudioProcessEntry,
+        fileExists: (URL) -> Bool = { FileManager.default.fileExists(atPath: $0.path) }
+    ) -> ActiveProcessIconSource {
+        guard let bundleURL = process.bundleURL, fileExists(bundleURL) else {
+            return .fallbackSystemSymbol
+        }
+        return .bundle(bundleURL)
     }
 
     private var volumeBinding: Binding<Double> {
@@ -738,9 +772,152 @@ enum AudioDashboardRouteSelection {
     }
 }
 
+enum AudioSystemAccessPermissionGatePresentation: Equatable {
+    enum Action: Equatable {
+        case requestAccess
+        case openSettings
+        case refresh
+        case none
+    }
+
+    case checking
+    case requesting
+    case notDetermined
+    case denied
+    case unavailable
+
+    init?(state: AudioSystemAccessState) {
+        switch state {
+        case .notChecked, .checking:
+            self = .checking
+        case .requesting:
+            self = .requesting
+        case .notDetermined:
+            self = .notDetermined
+        case .denied:
+            self = .denied
+        case .unavailable:
+            self = .unavailable
+        case .authorized:
+            return nil
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .unavailable:
+            AppLocalization.string(.audioAccessUnavailableTitle)
+        case .checking, .requesting, .notDetermined, .denied:
+            AppLocalization.string(.audioAccessPermissionTitle)
+        }
+    }
+
+    var message: String {
+        switch self {
+        case .checking, .requesting:
+            AppLocalization.string(.audioAccessChecking)
+        case .notDetermined:
+            AppLocalization.string(.audioAccessPermissionDescription)
+        case .denied:
+            AppLocalization.string(.audioAccessPermissionRequired)
+        case .unavailable:
+            AppLocalization.string(.audioAccessFailed)
+        }
+    }
+
+    var action: Action {
+        switch self {
+        case .notDetermined:
+            .requestAccess
+        case .denied:
+            .openSettings
+        case .unavailable:
+            .refresh
+        case .checking, .requesting:
+            .none
+        }
+    }
+
+    var actionTitle: String {
+        switch action {
+        case .requestAccess, .none:
+            AppLocalization.string(.audioAccessGrant)
+        case .openSettings:
+            AppLocalization.string(.audioAccessOpenSettings)
+        case .refresh:
+            AppLocalization.string(.audioRetry)
+        }
+    }
+
+    var showsProgress: Bool { self == .checking || self == .requesting }
+
+    var accessibility: AudioAccessibilityContract {
+        .init(identifier: "audio.permission.gate", label: title, value: message)
+    }
+}
+
+private struct AudioSystemAccessPermissionGate: View {
+    private static let systemSettingsURL = URL(
+        string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AudioCapture"
+    )!
+
+    let presentation: AudioSystemAccessPermissionGatePresentation
+    @ObservedObject var model: AudioDashboardModel
+
+    var body: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "record.circle")
+                .font(.system(size: 32, weight: .medium))
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+
+            Text(presentation.title)
+                .font(.headline)
+
+            Text(presentation.message)
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+
+            if presentation.showsProgress {
+                ProgressView()
+                    .controlSize(.small)
+            }
+
+            Button(presentation.actionTitle, action: performAction)
+                .buttonStyle(.borderedProminent)
+                .disabled(presentation.action == .none)
+                .audioAccessibility(.init(
+                    identifier: "audio.permission.gate.action",
+                    label: presentation.actionTitle,
+                    isEnabled: presentation.action != .none
+                ))
+        }
+        .frame(maxWidth: .infinity, minHeight: 180)
+        .padding(20)
+        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityElement(children: .contain)
+        .audioAccessibility(presentation.accessibility)
+    }
+
+    private func performAction() {
+        switch presentation.action {
+        case .requestAccess:
+            Task { await model.requestSystemAudioAccess() }
+        case .openSettings:
+            NSWorkspace.shared.open(Self.systemSettingsURL)
+        case .refresh:
+            Task { await model.refreshSystemAudioAuthorization() }
+        case .none:
+            break
+        }
+    }
+}
+
 struct AudioDashboardPresentation {
     let devices: [AudioDeviceRowPresentation]
     let processSection: AudioProcessSectionPresentation?
+    let permissionGate: AudioSystemAccessPermissionGatePresentation?
     let devicesAccessibility = AudioAccessibilityContract(
         identifier: "audio.devices.section",
         label: AppLocalization.string(.audioDevicesTitle)
@@ -748,8 +925,15 @@ struct AudioDashboardPresentation {
 
     init(snapshot: AudioControlSnapshot, supportsProcessControls: Bool) {
         devices = snapshot.devices.map(AudioDeviceRowPresentation.init)
-        processSection = supportsProcessControls
-            && (snapshot.processControlsAreVisible || snapshot.processRuntimeError != nil)
+        guard supportsProcessControls else {
+            processSection = nil
+            permissionGate = nil
+            return
+        }
+        permissionGate = AudioSystemAccessPermissionGatePresentation(
+            state: snapshot.systemAudioAccess
+        )
+        processSection = snapshot.systemAudioAccess == .authorized
             ? AudioProcessSectionPresentation(
                 processes: snapshot.processes.map(AudioProcessRowPresentation.init),
                 runtimeError: snapshot.processRuntimeError

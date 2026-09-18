@@ -28,6 +28,14 @@
 "audio.process.ownedByAnotherInstance" = "Eine andere Mac Activity-Instanz steuert das App-Audio.";
 "audio.process.runtimeUnavailable" = "Die App-Audiosteuerung ist nicht verfügbar.";
 "audio.process.targetUnavailable" = "Der ausgewählte Ausgang ist nicht verfügbar; die ursprüngliche Wiedergabe wurde wiederhergestellt.";
+"audio.access.checking" = "Der Zugriff auf Systemaudio wird überprüft...";
+"audio.access.permissionRequired" = "Erlaube Mac Activity die Erfassung von Systemaudio in den Systemeinstellungen.";
+"audio.access.failed" = "Der Zugriff auf Systemaudio konnte nicht überprüft werden. Versuche es erneut.";
+"audio.access.openSettings" = "Systemeinstellungen öffnen";
+"audio.access.permissionTitle" = "Systemaudioaufnahme erlauben";
+"audio.access.permissionDescription" = "Erlaube Mac Activity die Aufnahme von Systemaudio, bevor einzelne Apps gesteuert werden können.";
+"audio.access.grant" = "Zugriff erlauben";
+"audio.access.unavailableTitle" = "Systemaudiozugriff nicht verfügbar";
 "audio.route.title" = "Ausgabeweg";
 "audio.route.followOriginal" = "Ursprünglicher Ausgabe folgen";
 "audio.route.deviceUnavailable" = "%@ (nicht verfügbar)";

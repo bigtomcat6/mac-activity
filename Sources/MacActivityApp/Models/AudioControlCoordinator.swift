@@ -1,6 +1,11 @@
 import Combine
 import CoreAudio
 import MacActivityCore
+import OSLog
+
+#if DEBUG
+private let audioDiscoveryLogger = Logger(subsystem: "com.how.macactivity", category: "AudioDiscovery")
+#endif
 
 enum AudioControlUserError: Equatable, Sendable {
     case deviceRead(AudioHALError)
@@ -100,11 +105,35 @@ struct AudioProcessControlSnapshot: Identifiable, Equatable, Sendable {
     var error: AudioControlUserError?
 }
 
+enum AudioSystemAccessState: Equatable, Sendable {
+    case notChecked
+    case checking
+    case requesting
+    case authorized
+    case denied
+    case notDetermined
+    case unavailable
+
+    init(_ status: AudioSystemAuthorizationStatus) {
+        switch status {
+        case .authorized:
+            self = .authorized
+        case .denied:
+            self = .denied
+        case .notDetermined:
+            self = .notDetermined
+        case .unavailable:
+            self = .unavailable
+        }
+    }
+}
+
 struct AudioControlSnapshot: Equatable, Sendable {
     var devices: [AudioDeviceControlSnapshot]
     var processes: [AudioProcessControlSnapshot]
     var processControlsAreVisible: Bool = false
     var processRuntimeError: AudioControlUserError?
+    var systemAudioAccess: AudioSystemAccessState = .notChecked
 
     static let empty = AudioControlSnapshot(devices: [], processes: [])
 }
@@ -116,6 +145,8 @@ protocol AudioControlCoordinating: AnyObject {
     var snapshotPublisher: AnyPublisher<AudioControlSnapshot, Never> { get }
 
     func start() async
+    func refreshSystemAudioAuthorization() async
+    func requestSystemAudioAccess() async
     func retryDevice(_ deviceUID: String)
     func setDeviceVolume(_ volume: Double, for deviceUID: String)
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String)
@@ -127,18 +158,21 @@ protocol AudioControlCoordinating: AnyObject {
     func shutdown() async
 }
 
-typealias AudioControlDelay = @Sendable (Duration) async -> Void
-
 @MainActor
 final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject {
     private enum DeviceControlIntent {
-        case effectiveState(AudioEffectiveVolumeState, debounceVolume: Bool)
+        case effectiveState(AudioEffectiveVolumeState)
         case muteOnly(Bool)
     }
 
     private enum DeviceControlReadback {
         case volume(Double)
         case mute(Bool)
+    }
+
+    private struct SystemAudioAuthorizationCallbackConfirmation {
+        let requestGeneration: UInt64
+        let decision: AudioSystemAuthorizationStatus
     }
 
     @Published private(set) var snapshot: AudioControlSnapshot = .empty
@@ -155,7 +189,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private let planner: AudioRoutePlanner
     private let engine: any ProcessTapVolumeControlling
     private let preferences: PreferencesController
-    private let delay: AudioControlDelay
+    private let systemAudioAuthorizationReader: any AudioSystemAuthorizationReading
+    private let systemAudioAuthorizationRequester: any AudioSystemAuthorizationRequesting
 
     private var routeDevices: [AudioRouteDevice] = []
     private var confirmedDevices: [String: AudioOutputDeviceSnapshot] = [:]
@@ -172,10 +207,25 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var nextTrackedTaskID: UInt64 = 0
     private var monitorTask: Task<Void, Never>?
     private var engineSnapshotTask: Task<Void, Never>?
+    private var systemAudioAuthorizationTask: Task<Void, Never>?
+    private var systemAudioAuthorizationTaskID: UUID?
+    private var invalidatedSystemAudioAuthorizationTasks: [(UUID, Task<Void, Never>)] = []
+    private var authorizationReadGeneration: UInt64 = 0
+    private var latestSystemAudioAuthorization: AudioSystemAuthorizationStatus?
+    private var isValidatingSystemAudioPermissionFailure = false
+    private var systemAudioAccessRequestTask: Task<Void, Never>?
+    private var systemAudioAccessRequestTaskID: UUID?
+    private var systemAudioAccessRequestGeneration: UInt64 = 0
+    private var pendingSystemAudioAuthorizationConfirmation:
+        SystemAudioAuthorizationCallbackConfirmation?
+    private var systemAudioAuthorizationWorkGeneration: UInt64 = 0
+    private var systemAudioAuthorizationRestorationTask: Task<Void, Never>?
+    private var systemAudioAuthorizationRestorationTaskID: UUID?
     private var latestSnapshotOrders: [AudioObjectID: ProcessTapSnapshotOrder] = [:]
     #if DEBUG
     private var reconciliationOrdinal: UInt64 = 0
     private var reconciliationWaiters: [(UInt64, CheckedContinuation<Void, Never>)] = []
+    private var deviceControlStartWaiters: [(String, CheckedContinuation<Void, Never>)] = []
     private var processedEngineSnapshotOrders: [AudioObjectID: [ProcessTapSnapshotOrder]] = [:]
     private var engineSnapshotWaiters: [(
         AudioObjectID,
@@ -190,6 +240,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     private var shutdownWaiters: [CheckedContinuation<Void, Never>] = []
     private var processRuntimeWasStarted = false
     private var processRuntimePreparationWasAttempted = false
+    private var isStarting = false
+    private var isHandlingServiceRestart = false
 
     static func planningUserError(
         _ error: AudioRoutePlanningError
@@ -206,9 +258,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         planner: AudioRoutePlanner = .init(),
         engine: any ProcessTapVolumeControlling,
         preferences: PreferencesController,
-        delay: @escaping AudioControlDelay = { duration in
-            try? await Task.sleep(for: duration)
-        }
+        systemAudioAuthorizationReader: any AudioSystemAuthorizationReading,
+        systemAudioAuthorizationRequester: any AudioSystemAuthorizationRequesting
     ) {
         supportsProcessControls = availability.supportsProcessControls
         self.deviceProvider = deviceProvider
@@ -218,7 +269,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         self.planner = planner
         self.engine = engine
         self.preferences = preferences
-        self.delay = delay
+        self.systemAudioAuthorizationReader = systemAudioAuthorizationReader
+        self.systemAudioAuthorizationRequester = systemAudioAuthorizationRequester
     }
 
     deinit {
@@ -227,14 +279,31 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         trackedTasks.values.forEach { $0.cancel() }
         monitorTask?.cancel()
         engineSnapshotTask?.cancel()
+        systemAudioAuthorizationTask?.cancel()
+        invalidatedSystemAudioAuthorizationTasks.forEach { $0.1.cancel() }
+        systemAudioAccessRequestTask?.cancel()
+        systemAudioAuthorizationRestorationTask?.cancel()
     }
 
     func start() async {
+        await start(confirmedSystemAudioAuthorization: nil)
+    }
+
+    private func start(
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus?,
+        authorizationWorkGeneration: UInt64? = nil,
+        restoresInTrackedTask: Bool = false
+    ) async {
         guard hasStarted == false, acceptsMutations else { return }
         hasStarted = true
+        isStarting = true
+        defer { isStarting = false }
         do {
             try monitor.start()
         } catch {
+            #if DEBUG
+            audioDiscoveryLogger.error("Audio monitor startup failed: \(String(describing: error), privacy: .public)")
+            #endif
             hasStarted = false
             return
         }
@@ -242,8 +311,22 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             refreshRouteDescriptors()
         }
         refreshDevices()
-        let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
-        guard Task.isCancelled == false, didBeginShutdown == false else {
+        if supportsProcessControls, confirmedSystemAudioAuthorization == nil {
+            await refreshSystemAudioAuthorization()
+        }
+        let processRuntimeIsReady: Bool
+        if supportsProcessControls, latestSystemAudioAuthorization == .authorized {
+            processRuntimeIsReady = await prepareProcessRuntimeIfNeeded(
+                authorizationWorkGeneration: authorizationWorkGeneration
+            )
+        } else {
+            snapshot.processes = []
+            snapshot.processControlsAreVisible = false
+            processRuntimeIsReady = false
+        }
+        guard Task.isCancelled == false,
+              didBeginShutdown == false,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
             if didBeginShutdown == false {
                 monitor.stop()
                 hasStarted = false
@@ -256,9 +339,15 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         do {
             try monitor.updateObservedObjects(
                 deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-                processObjectIDs: Set(snapshot.processes.map(\.id))
+                processObjectIDs: processRuntimeWasStarted
+                    && latestSystemAudioAuthorization == .authorized
+                    ? processProvider.discoveredProcessObjectIDs
+                    : []
             )
         } catch {
+            #if DEBUG
+            audioDiscoveryLogger.error("Audio initial observation failed: \(String(describing: error), privacy: .public)")
+            #endif
             snapshot.processes = []
             snapshot.processControlsAreVisible = false
             monitor.stop()
@@ -267,7 +356,17 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
         startConsumers()
         if processRuntimeIsReady {
-            await restoreConfirmedAndPersistedRules()
+            if restoresInTrackedTask {
+                startSystemAudioAuthorizationRestoration(
+                    confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                    authorizationWorkGeneration: authorizationWorkGeneration
+                )
+            } else {
+                await restoreConfirmedAndPersistedRules(
+                    confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                    authorizationWorkGeneration: authorizationWorkGeneration
+                )
+            }
         }
     }
 
@@ -286,17 +385,73 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
     }
 
+    func refreshSystemAudioAuthorization() async {
+        guard supportsProcessControls, acceptsMutations else { return }
+        if let systemAudioAccessRequestTask {
+            await systemAudioAccessRequestTask.value
+            return
+        }
+        if let systemAudioAuthorizationTask {
+            await systemAudioAuthorizationTask.value
+            return
+        }
+
+        authorizationReadGeneration &+= 1
+        let generation = authorizationReadGeneration
+        let taskID = UUID()
+        let reader = systemAudioAuthorizationReader
+        let task = Task { @MainActor [weak self, reader] in
+            let status = await reader.authorizationStatus()
+            guard let self else { return }
+            await self.finishSystemAudioAuthorizationRefresh(
+                status,
+                generation: generation,
+                taskID: taskID
+            )
+        }
+        systemAudioAuthorizationTask = task
+        systemAudioAuthorizationTaskID = taskID
+        publishSystemAudioAuthorizationState()
+        await task.value
+    }
+
+    func requestSystemAudioAccess() async {
+        guard supportsProcessControls, acceptsMutations else { return }
+        guard latestSystemAudioAuthorization == .notDetermined else { return }
+        if let systemAudioAccessRequestTask {
+            await systemAudioAccessRequestTask.value
+            return
+        }
+
+        invalidateSystemAudioAuthorizationRefresh()
+        authorizationReadGeneration &+= 1
+        systemAudioAccessRequestGeneration &+= 1
+        clearSystemAudioAuthorizationConfirmation()
+        let generation = systemAudioAccessRequestGeneration
+        let taskID = UUID()
+        let requester = systemAudioAuthorizationRequester
+        let task = trackedTask { @MainActor [weak self, requester] in
+            let status = await requester.requestAuthorization()
+            guard let self else { return }
+            await self.finishSystemAudioAuthorizationRequest(
+                status,
+                generation: generation,
+                taskID: taskID
+            )
+        }
+        systemAudioAccessRequestTask = task
+        systemAudioAccessRequestTaskID = taskID
+        publishSystemAudioAuthorizationState()
+        await task.value
+    }
+
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {
         let requested = min(1, max(0, volume.isFinite ? volume : 1))
         guard acceptsMutations,
               let device = snapshot.devices.first(where: { $0.id == deviceUID })?.device,
               let stateSource = requested == 0 ? confirmedDevices[deviceUID] : device,
               let current = writableDeviceState(stateSource) else { return }
-        submitDeviceState(
-            current.settingDisplayVolume(requested),
-            for: deviceUID,
-            debounceVolume: requested > 0
-        )
+        submitDeviceState(current.settingDisplayVolume(requested), for: deviceUID)
     }
 
     func setDeviceMuted(_ isMuted: Bool, for deviceUID: String) {
@@ -306,7 +461,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         }
         if let current = writableDeviceState(device),
            let target = current.settingMuted(isMuted) {
-            submitDeviceState(target, for: deviceUID, debounceVolume: false)
+            submitDeviceState(target, for: deviceUID)
             return
         }
         guard let current = writableMuteOnlyDeviceState(device),
@@ -354,15 +509,8 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
             && isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime)
     }
 
-    func submitDeviceState(
-        _ target: AudioEffectiveVolumeState,
-        for uid: String,
-        debounceVolume: Bool
-    ) {
-        submitDeviceControl(
-            .effectiveState(target, debounceVolume: debounceVolume),
-            for: uid
-        )
+    func submitDeviceState(_ target: AudioEffectiveVolumeState, for uid: String) {
+        submitDeviceControl(.effectiveState(target), for: uid)
     }
 
     private func submitDeviceControl(_ intent: DeviceControlIntent, for uid: String) {
@@ -376,7 +524,7 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         previous?.cancel()
         updateDevice(uid) { row in
             switch intent {
-            case .effectiveState(let target, _):
+            case .effectiveState(let target):
                 row.device = Self.device(row.device, state: target)
             case .muteOnly(let muted):
                 row.device = Self.device(
@@ -396,6 +544,9 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
                     lifetime: lifetime,
                     ordinal: ordinal
                   ) else { return }
+            #if DEBUG
+            acknowledgeDeviceControlStart(uid)
+            #endif
             do {
                 guard let confirmed = try await executeDeviceControl(
                     intent,
@@ -446,14 +597,13 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         ordinal: UInt64
     ) async throws -> AudioOutputDeviceSnapshot? {
         switch intent {
-        case .effectiveState(let target, let debounceVolume):
+        case .effectiveState(let target):
             return try await executeEffectiveDeviceControl(
                 target,
                 uid: uid,
                 objectID: objectID,
                 lifetime: lifetime,
-                ordinal: ordinal,
-                debounceVolume: debounceVolume
+                ordinal: ordinal
             )
         case .muteOnly(let targetMuted):
             guard let latest = confirmedDevices[uid],
@@ -485,44 +635,28 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         uid: String,
         objectID: AudioObjectID,
         lifetime: UInt64,
-        ordinal: UInt64,
-        debounceVolume: Bool
+        ordinal: UInt64
     ) async throws -> AudioOutputDeviceSnapshot? {
         guard var confirmed = confirmedDevices[uid],
               var current = writableDeviceState(confirmed) else { return nil }
         if current.rawVolume != target.rawVolume {
-            if debounceVolume {
-                await delay(.milliseconds(75))
-                guard isCurrentDeviceOperation(
-                        uid,
-                        objectID: objectID,
-                        lifetime: lifetime,
-                        ordinal: ordinal
-                      ),
-                      let latest = confirmedDevices[uid],
-                      let latestState = writableDeviceState(latest) else { return nil }
-                confirmed = latest
-                current = latestState
-            }
-            if current.rawVolume != target.rawVolume {
-                guard isCurrentDeviceOperation(
-                    uid,
-                    objectID: objectID,
-                    lifetime: lifetime,
-                    ordinal: ordinal
-                ) else { return nil }
-                let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
-                guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
-                      let latest = confirmedDevices[uid] else { return nil }
-                confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
-                confirmedDevices[uid] = confirmed
-                guard let merged = writableDeviceState(confirmed) else {
-                    guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
-                    return confirmed
-                }
-                current = merged
+            guard isCurrentDeviceOperation(
+                uid,
+                objectID: objectID,
+                lifetime: lifetime,
+                ordinal: ordinal
+            ) else { return nil }
+            let volume = try deviceProvider.writeVolume(target.rawVolume, forUID: uid)
+            guard isCurrentDeviceLifetime(uid, objectID: objectID, lifetime: lifetime),
+                  let latest = confirmedDevices[uid] else { return nil }
+            confirmed = mergeSuccessfulDeviceReadback(.volume(volume), into: latest)
+            confirmedDevices[uid] = confirmed
+            guard let merged = writableDeviceState(confirmed) else {
                 guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
+                return confirmed
             }
+            current = merged
+            guard isCurrentDeviceIntent(uid, ordinal: ordinal) else { return nil }
         }
         if current.isMuted != target.isMuted {
             guard isCurrentDeviceOperation(
@@ -610,6 +744,15 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
     func requestShutdown() {
         guard shutdownWasRequested == false else { return }
         shutdownWasRequested = true
+        isValidatingSystemAudioPermissionFailure = false
+        authorizationReadGeneration &+= 1
+        systemAudioAccessRequestGeneration &+= 1
+        clearSystemAudioAuthorizationConfirmation()
+        systemAudioAuthorizationWorkGeneration &+= 1
+        systemAudioAuthorizationTask?.cancel()
+        invalidatedSystemAudioAuthorizationTasks.forEach { $0.1.cancel() }
+        systemAudioAccessRequestTask?.cancel()
+        cancelSystemAudioAuthorizationRestoration()
         for processObjectID in Array(gainTasks.keys) {
             _ = invalidateGainIntent(processObjectID)
             guard let confirmed = confirmedProcessValues[processObjectID] else { continue }
@@ -634,11 +777,21 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
         deviceControlTasks.values.forEach { $0.cancel() }
         processTasks.values.forEach { $0.cancel() }
         let workTasks = Array(trackedTasks.values)
+        let systemAudioAuthorizationTask = self.systemAudioAuthorizationTask
+        let invalidatedSystemAudioAuthorizationTasks = self.invalidatedSystemAudioAuthorizationTasks
+        self.systemAudioAuthorizationTask = nil
+        self.systemAudioAuthorizationTaskID = nil
+        self.invalidatedSystemAudioAuthorizationTasks.removeAll()
+        self.systemAudioAccessRequestTask = nil
+        self.systemAudioAccessRequestTaskID = nil
         workTasks.forEach { $0.cancel() }
         monitorTask?.cancel()
         engineSnapshotTask?.cancel()
         monitor.stop()
+        await systemAudioAuthorizationRequester.shutdown()
         for task in workTasks { await task.value }
+        await systemAudioAuthorizationTask?.value
+        for (_, task) in invalidatedSystemAudioAuthorizationTasks { await task.value }
         await monitorTask?.value
         await engineSnapshotTask?.value
         if processRuntimePreparationWasAttempted {
@@ -661,6 +814,14 @@ final class AudioControlCoordinator: AudioControlCoordinating, ObservableObject 
 
     func testingWaitForDeviceControl(_ deviceUID: String) async {
         await deviceControlTasks[deviceUID]?.value
+    }
+
+    func testingWaitForDeviceControlStart(_ deviceUID: String) async {
+        await withCheckedContinuation { deviceControlStartWaiters.append((deviceUID, $0)) }
+    }
+
+    func testingHandle(_ changes: Set<AudioSystemChange>) async {
+        await handle(changes)
     }
 
     func testingWaitForProcessTask(_ processObjectID: AudioObjectID) async {
@@ -730,16 +891,95 @@ private extension AudioControlCoordinator {
         }
     }
 
+    func invalidateAllProcessIntents() {
+        let processObjectIDs = Set(snapshot.processes.map(\.id))
+            .union(processTasks.keys)
+            .union(gainTasks.keys)
+        for processObjectID in processObjectIDs {
+            _ = invalidateGainIntent(processObjectID)
+            processTasks[processObjectID]?.cancel()
+            generations[processObjectID] = (generations[processObjectID] ?? 0) &+ 1
+        }
+        for row in snapshot.processes {
+            let confirmed = confirmedProcessValues[row.id] ?? .default
+            let routeOptions = makeRouteOptions(for: confirmed.route, process: row.process)
+            updateProcess(row.id) { row in
+                row.volume = confirmed.volume
+                row.isMuted = confirmed.isMuted
+                row.route = confirmed.route
+                row.routeOptions = routeOptions
+                row.pendingValues = nil
+                row.error = nil
+            }
+        }
+    }
+
     func refreshProcesses(resetSessions: Bool = false) {
+        guard latestSystemAudioAuthorization == .authorized else {
+            snapshot.processes = []
+            snapshot.processControlsAreVisible = false
+            return
+        }
         let previous = Dictionary(uniqueKeysWithValues: snapshot.processes.map { ($0.id, $0) })
         let audible = processProvider.audibleOutputProcesses()
         let validated = validatedProcesses(audible, previous: previous)
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio discovery: observed=\(String(describing: self.processProvider.discoveredProcessObjectIDs.sorted()), privacy: .public) audible=\(String(describing: audible.map(\.id)), privacy: .public) visible=\(String(describing: validated.map(\.id)), privacy: .public)")
+        #endif
         snapshot.processControlsAreVisible = validated.isEmpty == false
         snapshot.processes = validated.map { process in
             makeProcessSnapshot(
                 process,
                 preserving: previous[process.processObjectID],
                 resetSession: resetSessions
+            )
+        }
+    }
+
+    func refreshProcessesAfterSystemAudioAuthorization(
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus? = nil,
+        authorizationWorkGeneration: UInt64? = nil,
+        restoresInTrackedTask: Bool = false
+    ) async {
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio post-authorization refresh: started=\(self.hasStarted) runtime=\(self.processRuntimeWasStarted) accepts=\(self.acceptsMutations) error=\(String(describing: self.snapshot.processRuntimeError), privacy: .public)")
+        #endif
+        guard latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+            return
+        }
+        if hasStarted == false {
+            await start(
+                confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                authorizationWorkGeneration: authorizationWorkGeneration,
+                restoresInTrackedTask: restoresInTrackedTask
+            )
+            return
+        }
+        guard await prepareProcessRuntimeIfNeeded(
+            authorizationWorkGeneration: authorizationWorkGeneration
+        ) else { return }
+        guard latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+            return
+        }
+        refreshRouteDescriptors()
+        refreshProcesses()
+        startConsumers()
+        await updateMonitorObjects()
+        guard latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+            return
+        }
+        if restoresInTrackedTask {
+            startSystemAudioAuthorizationRestoration(
+                confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                authorizationWorkGeneration: authorizationWorkGeneration
+            )
+        } else {
+            await restoreConfirmedAndPersistedRules(
+                confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                authorizationWorkGeneration: authorizationWorkGeneration
             )
         }
     }
@@ -798,19 +1038,43 @@ private extension AudioControlCoordinator {
         }
     }
 
-    func restoreConfirmedAndPersistedRules() async {
+    func restoreConfirmedAndPersistedRules(
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus? = nil,
+        authorizationWorkGeneration: UInt64? = nil
+    ) async {
         guard supportsProcessControls else { return }
-        let confirmedIDs = Set<AudioObjectID>(snapshot.processes.compactMap { row in
-            guard confirmedProcessValues[row.id]?.isDefault == false else { return nil }
-            return row.id
-        })
-        for id in confirmedIDs {
-            guard let values = confirmedProcessValues[id] else { continue }
-            apply(values, to: id)
-            if let task = processTasks[id] { await task.value }
+        guard await currentSystemAudioAuthorizationAllowsAutomaticProcessWork(
+            confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+            authorizationWorkGeneration: authorizationWorkGeneration
+        ) else { return }
+        let confirmedRows = snapshot.processes.filter {
+            confirmedProcessValues[$0.id]?.isDefault == false
+        }
+        let confirmedIDs = Set(confirmedRows.map(\.id))
+        for row in confirmedRows {
+            guard latestSystemAudioAuthorization == .authorized,
+                  isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+                return
+            }
+            guard let values = confirmedProcessValues[row.id] else { continue }
+            applyAutomatically(
+                values,
+                to: row.id,
+                matching: row.process,
+                authorizationWorkGeneration: authorizationWorkGeneration
+            )
+            if let task = processTasks[row.id] { await task.value }
+            guard latestSystemAudioAuthorization == .authorized,
+                  isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+                return
+            }
         }
         let persistedIDs = Set(snapshot.processes.map(\.id)).subtracting(confirmedIDs)
-        await restorePersistedNonDefaultProfiles(processIDs: persistedIDs)
+        await restorePersistedNonDefaultProfiles(
+            processIDs: persistedIDs,
+            confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+            authorizationWorkGeneration: authorizationWorkGeneration
+        )
     }
 
     #if DEBUG
@@ -818,6 +1082,12 @@ private extension AudioControlCoordinator {
         reconciliationOrdinal &+= 1
         let ready = reconciliationWaiters.filter { reconciliationOrdinal >= $0.0 }
         reconciliationWaiters.removeAll { reconciliationOrdinal >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+
+    func acknowledgeDeviceControlStart(_ deviceUID: String) {
+        let ready = deviceControlStartWaiters.filter { $0.0 == deviceUID }
+        deviceControlStartWaiters.removeAll { $0.0 == deviceUID }
         ready.forEach { $0.1.resume() }
     }
 
@@ -833,9 +1103,25 @@ private extension AudioControlCoordinator {
     }
     #endif
 
-    func restorePersistedNonDefaultProfiles(processIDs: Set<AudioObjectID>? = nil) async {
+    func restorePersistedNonDefaultProfiles(
+        processIDs: Set<AudioObjectID>? = nil,
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus? = nil,
+        authorizationWorkGeneration: UInt64? = nil
+    ) async {
         guard supportsProcessControls else { return }
-        for row in snapshot.processes where processIDs?.contains(row.id) ?? true {
+        guard await currentSystemAudioAuthorizationAllowsAutomaticProcessWork(
+            confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+            authorizationWorkGeneration: authorizationWorkGeneration
+        ) else { return }
+        let rows = snapshot.processes.filter { processIDs?.contains($0.id) ?? true }
+        for row in rows {
+            guard latestSystemAudioAuthorization == .authorized,
+                  isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+                return
+            }
+            guard snapshot.processes.first(where: { $0.id == row.id })?.process == row.process else {
+                continue
+            }
             guard let bundleIdentifier = row.process.bundleIdentifier,
                   let profile = preferences.state.audioProcessProfiles[bundleIdentifier],
                   profile.isDefault == false else { continue }
@@ -852,8 +1138,17 @@ private extension AudioControlCoordinator {
                 row.routeOptions = routeOptions
                 row.pendingValues = values
             }
-            apply(values, to: row.id)
+            applyAutomatically(
+                values,
+                to: row.id,
+                matching: row.process,
+                authorizationWorkGeneration: authorizationWorkGeneration
+            )
             if let task = processTasks[row.id] { await task.value }
+            guard latestSystemAudioAuthorization == .authorized,
+                  isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+                return
+            }
         }
     }
 
@@ -886,6 +1181,8 @@ private extension AudioControlCoordinator {
         mutate: (inout AudioProcessControlValues) -> Void
     ) {
         guard acceptsMutations,
+              latestSystemAudioAuthorization == .authorized,
+              isValidatingSystemAudioPermissionFailure == false,
               retiringProcessObjectIDs.contains(processObjectID) == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }) else { return }
         var values = row.pendingValues ?? AudioProcessControlValues(
@@ -917,6 +1214,7 @@ private extension AudioControlCoordinator {
         to processObjectID: AudioObjectID
     ) {
         guard acceptsMutations,
+              isValidatingSystemAudioPermissionFailure == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }),
               let confirmed = confirmedProcessValues[processObjectID],
               confirmed.isDefault == false,
@@ -1016,6 +1314,8 @@ private extension AudioControlCoordinator {
     func apply(_ values: AudioProcessControlValues, to processObjectID: AudioObjectID) {
         guard acceptsMutations,
               supportsProcessControls,
+              latestSystemAudioAuthorization == .authorized,
+              isValidatingSystemAudioPermissionFailure == false,
               retiringProcessObjectIDs.contains(processObjectID) == false,
               let row = snapshot.processes.first(where: { $0.id == processObjectID }) else { return }
         let previousGainTask = invalidateGainIntent(processObjectID)
@@ -1228,6 +1528,7 @@ private extension AudioControlCoordinator {
     }
 
     func accept(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
+        guard acceptsMutations, latestSystemAudioAuthorization == .authorized else { return false }
         if let currentGeneration = generations[engineSnapshot.processObjectID],
            engineSnapshot.generation < currentGeneration {
             return false
@@ -1245,7 +1546,265 @@ private extension AudioControlCoordinator {
                 row.error = nil
             }
         }
+        if case .permissionDenied = engineSnapshot.error {
+            // Stream and direct engine results share this accepted snapshot path.
+            elevateSystemAudioAccess(for: .permissionDenied)
+        }
         return true
+    }
+
+    func elevateSystemAudioAccess(for error: AudioControlUserError) {
+        guard acceptsMutations,
+              isValidatingSystemAudioPermissionFailure == false,
+              case .permissionDenied = error else { return }
+        // Keep the authorized presentation visible while preventing new taps until validation completes.
+        isValidatingSystemAudioPermissionFailure = true
+        clearSystemAudioAuthorizationConfirmation()
+        invalidateSystemAudioAuthorizationRefresh()
+        authorizationReadGeneration &+= 1
+        // Preserve known authorization until this validation supplies new evidence.
+        publishSystemAudioAuthorizationState()
+        Task { @MainActor [weak self] in
+            await self?.refreshSystemAudioAuthorization()
+        }
+    }
+
+    func finishSystemAudioAuthorizationRefresh(
+        _ status: AudioSystemAuthorizationStatus,
+        generation: UInt64,
+        taskID: UUID
+    ) async {
+        let isCurrentTask = systemAudioAuthorizationTaskID == taskID
+        if isCurrentTask {
+            systemAudioAuthorizationTask = nil
+            systemAudioAuthorizationTaskID = nil
+        }
+        invalidatedSystemAudioAuthorizationTasks.removeAll { $0.0 == taskID }
+        guard isCurrentTask,
+              authorizationReadGeneration == generation,
+              acceptsMutations else {
+            return
+        }
+        isValidatingSystemAudioPermissionFailure = false
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio authorization preflight completed: \(String(describing: status), privacy: .public)")
+        #endif
+        let confirmsCallbackDecision = refreshConfirmsSystemAudioAuthorizationCallback(status)
+        guard acceptsSystemAudioAuthorizationRefresh(status) else {
+            publishSystemAudioAuthorizationState()
+            return
+        }
+        await acceptSystemAudioAuthorization(
+            status,
+            confirmedSystemAudioAuthorization: confirmsCallbackDecision ? status : nil
+        )
+    }
+
+    func finishSystemAudioAuthorizationRequest(
+        _ status: AudioSystemAuthorizationStatus,
+        generation: UInt64,
+        taskID: UUID
+    ) async {
+        guard systemAudioAccessRequestTaskID == taskID,
+               systemAudioAccessRequestGeneration == generation,
+               acceptsMutations else {
+            return
+        }
+
+        systemAudioAccessRequestTask = nil
+        systemAudioAccessRequestTaskID = nil
+        #if DEBUG
+        audioDiscoveryLogger.notice("Audio authorization callback completed: \(String(describing: status), privacy: .public)")
+        #endif
+        recordSystemAudioAuthorizationCallbackDecision(status, requestGeneration: generation)
+        await acceptSystemAudioAuthorization(
+            status,
+            confirmedSystemAudioAuthorization: status,
+            restoresInTrackedTask: true
+        )
+    }
+
+    /// A completed callback is newer than a lagging `notDetermined` preflight from TCC.
+    func recordSystemAudioAuthorizationCallbackDecision(
+        _ status: AudioSystemAuthorizationStatus,
+        requestGeneration: UInt64
+    ) {
+        guard status == .authorized || status == .denied else {
+            clearSystemAudioAuthorizationConfirmation()
+            return
+        }
+        pendingSystemAudioAuthorizationConfirmation = .init(
+            requestGeneration: requestGeneration,
+            decision: status
+        )
+    }
+
+    /// A definitive passive status acknowledges the callback; unavailable is still fail-closed.
+    func acceptsSystemAudioAuthorizationRefresh(_ status: AudioSystemAuthorizationStatus) -> Bool {
+        guard let confirmation = pendingSystemAudioAuthorizationConfirmation else { return true }
+        guard confirmation.requestGeneration == systemAudioAccessRequestGeneration,
+              confirmation.decision == .authorized || confirmation.decision == .denied else {
+            clearSystemAudioAuthorizationConfirmation()
+            return true
+        }
+        guard status == .notDetermined else {
+            clearSystemAudioAuthorizationConfirmation()
+            return true
+        }
+        return false
+    }
+
+    func refreshConfirmsSystemAudioAuthorizationCallback(
+        _ status: AudioSystemAuthorizationStatus
+    ) -> Bool {
+        guard let confirmation = pendingSystemAudioAuthorizationConfirmation,
+              confirmation.requestGeneration == systemAudioAccessRequestGeneration,
+              status == .authorized || status == .denied else {
+            return false
+        }
+        return confirmation.decision == .authorized || confirmation.decision == .denied
+    }
+
+    func clearSystemAudioAuthorizationConfirmation() {
+        pendingSystemAudioAuthorizationConfirmation = nil
+    }
+
+    func acceptSystemAudioAuthorization(
+        _ status: AudioSystemAuthorizationStatus,
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus? = nil,
+        restoresInTrackedTask: Bool = false
+    ) async {
+        let becameAuthorized = latestSystemAudioAuthorization != .authorized && status == .authorized
+        if latestSystemAudioAuthorization != status {
+            systemAudioAuthorizationWorkGeneration &+= 1
+        }
+        let authorizationWorkGeneration = systemAudioAuthorizationWorkGeneration
+        latestSystemAudioAuthorization = status
+        publishSystemAudioAuthorizationState()
+        if status != .authorized {
+            cancelSystemAudioAuthorizationRestoration()
+            invalidateAllProcessIntents()
+            snapshot.processes = []
+            snapshot.processControlsAreVisible = false
+            if processRuntimeWasStarted {
+                await engine.stopAll()
+            }
+            guard acceptsMutations,
+                  Task.isCancelled == false,
+                  systemAudioAuthorizationWorkGeneration == authorizationWorkGeneration,
+                  latestSystemAudioAuthorization == status else {
+                return
+            }
+            if hasStarted {
+                await updateMonitorObjects()
+            }
+            return
+        }
+        if (becameAuthorized || hasStarted == false),
+           isStarting == false,
+           isHandlingServiceRestart == false {
+            await refreshProcessesAfterSystemAudioAuthorization(
+                confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                authorizationWorkGeneration: authorizationWorkGeneration,
+                restoresInTrackedTask: restoresInTrackedTask
+            )
+        }
+    }
+
+    func publishSystemAudioAuthorizationState() {
+        guard supportsProcessControls else { return }
+        if systemAudioAccessRequestTask != nil,
+           latestSystemAudioAuthorization == .notDetermined {
+            snapshot.systemAudioAccess = .requesting
+            return
+        }
+        if systemAudioAuthorizationTask != nil {
+            snapshot.systemAudioAccess = latestSystemAudioAuthorization == .authorized
+                ? .authorized
+                : .checking
+            return
+        }
+        snapshot.systemAudioAccess = latestSystemAudioAuthorization.map(AudioSystemAccessState.init)
+            ?? .notChecked
+    }
+
+    func invalidateSystemAudioAuthorizationRefresh() {
+        guard let task = systemAudioAuthorizationTask,
+              let taskID = systemAudioAuthorizationTaskID else {
+            return
+        }
+        systemAudioAuthorizationTask = nil
+        systemAudioAuthorizationTaskID = nil
+        invalidatedSystemAudioAuthorizationTasks.append((taskID, task))
+        task.cancel()
+    }
+
+    func currentSystemAudioAuthorizationAllowsAutomaticProcessWork(
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus? = nil,
+        authorizationWorkGeneration: UInt64? = nil
+    ) async -> Bool {
+        if let confirmedSystemAudioAuthorization {
+            return confirmedSystemAudioAuthorization == .authorized
+                && latestSystemAudioAuthorization == .authorized
+                && isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration)
+        }
+        guard supportsProcessControls, acceptsMutations else { return false }
+        await refreshSystemAudioAuthorization()
+        return latestSystemAudioAuthorization == .authorized
+            && isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration)
+    }
+
+    func applyAutomatically(
+        _ values: AudioProcessControlValues,
+        to processObjectID: AudioObjectID,
+        matching process: AudioProcessEntry,
+        authorizationWorkGeneration: UInt64? = nil
+    ) {
+        guard latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration),
+              snapshot.processes.first(where: { $0.id == processObjectID })?.process == process else {
+            return
+        }
+        apply(values, to: processObjectID)
+    }
+
+    func isCurrentSystemAudioAuthorizationWork(
+        _ authorizationWorkGeneration: UInt64?
+    ) -> Bool {
+        guard acceptsMutations, Task.isCancelled == false else { return false }
+        guard let authorizationWorkGeneration else { return true }
+        return latestSystemAudioAuthorization == .authorized
+            && systemAudioAuthorizationWorkGeneration == authorizationWorkGeneration
+    }
+
+    func startSystemAudioAuthorizationRestoration(
+        confirmedSystemAudioAuthorization: AudioSystemAuthorizationStatus?,
+        authorizationWorkGeneration: UInt64?
+    ) {
+        guard latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
+            return
+        }
+        cancelSystemAudioAuthorizationRestoration()
+        let taskID = UUID()
+        let task = trackedTask { @MainActor [weak self] in
+            guard let self else { return }
+            await self.restoreConfirmedAndPersistedRules(
+                confirmedSystemAudioAuthorization: confirmedSystemAudioAuthorization,
+                authorizationWorkGeneration: authorizationWorkGeneration
+            )
+            guard self.systemAudioAuthorizationRestorationTaskID == taskID else { return }
+            self.systemAudioAuthorizationRestorationTask = nil
+            self.systemAudioAuthorizationRestorationTaskID = nil
+        }
+        systemAudioAuthorizationRestorationTask = task
+        systemAudioAuthorizationRestorationTaskID = taskID
+    }
+
+    func cancelSystemAudioAuthorizationRestoration() {
+        systemAudioAuthorizationRestorationTask?.cancel()
+        systemAudioAuthorizationRestorationTask = nil
+        systemAudioAuthorizationRestorationTaskID = nil
     }
 
     func acceptResult(_ engineSnapshot: ProcessTapSessionSnapshot) -> Bool {
@@ -1257,6 +1816,7 @@ private extension AudioControlCoordinator {
     func isCurrent(_ processObjectID: AudioObjectID, generation: UInt64) -> Bool {
         acceptsMutations
             && Task.isCancelled == false
+            && latestSystemAudioAuthorization == .authorized
             && generations[processObjectID] == generation
     }
 
@@ -1267,6 +1827,7 @@ private extension AudioControlCoordinator {
     ) -> Bool {
         Task.isCancelled == false
             && acceptsMutations
+            && latestSystemAudioAuthorization == .authorized
             && gainIntentOrdinals[processObjectID] == ordinal
             && generations[processObjectID] == generation
             && retiringProcessObjectIDs.contains(processObjectID) == false
@@ -1388,7 +1949,11 @@ private extension AudioControlCoordinator {
 
     func handle(_ changes: Set<AudioSystemChange>) async {
         if changes.contains(.serviceRestarted) {
+            isHandlingServiceRestart = true
+            defer { isHandlingServiceRestart = false }
+            beginSystemAudioAccessInvalidationAfterServiceRestart()
             invalidateAllDeviceControlLifetimes()
+            invalidateAllProcessIntents()
             if processRuntimeWasStarted {
                 await engine.stopAll()
             }
@@ -1397,17 +1962,24 @@ private extension AudioControlCoordinator {
                 refreshRouteDescriptors()
             }
             refreshDevices()
-            let processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
+            if supportsProcessControls {
+                await refreshSystemAudioAuthorization()
+            }
+            let processRuntimeIsReady: Bool
+            if supportsProcessControls, latestSystemAudioAuthorization == .authorized {
+                processRuntimeIsReady = await prepareProcessRuntimeIfNeeded()
+            } else {
+                processRuntimeIsReady = false
+            }
             if processRuntimeIsReady {
                 refreshProcesses(resetSessions: true)
             } else {
                 snapshot.processes = []
+                snapshot.processControlsAreVisible = false
             }
             if processRuntimeIsReady {
                 startConsumers()
-                if supportsProcessControls {
-                    await restoreConfirmedAndPersistedRules()
-                }
+                await restoreConfirmedAndPersistedRules()
             }
             await updateMonitorObjects()
             return
@@ -1433,28 +2005,61 @@ private extension AudioControlCoordinator {
                     return false
                 }
         )
-        if refreshesProcesses {
-            await reconcileProcesses(changes: changes)
-        }
         let hasLivenessChange = changes.contains { change in
             guard case .device(_, .liveness) = change else { return false }
             return true
-        }
-        if changes.contains(.deviceList) || hasLivenessChange {
-            await reconcileExplicitTargets()
         }
         let changedSampleRateDeviceIDs = Set(changes.compactMap { change -> AudioDeviceID? in
             guard case .device(let id, .nominalSampleRate) = change else { return nil }
             return id
         })
-        for deviceID in changedSampleRateDeviceIDs {
-            await rebuildSessions(using: deviceID)
+        let needsAutomaticProcessWork = refreshesProcesses
+            || hasLivenessChange
+            || changedSampleRateDeviceIDs.isEmpty == false
+        let mayRunAutomaticProcessWork: Bool
+        if needsAutomaticProcessWork {
+            mayRunAutomaticProcessWork = await currentSystemAudioAuthorizationAllowsAutomaticProcessWork()
+        } else {
+            mayRunAutomaticProcessWork = false
+        }
+        if needsAutomaticProcessWork, mayRunAutomaticProcessWork == false {
+            snapshot.processes = []
+            snapshot.processControlsAreVisible = false
+        }
+        if refreshesProcesses, mayRunAutomaticProcessWork {
+            await reconcileProcesses(changes: changes)
+        }
+        if mayRunAutomaticProcessWork, (changes.contains(.deviceList) || hasLivenessChange) {
+            await reconcileExplicitTargets()
+        }
+        if mayRunAutomaticProcessWork {
+            for deviceID in changedSampleRateDeviceIDs {
+                await rebuildSessions(using: deviceID)
+            }
         }
         await updateMonitorObjects()
     }
 
+    func beginSystemAudioAccessInvalidationAfterServiceRestart() {
+        authorizationReadGeneration &+= 1
+        systemAudioAuthorizationWorkGeneration &+= 1
+        cancelSystemAudioAuthorizationRestoration()
+        latestSystemAudioAuthorization = nil
+        isValidatingSystemAudioPermissionFailure = false
+        clearSystemAudioAuthorizationConfirmation()
+        invalidateSystemAudioAuthorizationRefresh()
+        systemAudioAccessRequestGeneration &+= 1
+        let task = systemAudioAccessRequestTask
+        systemAudioAccessRequestTask = nil
+        systemAudioAccessRequestTaskID = nil
+        task?.cancel()
+        publishSystemAudioAuthorizationState()
+    }
+
     func reconcileProcesses(changes: Set<AudioSystemChange>) async {
+        guard latestSystemAudioAuthorization == .authorized else { return }
         guard await prepareProcessRuntimeIfNeeded() else { return }
+        guard latestSystemAudioAuthorization == .authorized else { return }
         let previous = snapshot.processes
         let audible = processProvider.audibleOutputProcesses()
         let previousByID = Dictionary(uniqueKeysWithValues: previous.map { ($0.id, $0) })
@@ -1494,10 +2099,11 @@ private extension AudioControlCoordinator {
             return id
         })
         for id in changedProcessIDs {
-            guard let values = confirmedProcessValues[id],
+            guard let row = snapshot.processes.first(where: { $0.id == id }),
+                  let values = confirmedProcessValues[id],
                   values.isDefault == false,
                   values.route == .followOriginal else { continue }
-            apply(values, to: id)
+            applyAutomatically(values, to: id, matching: row.process)
             if let task = processTasks[id] { await task.value }
         }
         if changes.contains(.defaultOutputDevice) {
@@ -1505,7 +2111,7 @@ private extension AudioControlCoordinator {
                 guard let values = confirmedProcessValues[row.id],
                       values.isDefault == false,
                       values.route == .followOriginal else { continue }
-                apply(values, to: row.id)
+                applyAutomatically(values, to: row.id, matching: row.process)
                 if let task = processTasks[row.id] { await task.value }
             }
         }
@@ -1536,7 +2142,10 @@ private extension AudioControlCoordinator {
         do {
             try monitor.updateObservedObjects(
                 deviceIDs: Set(snapshot.devices.map(\.device.objectID)),
-                processObjectIDs: Set(snapshot.processes.map(\.id))
+                processObjectIDs: processRuntimeWasStarted
+                    && latestSystemAudioAuthorization == .authorized
+                    ? processProvider.discoveredProcessObjectIDs
+                    : []
             )
         } catch {
             processTasks.values.forEach { $0.cancel() }
@@ -1551,15 +2160,22 @@ private extension AudioControlCoordinator {
         }
     }
 
-    func prepareProcessRuntimeIfNeeded() async -> Bool {
-        guard supportsProcessControls else {
+    func prepareProcessRuntimeIfNeeded(
+        authorizationWorkGeneration: UInt64? = nil
+    ) async -> Bool {
+        guard supportsProcessControls,
+              latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
             snapshot.processRuntimeError = nil
             return false
         }
         guard processRuntimeWasStarted == false else { return true }
         processRuntimePreparationWasAttempted = true
         let preparation = await engine.prepareRuntime()
-        guard Task.isCancelled == false, didBeginShutdown == false else {
+        guard Task.isCancelled == false,
+              didBeginShutdown == false,
+              latestSystemAudioAuthorization == .authorized,
+              isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration) else {
             return false
         }
         switch preparation {
@@ -1655,6 +2271,7 @@ private extension AudioControlCoordinator {
     }
 
     func reconcileExplicitTargets() async {
+        guard latestSystemAudioAuthorization == .authorized else { return }
         for row in snapshot.processes {
             guard let values = confirmedProcessValues[row.id],
                   values.isDefault == false,
@@ -1664,7 +2281,7 @@ private extension AudioControlCoordinator {
             }
             if missing.isEmpty {
                 if case .targetUnavailable = row.error {
-                    apply(values, to: row.id)
+                    applyAutomatically(values, to: row.id, matching: row.process)
                     if let task = processTasks[row.id] { await task.value }
                 }
                 continue
@@ -1695,7 +2312,7 @@ private extension AudioControlCoordinator {
                     row.error = .targetUnavailable(missing)
                 }
             } else {
-                apply(values, to: row.id)
+                applyAutomatically(values, to: row.id, matching: row.process)
                 if let task = processTasks[row.id] { await task.value }
                 updateProcess(row.id) { row in
                     row.error = .targetUnavailable(missing)
@@ -1705,6 +2322,7 @@ private extension AudioControlCoordinator {
     }
 
     func rebuildSessions(using deviceID: AudioDeviceID) async {
+        guard latestSystemAudioAuthorization == .authorized else { return }
         let deviceUID = routeDevices.first(where: { $0.objectID == deviceID })?.uid
         for row in snapshot.processes {
             guard let values = confirmedProcessValues[row.id], values.isDefault == false else {
@@ -1718,7 +2336,7 @@ private extension AudioControlCoordinator {
                 usesDevice = deviceUID.map(targets.contains) ?? false
             }
             guard usesDevice else { continue }
-            apply(values, to: row.id)
+            applyAutomatically(values, to: row.id, matching: row.process)
             if let task = processTasks[row.id] { await task.value }
         }
     }

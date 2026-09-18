@@ -30,9 +30,13 @@
 
 Mac Activity is a lightweight macOS menu bar utility that shows live system metrics and opens a compact dashboard for deeper inspection.
 
-It ships as:
-- `MacActivityApp`: the macOS app that renders the menu bar item and popover dashboard.
-- `MacActivityCore`: a reusable framework containing metric providers, sampling logic, preferences state, and data formatting.
+<p align="center">
+  <img
+    src="./assets/screenshots/26/mac-activity-overview-2026.webp"
+    width="900"
+    alt="Mac Activity Overview showing live system metrics from the macOS menu bar"
+  >
+</p>
 
 ## Features
 
@@ -41,10 +45,24 @@ It ships as:
 - Basic network trend visualization (download/upload sparkline).
 - Customizable menu bar metrics and launch behavior.
 - Launch at login toggle.
-- Actives cleanup surface for disk cleanup and process memory.
+- Actives view for disk cleanup and per-app memory inspection, with quick process termination.
 - Sparkle-based update checks with release, beta, and alpha channels.
 - Per-metric sampling cadence (`fast`, `medium`, `slow`) and history tracking.
 - Unit tests for core scheduling, summary formatting, preferences, snapshot/history, and dashboard model behavior.
+
+## Screenshots
+
+### Actives
+
+Inspect application memory usage and disk cleanup status directly from the Mac Activity popover.
+
+<p align="center">
+  <img
+    src="./assets/screenshots/26/mac-activity-actives-2026.webp"
+    width="820"
+    alt="Mac Activity Actives view showing application memory usage and disk cleanup status"
+  >
+</p>
 
 ## Supported metrics
 

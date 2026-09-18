@@ -28,6 +28,14 @@
 "audio.process.ownedByAnotherInstance" = "Another Mac Activity instance is controlling app audio.";
 "audio.process.runtimeUnavailable" = "App audio control is unavailable.";
 "audio.process.targetUnavailable" = "The selected output is unavailable; original playback is restored.";
+"audio.access.checking" = "Checking system audio access...";
+"audio.access.permissionRequired" = "Allow Mac Activity to capture system audio in System Settings.";
+"audio.access.failed" = "System audio access could not be checked. Try again.";
+"audio.access.openSettings" = "Open System Settings";
+"audio.access.permissionTitle" = "Allow System Audio Recording";
+"audio.access.permissionDescription" = "Allow Mac Activity to record system audio before controlling individual applications.";
+"audio.access.grant" = "Grant Access";
+"audio.access.unavailableTitle" = "System Audio Access Unavailable";
 "audio.route.title" = "Output route";
 "audio.route.followOriginal" = "Follow original output";
 "audio.route.deviceUnavailable" = "%@ (unavailable)";
