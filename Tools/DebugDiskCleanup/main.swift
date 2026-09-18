@@ -72,8 +72,8 @@ private struct DebugDiskCleanupResultReport: Encodable {
     let remainingBytes: UInt64?
 }
 
-@main
 struct DebugDiskCleanup {
+    @MainActor
     static func main() async {
         do {
             let options = try parseOptions(Array(CommandLine.arguments.dropFirst()))
@@ -485,3 +485,5 @@ private enum DebugDiskCleanupError: LocalizedError {
         }
     }
 }
+
+await DebugDiskCleanup.main()

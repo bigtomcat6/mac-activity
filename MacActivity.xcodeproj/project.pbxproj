@@ -171,6 +171,7 @@
 		E6BBAAF89B168E11B0872C3F /* TemperatureSourceSelectionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C829186479D24A736AC9EB6B /* TemperatureSourceSelectionStore.swift */; };
 		E729B27242D7FE7473D30570 /* ProcessTapRetryScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 06A4A0695C3612C49CAA13DA /* ProcessTapRetryScheduler.swift */; };
 		E91EFBA8386879614B88F7EB /* PreferencesViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7935E5143511FB753D77DD5F /* PreferencesViewTests.swift */; };
+		EB64920076FD876BE4826019 /* ToolEntrypointTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20F07B69DBD11F4F1537D8B /* ToolEntrypointTests.swift */; };
 		EDC980EF30033CA70792C40E /* EnergyImpactProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FBBF160184071B2E1059B58 /* EnergyImpactProviderTests.swift */; };
 		F008634868B46A29FBED4069 /* AudioControlModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = D6A085010AE18BDEC0E3BB55 /* AudioControlModels.swift */; };
 		F20363F876BE2F8C2CA12F53 /* DiskCleanupServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */; };
@@ -349,6 +350,7 @@
 		9A1F7A521F369C3B108ACABF /* EnergyImpactSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactSampler.swift; sourceTree = "<group>"; };
 		9B047FCBC5C7F972AA959067 /* CoreAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreAudioHALBackend.swift; sourceTree = "<group>"; };
 		9B26B36594393917E7097C16 /* DiskCleanupServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupServiceTests.swift; sourceTree = "<group>"; };
+		A20F07B69DBD11F4F1537D8B /* ToolEntrypointTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolEntrypointTests.swift; sourceTree = "<group>"; };
 		A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusSummaryModelTests.swift; sourceTree = "<group>"; };
 		A47AF78DA008CD37CCBE9BF6 /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupStatusView.swift; sourceTree = "<group>"; };
@@ -738,6 +740,7 @@
 				A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */,
 				2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */,
 				CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */,
+				A20F07B69DBD11F4F1537D8B /* ToolEntrypointTests.swift */,
 				8C1D390604B9381BB20F9F4A /* TrashCleanupServiceTests.swift */,
 				90B7A168A4B1458DEE0615A8 /* UpdateCandidateSelectorTests.swift */,
 				F5F573CD71031424CFB8C109 /* Support */,
@@ -1053,6 +1056,7 @@
 				03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */,
 				16ECB6A0AD84B607F511085E /* SummaryFormatterTests.swift in Sources */,
 				051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */,
+				EB64920076FD876BE4826019 /* ToolEntrypointTests.swift in Sources */,
 				366D7404F0EDEC0EA16DF7CB /* TrashCleanupServiceTests.swift in Sources */,
 				442969EB596E699488524CFD /* UpdateCandidateSelectorTests.swift in Sources */,
 			);
