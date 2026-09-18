@@ -183,4 +183,39 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         )
     }
 
+    func testStatusItemRightClickClassificationOnlyMatchesRightMouseUp() {
+        XCTAssertTrue(StatusItemController.presentsContextMenu(for: .rightMouseUp))
+        XCTAssertFalse(StatusItemController.presentsContextMenu(for: .leftMouseUp))
+        XCTAssertFalse(StatusItemController.presentsContextMenu(for: .leftMouseDown))
+        XCTAssertFalse(StatusItemController.presentsContextMenu(for: .rightMouseDown))
+        XCTAssertFalse(StatusItemController.presentsContextMenu(for: nil))
+    }
+
+    func testStatusItemContextMenuContainsPreferencesSeparatorAndQuit() {
+        let target = ContextMenuActionTarget()
+        let menu = StatusItemController.makeContextMenu(
+            preferencesTitle: "Settings…",
+            quitTitle: "Quit",
+            target: target,
+            preferencesAction: #selector(ContextMenuActionTarget.openPreferences(_:)),
+            quitAction: #selector(ContextMenuActionTarget.quit(_:))
+        )
+
+        XCTAssertEqual(menu.items.count, 3)
+        XCTAssertEqual(menu.items[0].title, "Settings…")
+        XCTAssertEqual(menu.items[0].keyEquivalent, "")
+        XCTAssertTrue(menu.items[0].target === target)
+        XCTAssertEqual(menu.items[0].action, #selector(ContextMenuActionTarget.openPreferences(_:)))
+        XCTAssertTrue(menu.items[1].isSeparatorItem)
+        XCTAssertEqual(menu.items[2].title, "Quit")
+        XCTAssertEqual(menu.items[2].keyEquivalent, "")
+        XCTAssertTrue(menu.items[2].target === target)
+        XCTAssertEqual(menu.items[2].action, #selector(ContextMenuActionTarget.quit(_:)))
+    }
+
+}
+
+private final class ContextMenuActionTarget: NSObject {
+    @objc func openPreferences(_ sender: Any?) {}
+    @objc func quit(_ sender: Any?) {}
 }

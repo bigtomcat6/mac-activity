@@ -116,7 +116,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let statusItemController = StatusItemController(
             summaryModel: summaryModel,
-            popoverController: dashboardPopoverController
+            popoverController: dashboardPopoverController,
+            showPreferences: { [weak self] in
+                self?.showPreferences()
+            },
+            quitApplication: { [weak self] in
+                self?.terminateApplication()
+            }
         )
         let presentationCoordinator = AppPresentationCoordinator(
             statusItemController: statusItemController,
@@ -254,7 +260,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    private func showPreferences() {
+    @objc func showPreferences() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
@@ -274,7 +280,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func terminateApplication() {
+    @objc func terminateApplication() {
         NSApplication.shared.terminate(nil)
     }
 

@@ -8,16 +8,22 @@ final class StatusItemController: NSObject {
 
     private let summaryModel: StatusSummaryModel
     private let popoverController: DashboardPopoverControlling
+    private let showPreferences: () -> Void
+    private let quitApplication: () -> Void
     private var statusItem: NSStatusItem?
     private var cancellables: Set<AnyCancellable> = []
     private var currentSummary: RenderedStatusSummary?
 
     init(
         summaryModel: StatusSummaryModel,
-        popoverController: DashboardPopoverControlling
+        popoverController: DashboardPopoverControlling,
+        showPreferences: @escaping () -> Void,
+        quitApplication: @escaping () -> Void
     ) {
         self.summaryModel = summaryModel
         self.popoverController = popoverController
+        self.showPreferences = showPreferences
+        self.quitApplication = quitApplication
         super.init()
     }
 
@@ -76,11 +82,69 @@ final class StatusItemController: NSObject {
         button.imageScaling = .scaleNone
         button.target = self
         button.action = #selector(statusItemClicked(_:))
-        button.sendAction(on: [.leftMouseUp])
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
     }
 
     @objc private func statusItemClicked(_ sender: Any?) {
+        guard !Self.presentsContextMenu(for: NSApp.currentEvent?.type) else {
+            presentContextMenu()
+            return
+        }
+
         togglePopover()
+    }
+
+    static func presentsContextMenu(for eventType: NSEvent.EventType?) -> Bool {
+        eventType == .rightMouseUp
+    }
+
+    static func makeContextMenu(
+        preferencesTitle: String,
+        quitTitle: String,
+        target: AnyObject?,
+        preferencesAction: Selector,
+        quitAction: Selector
+    ) -> NSMenu {
+        let menu = NSMenu()
+        let preferencesItem = NSMenuItem(
+            title: preferencesTitle,
+            action: preferencesAction,
+            keyEquivalent: ""
+        )
+        preferencesItem.target = target
+        menu.addItem(preferencesItem)
+        menu.addItem(.separator())
+        let quitItem = NSMenuItem(title: quitTitle, action: quitAction, keyEquivalent: "")
+        quitItem.target = target
+        menu.addItem(quitItem)
+        return menu
+    }
+
+    @objc func contextMenuPreferences(_ sender: Any?) {
+        showPreferences()
+    }
+
+    @objc func contextMenuQuit(_ sender: Any?) {
+        quitApplication()
+    }
+
+    private func presentContextMenu() {
+        guard let button = statusItem?.button else {
+            return
+        }
+
+        let menu = Self.makeContextMenu(
+            preferencesTitle: AppLocalization.string(.preferences),
+            quitTitle: AppLocalization.string(.quit),
+            target: self,
+            preferencesAction: #selector(contextMenuPreferences(_:)),
+            quitAction: #selector(contextMenuQuit(_:))
+        )
+        menu.popUp(
+            positioning: nil,
+            at: NSPoint(x: 0, y: button.bounds.height + 4),
+            in: button
+        )
     }
 
     private func togglePopover() {
