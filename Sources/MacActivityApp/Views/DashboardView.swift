@@ -13,6 +13,8 @@ enum DashboardMotion {
     static var sampleAnimation: Animation { .smooth(duration: sampleDuration) }
     static var domainAnimation: Animation { .smooth(duration: domainDuration) }
     static var valueAnimation: Animation { .easeOut(duration: valueDuration) }
+    static let tabSelectionDuration: Double = 0.28
+    static var tabSelectionAnimation: Animation { .smooth(duration: tabSelectionDuration) }
 }
 
 enum DashboardCardLayout {
@@ -632,6 +634,32 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabEnergyImpact)
         case .audio:
             return AppLocalization.string(.dashboardTabAudio)
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2"
+        case .actives:
+            return "list.bullet.rectangle"
+        case .energyImpact:
+            return "bolt"
+        case .audio:
+            return "speaker.wave.2"
+        }
+    }
+
+    var selectedSystemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2.fill"
+        case .actives:
+            return "list.bullet.rectangle.fill"
+        case .energyImpact:
+            return "bolt.fill"
+        case .audio:
+            return "speaker.wave.2.fill"
         }
     }
 }
