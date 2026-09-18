@@ -754,6 +754,7 @@ struct DashboardView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
+            .mask(DashboardScrollEdgeFade())
 
             DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
                 Divider()
@@ -919,6 +920,31 @@ struct DashboardView: View {
         activeCleanupModel.setDiskCleanupCategories(categories)
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
+        }
+    }
+}
+
+struct DashboardScrollEdgeFade: View {
+    static let fadeHeight: CGFloat = 12
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [.clear, .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: Self.fadeHeight)
+
+            Rectangle()
+                .fill(.black)
+
+            LinearGradient(
+                colors: [.black, .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: Self.fadeHeight)
         }
     }
 }
