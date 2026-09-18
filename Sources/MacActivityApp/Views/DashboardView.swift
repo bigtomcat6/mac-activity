@@ -517,12 +517,6 @@ enum DashboardOverviewLayout {
     }
 }
 
-enum DashboardFooterChrome {
-    static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
-    static let preferencesSystemImage = "gearshape"
-    static let quitSystemImage = "power"
-}
-
 enum DashboardOverviewChrome {
     static let usageFillOpacity = 0.82
     static let valueStripOpacity = 0.14
@@ -684,8 +678,6 @@ struct DashboardView: View {
     @ObservedObject var tabSelectionState: DashboardTabSelectionState
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
-    let openPreferences: () -> Void
-    let quitApplication: () -> Void
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
     @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
@@ -693,8 +685,6 @@ struct DashboardView: View {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
         initialSelectedTab: DashboardTab = .overview,
@@ -703,8 +693,6 @@ struct DashboardView: View {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
-        self.openPreferences = openPreferences
-        self.quitApplication = quitApplication
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self.scrollIndicatorState = scrollIndicatorState
         self.tabSelectionState = tabSelectionState ?? DashboardTabSelectionState(initialTab: initialSelectedTab)
@@ -729,14 +717,6 @@ struct DashboardView: View {
                         .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-
-            DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
-                Divider()
-            }
-
-            DashboardMeasuredSegment(segment: .footer, onHeightChange: onMeasuredSegmentHeight) {
-                footer
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
@@ -818,27 +798,6 @@ struct DashboardView: View {
             .onDisappear {
                 audioDashboardModel.audioPageDeactivated()
             }
-    }
-
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Button(action: openPreferences) {
-                Label(
-                    AppLocalization.string(.preferences),
-                    systemImage: DashboardFooterChrome.preferencesSystemImage
-                )
-            }
-            Spacer(minLength: 12)
-            Button(action: quitApplication) {
-                Label(
-                    AppLocalization.string(.quit),
-                    systemImage: DashboardFooterChrome.quitSystemImage
-                )
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(14)
-        .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
     }
 
     private var selectedTab: DashboardTab { tabSelectionState.selectedTab }

@@ -312,12 +312,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audioDashboardModel: makeAudioDashboardModel(),
             onVisibilityChange: { [weak self] isVisible in
                 self?.handleDashboardVisibilityChange(isVisible)
-            },
-            openPreferences: { [weak self] in
-                self?.showPreferences()
-            },
-            quitApplication: { [weak self] in
-                self?.terminateApplication()
             }
         )
     }

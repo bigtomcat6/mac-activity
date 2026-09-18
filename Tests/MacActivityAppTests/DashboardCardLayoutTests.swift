@@ -820,10 +820,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
     }
 
-    func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
-        XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
-    }
-
     func testDashboardCardsShareActivesSurfaceChrome() {
         XCTAssertEqual(DashboardCardChrome.cornerRadius, ActiveCleanupChrome.cornerRadius)
         XCTAssertEqual(DashboardCardChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
@@ -883,11 +879,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(dashboardSource.contains("DashboardOverviewChrome.liveIndicatorColor"))
         XCTAssertTrue(dashboardSource.contains("Text(AppLocalization.string(.appName))"))
         XCTAssertTrue(dashboardSource.contains("tabPicker"))
-    }
-
-    func testFooterActionsUseStableSystemImages() {
-        XCTAssertEqual(DashboardFooterChrome.preferencesSystemImage, "gearshape")
-        XCTAssertEqual(DashboardFooterChrome.quitSystemImage, "power")
     }
 
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
@@ -985,37 +976,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
     }
 
-    func testRenderedFooterUsesOverviewGrayBackgroundTone() throws {
-        let model = DashboardModel(store: MetricsStore())
-        let contentWidth = DashboardPopoverLayout.contentWidth
-        let contentHeight: CGFloat = 260
-        let content = DashboardView(
-            dashboardModel: model,
-            preferencesController: Self.preferencesController(),
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
-        )
-        .frame(width: contentWidth, height: contentHeight)
-
-        let referenceColor = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle()
-                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
-                    .frame(width: contentWidth, height: 60),
-                atTopLeft: CGPoint(x: contentWidth / 2, y: 30)
-            )
-        )
-        let footerColor = try XCTUnwrap(
-            Self.renderedColor(of: content, atTopLeft: CGPoint(x: contentWidth / 2, y: contentHeight - 6))
-        )
-
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
-            "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
-        )
-    }
-
     func testRenderedOverviewDisplaysSplitStorageCardForDiskAndSwapMetrics() throws {
         let store = MetricsStore()
         store.apply(
@@ -1033,8 +993,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1057,8 +1015,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: storageOnlyModel,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1086,8 +1042,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1109,8 +1063,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1138,8 +1090,6 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             initialSelectedTab: .actives
         )
         .frame(width: 360, height: 320)
@@ -1159,8 +1109,6 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             initialSelectedTab: .energyImpact
         )
         .frame(width: 360, height: 560)
@@ -1877,6 +1825,15 @@ final class DashboardCardLayoutTests: XCTestCase {
             RAMSegmentBarsLayout.displaySegments(for: sample).reduce(UInt64(0)) { $0 + $1.bytes },
             5
         )
+    }
+
+    func testDashboardViewNoLongerRendersFooterActions() throws {
+        let dashboardSource = try Self.dashboardViewSource()
+
+        XCTAssertFalse(dashboardSource.contains("DashboardFooterChrome"))
+        XCTAssertFalse(dashboardSource.contains("openPreferences"))
+        XCTAssertFalse(dashboardSource.contains("quitApplication"))
+        XCTAssertFalse(dashboardSource.contains("footerDivider"))
     }
 
     private static func overviewMetrics(_ kinds: [MetricKind]) -> [DashboardMetric] {

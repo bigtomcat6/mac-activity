@@ -39,8 +39,6 @@ enum DashboardContentMeasurementSegment: CaseIterable, Hashable {
     case header
     case headerDivider
     case scrollContent
-    case footerDivider
-    case footer
 }
 
 @MainActor
@@ -393,9 +391,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void
+        onVisibilityChange: @escaping (Bool) -> Void
     ) {
         self.init(
             popover: NSPopover(),
@@ -403,9 +399,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
             audioDashboardModel: audioDashboardModel,
-            onVisibilityChange: onVisibilityChange,
-            openPreferences: openPreferences,
-            quitApplication: quitApplication
+            onVisibilityChange: onVisibilityChange
         )
     }
 
@@ -415,9 +409,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void
+        onVisibilityChange: @escaping (Bool) -> Void
     ) {
         self.popover = popover
         self.focusController = focusController
@@ -438,14 +430,6 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     dashboardModel: dashboardModel,
                     preferencesController: preferencesController,
                     audioDashboardModel: audioDashboardModel,
-                    openPreferences: { [weak popover] in
-                        popover?.performClose(nil)
-                        openPreferences()
-                    },
-                    quitApplication: { [weak popover] in
-                        popover?.performClose(nil)
-                        quitApplication()
-                    },
                     onMeasuredSegmentHeight: { [weak measurement] segment, height in
                         measurement?.report(height, for: segment)
                     },
