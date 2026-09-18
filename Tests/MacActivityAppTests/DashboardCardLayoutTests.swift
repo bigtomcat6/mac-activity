@@ -848,6 +848,17 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardHeaderChrome.tabPickerMinWidth, 160)
     }
 
+    func testDashboardTabBarUsesCompactIconChrome() {
+        XCTAssertEqual(DashboardTabChrome.iconButtonWidth, 30)
+        XCTAssertEqual(DashboardTabChrome.iconButtonHeight, 20)
+        XCTAssertEqual(DashboardTabChrome.itemSpacing, 2)
+        XCTAssertEqual(DashboardTabChrome.trackPadding, 2)
+        XCTAssertEqual(DashboardTabChrome.trackFillOpacity, 0.06, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.selectedFillOpacity, 0.12, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.hoverFillOpacity, 0.06, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.focusRingWidth, 2)
+    }
+
     func testDashboardHeaderKeepsOnlyAppNameAndInlineTabPicker() throws {
         let dashboardSource = try Self.dashboardViewSource()
 
