@@ -64,6 +64,7 @@ struct ActiveProcessQuitButtonConfiguration: Equatable {
 
 struct ActiveProcessMemoryRow: View {
     @Environment(\.appearsActive) private var appearsActive
+    @Environment(\.dashboardStyleAppearance) private var styleAppearance
     let app: ActiveAppMemoryEntry
     let usedMemoryBytes: UInt64
     let isQuitPending: Bool
@@ -97,7 +98,12 @@ struct ActiveProcessMemoryRow: View {
 
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
+                    .fill(
+                        ActiveCleanupChrome.progressFillColor(
+                            appearsActive: appearsActive,
+                            appearance: styleAppearance
+                        )
+                    )
                     .frame(width: progressWidth)
 
                 HStack(spacing: 10) {

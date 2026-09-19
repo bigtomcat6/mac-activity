@@ -129,6 +129,58 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         )
     }
 
+    func testRenderedProcessProgressUsesPrimaryDimmingInTranslucentAppearance() throws {
+        let app = ActiveAppMemoryEntry(
+            processIdentifier: 2_211,
+            name: "B",
+            bundleIdentifier: "c",
+            bundleURL: nil,
+            residentMemoryBytes: 1_000,
+            isTerminable: true
+        )
+        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+
+        let translucentInactiveRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, false)
+            .environment(\.dashboardStyleAppearance, translucentAppearance)
+        let standardInactiveRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
+            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
+            .environment(\.appearsActive, false)
+
+        let expectedTranslucent = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle().fill(Color.primary.opacity(0.22)).frame(width: 32, height: 32),
+                atTopLeft: CGPoint(x: 16, y: 16)
+            )
+        )
+        let expectedStandard = try XCTUnwrap(
+            Self.renderedColor(
+                of: Rectangle().fill(Color.black.opacity(0.22)).frame(width: 32, height: 32),
+                atTopLeft: CGPoint(x: 16, y: 16)
+            )
+        )
+
+        let translucentColor = try XCTUnwrap(
+            Self.renderedColor(of: translucentInactiveRow, atTopLeft: CGPoint(x: 200, y: 19))
+        )
+        let standardColor = try XCTUnwrap(
+            Self.renderedColor(of: standardInactiveRow, atTopLeft: CGPoint(x: 200, y: 19))
+        )
+
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(translucentColor, expectedTranslucent, tolerance: 0.08),
+            "Expected the translucent inactive process fill to use the adaptive primary dimming. expected=\(Self.debugColor(expectedTranslucent)) actual=\(Self.debugColor(translucentColor))"
+        )
+        XCTAssertTrue(
+            Self.colorsApproximatelyEqual(standardColor, expectedStandard, tolerance: 0.08),
+            "Expected the standard inactive process fill to keep the dark neutral tone. expected=\(Self.debugColor(expectedStandard)) actual=\(Self.debugColor(standardColor))"
+        )
+    }
+
     func testRenderedProcessRowRestoresTransparentSpaceOutsideProgressFill() throws {
         let app = ActiveAppMemoryEntry(
             processIdentifier: 2_333,

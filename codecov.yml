@@ -30,3 +30,10 @@ ignore:
   # lifecycle, and DSP logic remains unit tested through injected hardware.
   - "Sources/MacActivityCore/Audio/AudioTapHardware.swift"
   - "Sources/MacActivityCore/Audio/CoreAudioHALBackend.swift"
+
+  # The DebugGlassPrototype harness is a manual, developer-run executable. Its
+  # status-item app delegate and @main entry hand off to NSApplication.run and
+  # process exit, so the harness logic stays covered by DebugGlassPrototypeTests
+  # while these entry points are excluded from patch gating.
+  - "Tools/DebugGlassPrototype/PrototypeApp.swift"
+  - "Tools/DebugGlassPrototype/Entry.swift"

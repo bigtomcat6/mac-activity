@@ -651,6 +651,42 @@ final class PreferencesViewTests: XCTestCase {
         )
     }
 
+    func testTransparentStyleOptionAvailabilityFollowsMacOSBoundary() {
+        XCTAssertFalse(PreferencesDashboardStyleSupport.isTransparentOptionEnabled(majorVersion: 25))
+        XCTAssertTrue(PreferencesDashboardStyleSupport.isTransparentOptionEnabled(majorVersion: 26))
+    }
+
+    func testDashboardStyleDescriptionSwitchesForUnsupportedSystem() {
+        XCTAssertEqual(
+            PreferencesDashboardStyleSupport.descriptionKey(isTransparentSupported: false),
+            .preferencesDashboardStyleUnavailable
+        )
+        XCTAssertEqual(
+            PreferencesDashboardStyleSupport.descriptionKey(isTransparentSupported: true),
+            .preferencesDashboardStyleHelp
+        )
+    }
+
+    func testPreferencesGeneralPageIncludesDashboardStylePicker() throws {
+        let source = try Self.preferencesViewSource()
+
+        XCTAssertTrue(source.contains("preferencesDashboardStyle"))
+        XCTAssertTrue(source.contains("setDashboardStyle"))
+        XCTAssertTrue(source.contains("preferencesDashboardStyleHelp"))
+        XCTAssertTrue(source.contains("preferencesDashboardStyleUnavailable"))
+    }
+
+    private static func preferencesViewSource() throws -> String {
+        let packageRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        return try String(
+            contentsOf: packageRoot.appendingPathComponent("Sources/MacActivityApp/Views/PreferencesView.swift"),
+            encoding: .utf8
+        )
+    }
+
     private func makeBundle(info: [String: String]) throws -> Bundle {
         let bundleURL = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)

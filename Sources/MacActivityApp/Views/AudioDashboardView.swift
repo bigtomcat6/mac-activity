@@ -418,6 +418,10 @@ private struct AudioDashboardSection<Content: View>: View {
                 .foregroundStyle(.secondary)
             content
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .dashboardCardChrome()
         .accessibilityElement(children: .contain)
         .audioAccessibility(accessibility)
     }
@@ -895,7 +899,7 @@ private struct AudioSystemAccessPermissionGate: View {
         }
         .frame(maxWidth: .infinity, minHeight: 180)
         .padding(20)
-        .background(.quaternary.opacity(0.65), in: RoundedRectangle(cornerRadius: 8))
+        .dashboardCardChrome()
         .accessibilityElement(children: .contain)
         .audioAccessibility(presentation.accessibility)
     }

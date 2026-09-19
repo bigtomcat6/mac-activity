@@ -805,14 +805,107 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardOverviewLayout.compactTrendCardHeight, 64)
     }
 
-    func testFooterUsesSameGrayOpacityTokenAsActivesChrome() {
-        XCTAssertEqual(DashboardFooterChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
+    func testDashboardRegionsRevealOneNativeBackdrop() throws {
+        let source = try Self.dashboardViewSource()
+        XCTAssertFalse(source.contains("DashboardCardChrome.canvasColor"))
+        XCTAssertFalse(source.contains("DashboardFooterChrome.backgroundOpacity"))
+        XCTAssertFalse(
+            source.contains("GlassEffectContainer"),
+            "glass cards must not be extracted into a container outside the scroll clip"
+        )
+        XCTAssertEqual(
+            source.components(separatedBy: "DashboardRootGlassBackground(").count - 1,
+            1,
+            "the transparent style must add exactly one root glass background"
+        )
+        XCTAssertTrue(source.contains(".allowsHitTesting(false)"))
+        XCTAssertFalse(source.contains("dashboardShellSurface"))
+        let start = try XCTUnwrap(source.range(of: "private var footer: some View"))
+        let end = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
+        let footer = source[start.lowerBound..<end.lowerBound]
+        XCTAssertFalse(footer.contains(".dashboardShellSurface()"))
+        XCTAssertFalse(footer.contains(".background("))
+        XCTAssertFalse(footer.contains(".dashboardCardChrome("))
+    }
+
+    func testDashboardKeepsMeasuredButInvisibleSeparators() throws {
+        let source = try Self.dashboardViewSource()
+        for segment in ["headerDivider", "footerDivider"] {
+            let start = try XCTUnwrap(source.range(of: "segment: .\(segment),"))
+            let remaining = source[start.upperBound...]
+            let end = try XCTUnwrap(remaining.range(of: "}"))
+            let separator = remaining[..<end.lowerBound]
+            XCTAssertTrue(separator.contains("Divider()"))
+            XCTAssertTrue(separator.contains(".hidden()"))
+        }
     }
 
     func testDashboardCardsShareActivesSurfaceChrome() {
         XCTAssertEqual(DashboardCardChrome.cornerRadius, ActiveCleanupChrome.cornerRadius)
-        XCTAssertEqual(DashboardCardChrome.backgroundOpacity, ActiveCleanupChrome.backgroundOpacity, accuracy: 0.001)
-        XCTAssertEqual(DashboardCardChrome.borderOpacity(isHovered: false), ActiveCleanupChrome.borderOpacity, accuracy: 0.001)
+        XCTAssertEqual(
+            DashboardCardChrome.borderOpacity(isHovered: false),
+            ActiveCleanupChrome.borderOpacity,
+            accuracy: 0.001
+        )
+    }
+
+    func testRaisedCardUsesCompactRadiusAndPreservesHoverEmphasis() {
+        XCTAssertEqual(DashboardCardChrome.cornerRadius, 12)
+        XCTAssertGreaterThan(
+            DashboardCardChrome.borderOpacity(isHovered: true),
+            DashboardCardChrome.borderOpacity(isHovered: false)
+        )
+    }
+
+    func testReducedTransparencyCardHasOpaqueSurfaceAndExternalShadowInBothAppearances() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let card = Color.clear
+                .frame(width: 80, height: 40)
+                .dashboardCardChrome()
+                .padding(16)
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            let surface = try XCTUnwrap(Self.renderedColor(
+                of: card, atTopLeft: CGPoint(x: 56, y: 36)
+            ))
+            let shadow = try XCTUnwrap(Self.renderedColor(
+                of: card, atTopLeft: CGPoint(x: 56, y: 58)
+            ))
+            let expected = try XCTUnwrap(Self.renderedColor(
+                of: DashboardCardChrome.surfaceColor(for: scheme)
+                    .frame(width: 80, height: 40),
+                atTopLeft: CGPoint(x: 40, y: 20)
+            ))
+            XCTAssertGreaterThan(surface.alphaComponent, 0.99)
+            XCTAssertTrue(Self.colorsApproximatelyEqual(surface, expected, tolerance: 0.02))
+            XCTAssertGreaterThan(shadow.alphaComponent, 0.001)
+            XCTAssertLessThan(shadow.alphaComponent, 0.4)
+        }
+    }
+
+    func testCleanupAndDashboardUseTheSameRenderedSurface() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let dashboard = Color.clear.frame(width: 80, height: 40)
+                .dashboardCardChrome().padding(16)
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            let cleanup = Color.clear.frame(width: 80, height: 40)
+                .activeCleanupCardChrome().padding(16)
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            for point in [CGPoint(x: 56, y: 36), CGPoint(x: 56, y: 58)] {
+                let first = try XCTUnwrap(Self.renderedColor(of: dashboard, atTopLeft: point))
+                let second = try XCTUnwrap(Self.renderedColor(of: cleanup, atTopLeft: point))
+                XCTAssertTrue(Self.colorsApproximatelyEqual(first, second, tolerance: 0.02))
+            }
+        }
+    }
+
+    func testRaisedCardDoesNotChangeItsLayoutSize() throws {
+        let plain = ImageRenderer(content: Color.clear.frame(width: 80, height: 40))
+        let raised = ImageRenderer(content: Color.clear.frame(width: 80, height: 40)
+            .dashboardCardChrome())
+        XCTAssertEqual(try XCTUnwrap(plain.nsImage).size, try XCTUnwrap(raised.nsImage).size)
     }
 
     func testDashboardCardsIncreaseBorderEmphasisOnHover() {
@@ -838,6 +931,78 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(dashboardSource.contains("DashboardOverviewChrome.liveIndicatorColor"))
         XCTAssertTrue(dashboardSource.contains("Text(AppLocalization.string(.appName))"))
         XCTAssertTrue(dashboardSource.contains("tabPicker"))
+    }
+
+    func testGlassAPIsAreAvailabilityGatedAndDoNotMergeCards() throws {
+        let source = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
+        XCTAssertTrue(source.contains("#available(macOS 26.0, *)"))
+        XCTAssertTrue(source.contains(".glassEffect(.regular, in: shape)"))
+        XCTAssertFalse(source.contains(".glassEffect(.clear"))
+        XCTAssertTrue(source.contains("Color.primary.opacity"))
+        XCTAssertFalse(
+            source.contains("GlassEffectContainer"),
+            "glass cards must render in place so the scroll clip can keep them inside the layout"
+        )
+        XCTAssertTrue(source.contains("accessibilityReduceTransparency"))
+        XCTAssertFalse(source.contains(".interactive("))
+        XCTAssertFalse(source.contains("glassEffectUnion"))
+    }
+
+    func testFallbackSurfaceRespectsReduceTransparency() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let surface = DashboardFallbackCardSurface()
+                .frame(width: 80, height: 40)
+                .padding(16)
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            let color = try XCTUnwrap(Self.renderedColor(
+                of: surface, atTopLeft: CGPoint(x: 56, y: 36)
+            ))
+            let expected = try XCTUnwrap(Self.renderedColor(
+                of: DashboardCardChrome.surfaceColor(for: scheme).frame(width: 80, height: 40),
+                atTopLeft: CGPoint(x: 40, y: 20)
+            ))
+            XCTAssertGreaterThan(color.alphaComponent, 0.99)
+            XCTAssertTrue(Self.colorsApproximatelyEqual(color, expected, tolerance: 0.02))
+        }
+    }
+
+    func testActivesAndEnergyModulesUseSharedChromeWithoutRaisingRows() throws {
+        for file in ["DiskCleanupStatusView.swift", "ActiveProcessMemoryList.swift"] {
+            XCTAssertTrue(try Self.dashboardViewSource(file).contains(".activeCleanupCardChrome()"), file)
+        }
+        for file in ["PowerFlowView.swift", "EnergyImpactView.swift"] {
+            XCTAssertTrue(try Self.dashboardViewSource(file).contains(".dashboardCardChrome()"), file)
+        }
+        let processRow = try Self.dashboardViewSource("ActiveProcessMemoryRow.swift")
+        XCTAssertFalse(processRow.contains(".dashboardCardChrome("))
+        XCTAssertFalse(processRow.contains(".activeCleanupCardChrome("))
+        XCTAssertFalse(processRow.contains(".shadow("))
+        let energy = try Self.dashboardViewSource("EnergyImpactView.swift")
+        let row = try XCTUnwrap(energy.components(separatedBy: "struct EnergyImpactRow: View").last)
+        XCTAssertFalse(row.contains(".dashboardCardChrome("))
+        XCTAssertFalse(row.contains(".shadow("))
+    }
+
+    func testAudioRaisesSectionsAndPermissionGateButNotControlRows() throws {
+        let source = try Self.dashboardViewSource("AudioDashboardView.swift")
+        let sectionStart = try XCTUnwrap(source.range(of: "private struct AudioDashboardSection"))
+        let rowsStart = try XCTUnwrap(source.range(of: "private struct AudioDeviceControlRow"))
+        let gateStart = try XCTUnwrap(source.range(of: "private struct AudioSystemAccessPermissionGate: View"))
+        let presentationStart = try XCTUnwrap(source.range(
+            of: "struct AudioDashboardPresentation",
+            range: gateStart.upperBound..<source.endIndex
+        ))
+        let sectionBody = source[sectionStart.lowerBound..<rowsStart.lowerBound]
+        XCTAssertTrue(sectionBody.contains(".dashboardCardChrome()"))
+
+        let gate = source[gateStart.lowerBound..<presentationStart.lowerBound]
+        XCTAssertTrue(gate.contains(".dashboardCardChrome()"))
+        XCTAssertFalse(source.contains(".quaternary.opacity(0.65)"))
+
+        let rowsBeforeGate = source[rowsStart.lowerBound..<gateStart.lowerBound]
+        XCTAssertFalse(rowsBeforeGate.contains(".dashboardCardChrome("))
+        XCTAssertFalse(rowsBeforeGate.contains(".shadow("))
     }
 
     func testFooterActionsUseStableSystemImages() {
@@ -940,35 +1105,30 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
     }
 
-    func testRenderedFooterUsesOverviewGrayBackgroundTone() throws {
+    func testDashboardRegionsLeaveClearMarginsAroundNativeBackdrop() throws {
         let model = DashboardModel(store: MetricsStore())
-        let contentWidth = DashboardPopoverLayout.contentWidth
+        let contentWidth: CGFloat = 420
         let contentHeight: CGFloat = 260
-        let content = DashboardView(
-            dashboardModel: model,
-            preferencesController: Self.preferencesController(),
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
-        )
-        .frame(width: contentWidth, height: contentHeight)
-
-        let referenceColor = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle()
-                    .fill(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity))
-                    .frame(width: contentWidth, height: 60),
-                atTopLeft: CGPoint(x: contentWidth / 2, y: 30)
+        for scheme in [ColorScheme.light, .dark] {
+            let content = DashboardView(
+                dashboardModel: model,
+                preferencesController: Self.preferencesController(),
+                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+                openPreferences: {},
+                quitApplication: {}
             )
-        )
-        let footerColor = try XCTUnwrap(
-            Self.renderedColor(of: content, atTopLeft: CGPoint(x: contentWidth / 2, y: contentHeight - 6))
-        )
+            .frame(width: contentWidth, height: contentHeight)
+            .environment(\.colorScheme, scheme)
 
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(footerColor, referenceColor, tolerance: 0.08),
-            "Expected footer background to match the Overview/Actives gray tone. reference=\(Self.debugColor(referenceColor)) footer=\(Self.debugColor(footerColor))"
-        )
+            for point in [CGPoint(x: 2, y: 2), CGPoint(x: 2, y: 130), CGPoint(x: 2, y: 254)] {
+                let color = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: point))
+                XCTAssertLessThan(
+                    color.alphaComponent,
+                    0.02,
+                    "Expected a clear dashboard margin at \(point); got \(Self.debugColor(color))"
+                )
+            }
+        }
     }
 
     func testRenderedOverviewDisplaysSplitStorageCardForDiskAndSwapMetrics() throws {
@@ -1834,6 +1994,356 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testTranslucentCardChromePaintsAdaptivePrimaryFillWithoutGlass() throws {
+        try Self.requireLiquidGlassRendering()
+
+        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+        let card = Color.clear.frame(width: 80, height: 40)
+            .dashboardCardChrome()
+            .padding(16)
+            .environment(\.dashboardStyleAppearance, translucentAppearance)
+
+        let color = try XCTUnwrap(Self.renderedColor(
+            of: card,
+            atTopLeft: CGPoint(x: 56, y: 36)
+        ))
+        let expected = try XCTUnwrap(Self.renderedColor(
+            of: Color.primary.opacity(DashboardPresentationPolicy.translucentModuleFillOpacity)
+                .frame(width: 80, height: 40),
+            atTopLeft: CGPoint(x: 40, y: 20)
+        ))
+        XCTAssertTrue(Self.colorsApproximatelyEqual(color, expected, tolerance: 0.03))
+        XCTAssertLessThan(color.alphaComponent, 0.2)
+        XCTAssertLessThan(color.redComponent, 0.3)
+    }
+
+    func testReduceTransparencyCardChromeIgnoresTranslucentAppearance() throws {
+        try Self.requireLiquidGlassRendering()
+
+        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+        let standard = Color.clear.frame(width: 80, height: 40)
+            .dashboardCardChrome()
+            .padding(16)
+            .environment(\._accessibilityReduceTransparency, true)
+        let withTranslucentEnvironment = Color.clear.frame(width: 80, height: 40)
+            .dashboardCardChrome()
+            .padding(16)
+            .environment(\.dashboardStyleAppearance, translucentAppearance)
+            .environment(\._accessibilityReduceTransparency, true)
+
+        for point in [CGPoint(x: 56, y: 36), CGPoint(x: 56, y: 58)] {
+            let expected = try XCTUnwrap(Self.renderedColor(of: standard, atTopLeft: point))
+            let actual = try XCTUnwrap(Self.renderedColor(of: withTranslucentEnvironment, atTopLeft: point))
+            XCTAssertTrue(Self.colorsApproximatelyEqual(expected, actual, tolerance: 0.02))
+        }
+    }
+
+    func testTranslucentInactiveChromeUsesPrimaryDimming() throws {
+        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+        let translucentPrimary = DashboardOverviewChrome.inactiveChartPrimaryStroke(for: translucentAppearance)
+        let standardPrimary = DashboardOverviewChrome.inactiveChartPrimaryStroke(for: .standardAppearance)
+
+        let translucentRendered = try XCTUnwrap(Self.renderedColor(
+            of: Rectangle().fill(translucentPrimary).frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+        let expectedTranslucent = try XCTUnwrap(Self.renderedColor(
+            of: Color.primary.opacity(0.56).frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+        let standardRendered = try XCTUnwrap(Self.renderedColor(
+            of: Rectangle().fill(standardPrimary).frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+        let expectedStandard = try XCTUnwrap(Self.renderedColor(
+            of: Color.black.opacity(0.56).frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+
+        XCTAssertTrue(Self.colorsApproximatelyEqual(translucentRendered, expectedTranslucent, tolerance: 0.02))
+        XCTAssertTrue(Self.colorsApproximatelyEqual(standardRendered, expectedStandard, tolerance: 0.02))
+
+        for (actual, expected) in [
+            (
+                DashboardOverviewChrome.inactiveChartSecondaryStroke(for: translucentAppearance),
+                Color.primary.opacity(0.42)
+            ),
+            (
+                DashboardOverviewChrome.inactiveMemorySegmentFill(for: translucentAppearance),
+                Color.primary.opacity(0.38)
+            ),
+            (
+                DashboardOverviewChrome.translucentInactiveEmphasisFill,
+                Color.primary.opacity(0.22)
+            ),
+            (
+                ActiveCleanupChrome.progressFillColor(appearsActive: false, appearance: translucentAppearance),
+                Color.primary.opacity(0.22)
+            ),
+            (
+                ActiveCleanupChrome.progressFillColor(appearsActive: false, appearance: .standardAppearance),
+                Color.black.opacity(0.22)
+            ),
+        ] {
+            let actualColor = try XCTUnwrap(Self.renderedColor(
+                of: Rectangle().fill(actual).frame(width: 20, height: 20),
+                atTopLeft: CGPoint(x: 10, y: 10)
+            ))
+            let expectedColor = try XCTUnwrap(Self.renderedColor(
+                of: Rectangle().fill(expected).frame(width: 20, height: 20),
+                atTopLeft: CGPoint(x: 10, y: 10)
+            ))
+            XCTAssertTrue(Self.colorsApproximatelyEqual(actualColor, expectedColor, tolerance: 0.02))
+        }
+
+        let translucentActiveProgress = try XCTUnwrap(Self.renderedColor(
+            of: Rectangle()
+                .fill(ActiveCleanupChrome.progressFillColor(appearsActive: true, appearance: translucentAppearance))
+                .frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+        let standardActiveProgress = try XCTUnwrap(Self.renderedColor(
+            of: Rectangle()
+                .fill(ActiveCleanupChrome.progressFillColor(appearsActive: true, appearance: .standardAppearance))
+                .frame(width: 20, height: 20),
+            atTopLeft: CGPoint(x: 10, y: 10)
+        ))
+        XCTAssertTrue(Self.colorsApproximatelyEqual(translucentActiveProgress, standardActiveProgress, tolerance: 0.02))
+    }
+
+    func testTranslucentChromeKeepsHierarchicalForegroundStylesAdaptive() throws {
+        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+        let translucentSecondary = Rectangle().fill(.secondary)
+            .environment(\.dashboardStyleAppearance, translucentAppearance)
+            .frame(width: 20, height: 20)
+        let plainSecondary = Rectangle().fill(.secondary)
+            .frame(width: 20, height: 20)
+        let translucentTertiary = Rectangle().fill(.tertiary)
+            .environment(\.dashboardStyleAppearance, translucentAppearance)
+            .frame(width: 20, height: 20)
+        let plainTertiary = Rectangle().fill(.tertiary)
+            .frame(width: 20, height: 20)
+
+        for (actual, expected) in [
+            (translucentSecondary, plainSecondary),
+            (translucentTertiary, plainTertiary),
+        ] {
+            let actualRendered = try XCTUnwrap(Self.renderedColor(of: actual, atTopLeft: CGPoint(x: 10, y: 10)))
+            let expectedRendered = try XCTUnwrap(Self.renderedColor(of: expected, atTopLeft: CGPoint(x: 10, y: 10)))
+            XCTAssertTrue(Self.colorsApproximatelyEqual(actualRendered, expectedRendered, tolerance: 0.02))
+        }
+    }
+
+    func testRootGlassBackgroundBuildsLeafRegularGlass() throws {
+        guard #available(macOS 26.0, *) else {
+            throw XCTSkip("NSGlassEffectView rendering requires macOS 26.")
+        }
+
+        let size = NSSize(width: 200, height: 120)
+        let hosting = NSHostingView(
+            rootView: DashboardRootGlassBackground(cornerRadius: 24)
+                .frame(width: size.width, height: size.height)
+        )
+        hosting.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.orderFront(nil)
+        defer { window.close() }
+        hosting.layoutSubtreeIfNeeded()
+
+        let glass = try XCTUnwrap(Self.firstGlassEffectView(in: hosting) as? NSGlassEffectView)
+        XCTAssertEqual(glass.style, .regular)
+        XCTAssertNil(glass.tintColor)
+        XCTAssertEqual(glass.cornerRadius, 24, accuracy: 0.01)
+        XCTAssertNil(glass.contentView)
+        XCTAssertEqual(glass.frame.width, hosting.bounds.width, accuracy: 0.5)
+        XCTAssertEqual(glass.frame.height, hosting.bounds.height, accuracy: 0.5)
+        XCTAssertEqual(glass.intrinsicContentSize.width, -1, accuracy: 0.01)
+        XCTAssertEqual(glass.intrinsicContentSize.height, -1, accuracy: 0.01)
+    }
+
+    func testRootGlassBackgroundDoesNotInflateMeasuredContent() throws {
+        guard #available(macOS 26.0, *) else {
+            throw XCTSkip("NSGlassEffectView rendering requires macOS 26.")
+        }
+
+        let plain = NSHostingView(rootView: Text("Mac Activity"))
+        let withBackdrop = NSHostingView(
+            rootView: Text("Mac Activity")
+                .background {
+                    DashboardRootGlassBackground(cornerRadius: 24)
+                }
+        )
+        let plainWindow = Self.hostForFittingSize(plain)
+        let backdropWindow = Self.hostForFittingSize(withBackdrop)
+        defer {
+            plainWindow.close()
+            backdropWindow.close()
+        }
+        plain.layoutSubtreeIfNeeded()
+        withBackdrop.layoutSubtreeIfNeeded()
+
+        let plainSize = plain.fittingSize
+        let backdropSize = withBackdrop.fittingSize
+        XCTAssertGreaterThan(plainSize.width, 0, "the plain control must measure a real non-zero width")
+        XCTAssertGreaterThan(plainSize.height, 0, "the plain control must measure a real non-zero height")
+        XCTAssertGreaterThan(backdropSize.width, 0, "the backdrop host must measure a real non-zero width")
+        XCTAssertGreaterThan(backdropSize.height, 0, "the backdrop host must measure a real non-zero height")
+
+        XCTAssertEqual(backdropSize.width, plainSize.width, accuracy: 0.5)
+        XCTAssertEqual(backdropSize.height, plainSize.height, accuracy: 0.5)
+    }
+
+    func testHeaderAndFooterPaintNoPerAreaBacking() throws {
+        let source = try Self.dashboardViewSource()
+        let headerStart = try XCTUnwrap(source.range(of: "segment: .header,"))
+        let headerEnd = try XCTUnwrap(source.range(
+            of: "segment: .headerDivider,",
+            range: headerStart.upperBound..<source.endIndex
+        ))
+        let header = source[headerStart.lowerBound..<headerEnd.lowerBound]
+        XCTAssertTrue(header.contains(".padding(.horizontal, DashboardHeaderChrome.horizontalPadding)"))
+        XCTAssertFalse(header.contains(".dashboardShellSurface"))
+        XCTAssertFalse(header.contains(".background("))
+        XCTAssertFalse(header.contains(".dashboardCardChrome("))
+
+        let footerStart = try XCTUnwrap(source.range(of: "private var footer: some View"))
+        let footerEnd = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
+        let footer = source[footerStart.lowerBound..<footerEnd.lowerBound]
+        XCTAssertTrue(footer.contains("padding(14)"))
+        XCTAssertFalse(footer.contains(".dashboardShellSurface"))
+        XCTAssertFalse(footer.contains(".background("))
+        XCTAssertFalse(footer.contains(".dashboardCardChrome("))
+    }
+
+    func testTrendChartGridLinesUseSystemSecondary() throws {
+        let source = try Self.dashboardViewSource("DashboardTrendChart.swift")
+        XCTAssertFalse(source.contains("secondaryForegroundColor"))
+        XCTAssertEqual(
+            source.components(separatedBy: "Color.secondary.opacity(0.14)").count - 1,
+            2
+        )
+    }
+
+    func testSettingsWindowDoesNotReceiveDashboardChromeEnvironment() throws {
+        let packageRoot = Self.packageRootURL()
+        for file in ["AppShell/PreferencesWindowController.swift", "Views/PreferencesView.swift"] {
+            let source = try String(
+                contentsOf: packageRoot.appendingPathComponent("Sources/MacActivityApp").appendingPathComponent(file),
+                encoding: .utf8
+            )
+            XCTAssertFalse(source.contains("dashboardStyleAppearance"), file)
+            XCTAssertFalse(source.contains("DashboardRootGlassBackground"), file)
+        }
+    }
+
+    func testFooterUsesSystemButtonStyleWithoutAppearanceBranch() throws {
+        let source = try Self.dashboardViewSource()
+        let footerStart = try XCTUnwrap(source.range(of: "private var footer: some View"))
+        let footerEnd = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
+        let footer = source[footerStart.lowerBound..<footerEnd.lowerBound]
+
+        XCTAssertTrue(footer.contains("padding(14)"))
+        XCTAssertFalse(footer.contains("buttonStyle"))
+        XCTAssertFalse(footer.contains("DashboardClearFooterButtonStyle"))
+        XCTAssertFalse(footer.contains("usesTranslucentChrome"))
+        XCTAssertFalse(footer.contains("usesClearReadability"))
+
+        let layoutSource = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
+        XCTAssertFalse(layoutSource.contains("DashboardClearFooterButtonStyle"))
+    }
+
+    func testTranslucentSourceHasNoClearGlassOrForcedDarkScheme() throws {
+        for file in [
+            "DashboardView.swift",
+            "ActiveCleanReleaseLayout.swift",
+            "DashboardStyleAppearance.swift",
+        ] {
+            let source = try Self.dashboardViewSource(file)
+            XCTAssertFalse(source.contains(".glassEffect(.clear"), file)
+            XCTAssertFalse(source.contains("colorScheme, .dark"), file)
+            XCTAssertFalse(source.contains("DashboardClearPalette"), file)
+            XCTAssertFalse(source.contains("DashboardClearReadabilityModifier"), file)
+            XCTAssertFalse(source.contains("moduleBackingOpacity"), file)
+        }
+    }
+
+    func testPopoverRootDoesNotBranchAboveStatefulDashboard() throws {
+        let packageRoot = Self.packageRootURL()
+        let source = try String(
+            contentsOf: packageRoot
+                .appendingPathComponent("Sources/MacActivityApp/AppShell/DashboardPopoverController.swift"),
+            encoding: .utf8
+        )
+        let start = try XCTUnwrap(source.range(of: "struct DashboardPopoverRootView"))
+        let end = try XCTUnwrap(source.range(
+            of: "final class DashboardPopoverController",
+            range: start.upperBound..<source.endIndex
+        ))
+        let rootView = source[start.lowerBound..<end.lowerBound]
+
+        XCTAssertTrue(rootView.contains("content"))
+        XCTAssertFalse(rootView.contains("if "))
+        XCTAssertFalse(rootView.contains("switch "))
+        XCTAssertFalse(rootView.contains(".id("))
+    }
+
+    private static func requireLiquidGlassRendering() throws {
+        guard #available(macOS 26.0, *) else {
+            throw XCTSkip("Liquid Glass rendering requires macOS 26.")
+        }
+    }
+
+    private static func hostForFittingSize(_ view: NSView) -> NSWindow {
+        let window = NSWindow(
+            contentRect: NSRect(x: 0, y: 0, width: 200, height: 120),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = view
+        window.orderFront(nil)
+        return window
+    }
+
+    private static func firstGlassEffectView(in view: NSView) -> NSView? {
+        if #available(macOS 26.0, *), view is NSGlassEffectView {
+            return view
+        }
+        for subview in view.subviews {
+            if let found = firstGlassEffectView(in: subview) {
+                return found
+            }
+        }
+        return nil
+    }
+
+    private static func packageRootURL() -> URL {
+        URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+    }
+
     private static func overviewMetrics(_ kinds: [MetricKind]) -> [DashboardMetric] {
         kinds.map { kind in
             DashboardMetric(
@@ -1850,6 +2360,46 @@ final class DashboardCardLayoutTests: XCTestCase {
             store: DashboardCardLayoutPreferencesStore(initial: initial),
             launchService: NoopLaunchAtLoginService()
         )
+    }
+
+    private static func hostedRenderedColor<Content: View>(
+        of view: Content,
+        size: NSSize,
+        atTopLeft point: CGPoint
+    ) -> NSColor? {
+        _ = NSApplication.shared
+        let hosting = NSHostingView(rootView: view)
+        hosting.frame = NSRect(origin: .zero, size: size)
+        let window = NSWindow(
+            contentRect: NSRect(origin: .zero, size: size),
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.contentView = hosting
+        window.orderFront(nil)
+        hosting.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        hosting.layoutSubtreeIfNeeded()
+        defer { window.close() }
+
+        guard let bitmap = hosting.bitmapImageRepForCachingDisplay(in: hosting.bounds) else {
+            return nil
+        }
+        hosting.cacheDisplay(in: hosting.bounds, to: bitmap)
+
+        let scale = CGFloat(bitmap.pixelsWide) / max(size.width, 1)
+        let pixelX = Int((point.x * scale).rounded(.down))
+        let pixelY = Int(((size.height - point.y) * scale).rounded(.down))
+
+        guard (0..<bitmap.pixelsWide).contains(pixelX),
+              (0..<bitmap.pixelsHigh).contains(pixelY)
+        else {
+            return nil
+        }
+
+        return bitmap.colorAt(x: pixelX, y: pixelY)?.usingColorSpace(.deviceRGB)
     }
 
     private static func renderedColor<Content: View>(
@@ -1900,14 +2450,15 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    private static func dashboardViewSource() throws -> String {
+    private static func dashboardViewSource(_ fileName: String = "DashboardView.swift") throws -> String {
         let testFile = URL(fileURLWithPath: #filePath)
         let packageRoot = testFile
             .deletingLastPathComponent()
             .deletingLastPathComponent()
             .deletingLastPathComponent()
         let sourceURL = packageRoot
-            .appendingPathComponent("Sources/MacActivityApp/Views/DashboardView.swift")
+            .appendingPathComponent("Sources/MacActivityApp/Views")
+            .appendingPathComponent(fileName)
         return try String(contentsOf: sourceURL, encoding: .utf8)
     }
 }

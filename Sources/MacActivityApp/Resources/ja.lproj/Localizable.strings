@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "更新チャンネル";
 "preferences.language" = "言語";
 "preferences.languageHelp" = "環境設定とダッシュボードの表示言語を制御します。";
+"preferences.dashboardStyle" = "ダッシュボードのスタイル";
+"preferences.dashboardStyle.standard" = "標準";
+"preferences.dashboardStyle.transparent" = "透明";
+"preferences.dashboardStyle.help" = "「透明」は macOS 26 以降で透明なボーダーレスパネルを使用します。「透明度を下げる」が有効な場合は「標準」の外観を維持します。";
+"preferences.dashboardStyle.unavailable" = "「透明」には macOS 26 以降が必要です。この Mac では「標準」の外観を維持します。";
 "preferences.temperatureSource" = "温度ソース";
 "preferences.temperatureHelp" = "ステータスバーとダッシュボードの温度メトリックを制御します。";
 "preferences.hardwareBatteryPercentage" = "ハードウェアバッテリー残量を表示";

@@ -1,8 +1,14 @@
 import SwiftUI
 import MacActivityCore
 
+struct PowerFlowRefreshTaskID: Equatable {
+    var presented: Bool = true
+    var trigger: Int
+}
+
 struct PowerFlowView: View {
     @ObservedObject var model: PowerFlowModel
+    @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     let refreshTrigger: Int
 
     var body: some View {
@@ -17,7 +23,8 @@ struct PowerFlowView: View {
             )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .task(id: refreshTrigger) {
+        .task(id: PowerFlowRefreshTaskID(presented: dashboardIsPresented, trigger: refreshTrigger)) {
+            guard dashboardIsPresented else { return }
             await model.refreshWhileVisible()
         }
     }
@@ -45,7 +52,7 @@ private struct PowerFlowColumn: View {
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .padding(10)
-        .background(.quaternary.opacity(0.55), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .dashboardCardChrome()
     }
 }
 

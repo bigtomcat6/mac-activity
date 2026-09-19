@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "Canal de mise à jour";
 "preferences.language" = "Langue";
 "preferences.languageHelp" = "Contrôle la langue d’affichage des préférences et du tableau de bord.";
+"preferences.dashboardStyle" = "Style du tableau de bord";
+"preferences.dashboardStyle.standard" = "Standard";
+"preferences.dashboardStyle.transparent" = "Transparent";
+"preferences.dashboardStyle.help" = "« Transparent » utilise un panneau clair sans bordure sur macOS 26 ou version ultérieure. Si « Réduire la transparence » est activé, l’apparence « Standard » est conservée.";
+"preferences.dashboardStyle.unavailable" = "« Transparent » nécessite macOS 26 ou version ultérieure. Sur ce Mac, l’apparence « Standard » est conservée.";
 "preferences.temperatureSource" = "Source de température";
 "preferences.temperatureHelp" = "Contrôle la métrique de température dans la barre de menu et le tableau de bord.";
 "preferences.hardwareBatteryPercentage" = "Afficher le pourcentage matériel de la batterie";

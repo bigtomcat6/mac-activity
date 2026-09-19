@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "选择更新频道";
 "preferences.language" = "语言";
 "preferences.languageHelp" = "控制偏好设置和仪表盘的显示语言。";
+"preferences.dashboardStyle" = "界面风格";
+"preferences.dashboardStyle.standard" = "标准";
+"preferences.dashboardStyle.transparent" = "通透";
+"preferences.dashboardStyle.help" = "“通透”会在 macOS 26 或更高版本上使用透明无边框面板。若系统开启了“降低透明度”，将保持“标准”外观。";
+"preferences.dashboardStyle.unavailable" = "“通透”需要 macOS 26 或更高版本。此 Mac 将保持“标准”外观。";
 "preferences.temperatureSource" = "温度来源";
 "preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
 "preferences.hardwareBatteryPercentage" = "显示硬件电池百分比";
