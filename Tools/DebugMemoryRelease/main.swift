@@ -97,8 +97,8 @@ private struct CooldownAttemptReport: Encodable {
     let result: ReleaseResultReport
 }
 
-@main
 struct DebugMemoryRelease {
+    @MainActor
     static func main() async {
         do {
             let options = try parseOptions(Array(CommandLine.arguments.dropFirst()))
@@ -581,3 +581,5 @@ private enum DebugMemoryReleaseError: LocalizedError {
         }
     }
 }
+
+await DebugMemoryRelease.main()

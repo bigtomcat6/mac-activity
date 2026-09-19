@@ -46,7 +46,50 @@ The Energy Impact page shows a physical power-flow panel above the app ranking:
 - Physical power flow shows active input and output endpoints above the app energy-impact ranking.
 - Battery appears as an input while discharging and an output while charging.
 - Connector labels can identify USB-C or MagSafe when Mac Activity can recognize the adapter; otherwise the app shows an unknown external interface.
-- Current watts appear only for hardware measurements that are directly available. Adapter ratings and negotiated limits are not shown as live power.
+- Input watts come directly from current SMC input voltage and current readings. Battery watts come directly from current SMC battery voltage and signed-current readings.
+- If a live SMC sensor is unavailable, its related flow remains unavailable. Mac Activity does not substitute adapter ratings, negotiated limits, or a cached earlier reading.
+- The Mac value is a derived allocation: external input plus battery discharge minus battery charging. It includes the non-battery residual in that flow and is not an independently measured system-load sensor.
+- The panel keeps its active input/output endpoint layout and uses mW for sub-watt readings.
+- App energy-impact CPU estimates are separate process estimates and are not inputs to physical power flow.
+- These readings do not claim exact AlDente parity for charging states that have not been validated.
+
+## Audio
+
+Output-device sliders apply volume changes while you drag, rather than waiting
+for you to release the slider. Sliders are available when the device exposes
+writable volume and mute controls. Dragging to zero mutes the device; dragging
+up restores audible output at the selected volume.
+
+Application audio controls require macOS 14.2 or later and system audio capture
+permission. MacActivity silently checks the current status when the Audio page
+opens or becomes active; this check does not request permission. Until access
+is available, the application region is replaced by a recording-permission view
+with a `record.circle` icon while output-device controls remain available.
+Choose **Grant Access** before macOS has made a decision. If access was denied,
+the action opens System Settings instead of repeatedly requesting permission.
+The manual **Grant Access** button is the only place MacActivity uses the
+private `TCCAccessRequest` callback. When macOS allows access, the application
+list updates immediately; restarting MacActivity is not required. Page entry,
+focus changes, and service restarts continue to use only the silent status
+check and never request permission.
+
+The silent status check and the manual callback use macOS private TCC
+interfaces. Apple may change or remove either interface in a future macOS
+release; if one is unavailable, MacActivity shows an honest unavailable state
+rather than application controls. No system-audio recording request is made
+until you choose **Grant Access**.
+
+The application list includes processes currently producing audio output and
+excludes MacActivity's own process. Each application row shows its localized
+application name and icon when its bundle can be resolved. If no applications
+are playing audio after access is available, the page shows that empty state;
+it does not indicate whether permission was granted.
+
+Changing an application's output can briefly show a rebuilding state while the
+previous route's audio resources are released. A newer selection replaces a
+pending selection. If cleanup cannot complete or the route is unavailable, the
+control reports a failure; use Retry after the underlying problem is resolved.
+Device and route compatibility still depend on the hardware and macOS APIs.
 
 ## Audio
 
@@ -180,7 +223,9 @@ Some metrics are intentionally conditional:
 - Memory history improves after the app has been running long enough to collect
   samples.
 - Connector labels and direct power-flow values depend on hardware and system
-  APIs, and unavailable values are expected on some Macs.
+  APIs, and unavailable values are expected on some Macs. A Mac without an
+  internal battery has no battery endpoint; a present battery with unavailable
+  live SMC telemetry leaves its related allocation unavailable.
 
 ## Troubleshooting
 
