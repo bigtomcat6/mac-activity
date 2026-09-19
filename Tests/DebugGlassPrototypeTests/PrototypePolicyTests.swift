@@ -127,4 +127,30 @@ final class PrototypeOptionsTests: XCTestCase {
         XCTAssertThrowsError(try PrototypeOptions.parse(["--cycles", "zero"]))
         XCTAssertThrowsError(try PrototypeOptions.parse(["--cycles", "-1"]))
     }
+
+    func testModeDisplayNamesCoverEveryCase() {
+        XCTAssertEqual(
+            PrototypeMode.allCases.map(\.displayName),
+            [
+                "Standard popover (regular glass)",
+                "Clear popover (clear glass + readability tint)",
+                "Transparent panel (clear glass, no shell)",
+            ]
+        )
+    }
+
+    func testOptionErrorsDescribeTheirArguments() {
+        XCTAssertEqual(
+            PrototypeOptionError.unknownArgument("--nope").errorDescription,
+            "Unknown argument: --nope"
+        )
+        XCTAssertEqual(
+            PrototypeOptionError.missingValue(argument: "--capture-dir").errorDescription,
+            "Missing value after --capture-dir"
+        )
+        XCTAssertEqual(
+            PrototypeOptionError.invalidValue(argument: "--cycles", value: "zero").errorDescription,
+            "Invalid value for --cycles: zero"
+        )
+    }
 }

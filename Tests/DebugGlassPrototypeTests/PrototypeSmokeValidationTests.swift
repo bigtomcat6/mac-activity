@@ -101,6 +101,13 @@ final class PrototypeSmokeValidationTests: XCTestCase {
         )
     }
 
+    func testPanelAttributeFailureRequiresStyleMask() {
+        XCTAssertEqual(
+            PrototypeSmokeValidation.transparentPanelAttributeFailure(panelReport(styleMask: nil)),
+            "panel-not-transparent:styleMask"
+        )
+    }
+
     func testPanelReportFailsWhenFrameMissing() {
         XCTAssertEqual(
             PrototypeSmokeValidation.modeFailure(

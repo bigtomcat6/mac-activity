@@ -247,6 +247,75 @@ final class DashboardPanelHostTests: XCTestCase {
         XCTAssertTrue(host.shouldDismiss(forEventWindow: nil, mouseLocation: outside))
     }
 
+    func testContentSizeReportsAttachedPanelFrameAndNilBeforeShow() throws {
+        let host = DashboardPanelHost()
+        XCTAssertNil(host.contentSize)
+
+        host.show(
+            contentViewController: NSHostingController(rootView: Text("content size")),
+            anchorRect: anchorRect,
+            visibleFrame: visibleFrame,
+            contentSize: NSSize(width: 420, height: 320)
+        )
+        defer { host.destroy() }
+
+        let contentSize = try XCTUnwrap(host.contentSize)
+        XCTAssertEqual(contentSize.width, 420, accuracy: 0.5)
+        XCTAssertEqual(contentSize.height, 320, accuracy: 0.5)
+    }
+
+    func testGlobalMouseClickClosesShownPanel() throws {
+        let recorder = DashboardRecordingMonitorBag()
+        let host = makeShownHost(makeMonitorBag: { recorder.makeBag() })
+        defer { host.destroy() }
+        let globalHandler = try XCTUnwrap(recorder.globalHandler(for: .leftMouseDown))
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: 5, y: 5),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: 0,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 0
+        ))
+
+        globalHandler(event)
+        drainRunLoop()
+
+        XCTAssertNotNil(host.panel, "global dismissal hides the panel; it is kept attached for reuse")
+        XCTAssertFalse(host.isVisible)
+        XCTAssertEqual(host.activeMonitorCount, 0)
+    }
+
+    func testLocalMouseClickInsidePanelWindowKeepsPanelVisible() throws {
+        let recorder = DashboardRecordingMonitorBag()
+        let host = makeShownHost(makeMonitorBag: { recorder.makeBag() })
+        defer { host.destroy() }
+        let mouseHandler = try XCTUnwrap(recorder.localHandler(for: .leftMouseDown))
+        let panel = try XCTUnwrap(host.panel)
+        let event = try XCTUnwrap(NSEvent.mouseEvent(
+            with: .leftMouseDown,
+            location: NSPoint(x: panel.frame.midX, y: panel.frame.midY),
+            modifierFlags: [],
+            timestamp: 0,
+            windowNumber: panel.windowNumber,
+            context: nil,
+            eventNumber: 1,
+            clickCount: 1,
+            pressure: 0
+        ))
+        XCTAssertTrue(event.window === panel)
+
+        let returned = mouseHandler(event)
+        drainRunLoop()
+
+        XCTAssertTrue(returned === event)
+        XCTAssertTrue(host.isVisible)
+        XCTAssertEqual(host.activeMonitorCount, 6)
+    }
+
     func testExternalLocalMouseClickReturnsOriginalEventAndCloses() throws {
         let recorder = DashboardRecordingMonitorBag()
         let host = makeShownHost(makeMonitorBag: { recorder.makeBag() })
@@ -389,5 +458,9 @@ final class DashboardRecordingMonitorBag {
 
     func localHandler(for mask: NSEvent.EventTypeMask) -> ((NSEvent) -> NSEvent?)? {
         localHandlers.first { $0.mask.contains(mask) }?.handler
+    }
+
+    func globalHandler(for mask: NSEvent.EventTypeMask) -> ((NSEvent) -> Void)? {
+        globalHandlers.first { $0.mask.contains(mask) }?.handler
     }
 }

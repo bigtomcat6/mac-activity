@@ -304,6 +304,46 @@ final class DashboardAdaptiveHostTests: XCTestCase {
         XCTAssertTrue(host.panelForTesting === hiddenPanel)
         host.performClose(nil)
     }
+
+    func testHostForwardsPopoverConfigurationAccessors() {
+        let host = makeHost(state: makeState(style: .standard))
+
+        XCTAssertEqual(host.behavior, .transient)
+        host.behavior = .semitransient
+        XCTAssertEqual(host.behavior, .semitransient)
+
+        XCTAssertTrue(host.animates)
+        host.animates = false
+        XCTAssertFalse(host.animates)
+
+        let delegate = AdaptiveHostCloseCounter()
+        XCTAssertNil(host.delegate)
+        host.delegate = delegate
+        XCTAssertTrue(host.delegate === delegate)
+    }
+
+    func testVisiblePanelContentSizeReadsAndResizesThroughPanelHost() throws {
+        let state = makeState(style: .transparent)
+        let host = makeHost(state: state)
+        host.contentViewController = NSHostingController(rootView: Text("panel content size"))
+        host.contentSize = NSSize(width: 420, height: 320)
+
+        host.show(
+            relativeTo: NSRect(x: 0, y: 0, width: 24, height: 24),
+            of: try makeAnchorView(),
+            preferredEdge: .minY
+        )
+        defer { host.performClose(nil) }
+
+        XCTAssertEqual(host.activeHostKind, .panel)
+        XCTAssertEqual(host.contentSize.width, 420, accuracy: 0.5)
+        XCTAssertEqual(host.contentSize.height, 320, accuracy: 0.5)
+
+        host.contentSize = NSSize(width: 420, height: 480)
+
+        XCTAssertEqual(host.contentSize.width, 420, accuracy: 0.5)
+        XCTAssertEqual(host.contentSize.height, 480, accuracy: 0.5)
+    }
 }
 
 @MainActor

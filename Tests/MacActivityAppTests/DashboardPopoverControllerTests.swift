@@ -1197,6 +1197,41 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(recorder.events, [])
     }
 
+    func testAccessibilityDisplayOptionsChangeReappliesPresentationForShownHost() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        popover.isShown = true
+        let preferencesController = Self.preferencesController()
+        preferencesController.setDashboardStyle(.transparent)
+        var reduceTransparency = false
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: preferencesController,
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            openPreferences: {},
+            quitApplication: {},
+            accessibilityEnvironmentProvider: {
+                DashboardPresentationAccessibilityEnvironment(
+                    reduceTransparency: reduceTransparency,
+                    increaseContrast: false,
+                    majorVersion: 26
+                )
+            }
+        )
+
+        reduceTransparency = true
+        NSWorkspace.shared.notificationCenter.post(
+            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
+            object: nil
+        )
+
+        XCTAssertEqual(recorder.events, ["close-popover"])
+        withExtendedLifetime(controller) {}
+    }
+
     func testOpeningThenClosingReportsPairedVisibilityOnce() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)

@@ -80,4 +80,43 @@ final class PrototypePlacementTests: XCTestCase {
         XCTAssertEqual(frame.width, 500 - PrototypePlacement.defaultEdgeMargin * 2)
         XCTAssertEqual(frame.height, 800 - PrototypePlacement.defaultEdgeMargin * 2)
     }
+
+    func testScreenIndexFallsBackToLargestIntersectionWhenNoScreenContainsCenter() {
+        XCTAssertEqual(
+            PrototypePlacement.screenIndex(
+                containing: NSRect(x: -1500, y: 200, width: 400, height: 200),
+                screenFrames: [mainScreen, leftScreen]
+            ),
+            1
+        )
+        XCTAssertNil(
+            PrototypePlacement.screenIndex(
+                containing: NSRect(x: 200, y: 1200, width: 40, height: 40),
+                screenFrames: [mainScreen, leftScreen]
+            )
+        )
+    }
+
+    @MainActor
+    func testVisibleFrameFallsBackToMainScreenWhenAnchorMatchesNoScreen() {
+        let fallback = PrototypePlacement.visibleFrame(for: .zero, screens: [])
+        XCTAssertEqual(fallback, (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero)
+    }
+
+    @MainActor
+    func testVisibleFrameUsesScreenContainingAnchor() throws {
+        let screens = NSScreen.screens
+        try XCTSkipIf(screens.isEmpty, "a screen is required to resolve the containing visible frame")
+        let anchor = NSRect(
+            x: screens[0].frame.midX - 5,
+            y: screens[0].frame.midY - 5,
+            width: 10,
+            height: 10
+        )
+
+        XCTAssertEqual(
+            PrototypePlacement.visibleFrame(for: anchor, screens: screens),
+            screens[0].visibleFrame
+        )
+    }
 }

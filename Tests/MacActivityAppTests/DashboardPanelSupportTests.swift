@@ -45,6 +45,10 @@ final class DashboardPanelSupportTests: XCTestCase {
         XCTAssertEqual(DashboardPanelAnchor.screenRect(for: view), expected)
         XCTAssertNil(DashboardPanelAnchor.screenRect(for: nil))
         XCTAssertNil(DashboardPanelAnchor.screenRect(for: NSView()))
+
+        let zeroSizedView = NSView(frame: .zero)
+        window.contentView?.addSubview(zeroSizedView)
+        XCTAssertNil(DashboardPanelAnchor.screenRect(for: zeroSizedView))
     }
 
     func testMenuBarPlausibilityFollowsScreenBandAndBounds() {
@@ -126,6 +130,34 @@ final class DashboardPanelSupportTests: XCTestCase {
             0
         )
         XCTAssertNil(DashboardPanelPlacement.screenIndex(containing: .zero, screenFrames: []))
+    }
+
+    func testScreenIndexFallsBackToLargestIntersectionWhenNoScreenContainsCenter() {
+        let mainScreen = NSRect(x: 0, y: 0, width: 1920, height: 1080)
+        let leftScreen = NSRect(x: -1280, y: 0, width: 1280, height: 1024)
+
+        XCTAssertEqual(
+            DashboardPanelPlacement.screenIndex(
+                containing: NSRect(x: -1500, y: 200, width: 400, height: 200),
+                screenFrames: [mainScreen, leftScreen]
+            ),
+            1
+        )
+        XCTAssertNil(
+            DashboardPanelPlacement.screenIndex(
+                containing: NSRect(x: 200, y: 1200, width: 40, height: 40),
+                screenFrames: [mainScreen, leftScreen]
+            )
+        )
+    }
+
+    func testVisibleFrameFallsBackToMainScreenWhenAnchorMatchesNoScreen() {
+        let fallback = DashboardPanelPlacement.visibleFrame(
+            for: NSRect(x: -50_000, y: -50_000, width: 10, height: 10),
+            screens: []
+        )
+
+        XCTAssertEqual(fallback, (NSScreen.main ?? NSScreen.screens.first)?.visibleFrame ?? .zero)
     }
 
     func testPanelFrameStaysInsideNegativeOriginSecondScreen() {

@@ -50,6 +50,9 @@ final class EnergyImpactViewTests: XCTestCase {
             PowerFlowRefreshTaskID(presented: true, trigger: 1),
             PowerFlowRefreshTaskID(presented: false, trigger: 1)
         )
+        XCTAssertTrue(ActiveCleanReleaseRefreshTaskID(trigger: 1).presented)
+        XCTAssertTrue(ActiveCleanReleaseQuitRefreshTaskID(identifiers: [1]).presented)
+        XCTAssertTrue(PowerFlowRefreshTaskID(trigger: 1).presented)
     }
 
     func testEnergyImpactViewDoesNotClaimACompletedCheckBeforeFirstObservation() {
