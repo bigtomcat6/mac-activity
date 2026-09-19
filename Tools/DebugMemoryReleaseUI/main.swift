@@ -24,7 +24,6 @@ private struct DebugMemoryReleaseUIReport: Encodable {
     let subtitle: String
 }
 
-@main
 struct DebugMemoryReleaseUI {
     static func main() {
         do {
@@ -227,3 +226,5 @@ private enum DebugMemoryReleaseUIError: LocalizedError {
         }
     }
 }
+
+DebugMemoryReleaseUI.main()
