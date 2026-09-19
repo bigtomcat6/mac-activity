@@ -765,7 +765,6 @@ struct DashboardView: View {
                 footer
             }
         }
-        .modifier(DashboardGlassContainerModifier())
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background {
             if styleAppearance.usesRootGlass {

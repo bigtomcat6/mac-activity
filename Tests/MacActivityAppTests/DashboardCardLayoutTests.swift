@@ -809,7 +809,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         let source = try Self.dashboardViewSource()
         XCTAssertFalse(source.contains("DashboardCardChrome.canvasColor"))
         XCTAssertFalse(source.contains("DashboardFooterChrome.backgroundOpacity"))
-        XCTAssertTrue(source.contains(".modifier(DashboardGlassContainerModifier())"))
+        XCTAssertFalse(
+            source.contains("GlassEffectContainer"),
+            "glass cards must not be extracted into a container outside the scroll clip"
+        )
         XCTAssertEqual(
             source.components(separatedBy: "DashboardRootGlassBackground(").count - 1,
             1,
@@ -936,7 +939,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(source.contains(".glassEffect(.regular, in: shape)"))
         XCTAssertFalse(source.contains(".glassEffect(.clear"))
         XCTAssertTrue(source.contains("Color.primary.opacity"))
-        XCTAssertTrue(source.contains("GlassEffectContainer(spacing: 0)"))
+        XCTAssertFalse(
+            source.contains("GlassEffectContainer"),
+            "glass cards must render in place so the scroll clip can keep them inside the layout"
+        )
         XCTAssertTrue(source.contains("accessibilityReduceTransparency"))
         XCTAssertFalse(source.contains(".interactive("))
         XCTAssertFalse(source.contains("glassEffectUnion"))

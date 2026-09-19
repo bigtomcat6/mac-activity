@@ -49,19 +49,6 @@ struct DashboardFallbackCardSurface: View {
     }
 }
 
-struct DashboardGlassContainerModifier: ViewModifier {
-    @ViewBuilder
-    func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            GlassEffectContainer(spacing: 0) {
-                content
-            }
-        } else {
-            content
-        }
-    }
-}
-
 enum DashboardHeaderChrome {
     static let horizontalPadding: CGFloat = 18
     static let topPadding: CGFloat = 18
