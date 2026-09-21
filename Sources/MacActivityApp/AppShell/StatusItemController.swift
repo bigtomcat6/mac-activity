@@ -86,7 +86,13 @@ final class StatusItemController: NSObject {
     }
 
     @objc private func statusItemClicked(_ sender: Any?) {
-        guard !Self.presentsContextMenu(for: NSApp.currentEvent?.type) else {
+        handleStatusItemClick(eventType: NSApp.currentEvent?.type)
+    }
+
+    /// Dispatches a status item click without reading `NSApp.currentEvent`, so
+    /// tests can drive the left-click and right-click paths directly.
+    func handleStatusItemClick(eventType: NSEvent.EventType?) {
+        guard !Self.presentsContextMenu(for: eventType) else {
             presentContextMenu()
             return
         }
