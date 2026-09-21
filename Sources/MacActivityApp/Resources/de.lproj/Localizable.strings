@@ -101,6 +101,11 @@
 "preferences.updateChannel" = "Update-Kanal";
 "preferences.language" = "Sprache";
 "preferences.languageHelp" = "Steuert die Anzeigesprache für Einstellungen und Dashboard.";
+"preferences.dashboardStyle" = "Dashboard-Stil";
+"preferences.dashboardStyle.standard" = "Standard";
+"preferences.dashboardStyle.transparent" = "Transparent";
+"preferences.dashboardStyle.help" = "„Transparent“ verwendet auf macOS 26 oder neuer ein klares, rahmenloses Panel. Wenn „Transparenz reduzieren“ aktiviert ist, bleibt die Darstellung „Standard“.";
+"preferences.dashboardStyle.unavailable" = "„Transparent“ erfordert macOS 26 oder neuer. Auf diesem Mac bleibt die Darstellung „Standard“.";
 "preferences.temperatureSource" = "Temperaturquelle";
 "preferences.temperatureHelp" = "Steuert die Temperaturmetrik in Statusleiste und Dashboard.";
 "preferences.hardwareBatteryPercentage" = "Hardware-Akku-Prozentsatz anzeigen";

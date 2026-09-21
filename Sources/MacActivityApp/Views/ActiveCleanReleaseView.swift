@@ -1,7 +1,18 @@
 import SwiftUI
 
+struct ActiveCleanReleaseRefreshTaskID: Equatable {
+    var presented: Bool = true
+    var trigger: Int
+}
+
+struct ActiveCleanReleaseQuitRefreshTaskID: Equatable {
+    var presented: Bool = true
+    var identifiers: Set<pid_t>
+}
+
 struct ActiveCleanReleaseView: View {
     @ObservedObject var model: ActiveCleanupModel
+    @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     let refreshTrigger: Int
     let usedMemoryBytes: UInt64
     let showsApplicationIdentifier: Bool
@@ -41,10 +52,12 @@ struct ActiveCleanReleaseView: View {
                 .accessibilityIdentifier("actives-clean-release-processes")
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: refreshTrigger) {
+        .task(id: ActiveCleanReleaseRefreshTaskID(presented: dashboardIsPresented, trigger: refreshTrigger)) {
+            guard dashboardIsPresented else { return }
             await model.refreshVisibleCleanReleaseSections()
         }
-        .task(id: model.quittingProcessIdentifiers) {
+        .task(id: ActiveCleanReleaseQuitRefreshTaskID(presented: dashboardIsPresented, identifiers: model.quittingProcessIdentifiers)) {
+            guard dashboardIsPresented else { return }
             await model.refreshQuittingProcessesUntilResolved()
         }
     }

@@ -76,6 +76,11 @@ public final class PreferencesController: ObservableObject {
         try? store.save(state)
     }
 
+    public func setDashboardStyle(_ dashboardStyle: DashboardStyle) {
+        state.dashboardStyle = dashboardStyle
+        try? store.save(state)
+    }
+
     public func setDiskCleanupCategory(_ kind: DiskCleanupCategoryKind, isSelected: Bool) {
         var selectedCategories = Set(state.diskCleanupCategories)
         if isSelected {

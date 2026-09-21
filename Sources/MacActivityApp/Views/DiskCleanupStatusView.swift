@@ -92,10 +92,7 @@ struct DiskCleanupStatusView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: ActiveCleanReleaseLayout.diskCleanupStripHeight, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .fill(Color(nsColor: .controlBackgroundColor).opacity(0.62))
-        )
+        .activeCleanupCardChrome()
         .task(id: confirmationState) {
             guard confirmationState == .confirming else { return }
             try? await Task.sleep(nanoseconds: Self.confirmationTimeoutNanoseconds)

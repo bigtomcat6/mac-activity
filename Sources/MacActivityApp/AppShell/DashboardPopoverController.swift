@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 import MacActivityCore
 
@@ -371,9 +372,13 @@ final class DashboardPopoverHostingController: NSHostingController<DashboardPopo
 
 struct DashboardPopoverRootView: View {
     let content: DashboardView
+    @ObservedObject var presentationState: DashboardPresentationState
 
     var body: some View {
-        content.frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+        content
+            .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+            .environment(\.dashboardStyleAppearance, presentationState.resolution.appearance)
+            .environment(\.dashboardPresentationIsPresented, presentationState.isPresented)
     }
 }
 
@@ -386,6 +391,9 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     private let dashboardHostingController: DashboardPopoverHostingController
     private let contentMeasurement: DashboardPopoverContentMeasurement
     private let scrollIndicatorState: DashboardPopoverScrollIndicatorState
+    private let presentationState: DashboardPresentationState
+    private let accessibilityEnvironmentProvider: () -> DashboardPresentationAccessibilityEnvironment
+    private var cancellables: Set<AnyCancellable> = []
 
     convenience init(
         dashboardModel: DashboardModel,
@@ -393,13 +401,21 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         audioDashboardModel: AudioDashboardModel,
         onVisibilityChange: @escaping (Bool) -> Void
     ) {
+        let presentationState = DashboardPresentationState(
+            style: preferencesController.state.dashboardStyle,
+            environment: DashboardPresentationAccessibilityEnvironment.live()
+        )
+        let host = DashboardAdaptivePopoverHost(
+            resolutionProvider: { presentationState.resolution }
+        )
         self.init(
-            popover: NSPopover(),
+            popover: host,
             focusController: SharedDashboardPopoverFocusController(),
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
             audioDashboardModel: audioDashboardModel,
-            onVisibilityChange: onVisibilityChange
+            onVisibilityChange: onVisibilityChange,
+            presentationState: presentationState
         )
     }
 
@@ -409,11 +425,19 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void
+        onVisibilityChange: @escaping (Bool) -> Void,
+        presentationState: DashboardPresentationState? = nil,
+        accessibilityEnvironmentProvider: @escaping () -> DashboardPresentationAccessibilityEnvironment = { .live() }
     ) {
         self.popover = popover
         self.focusController = focusController
         self.onVisibilityChange = onVisibilityChange
+        let presentationState = presentationState ?? DashboardPresentationState(
+            style: preferencesController.state.dashboardStyle,
+            environment: accessibilityEnvironmentProvider()
+        )
+        self.presentationState = presentationState
+        self.accessibilityEnvironmentProvider = accessibilityEnvironmentProvider
 
         let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
         let tabSelectionState = DashboardTabSelectionState()
@@ -435,7 +459,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     },
                     scrollIndicatorState: scrollIndicatorState,
                     tabSelectionState: tabSelectionState
-                )
+                ),
+                presentationState: presentationState
             )
         )
         measurement.onContentSizeChange = { [weak contentSizeCoordinator] size in
@@ -461,6 +486,22 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.scrollIndicatorState = scrollIndicatorState
         super.init()
         popover.delegate = self
+
+        preferencesController.$state
+            .map(\.dashboardStyle)
+            .removeDuplicates()
+            .sink { [weak self] dashboardStyle in
+                self?.applyPresentation(dashboardStyle: dashboardStyle)
+            }
+            .store(in: &cancellables)
+
+        NSWorkspace.shared.notificationCenter.publisher(
+            for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
+        )
+        .sink { [weak self] _ in
+            self?.applyPresentation(dashboardStyle: nil)
+        }
+        .store(in: &cancellables)
     }
 
     func toggle(relativeTo view: NSView?) {
@@ -469,6 +510,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         }
 
         if popover.isShown {
+            presentationState.setPresented(false)
             popover.performClose(nil)
         } else {
             focusController.activateApplication()
@@ -478,13 +520,32 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                 contentSizeCoordinator.applyImmediately(measuredSize: latestContentSize)
             }
             popover.show(relativeTo: view.bounds, of: view, preferredEdge: .minY)
+            guard popover.isShown else {
+                return
+            }
+            presentationState.setPresented(true)
             focusController.focusPresentedPopover(popover)
             onVisibilityChange(true)
         }
     }
 
+    private func applyPresentation(dashboardStyle: DashboardStyle?) {
+        let previousHostKind = presentationState.resolution.hostKind
+        presentationState.apply(
+            style: dashboardStyle,
+            environment: accessibilityEnvironmentProvider()
+        )
+        guard presentationState.resolution.hostKind != previousHostKind, popover.isShown else {
+            return
+        }
+        presentationState.setPresented(false)
+        popover.performClose(nil)
+    }
+
     func popoverDidClose(_ notification: Notification) {
+        guard !popover.isShown else { return }
         contentSizeCoordinator.resetAfterPopoverCloses()
+        presentationState.setPresented(false)
         onVisibilityChange(false)
     }
 

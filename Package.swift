@@ -34,6 +34,10 @@ let package = Package(
             name: "DebugDiskCleanup",
             targets: ["DebugDiskCleanup"]
         ),
+        .executable(
+            name: "DebugGlassPrototype",
+            targets: ["DebugGlassPrototype"]
+        ),
     ],
     dependencies: [
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
@@ -73,6 +77,10 @@ let package = Package(
             dependencies: ["MacActivityCore"],
             path: "Tools/DebugDiskCleanup"
         ),
+        .executableTarget(
+            name: "DebugGlassPrototype",
+            path: "Tools/DebugGlassPrototype"
+        ),
         .testTarget(
             name: "MacActivityCoreTests",
             dependencies: ["MacActivityCore"],
@@ -82,6 +90,11 @@ let package = Package(
             name: "MacActivityAppTests",
             dependencies: ["MacActivityApp"],
             path: "Tests/MacActivityAppTests"
+        ),
+        .testTarget(
+            name: "DebugGlassPrototypeTests",
+            dependencies: ["DebugGlassPrototype"],
+            path: "Tests/DebugGlassPrototypeTests"
         ),
     ]
 )

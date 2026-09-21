@@ -226,6 +226,19 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.saveAttempts, 1)
         XCTAssertEqual(store.savedValues, [])
     }
+
+    func testDashboardStylePreferencePersistsToPreferencesState() {
+        let store = RecordingPreferencesStore(initial: .default)
+        let controller = PreferencesController(
+            store: store,
+            launchService: NoopLaunchAtLoginService()
+        )
+
+        controller.setDashboardStyle(.transparent)
+
+        XCTAssertEqual(controller.state.dashboardStyle, .transparent)
+        XCTAssertEqual(store.savedValues.last?.dashboardStyle, .transparent)
+    }
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {

@@ -300,11 +300,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handleDashboardVisibilityChange(_ isVisible: Bool) {
         dashboardModel?.setActive(isVisible)
         samplingController?.setDashboardVisible(isVisible)
-
-        if !isVisible {
-            dashboardPopoverController?.reset()
-            dashboardModel = nil
-        }
     }
 
     private func makeDashboardPopoverController() -> DashboardPopoverController {
@@ -383,7 +378,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func testingResolveDashboardPopoverController() -> DashboardPopoverController {
-        testingResolvedDashboardPopoverController = nil
         dashboardPopoverController?.toggle(relativeTo: nil)
         guard let testingResolvedDashboardPopoverController else {
             fatalError("Dashboard popover test factory was not configured")

@@ -169,7 +169,7 @@ final class AppSamplingControllerTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
     }
 
-    func testClosingAndRecreatingPopoverKeepsOneApplicationAudioCoordinator() throws {
+    func testClosingAndReopeningPopoverKeepsOneDashboardIdentityAndAudioCoordinator() throws {
         let coordinator = TestAudioControlCoordinator()
         let delegate = AppDelegate(releasePageOpener: { _ in })
         delegate.testingConfigureDashboardPopoverFactory(
@@ -186,8 +186,8 @@ final class AppSamplingControllerTests: XCTestCase {
         let secondPopover = delegate.testingResolveDashboardPopoverController()
         let secondModel = try XCTUnwrap(secondPopover.testingAudioDashboardModel)
 
-        XCTAssertFalse(firstPopover === secondPopover)
-        XCTAssertFalse(firstModel === secondModel)
+        XCTAssertTrue(firstPopover === secondPopover)
+        XCTAssertTrue(firstModel === secondModel)
         XCTAssertTrue(firstModel.testingCoordinator === secondModel.testingCoordinator)
         XCTAssertEqual(coordinator.shutdownCallCount, 0)
     }
@@ -262,6 +262,7 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
         subject.eraseToAnyPublisher()
     }
     private(set) var shutdownCallCount = 0
+    private(set) var refreshSystemAudioAuthorizationCallCount = 0
 
     init(supportsProcessControls: Bool = false, snapshot: AudioControlSnapshot = .empty) {
         self.supportsProcessControls = supportsProcessControls
@@ -270,7 +271,9 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
     }
 
     func start() async {}
-    func refreshSystemAudioAuthorization() async {}
+    func refreshSystemAudioAuthorization() async {
+        refreshSystemAudioAuthorizationCallCount += 1
+    }
     func requestSystemAudioAccess() async {}
     func retryDevice(_ deviceUID: String) {}
     func setDeviceVolume(_ volume: Double, for deviceUID: String) {}

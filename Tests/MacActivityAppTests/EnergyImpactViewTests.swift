@@ -34,6 +34,25 @@ final class EnergyImpactViewTests: XCTestCase {
             EnergyImpactRefreshTaskID(trigger: 1, scope: .regularOnly),
             EnergyImpactRefreshTaskID(trigger: 1, scope: .regularAndAccessory)
         )
+        XCTAssertNotEqual(
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularOnly),
+            EnergyImpactRefreshTaskID(trigger: 1, scope: .regularOnly, presented: false)
+        )
+        XCTAssertNotEqual(
+            ActiveCleanReleaseRefreshTaskID(presented: true, trigger: 1),
+            ActiveCleanReleaseRefreshTaskID(presented: false, trigger: 1)
+        )
+        XCTAssertNotEqual(
+            ActiveCleanReleaseQuitRefreshTaskID(presented: true, identifiers: [1]),
+            ActiveCleanReleaseQuitRefreshTaskID(presented: false, identifiers: [1])
+        )
+        XCTAssertNotEqual(
+            PowerFlowRefreshTaskID(presented: true, trigger: 1),
+            PowerFlowRefreshTaskID(presented: false, trigger: 1)
+        )
+        XCTAssertTrue(ActiveCleanReleaseRefreshTaskID(trigger: 1).presented)
+        XCTAssertTrue(ActiveCleanReleaseQuitRefreshTaskID(identifiers: [1]).presented)
+        XCTAssertTrue(PowerFlowRefreshTaskID(trigger: 1).presented)
     }
 
     func testEnergyImpactViewDoesNotClaimACompletedCheckBeforeFirstObservation() {

@@ -179,4 +179,107 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches, .trash, .userLogs])
     }
 
+    func testLoadDefaultsDashboardStyleToStandardWhenMissingFromStoredPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        userDefaults.set(
+            Data(
+                #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":false,"temperatureSource":"smc"}"#
+                    .utf8
+            ),
+            forKey: "mac-activity.preferences"
+        )
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+
+        XCTAssertEqual(store.load().dashboardStyle, .standard)
+    }
+
+    func testLoadDefaultsDashboardStyleToStandardForUnknownStoredValueWithoutResettingOtherPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        userDefaults.set(
+            Data(
+                #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":true,"temperatureSource":"battery","dashboardStyle":"future-panel-style","updateChannel":"beta"}"#
+                    .utf8
+            ),
+            forKey: "mac-activity.preferences"
+        )
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.dashboardStyle, .standard)
+        XCTAssertEqual(loaded.temperatureSource, .battery)
+        XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .battery])
+        XCTAssertTrue(loaded.launchAtLoginEnabled)
+        XCTAssertEqual(loaded.updateChannel, .beta)
+    }
+
+    func testSavePersistsTransparentDashboardStyle() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        var preferences = AppPreferences.default
+        preferences.dashboardStyle = .transparent
+
+        try store.save(preferences)
+
+        XCTAssertEqual(store.load().dashboardStyle, .transparent)
+    }
+
+    func testDashboardStyleRequiresMacOS26ForTransparent() {
+        XCTAssertFalse(DashboardStyle.isTransparentSupported(majorVersion: 25))
+        XCTAssertTrue(DashboardStyle.isTransparentSupported(majorVersion: 26))
+        XCTAssertTrue(DashboardStyle.isTransparentSupported(majorVersion: 27))
+        XCTAssertEqual(DashboardStyle.minimumTransparentOSMajorVersion, 26)
+        XCTAssertEqual(DashboardStyle.allCases, [.standard, .transparent])
+    }
+
+    func testLoadDefaultsDashboardStyleToStandardForNullStoredValueWithoutResettingOtherPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        userDefaults.set(
+            Data(
+                #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":true,"temperatureSource":"battery","dashboardStyle":null,"updateChannel":"beta"}"#
+                    .utf8
+            ),
+            forKey: "mac-activity.preferences"
+        )
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.dashboardStyle, .standard)
+        XCTAssertEqual(loaded.temperatureSource, .battery)
+        XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .battery])
+        XCTAssertTrue(loaded.launchAtLoginEnabled)
+        XCTAssertEqual(loaded.updateChannel, .beta)
+    }
+
+    func testLoadDefaultsDashboardStyleToStandardForMalformedStoredValuesWithoutResettingOtherPreferences() throws {
+        let malformedStyles = ["42", #"{"style":"transparent"}"#]
+
+        for malformedStyle in malformedStyles {
+            let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+            let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+            userDefaults.removePersistentDomain(forName: suiteName)
+            userDefaults.set(
+                Data(
+                    #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":true,"temperatureSource":"battery","dashboardStyle":\#(malformedStyle),"updateChannel":"beta"}"#
+                        .utf8
+                ),
+                forKey: "mac-activity.preferences"
+            )
+            let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+            let loaded = store.load()
+
+            XCTAssertEqual(loaded.dashboardStyle, .standard, malformedStyle)
+            XCTAssertEqual(loaded.temperatureSource, .battery, malformedStyle)
+            XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .battery], malformedStyle)
+            XCTAssertTrue(loaded.launchAtLoginEnabled, malformedStyle)
+            XCTAssertEqual(loaded.updateChannel, .beta, malformedStyle)
+        }
+    }
 }

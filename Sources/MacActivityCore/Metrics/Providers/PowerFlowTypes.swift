@@ -81,22 +81,17 @@ struct PowerFlowBatteryState: Equatable, Sendable {
 enum PowerFlowRules {
     static func batteryState(
         voltageMillivolts: Double?,
-        amperageMilliamps: Double?,
-        isCharging: Bool
+        amperageMilliamps: Double?
     ) -> PowerFlowBatteryState {
         guard let amperageMilliamps,
-              amperageMilliamps.isFinite,
-              amperageMilliamps != 0 else {
+              amperageMilliamps.isFinite else {
             return PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
+        }
+        guard amperageMilliamps != 0 else {
+            return PowerFlowBatteryState(direction: .idle, measurement: .watts(0))
         }
 
-        let direction: PowerFlowDirection
-        switch (amperageMilliamps.sign == .minus, isCharging) {
-        case (true, false): direction = .input
-        case (false, true): direction = .output
-        default:
-            return PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
-        }
+        let direction: PowerFlowDirection = amperageMilliamps < 0 ? .input : .output
 
         guard let voltageMillivolts,
               voltageMillivolts.isFinite,
@@ -129,47 +124,40 @@ enum PowerFlowRules {
 
     static func externalInputMeasurement(
         voltageMillivolts: Double?,
-        currentMilliamps: Double?,
-        reportedPowerMilliwatts: Double?
+        currentMilliamps: Double?
     ) -> PowerFlowMeasurement {
         guard let voltageMillivolts,
               let currentMilliamps,
-              let reportedPowerMilliwatts,
               voltageMillivolts.isFinite,
               currentMilliamps.isFinite,
-              reportedPowerMilliwatts.isFinite,
-              voltageMillivolts > 0,
-              currentMilliamps > 0,
-              reportedPowerMilliwatts > 0 else {
+              voltageMillivolts >= 0,
+              currentMilliamps >= 0 else {
             return .unavailable
         }
+        guard currentMilliamps != 0 else { return .watts(0) }
+        guard voltageMillivolts > 0 else { return .unavailable }
 
-        let calculatedWatts = voltageMillivolts * currentMilliamps / 1_000_000
-        let reportedWatts = reportedPowerMilliwatts / 1_000
-        guard calculatedWatts.isFinite,
-              reportedWatts.isFinite,
-              calculatedWatts > 0,
-              reportedWatts > 0 else {
+        let watts = voltageMillivolts * currentMilliamps / 1_000_000
+        guard watts.isFinite, watts > 0 else {
             return .unavailable
         }
-
-        let tolerance = max(0.5, max(calculatedWatts, reportedWatts) * 0.05)
-        guard abs(calculatedWatts - reportedWatts) <= tolerance else {
-            return .unavailable
-        }
-        return .watts(calculatedWatts)
+        return .watts(watts)
     }
 
     static func macOutputMeasurement(
-        systemLoadMilliwatts: Double?
+        externalInput: PowerFlowMeasurement,
+        batteryState: PowerFlowBatteryState
     ) -> PowerFlowMeasurement {
-        guard let systemLoadMilliwatts,
-              systemLoadMilliwatts.isFinite,
-              systemLoadMilliwatts > 0 else {
+        guard let input = externalInput.watts,
+              let battery = batteryState.measurement.watts,
+              input.isFinite,
+              battery.isFinite,
+              input >= 0,
+              battery >= 0 else {
             return .unavailable
         }
 
-        let watts = systemLoadMilliwatts / 1_000
+        let watts = input + (batteryState.direction == .input ? battery : -battery)
         guard watts.isFinite, watts > 0 else {
             return .unavailable
         }

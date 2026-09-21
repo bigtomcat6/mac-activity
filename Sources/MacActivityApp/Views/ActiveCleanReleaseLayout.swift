@@ -11,13 +11,41 @@ enum ActiveCleanReleaseLayout {
 }
 
 enum DashboardCardChrome {
-    static let cornerRadius: CGFloat = 8
-    static let backgroundOpacity = 0.55
-    static let borderOpacity = 0.45
-    static let hoverBorderOpacity = 0.68
+    static let cornerRadius: CGFloat = 12
+    static let borderOpacity = 0.10
+    static let hoverBorderOpacity = 0.18
+    static let increasedContrastBorderOpacity = 0.55
+    static let shadowRadius: CGFloat = 7
+    static let shadowOffsetY: CGFloat = 3
 
     static func borderOpacity(isHovered: Bool) -> Double {
         isHovered ? hoverBorderOpacity : borderOpacity
+    }
+
+    static func surfaceColor(for colorScheme: ColorScheme) -> Color {
+        Color(.sRGB, white: colorScheme == .dark ? 0.20 : 0.98, opacity: 1)
+    }
+
+    static func shadowOpacity(for colorScheme: ColorScheme) -> Double {
+        colorScheme == .dark ? 0.20 : 0.10
+    }
+}
+
+struct DashboardFallbackCardSurface: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
+            .fill(reduceTransparency
+                ? AnyShapeStyle(DashboardCardChrome.surfaceColor(for: colorScheme))
+                : AnyShapeStyle(.ultraThinMaterial))
+            .shadow(
+                color: .black.opacity(DashboardCardChrome.shadowOpacity(for: colorScheme)),
+                radius: DashboardCardChrome.shadowRadius,
+                x: 0,
+                y: DashboardCardChrome.shadowOffsetY
+            )
     }
 }
 
@@ -42,13 +70,18 @@ enum DashboardTabChrome {
 
 enum ActiveCleanupChrome {
     static let cornerRadius = DashboardCardChrome.cornerRadius
-    static let backgroundOpacity = DashboardCardChrome.backgroundOpacity
     static let borderOpacity = DashboardCardChrome.borderOpacity
     static let activeProgressFill = Color.accentColor.opacity(0.12)
     static let inactiveProgressFill = Color.black.opacity(0.22)
 
-    static func progressFillColor(appearsActive: Bool) -> Color {
-        appearsActive ? activeProgressFill : inactiveProgressFill
+    static func progressFillColor(
+        appearsActive: Bool,
+        appearance: DashboardStyleAppearance = .standardAppearance
+    ) -> Color {
+        guard appearsActive == false else { return activeProgressFill }
+        return appearance.usesTranslucentChrome
+            ? DashboardOverviewChrome.translucentInactiveEmphasisFill
+            : inactiveProgressFill
     }
 }
 
@@ -67,37 +100,46 @@ enum ActiveProcessQuitButtonStyling {
 }
 
 private struct DashboardCardChromeModifier: ViewModifier {
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    @Environment(\.dashboardStyleAppearance) private var appearance
     let isHovered: Bool
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(
-            cornerRadius: DashboardCardChrome.cornerRadius,
+            cornerRadius: appearance.moduleCornerRadius,
             style: .continuous
         )
+        let borderOpacity = resolvedBorderOpacity
+        let clippedContent = content.contentShape(shape).clipShape(shape)
 
-        content
-            .contentShape(shape)
-            .background(.quaternary.opacity(DashboardCardChrome.backgroundOpacity), in: shape)
-            .clipShape(shape)
-            .overlay {
-                shape.stroke(
-                    .separator.opacity(DashboardCardChrome.borderOpacity(isHovered: isHovered)),
-                    lineWidth: 1
-                )
+        Group {
+            if #available(macOS 26.0, *), !reduceTransparency {
+                if appearance.usesRootGlass {
+                    clippedContent
+                        .background(shape.fill(Color.primary.opacity(appearance.moduleFillOpacity)))
+                } else {
+                    clippedContent.glassEffect(.regular, in: shape)
+                }
+            } else {
+                clippedContent.background {
+                    DashboardFallbackCardSurface()
+                }
             }
+        }
+        .overlay {
+            shape.strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+        }
     }
-}
 
-private struct ActiveCleanupCardChromeModifier: ViewModifier {
-    func body(content: Content) -> some View {
-        let shape = RoundedRectangle(cornerRadius: ActiveCleanupChrome.cornerRadius, style: .continuous)
-
-        content
-            .background(.quaternary.opacity(ActiveCleanupChrome.backgroundOpacity), in: shape)
-            .clipShape(shape)
-            .overlay {
-                shape.stroke(.separator.opacity(ActiveCleanupChrome.borderOpacity), lineWidth: 1)
-            }
+    private var resolvedBorderOpacity: Double {
+        if appearance.usesTranslucentChrome {
+            return appearance.strokeOpacity + (isHovered ? 0.10 : 0)
+        }
+        if contrast == .increased {
+            return DashboardCardChrome.increasedContrastBorderOpacity + (isHovered ? 0.10 : 0)
+        }
+        return DashboardCardChrome.borderOpacity(isHovered: isHovered)
     }
 }
 
@@ -107,6 +149,6 @@ extension View {
     }
 
     func activeCleanupCardChrome() -> some View {
-        modifier(ActiveCleanupCardChromeModifier())
+        dashboardCardChrome()
     }
 }
