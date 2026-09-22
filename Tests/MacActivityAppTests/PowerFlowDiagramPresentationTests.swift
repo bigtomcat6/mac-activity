@@ -144,6 +144,30 @@ final class PowerFlowDiagramPresentationTests: XCTestCase {
         XCTAssertEqual(unavailable.total, .unavailable)
     }
 
+    func testExactSummaryOverflowBecomesUnavailableWithoutChangingMembers() {
+        let one = node("one", .exact(Double.greatestFiniteMagnitude), .measured)
+        let two = node("two", .exact(Double.greatestFiniteMagnitude), .derived)
+        let summary = PowerFlowDiagramPresentationBuilder.sideSummary(for: [one, two])
+
+        XCTAssertEqual(summary.total, .unavailable)
+        XCTAssertEqual(summary.provenance, .mixed)
+        XCTAssertEqual(summary.memberCount, 2)
+        XCTAssertEqual(summary.representatives, [one, two])
+    }
+
+    func testLowerBoundSummaryOverflowBecomesUnavailableWithoutChangingMembers() {
+        let one = node("one", .exact(Double.greatestFiniteMagnitude), .measured)
+        let two = node("two", .exact(Double.greatestFiniteMagnitude), .measured)
+        let summary = PowerFlowDiagramPresentationBuilder.sideSummary(for: [
+            one, two, node("three", .unavailable, .measured),
+        ])
+
+        XCTAssertEqual(summary.total, .unavailable)
+        XCTAssertEqual(summary.provenance, .measured)
+        XCTAssertEqual(summary.memberCount, 3)
+        XCTAssertEqual(summary.representatives, [one, two])
+    }
+
     func testDuplicateSuffixesDoNotCollideWithRealIDsOnAnySide() {
         let cases: [(coreIDs: [String], renderIDs: [String])] = [
             (["duplicate", "duplicate", "duplicate#2"],

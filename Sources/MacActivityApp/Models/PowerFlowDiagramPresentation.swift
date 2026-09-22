@@ -167,20 +167,21 @@ enum PowerFlowDiagramPresentationBuilder {
     ) -> PowerFlowDiagramSideSummary {
         let real = nodes.filter { !$0.isSynthetic }
         let known = real.compactMap(\.measurement.exactWatts)
+        let knownWatts = known.reduce(0, +)
         let unavailableCount = real.count - known.count
 
         let total: PowerFlowDisplayMeasurement
         if real.isEmpty {
             total = nodes.isEmpty ? .idle : .unavailable
-        } else if known.isEmpty {
+        } else if known.isEmpty || !knownWatts.isFinite {
             total = .unavailable
         } else if unavailableCount > 0 {
             total = .lowerBound(
-                knownWatts: known.reduce(0, +),
+                knownWatts: knownWatts,
                 unavailableCount: unavailableCount
             )
         } else {
-            total = .exact(known.reduce(0, +))
+            total = .exact(knownWatts)
         }
 
         let provenances = Set(real.map(\.provenance))
