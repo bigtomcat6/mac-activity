@@ -218,6 +218,35 @@ Read/glob/search tools were also used. Two initial reads failed because this wor
 
 No broader testing was repeated after the required checks passed. The subsequent work was the specifically requested image diagnosis and read-only environment/source attribution. Artifacts under `.build` are ignored and local, not durable CI attachments; preserve them if handing off this ledger.
 
+## Final whole-branch review and revalidation
+
+Independent whole-branch review covered `77d9536..185a074` against the approved spec, implementation plan, per-task decisions, and this evidence ledger. The reviewer reported **zero Critical, zero Important, and zero material Minor code findings**. This is a code-review verdict, not completed visual acceptance: the reviewer separately retained the standard-native-glass, pressure-width, live accessibility, and hardware-state evidence gaps above as merge blockers.
+
+The controller then reran the final automated gates on `185a0740b62734b18ce708c6c691d9a778b8b490` (2026-09-22 AEST):
+
+| Command | Exit | Observed result |
+|---|---:|---|
+| `swift test` | 0 | `Executed 1703 tests, with 4 tests skipped and 0 failures (0 unexpected) in 70.131 (70.231) seconds` |
+| `xcodebuild -project MacActivity.xcodeproj -scheme MacActivity -configuration Debug -destination 'platform=macOS' CODE_SIGNING_ALLOWED=NO build` | 0 | `** BUILD SUCCEEDED **` |
+| `git diff --check next-version...HEAD` | 0 | No whitespace diagnostics after the documentation import correction. |
+| Protected-file diff against `next-version` | 0 | No changes to `PowerFlowModel`, `PowerFlowService`, `SystemPowerFlowReader`, `PowerFlowSMCReader`, or `PowerFlowTypes`. |
+
+The final SwiftPM run ended at 18:21:33.797 AEST. The same four environment/opt-in skips remain documented above. No production changes followed this revalidation; subsequent changes only record these results.
+
+The implementation is locally committed on `feat/power-flow-diagram`, but **not ready for acceptance/merge into `next-version`** until the outstanding visual/live gates are completed. The spec remains **Approved for implementation planning**. No push, merge, or PR was performed. The isolated worktree and ignored image evidence are retained for the controlled live-validation handoff.
+
+### Execution decisions and remaining cost
+
+- Followed the supplied plan's explicit local commit steps; did not authorize remote actions. Any unwanted commit organization remains locally adjustable.
+- Corrected noncompiling example-test expressions and duplicate-ID suffix collisions without changing the published internal interfaces. Any revision is confined to tests/internal render IDs.
+- Narrated derived/mixed lower bounds using the existing localized approximation template around the lower-bound phrase, keeping the visual `≥` prefix and exact measured narration. Wording can be refined without changing measurement semantics.
+- Followed the spec where render skeletons were incomplete: appearance-policy strokes, grouped aggregates, balanced `2→2` totals, and full-title help. Any visual refinement remains in the presentation/view layer.
+- Retained all 42 baseline images and added eight missing-sink/long-German supplements. Additional manual coverage remains necessary, not replaced by the supplements.
+- Extended the localization placeholder matcher to integer formats and normalized positional signatures. Translations remain unchanged; any adjustment is test-only.
+- Updated the existing chrome regression to follow wrapper-to-diagram ownership, preserving single-card/no-nested-chrome assertions. No runtime chrome change was needed.
+- Restored the approved ZIP's status (the remote copy still said Draft) and removed inherited Markdown trailing spaces. This is documentation correction, not verification advancement.
+- Kept native-glass/live/AX acceptance pending instead of changing existing chrome, the user's running app, system accessibility settings, or hardware power state to manufacture evidence. The remaining cost is a controlled manual validation session before merge.
+
 ### Post-write audit (18:09:42 AEST)
 
 `git diff --check` exited 0. `git diff --exit-code -- Sources Tests MacActivity.xcodeproj/project.pbxproj` exited 0 with no changes. `git status --short` exited 0 and showed only `?? docs/superpowers/verification/`; the local report and build artifacts are ignored. `git rev-parse HEAD` exited 0 and remained the literal HEAD above. `date '+%Y-%m-%d %H:%M:%S %Z'` exited 0 with `2026-09-22 18:09:42 AEST`.
