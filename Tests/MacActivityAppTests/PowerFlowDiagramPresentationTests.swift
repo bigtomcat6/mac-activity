@@ -323,6 +323,369 @@ final class PowerFlowDiagramPresentationTests: XCTestCase {
         XCTAssertEqual(summary.representatives.map(\.id), ["one", "missing"])
     }
 
+    func testBuildSelectsAllFourExpandedTopologies() {
+        let cases: [(PowerFlowSnapshot, PowerFlowDiagramMode)] = [
+            (
+                PowerFlowDiagramFixtures.snapshot(
+                    .init(id: "source", type: .usbC, direction: .input, measurement: .watts(21.46)),
+                    .init(id: "mac", type: .mac, direction: .output, measurement: .watts(21.46))
+                ),
+                .expanded(.oneToOne)
+            ),
+            (
+                PowerFlowDiagramFixtures.snapshot(
+                    .init(id: "source", type: .usbC, direction: .input, measurement: .watts(56.8)),
+                    .init(id: "battery", type: .battery, direction: .output, measurement: .watts(30.7)),
+                    .init(id: "mac", type: .mac, direction: .output, measurement: .watts(26.1))
+                ),
+                .expanded(.oneToMany)
+            ),
+            (
+                PowerFlowDiagramFixtures.snapshot(
+                    .init(id: "source", type: .usbC, direction: .input, measurement: .watts(20)),
+                    .init(id: "battery", type: .battery, direction: .input, measurement: .watts(24)),
+                    .init(id: "mac", type: .mac, direction: .output, measurement: .watts(44))
+                ),
+                .expanded(.manyToOne)
+            ),
+            (
+                PowerFlowDiagramFixtures.snapshot(
+                    .init(id: "source", type: .usbC, direction: .input, measurement: .watts(45)),
+                    .init(id: "unknown", type: .unknownExternalInterface, direction: .input, measurement: .watts(12)),
+                    .init(id: "battery", type: .battery, direction: .output, measurement: .watts(30)),
+                    .init(id: "mac", type: .mac, direction: .output, measurement: .watts(27))
+                ),
+                .expanded(.manyToMany)
+            ),
+        ]
+
+        for (snapshot, expected) in cases {
+            XCTAssertEqual(build(snapshot).preferredMode, expected)
+        }
+    }
+
+    func testMoreThanTwoNodesOnEitherSideUsesGroupedMode() {
+        let threeSources = PowerFlowDiagramFixtures.snapshot(
+            .init(id: "one", type: .usbC, direction: .input, measurement: .watts(20)),
+            .init(id: "two", type: .battery, direction: .input, measurement: .watts(10)),
+            .init(id: "three", type: .unknownExternalInterface, direction: .input, measurement: .watts(5)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(35))
+        )
+        let threeSinks = PowerFlowDiagramFixtures.snapshot(
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(35)),
+            .init(id: "battery", type: .battery, direction: .output, measurement: .watts(10)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(20)),
+            .init(id: "unknown", type: .unknownExternalInterface, direction: .output, measurement: .watts(5))
+        )
+
+        for snapshot in [threeSources, threeSinks] {
+            XCTAssertEqual(build(snapshot).preferredMode, .grouped)
+            XCTAssertEqual(build(snapshot).status, .summary)
+        }
+    }
+
+    func testMissingSourceInsertsNonNumericUnknownInput() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24))
+        ))
+
+        XCTAssertEqual(presentation.preferredMode, .expanded(.oneToOne))
+        XCTAssertEqual(presentation.sources.map(\.title), ["Unknown Input"])
+        XCTAssertEqual(presentation.sources.map(\.measurement), [.unavailable])
+        XCTAssertEqual(presentation.sources.map(\.provenance), [.absent])
+        XCTAssertEqual(presentation.sources.map(\.kind), [.unknown])
+        XCTAssertEqual(presentation.sources.map(\.id), ["source:synthetic-unknown-input"])
+        XCTAssertTrue(presentation.sources[0].isSynthetic)
+        XCTAssertEqual(presentation.sourceSummary.total, .unavailable)
+        XCTAssertEqual(presentation.issues, [.missingSource])
+        XCTAssertFalse(presentation.sources.contains { $0.measurement == .exact(24) })
+        XCTAssertEqual(presentation.accessibilityLabel,
+                       "Power Flow Summary. Input: Unknown Input, power unavailable. Output: Mac, approximately 24 W. Partial data.")
+    }
+
+    func testMissingSinkInsertsNonNumericUnknownOutput() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(24))
+        ))
+
+        XCTAssertEqual(presentation.preferredMode, .expanded(.oneToOne))
+        XCTAssertEqual(presentation.sinks.map(\.title), ["Unknown Output"])
+        XCTAssertEqual(presentation.sinks.map(\.measurement), [.unavailable])
+        XCTAssertEqual(presentation.sinks.map(\.provenance), [.absent])
+        XCTAssertEqual(presentation.sinks.map(\.kind), [.unknown])
+        XCTAssertEqual(presentation.sinks.map(\.id), ["sink:synthetic-unknown-output"])
+        XCTAssertTrue(presentation.sinks[0].isSynthetic)
+        XCTAssertEqual(presentation.sinkSummary.total, .unavailable)
+        XCTAssertEqual(presentation.issues, [.missingSink])
+        XCTAssertEqual(presentation.status, .summary)
+    }
+
+    func testMissingSourceWithThreeSinksRemainsGroupedAndNarratesEveryMember() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "battery", type: .battery, direction: .output, measurement: .watts(10)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(20)),
+            .init(id: "unknown", type: .unknownExternalInterface, direction: .output, measurement: .unavailable)
+        ))
+
+        XCTAssertEqual(presentation.preferredMode, .grouped)
+        XCTAssertEqual(presentation.sources.map(\.title), ["Unknown Input"])
+        XCTAssertEqual(presentation.sinks.count, 3)
+        XCTAssertTrue(presentation.issues.contains(.missingSource))
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Battery"))
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Mac"))
+        XCTAssertTrue(presentation.accessibilityLabel.contains("Unknown external interface"))
+        XCTAssertFalse(presentation.sources.contains { $0.measurement.exactWatts != nil })
+    }
+
+    func testMissingSinkWithThreeSourcesRemainsGroupedAndNarratesEveryMember() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "external", type: .usbC, direction: .input, measurement: .watts(20)),
+            .init(id: "battery", type: .battery, direction: .input, measurement: .watts(10)),
+            .init(id: "unknown", type: .unknownExternalInterface, direction: .input, measurement: .watts(5))
+        ))
+
+        XCTAssertEqual(presentation.preferredMode, .grouped)
+        XCTAssertEqual(presentation.status, .summary)
+        XCTAssertEqual(presentation.sources.count, 3)
+        XCTAssertEqual(presentation.sinks.map(\.measurement), [.unavailable])
+        XCTAssertTrue(presentation.sinks[0].isSynthetic)
+        XCTAssertEqual(presentation.issues, [.missingSink])
+        XCTAssertEqual(presentation.accessibilityLabel,
+                       "Power Flow Summary. Input: Total: 35 W. USB-C, 20 W; Battery, 10 W; Unknown external interface, 5 W. "
+                           + "Output: Total: power unavailable. Unknown Output, power unavailable. Partial data.")
+    }
+
+    func testWaitingIdleAndUnavailableModesAreDistinct() {
+        let waiting = PowerFlowDiagramPresentationBuilder.build(
+            snapshot: .empty,
+            isRefreshing: true,
+            bundle: PowerFlowDiagramFixtures.englishBundle
+        )
+        let idle = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "battery", type: .battery, direction: .idle, measurement: .watts(0))
+        ))
+        let unavailable = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "battery", type: .battery, direction: .idle, measurement: .unavailable)
+        ))
+
+        XCTAssertEqual(waiting.preferredMode, .waiting)
+        XCTAssertEqual(waiting.status, .waiting)
+        XCTAssertEqual(waiting.accessibilityLabel, "Waiting for Power Data")
+        XCTAssertTrue(waiting.sources.isEmpty && waiting.sinks.isEmpty && waiting.idleEndpoints.isEmpty)
+        XCTAssertTrue(waiting.issues.isEmpty)
+        XCTAssertEqual(waiting.sourceSummary.total, .idle)
+        XCTAssertEqual(waiting.sinkSummary.total, .idle)
+        XCTAssertEqual(idle.preferredMode, .idle)
+        XCTAssertEqual(idle.status, .idle)
+        XCTAssertEqual(idle.accessibilityLabel, "No Active Power Flow")
+        XCTAssertEqual(unavailable.preferredMode, .unavailable)
+        XCTAssertEqual(unavailable.status, .unavailable)
+        XCTAssertEqual(unavailable.accessibilityLabel, "Power Data Unavailable Partial data.")
+        for presentation in [idle, unavailable] {
+            XCTAssertTrue(presentation.sources.isEmpty && presentation.sinks.isEmpty)
+            XCTAssertEqual(presentation.idleEndpoints.count, 1)
+        }
+    }
+
+    func testWaitingRequiresBothRefreshingAndResetSentinel() {
+        let snapshot = PowerFlowDiagramFixtures.snapshot(
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(24)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24))
+        )
+        let refreshing = PowerFlowDiagramPresentationBuilder.build(
+            snapshot: snapshot,
+            isRefreshing: true,
+            bundle: PowerFlowDiagramFixtures.englishBundle
+        )
+
+        XCTAssertEqual(refreshing, build(snapshot))
+        XCTAssertEqual(refreshing.preferredMode, .expanded(.oneToOne))
+        XCTAssertEqual(refreshing.sources.map(\.measurement), [.exact(24)])
+        let stoppedSentinel = build(.empty)
+        XCTAssertEqual(stoppedSentinel.preferredMode, .expanded(.oneToOne))
+        XCTAssertEqual(stoppedSentinel.status, .summary)
+        XCTAssertEqual(stoppedSentinel.sinks.map(\.measurement), [.unavailable])
+        XCTAssertEqual(stoppedSentinel.issues, [.missingSource, .missingMeasurements])
+        XCTAssertEqual(build(PowerFlowDiagramFixtures.snapshot([])).accessibilityLabel, "Power Data Unavailable")
+    }
+
+    func testUnresolvedIdleMeasurementPreventsConfirmedIdleButDoesNotHideActiveFlow() {
+        let idle: [PowerFlowEndpoint] = [
+            .init(id: "zero", type: .battery, direction: .idle, measurement: .watts(0)),
+            .init(id: "missing", type: .usbC, direction: .idle, measurement: .unavailable),
+        ]
+        let unavailable = build(PowerFlowDiagramFixtures.snapshot(idle))
+        let active = build(PowerFlowDiagramFixtures.snapshot(idle + [
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(24)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24)),
+        ]))
+
+        XCTAssertEqual(unavailable.preferredMode, .unavailable)
+        XCTAssertTrue(unavailable.sources.isEmpty && unavailable.sinks.isEmpty)
+        XCTAssertEqual(active.preferredMode, .expanded(.oneToOne))
+        XCTAssertEqual(active.status, .externalPower)
+        XCTAssertEqual(active.idleEndpoints.count, 2)
+        XCTAssertEqual(active.issues, [.unresolvedIdleMeasurement])
+        XCTAssertTrue(active.accessibilityLabel.hasSuffix(" Partial data."))
+    }
+
+    func testStatusPrecedenceMatchesOperatingPattern() {
+        let cases: [([PowerFlowEndpoint], PowerFlowDiagramStatus)] = [
+            ([
+                .init(id: "source", type: .usbC, direction: .input, measurement: .watts(40)),
+                .init(id: "battery", type: .battery, direction: .output, measurement: .watts(18)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(22)),
+            ], .charging),
+            ([
+                .init(id: "battery", type: .battery, direction: .input, measurement: .watts(24)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24)),
+            ], .batteryPower),
+            ([
+                .init(id: "external", type: .usbC, direction: .input, measurement: .watts(20)),
+                .init(id: "battery", type: .battery, direction: .input, measurement: .watts(24)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(44)),
+            ], .multipleSources),
+            ([
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24)),
+            ], .summary),
+            ([
+                .init(id: "external", type: .magSafe, direction: .input, measurement: .watts(24)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24)),
+            ], .externalPower),
+            ([
+                .init(id: "unknown", type: .unknownExternalInterface, direction: .input, measurement: .watts(24)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(24)),
+            ], .multipleFlows),
+            ([
+                .init(id: "external", type: .usbC, direction: .input, measurement: .unavailable),
+                .init(id: "unknown", type: .unknownExternalInterface, direction: .input, measurement: .watts(12)),
+                .init(id: "battery", type: .battery, direction: .output, measurement: .watts(12)),
+            ], .charging),
+        ]
+
+        for (endpoints, expected) in cases {
+            XCTAssertEqual(build(PowerFlowDiagramFixtures.snapshot(endpoints)).status, expected)
+        }
+    }
+
+    func testKnownTotalToleranceBoundaryIsAcceptedAndJustBeyondIsFlagged() {
+        let cases: [(Double, Double, Bool)] = [
+            (20, 19, false), (20, 18.99, true),
+            (100, 95, false), (100, 94.99, true),
+            (95, 100, false), (94.99, 100, true),
+            (0.5, 0.1, false),
+        ]
+        for (input, output, unbalanced) in cases {
+            let presentation = build(PowerFlowDiagramFixtures.snapshot(
+                .init(id: "source", type: .usbC, direction: .input, measurement: .watts(input)),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(output))
+            ))
+
+            XCTAssertEqual(presentation.issues.contains(.unbalancedKnownTotals), unbalanced)
+            XCTAssertEqual(presentation.accessibilityLabel.hasSuffix(" Partial data."), unbalanced)
+        }
+    }
+
+    func testUnbalancedTotalsNeverCreateAResidualNode() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(57)),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(27))
+        ))
+
+        XCTAssertEqual(presentation.sources.count, 1)
+        XCTAssertEqual(presentation.sinks.count, 1)
+        XCTAssertEqual(presentation.sourceSummary.total, .exact(57))
+        XCTAssertEqual(presentation.sinkSummary.total, .exact(27))
+        XCTAssertEqual(presentation.sources.map(\.measurement), [.exact(57)])
+        XCTAssertEqual(presentation.sinks.map(\.measurement), [.exact(27)])
+        XCTAssertTrue(presentation.issues.contains(.unbalancedKnownTotals))
+        XCTAssertFalse(presentation.sources.contains(where: \.isSynthetic))
+        XCTAssertFalse(presentation.sinks.contains(where: \.isSynthetic))
+    }
+
+    func testUnknownIdentityAndUnavailablePowerStayExpandedWithoutInventedValues() {
+        for measurement in [PowerFlowMeasurement.watts(12), .unavailable] {
+            let presentation = build(PowerFlowDiagramFixtures.snapshot(
+                .init(id: "unknown", type: .unknownExternalInterface, direction: .input, measurement: measurement),
+                .init(id: "mac", type: .mac, direction: .output, measurement: .watts(12))
+            ))
+
+            XCTAssertEqual(presentation.preferredMode, .expanded(.oneToOne))
+            XCTAssertFalse(presentation.sources[0].isSynthetic)
+            if measurement == .unavailable {
+                XCTAssertEqual(presentation.sources[0].measurement, .unavailable)
+                XCTAssertEqual(presentation.issues, [.missingMeasurements])
+                XCTAssertTrue(presentation.accessibilityLabel.contains("Unknown external interface, power unavailable"))
+            } else {
+                XCTAssertEqual(presentation.sources[0].measurement, .exact(12))
+                XCTAssertTrue(presentation.issues.isEmpty)
+            }
+        }
+    }
+
+    func testPartialTotalsAreNotReconciledAsExact() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "source", type: .usbC, direction: .input, measurement: .watts(10)),
+            .init(id: "missing", type: .battery, direction: .input, measurement: .unavailable),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(100))
+        ))
+
+        XCTAssertEqual(presentation.sourceSummary.total, .lowerBound(knownWatts: 10, unavailableCount: 1))
+        XCTAssertEqual(presentation.issues, [.missingMeasurements])
+        XCTAssertEqual(presentation.preferredMode, .expanded(.manyToOne))
+        XCTAssertEqual(presentation.status, .multipleSources)
+    }
+
+    func testGroupedPartialAggregateHasExactEnglishNarration() {
+        let presentation = build(PowerFlowDiagramFixtures.snapshot(
+            .init(id: "one", type: .usbC, direction: .input, measurement: .watts(45)),
+            .init(id: "two", type: .battery, direction: .input, measurement: .watts(12)),
+            .init(id: "three", type: .unknownExternalInterface, direction: .input, measurement: .unavailable),
+            .init(id: "mac", type: .mac, direction: .output, measurement: .watts(57))
+        ))
+
+        XCTAssertEqual(presentation.sourceSummary.total, .lowerBound(knownWatts: 57, unavailableCount: 1))
+        XCTAssertEqual(
+            presentation.accessibilityLabel,
+            "Power Flow Summary. Input: Total: at least 57 W; unavailable readings: 1. "
+                + "USB-C, 45 W; Battery, 12 W; Unknown external interface, power unavailable. "
+                + "Output: Total: approximately 57 W. Mac, approximately 57 W. Partial data."
+        )
+    }
+
+    func testDerivedAndMixedLowerBoundAggregatesNarrateApproximation() {
+        let cases: [(PowerFlowEndpointType, PowerFlowDisplayProvenance)] = [
+            (.mac, .derived), (.battery, .mixed),
+        ]
+        for (type, provenance) in cases {
+            let presentation = build(PowerFlowDiagramFixtures.snapshot(
+                .init(id: "source", type: .usbC, direction: .input, measurement: .watts(30)),
+                .init(id: "one", type: .mac, direction: .output, measurement: .watts(20)),
+                .init(id: "two", type: type, direction: .output, measurement: .watts(10)),
+                .init(id: "missing", type: .mac, direction: .output, measurement: .unavailable)
+            ))
+
+            XCTAssertEqual(presentation.preferredMode, .grouped)
+            XCTAssertEqual(presentation.sinkSummary.provenance, provenance)
+            XCTAssertEqual(presentation.sinkSummary.total, .lowerBound(knownWatts: 30, unavailableCount: 1))
+            XCTAssertTrue(presentation.accessibilityLabel.contains(
+                "Output: Total: approximately at least 30 W; unavailable readings: 1."
+            ))
+            XCTAssertTrue(presentation.accessibilityLabel.contains("Mac, approximately 20 W"))
+            XCTAssertTrue(presentation.accessibilityLabel.contains("Mac, power unavailable"))
+        }
+    }
+
+    private func build(
+        _ snapshot: PowerFlowSnapshot
+    ) -> PowerFlowDiagramPresentation {
+        PowerFlowDiagramPresentationBuilder.build(
+            snapshot: snapshot,
+            isRefreshing: false,
+            bundle: PowerFlowDiagramFixtures.englishBundle
+        )
+    }
+
     private func normalize(
         _ endpoint: PowerFlowEndpoint
     ) -> PowerFlowDiagramNormalizedContent {
