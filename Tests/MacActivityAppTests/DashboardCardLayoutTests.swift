@@ -13,6 +13,21 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardTab.audio.title, AppLocalization.string(.dashboardTabAudio))
     }
 
+    func testDashboardTabsUseStableIconSymbolPairs() {
+        XCTAssertEqual(DashboardTab.overview.systemImage, "square.grid.2x2")
+        XCTAssertEqual(DashboardTab.overview.selectedSystemImage, "square.grid.2x2.fill")
+        XCTAssertEqual(DashboardTab.actives.systemImage, "list.bullet.rectangle")
+        XCTAssertEqual(DashboardTab.actives.selectedSystemImage, "list.bullet.rectangle.fill")
+        XCTAssertEqual(DashboardTab.energyImpact.systemImage, "bolt")
+        XCTAssertEqual(DashboardTab.energyImpact.selectedSystemImage, "bolt.fill")
+        XCTAssertEqual(DashboardTab.audio.systemImage, "speaker.wave.2")
+        XCTAssertEqual(DashboardTab.audio.selectedSystemImage, "speaker.wave.2.fill")
+    }
+
+    func testDashboardMotionDefinesTabSelectionDuration() {
+        XCTAssertEqual(DashboardMotion.tabSelectionDuration, 0.28, accuracy: 0.001)
+    }
+
     func testSelectingActivesTabAdvancesActivesRefreshTrigger() {
         XCTAssertEqual(
             DashboardView.activesRefreshTrigger(afterSelecting: .overview, currentTrigger: 4),
@@ -808,7 +823,6 @@ final class DashboardCardLayoutTests: XCTestCase {
     func testDashboardRegionsRevealOneNativeBackdrop() throws {
         let source = try Self.dashboardViewSource()
         XCTAssertFalse(source.contains("DashboardCardChrome.canvasColor"))
-        XCTAssertFalse(source.contains("DashboardFooterChrome.backgroundOpacity"))
         XCTAssertFalse(
             source.contains("GlassEffectContainer"),
             "glass cards must not be extracted into a container outside the scroll clip"
@@ -820,24 +834,16 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
         XCTAssertTrue(source.contains(".allowsHitTesting(false)"))
         XCTAssertFalse(source.contains("dashboardShellSurface"))
-        let start = try XCTUnwrap(source.range(of: "private var footer: some View"))
-        let end = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
-        let footer = source[start.lowerBound..<end.lowerBound]
-        XCTAssertFalse(footer.contains(".dashboardShellSurface()"))
-        XCTAssertFalse(footer.contains(".background("))
-        XCTAssertFalse(footer.contains(".dashboardCardChrome("))
     }
 
     func testDashboardKeepsMeasuredButInvisibleSeparators() throws {
         let source = try Self.dashboardViewSource()
-        for segment in ["headerDivider", "footerDivider"] {
-            let start = try XCTUnwrap(source.range(of: "segment: .\(segment),"))
-            let remaining = source[start.upperBound...]
-            let end = try XCTUnwrap(remaining.range(of: "}"))
-            let separator = remaining[..<end.lowerBound]
-            XCTAssertTrue(separator.contains("Divider()"))
-            XCTAssertTrue(separator.contains(".hidden()"))
-        }
+        let start = try XCTUnwrap(source.range(of: "segment: .headerDivider,"))
+        let remaining = source[start.upperBound...]
+        let end = try XCTUnwrap(remaining.range(of: "}"))
+        let separator = remaining[..<end.lowerBound]
+        XCTAssertTrue(separator.contains("Divider()"))
+        XCTAssertTrue(separator.contains(".hidden()"))
     }
 
     func testDashboardCardsShareActivesSurfaceChrome() {
@@ -923,6 +929,36 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(DashboardHeaderChrome.tabPickerMinWidth, 160)
     }
 
+    func testDashboardTabBarUsesCompactIconChrome() {
+        XCTAssertEqual(DashboardTabChrome.iconButtonWidth, 30)
+        XCTAssertEqual(DashboardTabChrome.iconButtonHeight, 20)
+        XCTAssertEqual(DashboardTabChrome.itemSpacing, 2)
+        XCTAssertEqual(DashboardTabChrome.trackPadding, 2)
+        XCTAssertEqual(DashboardTabChrome.trackFillOpacity, 0.06, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.selectedFillOpacity, 0.12, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.hoverFillOpacity, 0.06, accuracy: 0.001)
+        XCTAssertEqual(DashboardTabChrome.focusRingWidth, 2)
+    }
+
+    func testDashboardTabBarUsesIconButtonsWithAccessibilityAndMotion() throws {
+        let dashboardSource = try Self.dashboardViewSource()
+
+        XCTAssertTrue(dashboardSource.contains("DashboardTabBar(selection: selectedTabBinding)"))
+        XCTAssertFalse(dashboardSource.contains(".pickerStyle(.segmented)"))
+        XCTAssertTrue(dashboardSource.contains("matchedGeometryEffect(id: \"tabSelection\""))
+        XCTAssertTrue(dashboardSource.contains("DashboardMotion.tabSelectionAnimation"))
+        XCTAssertTrue(dashboardSource.contains(".help(tab.title)"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityLabel(Text(tab.title))"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityAddTraits(selection == tab ? .isSelected : [])"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityElement(children: .contain)"))
+        XCTAssertTrue(dashboardSource.contains(".accessibilityHidden(true)"))
+        XCTAssertTrue(dashboardSource.contains("accessibilityReduceMotion"))
+        XCTAssertTrue(dashboardSource.contains(".onMoveCommand"))
+        XCTAssertTrue(dashboardSource.contains("focusEffectDisabled()"))
+        XCTAssertTrue(dashboardSource.contains("contentTransition(.symbolEffect(.replace))"))
+        XCTAssertTrue(dashboardSource.contains("#available(macOS 14.0, *)"))
+    }
+
     func testDashboardHeaderKeepsOnlyAppNameAndInlineTabPicker() throws {
         let dashboardSource = try Self.dashboardViewSource()
 
@@ -1003,11 +1039,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         let rowsBeforeGate = source[rowsStart.lowerBound..<gateStart.lowerBound]
         XCTAssertFalse(rowsBeforeGate.contains(".dashboardCardChrome("))
         XCTAssertFalse(rowsBeforeGate.contains(".shadow("))
-    }
-
-    func testFooterActionsUseStableSystemImages() {
-        XCTAssertEqual(DashboardFooterChrome.preferencesSystemImage, "gearshape")
-        XCTAssertEqual(DashboardFooterChrome.quitSystemImage, "power")
     }
 
     func testNetworkMetricCardChartFillsRemainingCardHeight() {
@@ -1113,9 +1144,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             let content = DashboardView(
                 dashboardModel: model,
                 preferencesController: Self.preferencesController(),
-                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-                openPreferences: {},
-                quitApplication: {}
+                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator())
             )
             .frame(width: contentWidth, height: contentHeight)
             .environment(\.colorScheme, scheme)
@@ -1148,8 +1177,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1172,8 +1199,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: storageOnlyModel,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1201,8 +1226,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1224,8 +1247,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {}
         )
         .frame(width: 360, height: 320)
 
@@ -1253,8 +1274,6 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             initialSelectedTab: .actives
         )
         .frame(width: 360, height: 320)
@@ -1274,8 +1293,6 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             initialSelectedTab: .energyImpact
         )
         .frame(width: 360, height: 560)
@@ -1994,6 +2011,15 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
+    func testDashboardViewNoLongerRendersFooterActions() throws {
+        let dashboardSource = try Self.dashboardViewSource()
+
+        XCTAssertFalse(dashboardSource.contains("DashboardFooterChrome"))
+        XCTAssertFalse(dashboardSource.contains("openPreferences"))
+        XCTAssertFalse(dashboardSource.contains("quitApplication"))
+        XCTAssertFalse(dashboardSource.contains("footerDivider"))
+    }
+
     func testTranslucentCardChromePaintsAdaptivePrimaryFillWithoutGlass() throws {
         try Self.requireLiquidGlassRendering()
 
@@ -2212,7 +2238,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertEqual(backdropSize.height, plainSize.height, accuracy: 0.5)
     }
 
-    func testHeaderAndFooterPaintNoPerAreaBacking() throws {
+    func testDashboardHeaderPaintsNoPerAreaBacking() throws {
         let source = try Self.dashboardViewSource()
         let headerStart = try XCTUnwrap(source.range(of: "segment: .header,"))
         let headerEnd = try XCTUnwrap(source.range(
@@ -2224,14 +2250,6 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(header.contains(".dashboardShellSurface"))
         XCTAssertFalse(header.contains(".background("))
         XCTAssertFalse(header.contains(".dashboardCardChrome("))
-
-        let footerStart = try XCTUnwrap(source.range(of: "private var footer: some View"))
-        let footerEnd = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
-        let footer = source[footerStart.lowerBound..<footerEnd.lowerBound]
-        XCTAssertTrue(footer.contains("padding(14)"))
-        XCTAssertFalse(footer.contains(".dashboardShellSurface"))
-        XCTAssertFalse(footer.contains(".background("))
-        XCTAssertFalse(footer.contains(".dashboardCardChrome("))
     }
 
     func testTrendChartGridLinesUseSystemSecondary() throws {
@@ -2253,22 +2271,6 @@ final class DashboardCardLayoutTests: XCTestCase {
             XCTAssertFalse(source.contains("dashboardStyleAppearance"), file)
             XCTAssertFalse(source.contains("DashboardRootGlassBackground"), file)
         }
-    }
-
-    func testFooterUsesSystemButtonStyleWithoutAppearanceBranch() throws {
-        let source = try Self.dashboardViewSource()
-        let footerStart = try XCTUnwrap(source.range(of: "private var footer: some View"))
-        let footerEnd = try XCTUnwrap(source.range(of: "private var selectedTabBinding"))
-        let footer = source[footerStart.lowerBound..<footerEnd.lowerBound]
-
-        XCTAssertTrue(footer.contains("padding(14)"))
-        XCTAssertFalse(footer.contains("buttonStyle"))
-        XCTAssertFalse(footer.contains("DashboardClearFooterButtonStyle"))
-        XCTAssertFalse(footer.contains("usesTranslucentChrome"))
-        XCTAssertFalse(footer.contains("usesClearReadability"))
-
-        let layoutSource = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
-        XCTAssertFalse(layoutSource.contains("DashboardClearFooterButtonStyle"))
     }
 
     func testTranslucentSourceHasNoClearGlassOrForcedDarkScheme() throws {

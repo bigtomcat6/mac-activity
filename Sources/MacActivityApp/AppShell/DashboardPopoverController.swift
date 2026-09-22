@@ -40,8 +40,6 @@ enum DashboardContentMeasurementSegment: CaseIterable, Hashable {
     case header
     case headerDivider
     case scrollContent
-    case footerDivider
-    case footer
 }
 
 @MainActor
@@ -366,6 +364,10 @@ final class DashboardPopoverHostingController: NSHostingController<DashboardPopo
     var dashboardView: DashboardView {
         rootView.content
     }
+
+    var dashboardTabSelection: DashboardTabSelectionState {
+        rootView.content.tabSelectionState
+    }
 }
 
 struct DashboardPopoverRootView: View {
@@ -397,9 +399,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void
+        onVisibilityChange: @escaping (Bool) -> Void
     ) {
         let presentationState = DashboardPresentationState(
             style: preferencesController.state.dashboardStyle,
@@ -415,8 +415,6 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             preferencesController: preferencesController,
             audioDashboardModel: audioDashboardModel,
             onVisibilityChange: onVisibilityChange,
-            openPreferences: openPreferences,
-            quitApplication: quitApplication,
             presentationState: presentationState
         )
     }
@@ -428,8 +426,6 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
         onVisibilityChange: @escaping (Bool) -> Void,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void,
         presentationState: DashboardPresentationState? = nil,
         accessibilityEnvironmentProvider: @escaping () -> DashboardPresentationAccessibilityEnvironment = { .live() }
     ) {
@@ -444,6 +440,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.accessibilityEnvironmentProvider = accessibilityEnvironmentProvider
 
         let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
+        let tabSelectionState = DashboardTabSelectionState()
         let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(
             popover: popover,
             onHeightTransitionChange: { [weak scrollIndicatorState] isHeightTransitioning in
@@ -457,18 +454,11 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
                     dashboardModel: dashboardModel,
                     preferencesController: preferencesController,
                     audioDashboardModel: audioDashboardModel,
-                    openPreferences: { [weak popover] in
-                        popover?.performClose(nil)
-                        openPreferences()
-                    },
-                    quitApplication: { [weak popover] in
-                        popover?.performClose(nil)
-                        quitApplication()
-                    },
                     onMeasuredSegmentHeight: { [weak measurement] segment, height in
                         measurement?.report(height, for: segment)
                     },
-                    scrollIndicatorState: scrollIndicatorState
+                    scrollIndicatorState: scrollIndicatorState,
+                    tabSelectionState: tabSelectionState
                 ),
                 presentationState: presentationState
             )

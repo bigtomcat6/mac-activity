@@ -57,6 +57,17 @@ enum DashboardHeaderChrome {
     static let tabPickerMinWidth: CGFloat = 160
 }
 
+enum DashboardTabChrome {
+    static let iconButtonWidth: CGFloat = 30
+    static let iconButtonHeight: CGFloat = 20
+    static let itemSpacing: CGFloat = 2
+    static let trackPadding: CGFloat = 2
+    static let trackFillOpacity: Double = 0.06
+    static let selectedFillOpacity: Double = 0.12
+    static let hoverFillOpacity: Double = 0.06
+    static let focusRingWidth: CGFloat = 2
+}
+
 enum ActiveCleanupChrome {
     static let cornerRadius = DashboardCardChrome.cornerRadius
     static let borderOpacity = DashboardCardChrome.borderOpacity

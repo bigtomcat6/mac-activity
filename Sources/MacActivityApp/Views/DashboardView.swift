@@ -2,6 +2,15 @@ import AppKit
 import SwiftUI
 import MacActivityCore
 
+@MainActor
+final class DashboardTabSelectionState: ObservableObject {
+    @Published var selectedTab: DashboardTab
+
+    init(initialTab: DashboardTab = .overview) {
+        self.selectedTab = initialTab
+    }
+}
+
 enum DashboardMotion {
     static let hoverDuration: Double = 0.14
     static let sampleDuration: Double = 0.32
@@ -13,6 +22,8 @@ enum DashboardMotion {
     static var sampleAnimation: Animation { .smooth(duration: sampleDuration) }
     static var domainAnimation: Animation { .smooth(duration: domainDuration) }
     static var valueAnimation: Animation { .easeOut(duration: valueDuration) }
+    static let tabSelectionDuration: Double = 0.28
+    static var tabSelectionAnimation: Animation { .smooth(duration: tabSelectionDuration) }
 }
 
 enum DashboardCardLayout {
@@ -506,11 +517,6 @@ enum DashboardOverviewLayout {
     }
 }
 
-enum DashboardFooterChrome {
-    static let preferencesSystemImage = "gearshape"
-    static let quitSystemImage = "power"
-}
-
 enum DashboardOverviewChrome {
     static let usageFillOpacity = 0.82
     static let valueStripOpacity = 0.14
@@ -693,6 +699,32 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabAudio)
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2"
+        case .actives:
+            return "list.bullet.rectangle"
+        case .energyImpact:
+            return "bolt"
+        case .audio:
+            return "speaker.wave.2"
+        }
+    }
+
+    var selectedSystemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2.fill"
+        case .actives:
+            return "list.bullet.rectangle.fill"
+        case .energyImpact:
+            return "bolt.fill"
+        case .audio:
+            return "speaker.wave.2.fill"
+        }
+    }
 }
 
 struct DashboardView: View {
@@ -703,13 +735,11 @@ struct DashboardView: View {
     @StateObject private var energyImpactModel = EnergyImpactModel()
     @StateObject private var powerFlowModel = PowerFlowModel()
     @ObservedObject var audioDashboardModel: AudioDashboardModel
+    @ObservedObject var tabSelectionState: DashboardTabSelectionState
     @Environment(\.dashboardStyleAppearance) private var styleAppearance
     @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
-    @State private var selectedTab: DashboardTab = .overview
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
-    let openPreferences: () -> Void
-    let quitApplication: () -> Void
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
     @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
@@ -717,20 +747,17 @@ struct DashboardView: View {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
-        initialSelectedTab: DashboardTab = .overview
+        initialSelectedTab: DashboardTab = .overview,
+        tabSelectionState: DashboardTabSelectionState? = nil
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
-        self.openPreferences = openPreferences
-        self.quitApplication = quitApplication
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self.scrollIndicatorState = scrollIndicatorState
-        self._selectedTab = State(initialValue: initialSelectedTab)
+        self.tabSelectionState = tabSelectionState ?? DashboardTabSelectionState(initialTab: initialSelectedTab)
     }
 
     var body: some View {
@@ -755,15 +782,6 @@ struct DashboardView: View {
                 }
             }
             .mask(DashboardScrollEdgeFade())
-
-            DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
-                Divider()
-                    .hidden()
-            }
-
-            DashboardMeasuredSegment(segment: .footer, onHeightChange: onMeasuredSegmentHeight) {
-                footer
-            }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .background {
@@ -798,13 +816,7 @@ struct DashboardView: View {
     }
 
     private var tabPicker: some View {
-        Picker(AppLocalization.string(.dashboardSection), selection: selectedTabBinding) {
-            ForEach(DashboardTab.allCases) { tab in
-                Text(tab.title).tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
+        DashboardTabBar(selection: selectedTabBinding)
     }
 
     @ViewBuilder
@@ -862,35 +874,13 @@ struct DashboardView: View {
             }
     }
 
-    private var footer: some View {
-        footerButtonRow
-            .padding(14)
-    }
-
-    private var footerButtonRow: some View {
-        HStack(spacing: 12) {
-            Button(action: openPreferences) {
-                Label(
-                    AppLocalization.string(.preferences),
-                    systemImage: DashboardFooterChrome.preferencesSystemImage
-                )
-            }
-            Spacer(minLength: 12)
-            Button(action: quitApplication) {
-                Label(
-                    AppLocalization.string(.quit),
-                    systemImage: DashboardFooterChrome.quitSystemImage
-                )
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
+    private var selectedTab: DashboardTab { tabSelectionState.selectedTab }
 
     private var selectedTabBinding: Binding<DashboardTab> {
         Binding(
-            get: { selectedTab },
+            get: { tabSelectionState.selectedTab },
             set: { newValue in
-                selectedTab = newValue
+                tabSelectionState.selectedTab = newValue
                 activesRefreshTrigger = Self.activesRefreshTrigger(
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger
@@ -919,6 +909,129 @@ struct DashboardView: View {
         activeCleanupModel.setDiskCleanupCategories(categories)
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
+        }
+    }
+}
+
+private struct DashboardTabBar: View {
+    @Binding var selection: DashboardTab
+    @Namespace private var selectionNamespace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedTab: DashboardTab?
+    @State private var hoveredTab: DashboardTab?
+
+    var body: some View {
+        HStack(spacing: DashboardTabChrome.itemSpacing) {
+            ForEach(DashboardTab.allCases) { tab in
+                tabButton(for: tab)
+            }
+        }
+        .padding(DashboardTabChrome.trackPadding)
+        .background(
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(DashboardTabChrome.trackFillOpacity))
+        )
+        .animation(reduceMotion ? nil : DashboardMotion.tabSelectionAnimation, value: selection)
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel(Text(AppLocalization.string(.dashboardSection)))
+    }
+
+    private func tabButton(for tab: DashboardTab) -> some View {
+        Button {
+            guard selection != tab else { return }
+            selection = tab
+        } label: {
+            ZStack {
+                if selection == tab {
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(DashboardTabChrome.selectedFillOpacity))
+                        .matchedGeometryEffect(id: "tabSelection", in: selectionNamespace)
+                } else if hoveredTab == tab {
+                    Capsule(style: .continuous)
+                        .fill(Color.primary.opacity(DashboardTabChrome.hoverFillOpacity))
+                }
+
+                Image(systemName: selection == tab ? tab.selectedSystemImage : tab.systemImage)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(selection == tab ? Color.primary : Color.secondary)
+                    .dashboardSymbolReplaceTransition(reduceMotion: reduceMotion)
+                    .accessibilityHidden(true)
+            }
+            .frame(width: DashboardTabChrome.iconButtonWidth, height: DashboardTabChrome.iconButtonHeight)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(DashboardTabButtonStyle())
+        .focused($focusedTab, equals: tab)
+        .dashboardTabFocusEffectDisabled()
+        .overlay {
+            if focusedTab == tab {
+                Capsule(style: .continuous)
+                    .stroke(Color.accentColor, lineWidth: DashboardTabChrome.focusRingWidth)
+            }
+        }
+        .help(tab.title)
+        .accessibilityLabel(Text(tab.title))
+        .accessibilityAddTraits(selection == tab ? .isSelected : [])
+        .onMoveCommand { direction in
+            moveSelection(from: tab, direction: direction)
+        }
+        .onHover { isHovered in
+            if isHovered {
+                hoveredTab = tab
+            } else if hoveredTab == tab {
+                hoveredTab = nil
+            }
+        }
+    }
+
+    private func moveSelection(from tab: DashboardTab, direction: MoveCommandDirection) {
+        let tabs = DashboardTab.allCases
+        guard let index = tabs.firstIndex(of: tab) else { return }
+
+        let offset: Int
+        switch direction {
+        case .left:
+            offset = -1
+        case .right:
+            offset = 1
+        default:
+            return
+        }
+
+        let nextTab = tabs[(index + offset + tabs.count) % tabs.count]
+        guard nextTab != tab else { return }
+        selection = nextTab
+        focusedTab = nextTab
+    }
+}
+
+private struct DashboardTabButtonStyle: ButtonStyle {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.94 : 1)
+            .opacity(configuration.isPressed ? 0.8 : 1)
+            .animation(.easeOut(duration: DashboardMotion.hoverDuration), value: configuration.isPressed)
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func dashboardSymbolReplaceTransition(reduceMotion: Bool) -> some View {
+        if #available(macOS 14.0, *), !reduceMotion {
+            contentTransition(.symbolEffect(.replace))
+        } else {
+            self
+        }
+    }
+
+    @ViewBuilder
+    func dashboardTabFocusEffectDisabled() -> some View {
+        if #available(macOS 14.0, *) {
+            focusEffectDisabled()
+        } else {
+            self
         }
     }
 }

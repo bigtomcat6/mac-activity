@@ -94,6 +94,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         AppLocalizationController.shared.applyPreferredLanguageIdentifier(
             preferencesController.state.preferredLanguageIdentifier
         )
+        installMainMenu()
         let sparkleUpdateController = SparkleUpdateController(preferencesController: preferencesController)
         let summaryModel = StatusSummaryModel(store: metricsStore, preferences: preferencesController)
         let samplingController = AppSamplingController(
@@ -116,7 +117,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let statusItemController = StatusItemController(
             summaryModel: summaryModel,
-            popoverController: dashboardPopoverController
+            popoverController: dashboardPopoverController,
+            showPreferences: { [weak self] in
+                self?.showPreferences()
+            },
+            quitApplication: { [weak self] in
+                self?.terminateApplication()
+            }
         )
         let presentationCoordinator = AppPresentationCoordinator(
             statusItemController: statusItemController,
@@ -163,8 +170,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         preferencesController.$state
             .map(\.preferredLanguageIdentifier)
             .removeDuplicates()
-            .sink { preferredLanguageIdentifier in
+            .sink { [weak self] preferredLanguageIdentifier in
                 AppLocalizationController.shared.applyPreferredLanguageIdentifier(preferredLanguageIdentifier)
+                self?.installMainMenu()
             }
             .store(in: &cancellables)
 
@@ -254,10 +262,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return .terminateLater
     }
 
-    private func showPreferences() {
+    @objc func showPreferences() {
         NSApplication.shared.activate(ignoringOtherApps: true)
         preferencesWindowController?.showWindow(nil)
         preferencesWindowController?.window?.makeKeyAndOrderFront(nil)
+    }
+
+    private func installMainMenu() {
+        NSApp.mainMenu = AppMainMenu.make(
+            appName: AppLocalization.string(.appName),
+            preferencesTitle: AppLocalization.string(.preferences),
+            quitTitle: AppLocalization.string(.quit),
+            target: self,
+            preferencesAction: #selector(showPreferences),
+            quitAction: #selector(terminateApplication)
+        )
     }
 
     func checkForUpdates() {
@@ -274,7 +293,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func terminateApplication() {
+    @objc func terminateApplication() {
         NSApplication.shared.terminate(nil)
     }
 
@@ -301,12 +320,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audioDashboardModel: makeAudioDashboardModel(),
             onVisibilityChange: { [weak self] isVisible in
                 self?.handleDashboardVisibilityChange(isVisible)
-            },
-            openPreferences: { [weak self] in
-                self?.showPreferences()
-            },
-            quitApplication: { [weak self] in
-                self?.terminateApplication()
             }
         )
     }
@@ -448,5 +461,39 @@ final class AppSamplingController {
 
         currentProfile = nextProfile
         onProfileChange?(nextProfile)
+    }
+}
+
+enum AppMainMenu {
+    static func make(
+        appName: String,
+        preferencesTitle: String,
+        quitTitle: String,
+        target: AnyObject?,
+        preferencesAction: Selector,
+        quitAction: Selector
+    ) -> NSMenu {
+        let mainMenu = NSMenu()
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+
+        let appMenu = NSMenu(title: appName)
+        let preferencesItem = NSMenuItem(
+            title: preferencesTitle,
+            action: preferencesAction,
+            keyEquivalent: ","
+        )
+        preferencesItem.keyEquivalentModifierMask = [.command]
+        preferencesItem.target = target
+        appMenu.addItem(preferencesItem)
+        appMenu.addItem(.separator())
+
+        let quitItem = NSMenuItem(title: quitTitle, action: quitAction, keyEquivalent: "q")
+        quitItem.keyEquivalentModifierMask = [.command]
+        quitItem.target = target
+        appMenu.addItem(quitItem)
+
+        appMenuItem.submenu = appMenu
+        return mainMenu
     }
 }
