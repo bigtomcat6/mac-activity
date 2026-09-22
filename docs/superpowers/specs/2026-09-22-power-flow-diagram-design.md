@@ -1,9 +1,13 @@
 # Power Flow Diagram Design Specification
 
-**Status:** Draft for user review  
-**Date:** 2026-09-22  
-**Target branch:** `feat/power-flow-diagram`, based on `next-version`  
-**Product area:** Energy → Power Flow  
+**Status:** Approved for implementation planning
+
+**Date:** 2026-09-22
+
+**Target branch:** `feat/power-flow-diagram`, based on `next-version`
+
+**Product area:** Energy → Power Flow
+
 **Selected direction:** General presentation model with controlled UI templates and grouped fallback
 
 ## 1. Summary
@@ -760,32 +764,38 @@ The feature is ready for branch review when all of the following are true:
 
 ### Edge mapping is unavailable
 
-**Risk:** A conventional graph could imply a false source-to-sink relationship.  
+**Risk:** A conventional graph could imply a false source-to-sink relationship.
+
 **Mitigation:** Use a central shared bus and avoid pairwise edges.
 
 ### Sensor data can be incomplete or temporarily inconsistent
 
-**Risk:** A visually complete graph could overstate certainty.  
+**Risk:** A visually complete graph could overstate certainty.
+
 **Mitigation:** Use unavailable, lower-bound, partial-data, and separate-total states; never fabricate a residual.
 
 ### Grouping hides detail
 
-**Risk:** Users may not see every endpoint in a complex topology.  
+**Risk:** Users may not see every endpoint in a complex topology.
+
 **Mitigation:** Show count, representative members, full accessibility narration, and optional hover help. The compact dashboard prioritizes comprehension over exhaustive graph expansion.
 
 ### Layout can become unstable as topology changes
 
-**Risk:** The application list below the diagram may jump and nodes may swap.  
+**Risk:** The application list below the diagram may jump and nodes may swap.
+
 **Mitigation:** Use fixed-height modes, deterministic ordering, stable IDs, and short transitions.
 
 ### Translucent styling can reduce legibility
 
-**Risk:** Flow bands and unavailable states may disappear against some desktops.  
+**Risk:** Flow bands and unavailable states may disappear against some desktops.
+
 **Mitigation:** Reuse `DashboardStyleAppearance`, respect accessibility fallbacks, keep semantic labels, and validate against varied backgrounds.
 
 ### Future endpoint kinds may outgrow current core enums
 
-**Risk:** The current core endpoint type set is limited.  
+**Risk:** The current core endpoint type set is limited.
+
 **Mitigation:** Keep diagram kinds and mapping isolated in the presentation builder. A later core extension can add endpoint descriptors or measurement provenance without changing the view’s topology contract.
 
 ## 23. Rollout
