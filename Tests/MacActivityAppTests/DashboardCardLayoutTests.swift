@@ -1007,14 +1007,29 @@ final class DashboardCardLayoutTests: XCTestCase {
         for file in ["DiskCleanupStatusView.swift", "ActiveProcessMemoryList.swift"] {
             XCTAssertTrue(try Self.dashboardViewSource(file).contains(".activeCleanupCardChrome()"), file)
         }
-        for file in ["PowerFlowView.swift", "EnergyImpactView.swift"] {
-            XCTAssertTrue(try Self.dashboardViewSource(file).contains(".dashboardCardChrome()"), file)
+        let powerFlow = try Self.dashboardViewSource("PowerFlowView.swift")
+        XCTAssertTrue(powerFlow.contains("PowerFlowDiagramView("))
+        XCTAssertFalse(powerFlow.contains(".dashboardCardChrome("))
+        let diagram = try Self.dashboardViewSource("PowerFlowDiagramView.swift")
+        let outerBodyStart = try XCTUnwrap(diagram.range(of: "struct PowerFlowDiagramView: View"))
+        let contentStart = try XCTUnwrap(diagram.range(of: "private func statusRow("))
+        let outerBody = diagram[outerBodyStart.upperBound..<contentStart.lowerBound]
+        XCTAssertTrue(outerBody.contains(".frame(height: PowerFlowDiagramLayout.cardHeight)\n        .dashboardCardChrome()"))
+        XCTAssertEqual(
+            diagram.components(separatedBy: ".dashboardCardChrome(").count - 1, 1,
+            "Only the outer diagram card owns chrome; internal tiles and summaries must not add nested cards"
+        )
+        for source in [powerFlow, diagram] {
+            XCTAssertFalse(source.contains(".activeCleanupCardChrome("))
+            XCTAssertFalse(source.contains(".glassEffect("))
+            XCTAssertFalse(source.contains(".shadow("))
         }
         let processRow = try Self.dashboardViewSource("ActiveProcessMemoryRow.swift")
         XCTAssertFalse(processRow.contains(".dashboardCardChrome("))
         XCTAssertFalse(processRow.contains(".activeCleanupCardChrome("))
         XCTAssertFalse(processRow.contains(".shadow("))
         let energy = try Self.dashboardViewSource("EnergyImpactView.swift")
+        XCTAssertTrue(energy.contains(".dashboardCardChrome()"))
         let row = try XCTUnwrap(energy.components(separatedBy: "struct EnergyImpactRow: View").last)
         XCTAssertFalse(row.contains(".dashboardCardChrome("))
         XCTAssertFalse(row.contains(".shadow("))
