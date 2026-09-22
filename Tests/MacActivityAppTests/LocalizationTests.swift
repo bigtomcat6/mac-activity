@@ -188,6 +188,23 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testFormatPlaceholderParityDetectsMissingAndMisindexedCounts() {
+        let count = Self.formatPlaceholders(in: "%lld sources")
+        XCTAssertEqual(count, ["%lld"])
+        XCTAssertNotEqual(count, Self.formatPlaceholders(in: "sources"))
+
+        let lowerBound = Self.formatPlaceholders(in: "at least %1$@; unavailable readings: %2$lld")
+        XCTAssertEqual(lowerBound, ["%1$@", "%2$lld"])
+        XCTAssertNotEqual(lowerBound, Self.formatPlaceholders(in: "at least %1$@; unavailable readings"))
+        XCTAssertNotEqual(lowerBound, Self.formatPlaceholders(in: "at least %1$@; unavailable readings: %3$lld"))
+    }
+
+    func testFormatPlaceholderParityAllowsOnlyPositionalReordering() {
+        XCTAssertEqual(Self.formatPlaceholders(in: "%2$lld件中%1$lld件"), ["%1$lld", "%2$lld"])
+        XCTAssertEqual(Self.formatPlaceholders(in: "%lld %@"), ["%lld", "%@"])
+        XCTAssertNotEqual(Self.formatPlaceholders(in: "%lld %@"), Self.formatPlaceholders(in: "%@ %lld"))
+    }
+
     func testGermanAudioCapturePermissionUsesCaptureTerminology() throws {
         let german = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "de"))
         let permissionCopy = AppLocalization.string(.audioProcessPermissionDenied, bundle: german)
@@ -1048,12 +1065,14 @@ final class LocalizationTests: XCTestCase {
     }
 
     private static func formatPlaceholders(in string: String) -> [String] {
-        let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?[d@f]"
+        let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?(?:lld|[d@f])"
         let regex = regex(pattern)
         let range = NSRange(string.startIndex..<string.endIndex, in: string)
-        return regex.matches(in: string, range: range).map { match in
+        let placeholders = regex.matches(in: string, range: range).map { match in
             String(string[Range(match.range, in: string)!])
         }
+        // Explicit argument positions allow translations to reorder placeholders safely.
+        return placeholders.allSatisfy { $0.contains("$") } ? placeholders.sorted() : placeholders
     }
 
     private static func shouldScanProductionStringLine(_ line: String) -> Bool {
