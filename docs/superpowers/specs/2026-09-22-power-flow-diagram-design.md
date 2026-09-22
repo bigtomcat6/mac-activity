@@ -1,6 +1,6 @@
 # Power Flow Diagram Design Specification
 
-**Status:** Approved for implementation planning  
+**Status:** Draft for user review  
 **Date:** 2026-09-22  
 **Target branch:** `feat/power-flow-diagram`, based on `next-version`  
 **Product area:** Energy → Power Flow  
@@ -10,7 +10,7 @@
 
 Replace the current two-column Input/Output lists in the Energy view with a compact, adaptive power-flow diagram.
 
-The underlying presentation model must accept an arbitrary number of source and sink endpoints. The first UI release will render the common topologies directly—`1→1`, `1→2`, `2→1`, and `2→2`—and fall back to a grouped summary whenever either side contains more than two active nodes or the topology cannot be shown clearly within the dashboard width.
+The presentation model must accept an arbitrary number of source and sink endpoints. The first UI release will render the common topologies directly—`1→1`, `1→2`, `2→1`, and `2→2`—and fall back to a grouped summary whenever either active side contains more than two nodes. The layout may also select grouped rendering below the supported width floor, but all four expanded templates must fit at the supported 320-point minimum.
 
 The diagram must distinguish:
 
@@ -114,13 +114,13 @@ An unknown endpoint remains visible when it materially participates in the flow.
 - **Unavailable measurement:** The endpoint exists, but a reliable wattage is not available.
 - **Missing counterpart:** One active side exists while the other side has no active endpoint at all.
 - **Synthetic placeholder:** A presentation-only Unknown Input or Unknown Output inserted for a missing counterpart. It never carries an inferred wattage.
-- **Grouped node:** A presentation-only summary of several endpoints. It is not a real hardware endpoint.
+- **Grouped side summary:** A presentation-only summary card for several endpoints. It is not a real hardware endpoint.
 - **Derived value:** A value calculated from other measurements. The current Mac power allocation is derived.
 - **Partial aggregate:** The sum of known member values when one or more members have unavailable measurements. It is displayed as a lower bound.
 
 ## 7. Architecture
 
-The view will be split into three responsibilities:
+The feature is split into three responsibilities:
 
 ```text
 PowerFlowSnapshot + PowerFlowModel.isRefreshing
@@ -138,7 +138,7 @@ PowerFlowSnapshot + PowerFlowModel.isRefreshing
 
 ### 7.2 Presentation builder
 
-A pure presentation builder converts a snapshot plus refresh state into a render-ready model. It owns:
+A synchronous presentation builder converts a snapshot plus refresh state into a render-ready model. It owns:
 
 - endpoint normalization;
 - source/sink/idle classification;
@@ -148,7 +148,17 @@ A pure presentation builder converts a snapshot plus refresh state into a render
 - grouped-summary selection;
 - aggregate measurement semantics;
 - data-quality issues;
-- accessibility summary content.
+- localized labels and accessibility narration.
+
+The builder accepts an optional localization bundle so tests can use the existing language-specific bundle pattern without relying on process-global UI state:
+
+```swift
+PowerFlowDiagramPresentationBuilder.build(
+    snapshot: PowerFlowSnapshot,
+    isRefreshing: Bool,
+    bundle: Bundle? = nil
+) -> PowerFlowDiagramPresentation
+```
 
 It must not import AppKit or perform asynchronous work.
 
@@ -158,6 +168,7 @@ The SwiftUI view renders the supplied presentation. It owns:
 
 - node tiles;
 - flow bands and shared-bus geometry;
+- grouped side-summary cards;
 - labels and aggregate summaries;
 - standard/translucent appearance adaptation;
 - short state transitions;
@@ -171,12 +182,12 @@ The implementation should provide types equivalent to the following interfaces. 
 
 ```swift
 struct PowerFlowDiagramPresentation: Equatable {
-    var mode: PowerFlowDiagramMode
+    var preferredMode: PowerFlowDiagramMode
     var sources: [PowerFlowDiagramNode]
     var sinks: [PowerFlowDiagramNode]
     var idleEndpoints: [PowerFlowDiagramNode]
-    var inputTotal: PowerFlowDisplayMeasurement
-    var outputTotal: PowerFlowDisplayMeasurement
+    var sourceSummary: PowerFlowDiagramSideSummary
+    var sinkSummary: PowerFlowDiagramSideSummary
     var issues: Set<PowerFlowDiagramIssue>
     var status: PowerFlowDiagramStatus
     var accessibilityLabel: String
@@ -203,17 +214,22 @@ struct PowerFlowDiagramNode: Identifiable, Equatable {
     var title: String
     var measurement: PowerFlowDisplayMeasurement
     var provenance: PowerFlowDisplayProvenance
-    var memberCount: Int
-    var summarizedMembers: [PowerFlowDiagramMember]
     var isSynthetic: Bool
+}
+
+struct PowerFlowDiagramSideSummary: Equatable {
+    var memberCount: Int
+    var total: PowerFlowDisplayMeasurement
+    var provenance: PowerFlowDisplayProvenance
+    var representatives: [PowerFlowDiagramNode]
 }
 
 enum PowerFlowDiagramNodeKind: Equatable {
     case externalPower
     case battery
     case mac
+    case other
     case unknown
-    case grouped
 }
 
 enum PowerFlowDisplayMeasurement: Equatable {
@@ -229,9 +245,19 @@ enum PowerFlowDisplayProvenance: Equatable {
     case mixed
     case absent
 }
-```
 
-`PowerFlowDiagramMember` contains stable ID, title, node kind, and display measurement for grouped text and accessibility output.
+enum PowerFlowDiagramStatus: Equatable {
+    case waiting
+    case idle
+    case unavailable
+    case externalPower
+    case batteryPower
+    case charging
+    case multipleSources
+    case multipleFlows
+    case summary
+}
+```
 
 `PowerFlowDiagramIssue` must be finite and explicit. Initial cases are:
 
@@ -241,7 +267,7 @@ enum PowerFlowDisplayProvenance: Equatable {
 - `unbalancedKnownTotals`
 - `unresolvedIdleMeasurement`
 
-Unknown identity is not itself an issue when direction and power are known.
+Unknown identity is not itself an issue when direction and power are known. Issues produce a localized Partial Data indication without replacing the primary operational status unless the mode itself is unavailable.
 
 ## 9. Normalization rules
 
@@ -256,6 +282,8 @@ A `.watts` value is displayable only when it is finite and non-negative. Invalid
 - `.input` becomes a source.
 - `.output` becomes a sink.
 - `.idle` is recorded separately and does not count toward topology selection.
+
+Any active, non-synthetic source or sink with unavailable measurement adds `missingMeasurements`.
 
 An idle endpoint with unavailable measurement adds `unresolvedIdleMeasurement`, because the UI must not claim that it is a confirmed zero-flow state.
 
@@ -272,14 +300,16 @@ Current endpoint types map as follows:
 
 Presentation titles retain the more specific localized USB-C and MagSafe labels even though both share the external-power visual kind.
 
+The `.other` diagram kind is reserved for future identified endpoint types that are neither external power, battery, nor Mac. It is not produced by the current core enum.
+
 ### 9.4 Mark current value provenance
 
 - Current external and battery wattages are treated as measured.
 - Current Mac wattage is treated as derived because `PowerFlowService` calculates it from input and battery contribution.
-- A grouped node is `.mixed` if its members do not all share the same provenance.
+- A side summary is `.mixed` if its real members do not all share the same provenance.
 - Synthetic placeholders use `.absent`.
 
-This mapping is deliberately isolated in the builder so a future core-level provenance field can replace it without changing the view contract.
+This mapping is isolated in the builder so a future core-level provenance field can replace it without changing the view contract.
 
 ### 9.5 Add a missing-counterpart placeholder
 
@@ -293,7 +323,7 @@ If active sinks exist and active sources are empty, insert one synthetic source:
 
 If active sources exist and active sinks are empty, insert one synthetic sink using the equivalent “Unknown Output” semantics and add `missingSink`.
 
-A synthetic placeholder communicates a missing side only. It is excluded from totals and never receives an inferred wattage.
+A synthetic placeholder communicates a missing side only. It is excluded from aggregate wattage and never receives an inferred value. It still counts as one visible node for topology selection.
 
 If neither side has an active endpoint, do not insert placeholders. Use waiting, idle, or unavailable mode according to the rules below.
 
@@ -306,16 +336,18 @@ If neither side has an active endpoint, do not insert placeholders. Use waiting,
 - Unavailable value: em dash in the compact diagram; the full localized explanation remains available through accessibility and the Energy information text.
 - Idle value: no active lane and no watt label.
 
-### 10.2 Aggregate values
+### 10.2 Side aggregates
 
-For a set of active members:
+For the real, non-synthetic active members on one side:
 
 1. If every member has an exact value, return `.exact(sum)`.
 2. If at least one member has an exact value and at least one is unavailable, return `.lowerBound(knownWatts: sum, unavailableCount: count)`.
 3. If no member has an exact value, return `.unavailable`.
-4. If the set has no active member, return `.idle`.
+4. If the side has no real active member, return `.idle` when it is genuinely empty, or `.unavailable` when represented only by a synthetic placeholder.
 
 A lower bound displays `≥` before the known sum. If the aggregate also contains derived members, `≥` takes visual precedence; the mixed/derived nature is stated in accessibility text rather than producing an ambiguous `≈≥` prefix.
+
+Side-summary representatives are the first two members after deterministic sorting. The member count includes synthetic placeholders for visible topology narration, while aggregate wattage excludes them.
 
 ### 10.3 No numerical residual inference
 
@@ -323,7 +355,7 @@ The builder never creates an unknown source or sink with a calculated residual v
 
 ### 10.4 Known-total reconciliation
 
-When both input and output aggregates are exact, compare them only to determine display quality. They are considered reconciled when their absolute difference is no greater than:
+When both side aggregates are exact and each side contains at least one real member, compare them only to determine display quality. They are considered reconciled when their absolute difference is no greater than:
 
 ```text
 max(1.0 W, 5% of the larger total)
@@ -339,45 +371,63 @@ Stable ordering prevents nodes from swapping positions when values fluctuate.
 
 1. external power;
 2. battery;
-3. other known future node kinds;
+3. other identified endpoint;
 4. unknown;
-5. grouped node.
+5. synthetic placeholder after a real node of the same kind.
 
 ### 11.2 Sink order
 
 1. battery;
 2. Mac;
-3. other known future node kinds;
+3. other identified endpoint;
 4. unknown;
-5. grouped node.
+5. synthetic placeholder after a real node of the same kind.
 
 Within the same kind:
 
-1. exact values before unavailable values;
-2. descending wattage for exact values;
-3. stable endpoint ID as the final tie-breaker.
+1. real nodes before synthetic placeholders;
+2. exact values before unavailable values;
+3. descending wattage for exact values;
+4. stable endpoint ID as the final tie-breaker.
 
-The grouped node always appears last on its side.
+## 12. Status selection
 
-## 12. Topology and mode selection
+Status communicates the operating pattern; issues communicate data quality.
+
+Apply the following precedence:
+
+1. waiting mode → `.waiting`;
+2. idle mode → `.idle`;
+3. unavailable mode → `.unavailable`;
+4. grouped mode → `.summary`;
+5. any synthetic missing counterpart → `.summary` plus Partial Data;
+6. external power source with battery sink → `.charging`;
+7. battery as the only real source and Mac as the sink → `.batteryPower`;
+8. one external-power source and one Mac sink → `.externalPower`;
+9. multiple real sources and one sink → `.multipleSources`;
+10. all other expanded multi-side topologies → `.multipleFlows`.
+
+This keeps “Partial Data” separate from useful operational context while preventing a missing-side diagram from claiming a normal complete state.
+
+## 13. Topology and mode selection
 
 Mode selection uses active nodes after normalization and placeholder insertion.
 
-### 12.1 Waiting
+### 13.1 Waiting
 
-Use `.waiting` when `PowerFlowModel.isRefreshing` is true and no current active snapshot has been published. The component keeps its normal height and does not show values from a previous visible run.
+Use `.waiting` when `PowerFlowModel.isRefreshing` is true and the snapshot is the reset sentinel (`timestamp == .distantPast`). The component keeps its normal height and does not show values from a previous visible run.
 
-### 12.2 Idle
+### 13.2 Idle
 
-Use `.idle` when there are no active sources or sinks, at least one endpoint is confirmed idle, and no unresolved measurement prevents that conclusion.
+Use `.idle` when there are no active sources or sinks, at least one endpoint is confirmed idle with an exact zero measurement, and no unresolved idle measurement prevents that conclusion.
 
-### 12.3 Unavailable
+### 13.3 Unavailable
 
 Use `.unavailable` when there are no active sources or sinks and the available endpoint information cannot establish a reliable idle state.
 
-### 12.4 Expanded templates
+### 13.4 Expanded templates
 
-Use `.expanded` only when both sides contain one or two nodes after placeholder insertion:
+Use `.expanded` only when both sides contain one or two visible nodes after placeholder insertion:
 
 | Sources | Sinks | Topology |
 |---:|---:|---|
@@ -388,7 +438,7 @@ Use `.expanded` only when both sides contain one or two nodes after placeholder 
 
 Unknown nodes and unavailable measurements count as nodes. They do not force grouping by themselves.
 
-### 12.5 Grouped summary
+### 13.5 Grouped summary
 
 Use `.grouped` when either side contains more than two active nodes.
 
@@ -407,9 +457,13 @@ Each side card shows:
 
 The full ordered member list is included in the accessibility label and may be attached as non-essential hover help. There is no expansion control in the first release.
 
-## 13. Visual design
+### 13.6 Width-driven render fallback
 
-### 13.1 Overall surface
+`preferredMode` is semantic and does not depend on geometry. `PowerFlowDiagramLayout` may select grouped rendering when the available width is below 320 points. Within the supported 320–384 point range, every expanded template must remain expanded and pass non-overlap tests.
+
+## 14. Visual design
+
+### 14.1 Overall surface
 
 The component is one dashboard card using the existing `.dashboardCardChrome()` treatment. Node tiles and grouped summaries are internal layers on that surface, not independent glass cards.
 
@@ -422,11 +476,12 @@ The implementation must respect `DashboardStyleAppearance`:
 
 No new bespoke blur or opaque background system is introduced.
 
-### 13.2 Size targets
+### 14.2 Size targets
 
 Initial design targets at the real Energy content width:
 
 - available width: approximately 384 pt;
+- supported test floor: 320 pt;
 - outer padding: 8 pt;
 - status row: 14–16 pt;
 - gap between status and diagram: 6 pt;
@@ -436,9 +491,9 @@ Initial design targets at the real Energy content width:
 - two-lane height: approximately 24 pt per lane with an 8 pt gap;
 - total card height: stable within approximately 96–108 pt across all modes.
 
-The implementation plan may adjust individual constants after rendering, but it must preserve the fixed-height intent and 384 pt primary target.
+The implementation plan may adjust individual constants after rendering, but it must preserve the fixed-height intent and supported width range.
 
-### 13.3 Flow geometry
+### 14.3 Flow geometry
 
 - `1→1`: one continuous band.
 - `1→2`: one trunk splitting into two sink lanes.
@@ -447,7 +502,7 @@ The implementation plan may adjust individual constants after rendering, but it 
 
 The `2→2` template must not draw four source-to-sink edges. The center bus explicitly avoids claiming unsupported allocation.
 
-### 13.4 Lane labels
+### 14.4 Lane labels
 
 - `1→1`: the main band carries the sink value; a derived Mac value uses `≈`.
 - `1→2`: each output branch carries its sink value; the status row may show total input.
@@ -455,18 +510,18 @@ The `2→2` template must not draw four source-to-sink edges. The center bus exp
 - `2→2`: source and sink branches carry their node values; aggregate input/output information appears in the status row rather than overcrowding the bus.
 - grouped: the center area carries the aggregate summary.
 
-### 13.5 Visual states
+### 14.5 Visual states
 
 - **Known power:** solid, low-contrast gradient band.
 - **Unknown identity with known power:** same active band treatment; question-mark node icon and explicit title communicate identity uncertainty.
 - **Unavailable power:** outlined or softly dashed band and em-dash value.
-- **Synthetic missing counterpart:** question-mark node with unavailable treatment; it must look different from an identified endpoint whose sensor temporarily failed.
+- **Synthetic missing counterpart:** question-mark node with unavailable treatment and missing-side wording; it must look different from an identified endpoint whose sensor temporarily failed.
 - **Idle:** muted endpoint context without an active band.
-- **Grouped:** compact summary cards connected by a simplified neutral bus.
+- **Grouped:** compact side-summary cards connected by a simplified neutral bus.
 
 Color is supplementary. Icons, ordering, labels, lane presence, and accessibility text must communicate the same state without color.
 
-### 13.6 Status row
+### 14.6 Status row
 
 The status row provides a localized high-level state, such as:
 
@@ -476,28 +531,29 @@ The status row provides a localized high-level state, such as:
 - Multiple Sources
 - Multiple Power Flows
 - Power Flow Summary
-- Partial Data
 - Waiting for Power Data
 - Power Data Unavailable
 
+When `issues` is non-empty, it also shows a localized Partial Data indicator.
+
 When useful, the trailing side shows compact separate totals, for example `In 57 W · Out ≥27 W`. It must not collapse mismatched totals into one number.
 
-## 14. Responsive behavior
+## 15. Responsive behavior
 
 The component is optimized for the current 384 pt content width and must remain usable down to 320 pt in tests.
 
-At narrower widths, adaptation occurs in this order:
+Within the supported range, adaptation occurs in this order:
 
 1. reduce internal horizontal spacing;
 2. reduce expanded node tile width within the approved range;
 3. reduce non-critical title width and use localized hover help;
-4. use grouped-summary mode when the expanded template cannot meet minimum label and lane widths.
+4. preserve critical watt-value width and branch separation.
 
 Critical watt values must not be truncated. Node titles may truncate visually only when their full localized value remains in accessibility text and hover help.
 
-The view does not switch to a vertically stacked mobile layout because this is a macOS popover and fixed-height stability is a primary requirement.
+Widths below 320 pt may use grouped rendering. The view does not switch to a vertically stacked mobile layout because this is a macOS popover and fixed-height stability is a primary requirement.
 
-## 15. Motion
+## 16. Motion
 
 - No repeating animation.
 - Value changes use the project’s existing short value animation where appropriate.
@@ -505,7 +561,7 @@ The view does not switch to a vertically stacked mobile layout because this is a
 - Reduce Motion disables geometry morphing and uses an immediate update or simple opacity transition.
 - The sampling cadence does not drive a continuous animation timeline.
 
-## 16. Accessibility
+## 17. Accessibility
 
 Decorative flow paths are hidden from accessibility.
 
@@ -527,7 +583,7 @@ For grouped mode, the label includes all grouped members, not only the two visib
 
 The design must remain understandable with Differentiate Without Color, Increase Contrast, Reduce Transparency, and Reduce Motion enabled.
 
-## 17. Localization
+## 18. Localization
 
 Add localized strings for:
 
@@ -548,28 +604,27 @@ Existing USB-C, MagSafe, Battery, Mac, Input, Output, and unavailable-power stri
 
 All supported localization bundles must receive the new keys. Localization tests must prevent missing entries.
 
-## 18. Integration and file boundaries
+## 19. Integration and file boundaries
 
-### 18.1 New files
+### 19.1 New files
 
 - `Sources/MacActivityApp/Models/PowerFlowDiagramPresentation.swift`
   - presentation types;
-  - pure builder;
-  - sorting, grouping, aggregation, issue detection;
-  - accessibility data assembly excluding final localized string plumbing when existing conventions require it elsewhere.
+  - synchronous builder;
+  - sorting, summaries, aggregation, issue detection, and localized accessibility narration.
 
 - `Sources/MacActivityApp/Views/PowerFlowDiagramView.swift`
   - diagram composition;
-  - node and grouped tiles;
+  - node and grouped-summary tiles;
   - shared-bus shapes;
   - appearance and motion adaptation.
 
 - `Sources/MacActivityApp/Views/PowerFlowDiagramLayout.swift`
   - pure geometry constants and frame calculations;
-  - narrow-width fallback decision;
+  - sub-320-point grouped fallback decision;
   - testable non-overlap calculations.
 
-### 18.2 Modified files
+### 19.2 Modified files
 
 - `Sources/MacActivityApp/Views/PowerFlowView.swift`
   - retain the current task lifecycle;
@@ -587,7 +642,7 @@ All supported localization bundles must receive the new keys. Localization tests
 - `Sources/MacActivityApp/Resources/*/Localizable.strings`
   - add translations for every supported language.
 
-### 18.3 Unchanged responsibilities
+### 19.3 Unchanged responsibilities
 
 The feature must not move sampling or service logic into the view. The following files are expected to remain behaviorally unchanged unless implementation exposes a genuine correctness defect:
 
@@ -597,9 +652,9 @@ The feature must not move sampling or service logic into the view. The following
 - `Sources/MacActivityCore/Metrics/Providers/PowerFlowSMCReader.swift`
 - `Sources/MacActivityCore/Metrics/Providers/PowerFlowTypes.swift`
 
-## 19. Testing strategy
+## 20. Testing strategy
 
-### 19.1 Presentation tests
+### 20.1 Presentation tests
 
 Create `Tests/MacActivityAppTests/PowerFlowDiagramPresentationTests.swift` covering at least:
 
@@ -622,9 +677,11 @@ Create `Tests/MacActivityAppTests/PowerFlowDiagramPresentationTests.swift` cover
 17. deterministic ordering independent of endpoint input order;
 18. invalid defensive watt values becoming unavailable;
 19. current Mac values being marked derived;
-20. waiting, idle, and unavailable mode selection.
+20. waiting, idle, and unavailable mode selection;
+21. status precedence with synthetic placeholders and partial-data issues;
+22. side-summary representatives and counts.
 
-### 19.2 Layout tests
+### 20.2 Layout tests
 
 Create `Tests/MacActivityAppTests/PowerFlowDiagramLayoutTests.swift` covering:
 
@@ -634,9 +691,9 @@ Create `Tests/MacActivityAppTests/PowerFlowDiagramLayoutTests.swift` covering:
 - stable component height across expanded modes;
 - grouped-summary geometry;
 - minimum branch spacing and label width;
-- narrow-width grouped fallback.
+- sub-320-point grouped fallback.
 
-### 19.3 View tests
+### 20.3 View tests
 
 Extend or replace the current `PowerFlowViewTests` to verify:
 
@@ -649,7 +706,7 @@ Extend or replace the current `PowerFlowViewTests` to verify:
 
 These are rendering smoke tests, not pixel-perfect visual approval.
 
-### 19.4 Regression tests
+### 20.4 Regression tests
 
 Keep all existing tests for:
 
@@ -662,7 +719,7 @@ Keep all existing tests for:
 - reset before a new visible run;
 - native validation gate.
 
-### 19.5 Manual visual matrix
+### 20.5 Manual visual matrix
 
 Review the running application in:
 
@@ -677,7 +734,7 @@ Review the running application in:
 
 Native hardware checks should include external power, active charging, battery-only operation, and rapid connect/disconnect where reproducible. A native test on one Mac does not replace fixture coverage of topologies that hardware cannot easily reproduce.
 
-## 20. Acceptance criteria
+## 21. Acceptance criteria
 
 The feature is ready for branch review when all of the following are true:
 
@@ -699,7 +756,7 @@ The feature is ready for branch review when all of the following are true:
 16. All supported localization bundles contain the new keys.
 17. Full automated tests, Xcode application build, and the manual visual matrix are completed before merge into `next-version`.
 
-## 21. Risks and mitigations
+## 22. Risks and mitigations
 
 ### Edge mapping is unavailable
 
@@ -731,12 +788,12 @@ The feature is ready for branch review when all of the following are true:
 **Risk:** The current core endpoint type set is limited.  
 **Mitigation:** Keep diagram kinds and mapping isolated in the presentation builder. A later core extension can add endpoint descriptors or measurement provenance without changing the view’s topology contract.
 
-## 22. Rollout
+## 23. Rollout
 
 The specification and implementation live on `feat/power-flow-diagram`, based on `next-version`. The completed feature should be reviewed and merged back into `next-version`, not directly into `main`.
 
 No feature flag or migration is required because the change replaces only the Energy power-flow presentation and does not alter persisted preferences or stored data.
 
-## 23. Final design decision
+## 24. Final design decision
 
 The first release will use a **general presentation model, four expanded shared-bus templates, and grouped-summary fallback**. It explicitly supports unknown and unavailable endpoints without inventing power values, while preserving a compact and stable macOS dashboard layout.
