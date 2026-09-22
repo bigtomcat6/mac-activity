@@ -13,6 +13,44 @@ struct PowerFlowDiagramLayoutResult: Equatable {
     var groupedSourceFrame: CGRect?
     var groupedCenterFrame: CGRect?
     var groupedSinkFrame: CGRect?
+
+    var sourceRibbons: [PowerFlowDiagramRibbonLayout] {
+        ribbons(isSource: true)
+    }
+
+    var sinkRibbons: [PowerFlowDiagramRibbonLayout] {
+        ribbons(isSource: false)
+    }
+
+    private func ribbons(isSource: Bool) -> [PowerFlowDiagramRibbonLayout] {
+        guard case .expanded = effectiveMode else { return [] }
+        let nodes = isSource ? sourceFrames : sinkFrames
+        let startX = isSource ? flowFrame.minX : (busFrame?.maxX ?? flowFrame.midX)
+        let endX = isSource ? (busFrame?.minX ?? flowFrame.midX) : flowFrame.maxX
+        let frame = CGRect(x: startX, y: flowFrame.minY, width: endX - startX, height: flowFrame.height)
+        // Equal lanes communicate membership, never a watt-proportional allocation.
+        let trunkHeight: CGFloat = 24
+        let joinHeight = trunkHeight / CGFloat(max(1, nodes.count))
+        return nodes.enumerated().map { index, node in
+            let nodeY = node.midY - frame.minY
+            let joinY = frame.height / 2 - trunkHeight / 2 + joinHeight * (CGFloat(index) + 0.5)
+            return PowerFlowDiagramRibbonLayout(
+                frame: frame,
+                startCenterY: isSource ? nodeY : joinY,
+                startHeight: isSource ? trunkHeight : joinHeight,
+                endCenterY: isSource ? joinY : nodeY,
+                endHeight: isSource ? joinHeight : trunkHeight
+            )
+        }
+    }
+}
+
+struct PowerFlowDiagramRibbonLayout: Equatable {
+    var frame: CGRect
+    var startCenterY: CGFloat
+    var startHeight: CGFloat
+    var endCenterY: CGFloat
+    var endHeight: CGFloat
 }
 
 enum PowerFlowDiagramLayout {

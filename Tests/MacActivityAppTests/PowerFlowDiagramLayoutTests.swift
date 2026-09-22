@@ -186,6 +186,37 @@ final class PowerFlowDiagramLayoutTests: XCTestCase {
         }
     }
 
+    func testRibbonSegmentsJoinOneSharedTrunkWithoutPairwiseAllocation() {
+        for width: CGFloat in [320, 384] {
+            for item in expandedCases {
+                let layout = resolve(width, item.mode, item.sources, item.sinks)
+                XCTAssertEqual(layout.sourceRibbons.count, item.sources)
+                XCTAssertEqual(layout.sinkRibbons.count, item.sinks)
+                for (ribbon, node) in zip(layout.sourceRibbons, layout.sourceFrames) {
+                    XCTAssertTrue(layout.flowFrame.contains(ribbon.frame))
+                    XCTAssertEqual(ribbon.frame.minX, layout.flowFrame.minX)
+                    XCTAssertEqual(ribbon.frame.maxX, layout.busFrame?.minX ?? layout.flowFrame.midX)
+                    XCTAssertEqual(ribbon.frame.minY + ribbon.startCenterY, node.midY)
+                    XCTAssertEqual(ribbon.startHeight, 24)
+                    XCTAssertEqual(ribbon.endHeight, 24 / CGFloat(item.sources))
+                }
+                for (ribbon, node) in zip(layout.sinkRibbons, layout.sinkFrames) {
+                    XCTAssertTrue(layout.flowFrame.contains(ribbon.frame))
+                    XCTAssertEqual(ribbon.frame.minX, layout.busFrame?.maxX ?? layout.flowFrame.midX)
+                    XCTAssertEqual(ribbon.frame.maxX, layout.flowFrame.maxX)
+                    XCTAssertEqual(ribbon.frame.minY + ribbon.endCenterY, node.midY)
+                    XCTAssertEqual(ribbon.startHeight, 24 / CGFloat(item.sinks))
+                    XCTAssertEqual(ribbon.endHeight, 24)
+                }
+            }
+        }
+        for mode in [PowerFlowDiagramMode.grouped, .waiting, .idle, .unavailable] {
+            let layout = resolve(320, mode, 0, 0)
+            XCTAssertTrue(layout.sourceRibbons.isEmpty)
+            XCTAssertTrue(layout.sinkRibbons.isEmpty)
+        }
+    }
+
     private func resolve(
         _ width: CGFloat,
         _ mode: PowerFlowDiagramMode,
