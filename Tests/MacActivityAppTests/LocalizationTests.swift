@@ -83,6 +83,59 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testPowerFlowDiagramStringsExistForAllSupportedLanguages() throws {
+        let keys: [AppLocalization.Key] = [
+            .powerFlowUnknownInput,
+            .powerFlowUnknownOutput,
+            .powerFlowSourcesCount,
+            .powerFlowOutputsCount,
+            .powerFlowMoreCount,
+            .powerFlowPartialData,
+            .powerFlowStatusExternalPower,
+            .powerFlowStatusBatteryPower,
+            .powerFlowStatusCharging,
+            .powerFlowStatusMultipleSources,
+            .powerFlowStatusMultipleFlows,
+            .powerFlowStatusSummary,
+            .powerFlowStatusWaiting,
+            .powerFlowStatusUnavailable,
+            .powerFlowStatusIdle,
+            .powerFlowTotals,
+            .powerFlowAccessibilityComponent,
+            .powerFlowAccessibilityNodeMeasured,
+            .powerFlowAccessibilityNodeDerived,
+            .powerFlowAccessibilityNodeUnavailable,
+            .powerFlowAccessibilitySideSummary,
+            .powerFlowAccessibilityAggregateDerived,
+            .powerFlowAccessibilityAggregateLowerBound,
+            .powerFlowAccessibilityAggregateUnavailable,
+            .powerFlowAccessibilityPartialSuffix,
+        ]
+
+        for languageIdentifier in AppLocalization.availableLanguageIdentifiers() {
+            let bundle = try XCTUnwrap(
+                AppLocalization.bundle(forLanguageIdentifier: languageIdentifier)
+            )
+
+            for key in keys {
+                let value = bundle.localizedString(
+                    forKey: key.rawValue,
+                    value: nil,
+                    table: nil
+                )
+                XCTAssertNotEqual(
+                    value,
+                    key.rawValue,
+                    "Missing \(key.rawValue) in \(languageIdentifier)"
+                )
+                XCTAssertFalse(
+                    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    "\(key.rawValue) in \(languageIdentifier) must not be empty"
+                )
+            }
+        }
+    }
+
     func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
