@@ -15,10 +15,11 @@ public struct ReleaseVersion: Equatable, Comparable, Sendable {
     public init(_ rawValue: String) throws {
         let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let withoutPrefix = trimmed.hasPrefix("v") ? String(trimmed.dropFirst()) : trimmed
-        let parts = withoutPrefix.split(separator: "-", maxSplits: 1).map(String.init)
-        let coreParts = parts[0].split(separator: ".").compactMap { Int($0) }
+        let parts = withoutPrefix.split(separator: "-", maxSplits: 1, omittingEmptySubsequences: false)
+        let coreFields = parts.first?.split(separator: ".", omittingEmptySubsequences: false) ?? []
+        let coreParts = coreFields.compactMap(Self.parseNumber)
 
-        guard coreParts.count == 3 else {
+        guard coreFields.count == 3, coreParts.count == 3 else {
             throw ReleaseVersionParseError.invalid(rawValue)
         }
 
@@ -33,16 +34,21 @@ public struct ReleaseVersion: Equatable, Comparable, Sendable {
             return
         }
 
-        let prereleaseParts = parts[1].split(separator: ".").map(String.init)
+        let prereleaseParts = parts[1].split(separator: ".", omittingEmptySubsequences: false)
         guard prereleaseParts.count == 2,
-              let parsedChannel = UpdateChannel(rawValue: prereleaseParts[0]),
+              let parsedChannel = UpdateChannel(rawValue: String(prereleaseParts[0])),
               parsedChannel != .release,
-              let parsedNumber = Int(prereleaseParts[1]) else {
+              let parsedNumber = Self.parseNumber(prereleaseParts[1]) else {
             throw ReleaseVersionParseError.invalid(rawValue)
         }
 
         self.channel = parsedChannel
         self.prereleaseNumber = parsedNumber
+    }
+
+    private static func parseNumber(_ value: Substring) -> Int? {
+        guard !value.isEmpty, value.utf8.allSatisfy({ (48...57).contains($0) }) else { return nil }
+        return Int(value)
     }
 
     public static func < (lhs: ReleaseVersion, rhs: ReleaseVersion) -> Bool {
