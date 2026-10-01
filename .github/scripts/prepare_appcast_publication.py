@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import argparse
-import html
 import re
 import sys
+import xml.etree.ElementTree as ET
+from xml.parsers import expat
 from pathlib import Path
+from urllib.parse import urlsplit
 
 
 INTERNAL_METADATA_COMMENT_PATTERN = re.compile(
@@ -17,40 +19,66 @@ def public_version(tag):
 
 
 def update_appcast_release_version(appcast, tag):
-    escaped_tag = re.escape(f"/releases/download/{tag}/")
-    item_pattern = re.compile(rf"<item>.*?{escaped_tag}.*?</item>", re.DOTALL)
-    match = item_pattern.search(appcast)
-    if not match:
-        raise ValueError(f"could not find appcast item for {tag}")
+    try:
+        document = ET.fromstring(appcast)
+    except ET.ParseError as error:
+        raise ValueError(f"invalid appcast XML: {error}") from error
 
-    item = match.group(0)
-    version = html.escape(public_version(tag), quote=False)
-    item = replace_once(
-        r"<title>[^<]*</title>",
-        f"<title>{version}</title>",
-        item,
-        "title",
-        tag,
-    )
-    item = replace_once(
-        r"<sparkle:shortVersionString>[^<]*</sparkle:shortVersionString>",
-        f"<sparkle:shortVersionString>{version}</sparkle:shortVersionString>",
-        item,
-        "sparkle:shortVersionString",
-        tag,
-    )
-    return appcast[: match.start()] + item + appcast[match.end() :]
+    items = document.findall("./channel/item")
+    release_path = f"/releases/download/{tag}/"
+    matches = [
+        index for index, item in enumerate(items)
+        if any(
+            release_path in urlsplit(enclosure.get("url", "")).path
+            for enclosure in item.findall("enclosure")
+        )
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"expected exactly one appcast item for {tag}, found {len(matches)}")
+
+    item_index = matches[0]
+    item = items[item_index]
+    sparkle_namespace = "http://www.andymatuschak.org/xml-namespaces/sparkle"
+    for field in ("title", f"{{{sparkle_namespace}}}shortVersionString"):
+        fields = item.findall(field)
+        if len(fields) != 1 or len(fields[0]):
+            raise ValueError(f"expected exactly one text {field} for {tag}")
+        fields[0].text = public_version(tag)
+
+    # Locate actual XML elements, not strings in descriptions or comments. Only
+    # reserialize the selected item; preserve the rest of the feed byte-for-byte.
+    encoded = appcast.encode("utf-8")
+    spans = []
+    stack = []
+    item_start = None
+    parser = expat.ParserCreate()
+
+    def start_element(name, attributes):
+        nonlocal item_start
+        stack.append(name)
+        if stack == ["rss", "channel", "item"]:
+            item_start = parser.CurrentByteIndex
+
+    def end_element(name):
+        if stack == ["rss", "channel", "item"]:
+            end = encoded.index(b">", parser.CurrentByteIndex) + 1
+            spans.append((item_start, end))
+        stack.pop()
+
+    parser.StartElementHandler = start_element
+    parser.EndElementHandler = end_element
+    parser.Parse(encoded, True)
+    if len(spans) != len(items):
+        raise ValueError("unsupported appcast item structure")
+    start, end = spans[item_index]
+    ET.register_namespace("sparkle", sparkle_namespace)
+    item.tail = None
+    replacement = ET.tostring(item, encoding="utf-8")
+    return (encoded[:start] + replacement + encoded[end:]).decode("utf-8")
 
 
 def sanitize_release_notes(notes):
     return INTERNAL_METADATA_COMMENT_PATTERN.sub("", notes)
-
-
-def replace_once(pattern, replacement, text, field, tag):
-    updated, count = re.subn(pattern, replacement, text, count=1)
-    if count != 1:
-        raise ValueError(f"could not update {field} for {tag}")
-    return updated
 
 
 def parse_args(argv=None):

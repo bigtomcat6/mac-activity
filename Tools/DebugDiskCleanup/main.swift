@@ -218,15 +218,7 @@ struct DebugDiskCleanup {
             return DiskCleanupRoots()
         }
 
-        return DiskCleanupRoots(
-            trashDirectory: fixtureRoot.appendingPathComponent(".Trash", isDirectory: true),
-            userCachesDirectory: fixtureRoot
-                .appendingPathComponent("Library", isDirectory: true)
-                .appendingPathComponent("Caches", isDirectory: true),
-            userLogsDirectory: fixtureRoot
-                .appendingPathComponent("Library", isDirectory: true)
-                .appendingPathComponent("Logs", isDirectory: true)
-        )
+        return DiskCleanupRoots(homeDirectory: fixtureRoot)
     }
 
     private static func summaryReport(from result: DiskCleanupScanResult) -> DebugDiskCleanupSummaryReport {
