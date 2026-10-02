@@ -116,10 +116,16 @@ final class PowerFlowDiagramLayoutTests: XCTestCase {
                 let layout = resolve(width, item.mode, item.sources, item.sinks)
                 if item.mode == .expanded(.manyToMany) {
                     let bus = try XCTUnwrap(layout.busFrame)
-                    XCTAssertEqual(bus.size, CGSize(width: 28, height: 24))
                     XCTAssertEqual(bus.midX, layout.flowFrame.midX)
                     XCTAssertEqual(bus.midY, layout.flowFrame.midY)
                     XCTAssertTrue(layout.flowFrame.contains(bus))
+                    XCTAssertLessThanOrEqual(bus.width, layout.sourceFrames[0].width)
+                    let trunkMinY = layout.sourceRibbons
+                        .map { $0.frame.minY + $0.endCenterY - $0.endHeight / 2 }.min() ?? .nan
+                    let trunkMaxY = layout.sourceRibbons
+                        .map { $0.frame.minY + $0.endCenterY + $0.endHeight / 2 }.max() ?? .nan
+                    XCTAssertEqual(bus.minY, trunkMinY, accuracy: 0.001)
+                    XCTAssertEqual(bus.maxY, trunkMaxY, accuracy: 0.001)
                     for label in layout.flowLabelFrames {
                         XCTAssertFalse(bus.intersects(label))
                     }
@@ -127,6 +133,98 @@ final class PowerFlowDiagramLayoutTests: XCTestCase {
                     XCTAssertNil(layout.busFrame)
                 }
             }
+        }
+    }
+
+    func testSingleLaneBandsApproachNodeHeightAndTwoLaneBandsMatchLaneHeight() {
+        for width in expandedWidths {
+            for item in expandedCases {
+                let layout = resolve(width, item.mode, item.sources, item.sinks)
+                let context = "\(item.mode), width: \(width)"
+
+                for (ribbon, node) in zip(layout.sourceRibbons, layout.sourceFrames) {
+                    XCTAssertEqual(ribbon.frame.minY + ribbon.startCenterY, node.midY, accuracy: 0.001, context)
+                    if item.sources == 1 {
+                        // A single band is substantial: it approaches (but does not
+                        // exceed) the full node lane height.
+                        XCTAssertGreaterThanOrEqual(ribbon.startHeight, node.height * 0.8, context)
+                        XCTAssertLessThanOrEqual(ribbon.startHeight, node.height, context)
+                    } else {
+                        XCTAssertEqual(ribbon.startHeight, node.height, context)
+                    }
+                    XCTAssertEqual(ribbon.startHeight, ribbon.endHeight, context)
+                }
+
+                for (ribbon, node) in zip(layout.sinkRibbons, layout.sinkFrames) {
+                    XCTAssertEqual(ribbon.frame.minY + ribbon.endCenterY, node.midY, accuracy: 0.001, context)
+                    if item.sinks == 1 {
+                        XCTAssertGreaterThanOrEqual(ribbon.endHeight, node.height * 0.8, context)
+                        XCTAssertLessThanOrEqual(ribbon.endHeight, node.height, context)
+                    } else {
+                        XCTAssertEqual(ribbon.endHeight, node.height, context)
+                    }
+                }
+            }
+        }
+    }
+
+    func testRibbonBranchesFillTheTrunkExactlyAtTheSharedSeam() {
+        for width: CGFloat in [320, 384] {
+            for item in expandedCases {
+                let layout = resolve(width, item.mode, item.sources, item.sinks)
+                let context = "\(item.mode), width: \(width)"
+                // Derive the trunk from the source branch intervals, then require
+                // the sink branches to tile exactly the same trunk.
+                let sourceIntervals: [(CGFloat, CGFloat)] = layout.sourceRibbons.map { ribbon in
+                    (ribbon.frame.minY + ribbon.endCenterY - ribbon.endHeight / 2,
+                     ribbon.frame.minY + ribbon.endCenterY + ribbon.endHeight / 2)
+                }
+                let trunkMinY = sourceIntervals.map(\.0).min() ?? .nan
+                let trunkMaxY = sourceIntervals.map(\.1).max() ?? .nan
+                let sinkIntervals: [(CGFloat, CGFloat)] = layout.sinkRibbons.map { ribbon in
+                    (ribbon.frame.minY + ribbon.startCenterY - ribbon.startHeight / 2,
+                     ribbon.frame.minY + ribbon.startCenterY + ribbon.startHeight / 2)
+                }
+
+                assertIntervalsTileExactly(
+                    sourceIntervals, minY: trunkMinY, maxY: trunkMaxY, context: context
+                )
+                assertIntervalsTileExactly(
+                    sinkIntervals, minY: trunkMinY, maxY: trunkMaxY, context: context
+                )
+
+                // Both sides meet at the same seam: no gap and no gradient reset.
+                for ribbon in layout.sourceRibbons {
+                    XCTAssertEqual(ribbon.frame.maxX, layout.flowFrame.midX, accuracy: 0.001, context)
+                }
+                for ribbon in layout.sinkRibbons {
+                    XCTAssertEqual(ribbon.frame.minX, layout.flowFrame.midX, accuracy: 0.001, context)
+                }
+            }
+        }
+    }
+
+    private func assertIntervalsTileExactly(
+        _ intervals: [(CGFloat, CGFloat)],
+        minY: CGFloat,
+        maxY: CGFloat,
+        context: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        XCTAssertFalse(intervals.isEmpty, context, file: file, line: line)
+        let sorted = intervals.sorted { $0.0 < $1.0 }
+        XCTAssertEqual(sorted.first?.0 ?? .nan, minY, accuracy: 0.001, context, file: file, line: line)
+        XCTAssertEqual(sorted.last?.1 ?? .nan, maxY, accuracy: 0.001, context, file: file, line: line)
+        for index in 1..<sorted.count {
+            XCTAssertEqual(
+                sorted[index].0,
+                sorted[index - 1].1,
+                accuracy: 0.001,
+                "gap or overlap between branch intervals. \(context)",
+                file: file,
+                line: line
+            )
         }
     }
 
@@ -195,18 +293,26 @@ final class PowerFlowDiagramLayoutTests: XCTestCase {
                 for (ribbon, node) in zip(layout.sourceRibbons, layout.sourceFrames) {
                     XCTAssertTrue(layout.flowFrame.contains(ribbon.frame))
                     XCTAssertEqual(ribbon.frame.minX, layout.flowFrame.minX)
-                    XCTAssertEqual(ribbon.frame.maxX, layout.busFrame?.minX ?? layout.flowFrame.midX)
+                    XCTAssertEqual(ribbon.frame.maxX, layout.flowFrame.midX)
                     XCTAssertEqual(ribbon.frame.minY + ribbon.startCenterY, node.midY)
-                    XCTAssertEqual(ribbon.startHeight, 24)
-                    XCTAssertEqual(ribbon.endHeight, 24 / CGFloat(item.sources))
+                    if item.sources > 1 {
+                        XCTAssertEqual(ribbon.startHeight, node.height)
+                    } else {
+                        XCTAssertGreaterThanOrEqual(ribbon.startHeight, node.height * 0.8)
+                    }
+                    XCTAssertEqual(ribbon.startHeight, ribbon.endHeight)
                 }
                 for (ribbon, node) in zip(layout.sinkRibbons, layout.sinkFrames) {
                     XCTAssertTrue(layout.flowFrame.contains(ribbon.frame))
-                    XCTAssertEqual(ribbon.frame.minX, layout.busFrame?.maxX ?? layout.flowFrame.midX)
+                    XCTAssertEqual(ribbon.frame.minX, layout.flowFrame.midX)
                     XCTAssertEqual(ribbon.frame.maxX, layout.flowFrame.maxX)
                     XCTAssertEqual(ribbon.frame.minY + ribbon.endCenterY, node.midY)
-                    XCTAssertEqual(ribbon.startHeight, 24 / CGFloat(item.sinks))
-                    XCTAssertEqual(ribbon.endHeight, 24)
+                    if item.sinks > 1 {
+                        XCTAssertEqual(ribbon.endHeight, node.height)
+                    } else {
+                        XCTAssertGreaterThanOrEqual(ribbon.endHeight, node.height * 0.8)
+                    }
+                    XCTAssertEqual(ribbon.startHeight, ribbon.endHeight)
                 }
             }
         }

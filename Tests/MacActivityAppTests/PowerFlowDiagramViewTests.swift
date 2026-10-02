@@ -98,6 +98,150 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         }
     }
 
+    // Measures the real production compact tile content (not constants) with the
+    // production node widths/heights. This is the regression that catches the
+    // horizontal icon+title arrangement exhausting the 40 pt node width.
+    func testCompactNodeTileContentFitsProductionNodeWidths() {
+        let shortKinds: Set<PowerFlowDiagramNodeKind> = [.externalPower, .battery, .mac]
+        for width: CGFloat in [320, 384] {
+            let plan = PowerFlowDiagramRenderPlan(presentation: Fixtures.manyToMany, width: width)
+            let nodes = Fixtures.manyToMany.sources + Fixtures.manyToMany.sinks
+            let frames = plan.layout.sourceFrames + plan.layout.sinkFrames
+            for (node, frame) in zip(nodes, frames) {
+                guard shortKinds.contains(node.kind) else { continue }
+                XCTAssertTrue(
+                    frame.height < PowerFlowDiagramNodeVisual.compactHeightThreshold,
+                    "\(node.title) should use the compact tile at width \(width)"
+                )
+                let host = NSHostingView(
+                    rootView: PowerFlowDiagramNodeTile(node: node, isCompact: true).content
+                )
+                host.layoutSubtreeIfNeeded()
+                let size = host.fittingSize
+                XCTAssertLessThanOrEqual(
+                    size.width, frame.width - 2,
+                    "compact '\(node.title)' content width \(size.width) overflows \(frame.width) at width \(width)"
+                )
+                XCTAssertLessThanOrEqual(
+                    size.height, frame.height - 2,
+                    "compact '\(node.title)' content height \(size.height) overflows \(frame.height)"
+                )
+            }
+        }
+    }
+
+    func testRegularNodeTileContentStaysWithinSingleLaneFrames() {
+        for width: CGFloat in [320, 384] {
+            let plan = PowerFlowDiagramRenderPlan(presentation: Fixtures.oneToOne, width: width)
+            let nodes = Fixtures.oneToOne.sources + Fixtures.oneToOne.sinks
+            let frames = plan.layout.sourceFrames + plan.layout.sinkFrames
+            for (node, frame) in zip(nodes, frames) {
+                XCTAssertGreaterThanOrEqual(frame.height, PowerFlowDiagramNodeVisual.compactHeightThreshold)
+                let host = NSHostingView(
+                    rootView: PowerFlowDiagramNodeTile(node: node, isCompact: false).content
+                )
+                host.layoutSubtreeIfNeeded()
+                let size = host.fittingSize
+                XCTAssertLessThanOrEqual(size.height, frame.height - 2)
+                XCTAssertLessThanOrEqual(size.width, frame.width)
+            }
+        }
+    }
+
+    // Rendered-content check: each sink lane must carry its endpoint tint at the
+    // node end (battery green, Mac blue) rather than one uniform purple gradient.
+    func testRenderedRibbonColorsFollowEndpointKinds() throws {
+        let presentation = Fixtures.oneToMany
+        let width: CGFloat = 384
+        let appearance = DashboardPresentationPolicy.translucentAppearance(
+            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
+            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
+        )
+        let bitmap = try renderBitmap(
+            presentation: presentation, width: width, appearance: appearance, backdrop: .white
+        )
+        let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
+        let scale = CGFloat(bitmap.pixelsWide) / width
+        let flow = plan.layout.flowFrame
+        // oneToMany sink order is battery, then Mac.
+        let battery = try XCTUnwrap(plan.layout.sinkFrames.first)
+        let mac = try XCTUnwrap(plan.layout.sinkFrames.dropFirst().first)
+        let batteryColor = color(in: bitmap, at: CGPoint(x: flow.maxX - 3, y: battery.midY - 10), scale: scale)
+        let macColor = color(in: bitmap, at: CGPoint(x: flow.maxX - 3, y: mac.midY - 10), scale: scale)
+
+        XCTAssertGreaterThan(
+            batteryColor.greenComponent, batteryColor.redComponent + 0.03,
+            "battery lane should read green, got \(batteryColor)"
+        )
+        XCTAssertGreaterThan(
+            batteryColor.greenComponent, batteryColor.blueComponent + 0.01,
+            "battery lane should read green, got \(batteryColor)"
+        )
+        XCTAssertGreaterThan(
+            macColor.blueComponent, macColor.greenComponent + 0.01,
+            "Mac lane should read blue, got \(macColor)"
+        )
+        XCTAssertGreaterThan(
+            macColor.blueComponent, macColor.redComponent + 0.03,
+            "Mac lane should read blue, got \(macColor)"
+        )
+    }
+
+    private func renderBitmap(
+        presentation: PowerFlowDiagramPresentation,
+        width: CGFloat,
+        appearance: DashboardStyleAppearance,
+        backdrop: Color
+    ) throws -> NSBitmapImageRep {
+        let content = ZStack {
+            backdrop
+            PowerFlowDiagramView(presentation: presentation)
+                .environment(\.dashboardStyleAppearance, appearance)
+                .frame(width: width)
+        }
+        let renderer = ImageRenderer(content: content)
+        renderer.scale = 2
+        let image = try XCTUnwrap(renderer.nsImage)
+        let tiff = try XCTUnwrap(image.tiffRepresentation)
+        return try XCTUnwrap(NSBitmapImageRep(data: tiff))
+    }
+
+    private func color(in representation: NSBitmapImageRep, at point: CGPoint, scale: CGFloat) -> NSColor {
+        let x = min(representation.pixelsWide - 1, max(0, Int(point.x * scale)))
+        let y = min(representation.pixelsHigh - 1, max(0, Int(point.y * scale)))
+        return representation.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) ?? .clear
+    }
+
+    func testNodeSurfaceRemainsVisibleWhenStandardModuleFillIsZero() {
+        let standard = DashboardPresentationPolicy.standardAppearance
+        XCTAssertEqual(standard.moduleFillOpacity, 0)
+        XCTAssertGreaterThan(PowerFlowDiagramNodeVisual.fillOpacity(for: standard), 0)
+        XCTAssertGreaterThanOrEqual(
+            PowerFlowDiagramNodeVisual.fillOpacity(for: standard),
+            PowerFlowDiagramNodeVisual.baseFillOpacity
+        )
+    }
+
+    func testGroupedSideSummaryContentHoldsTwoRepresentativesWithinDiagramHeight() throws {
+        let plan = PowerFlowDiagramRenderPlan(presentation: Fixtures.grouped, width: 320)
+        let cases: [(PowerFlowDiagramSideSummary, AppLocalization.Key, CGRect)] = [
+            (Fixtures.grouped.sourceSummary, .powerFlowSourcesCount, try XCTUnwrap(plan.layout.groupedSourceFrame)),
+            (Fixtures.grouped.sinkSummary, .powerFlowOutputsCount, try XCTUnwrap(plan.layout.groupedSinkFrame)),
+        ]
+        for (summary, key, frame) in cases {
+            let host = NSHostingView(
+                rootView: PowerFlowDiagramSideSummaryView(summary: summary, countKey: key)
+                    .frame(width: frame.width)
+                    .environment(\.dashboardStyleAppearance, DashboardPresentationPolicy.standardAppearance)
+            )
+            XCTAssertLessThanOrEqual(
+                host.fittingSize.height,
+                frame.height,
+                "\(key) side summary should fit within \(frame.height) pt"
+            )
+        }
+    }
+
     func testLongGermanLabelsStillRenderAt320Points() throws {
         let german = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "de"))
         let presentation = PowerFlowDiagramPresentationBuilder.build(
