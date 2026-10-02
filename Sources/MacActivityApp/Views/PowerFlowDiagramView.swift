@@ -75,7 +75,7 @@ enum PowerFlowDiagramPalette {
         case .battery: return "battery.100"
         case .mac: return "laptopcomputer"
         case .other: return "ellipsis"
-        case .unknown: return "questionmark"
+        case .unknown: return "questionmark.circle.fill"
         }
     }
 }
@@ -168,13 +168,11 @@ struct PowerFlowDiagramView: View {
 
     private func expandedContent(plan: PowerFlowDiagramRenderPlan) -> some View {
         Group {
-            Group {
-                ribbons(nodes: presentation.sources, layouts: plan.layout.sourceRibbons)
-                if let bus = plan.layout.busFrame {
-                    sharedBus.diagramFrame(bus)
-                }
-                ribbons(nodes: presentation.sinks, layouts: plan.layout.sinkRibbons)
-            }
+            PowerFlowDiagramFlowCanvas(
+                layout: plan.layout,
+                sources: presentation.sources,
+                sinks: presentation.sinks
+            )
             .accessibilityHidden(true)
 
             tiles(nodes: presentation.sources, frames: plan.layout.sourceFrames)
@@ -185,17 +183,13 @@ struct PowerFlowDiagramView: View {
         }
     }
 
-    private func ribbons(nodes: [PowerFlowDiagramNode], layouts: [PowerFlowDiagramRibbonLayout]) -> some View {
-        ForEach(Array(zip(nodes, layouts)), id: \.0.id) { node, layout in
-            PowerFlowRibbon(layout: layout, kind: node.kind, measurement: node.measurement)
-                .diagramFrame(layout.frame)
-        }
-        .accessibilityHidden(true)
-    }
-
     private func tiles(nodes: [PowerFlowDiagramNode], frames: [CGRect]) -> some View {
         ForEach(Array(zip(nodes, frames)), id: \.0.id) { node, frame in
-            PowerFlowDiagramNodeTile(node: node).diagramFrame(frame)
+            PowerFlowDiagramNodeTile(
+                node: node,
+                isCompact: frame.height < PowerFlowDiagramNodeVisual.compactHeightThreshold
+            )
+            .diagramFrame(frame)
         }
     }
 
@@ -204,19 +198,37 @@ struct PowerFlowDiagramView: View {
         if let source = plan.layout.groupedSourceFrame,
            let center = plan.layout.groupedCenterFrame,
            let sink = plan.layout.groupedSinkFrame {
+            groupedBusConnector(source: source, sink: sink, center: center)
             PowerFlowDiagramSideSummaryView(summary: presentation.sourceSummary, countKey: .powerFlowSourcesCount)
                 .diagramFrame(source)
             PowerFlowDiagramSideSummaryView(summary: presentation.sinkSummary, countKey: .powerFlowOutputsCount)
                 .diagramFrame(sink)
-            if let bus = plan.layout.busFrame {
-                sharedBus.diagramFrame(bus).accessibilityHidden(true)
-            }
             VStack(spacing: 2) {
                 aggregateLabel(title: .powerFlowInput, value: plan.sourceTotalText)
+                Rectangle()
+                    .fill(Color.primary.opacity(0.12))
+                    .frame(width: 26, height: 0.5)
                 aggregateLabel(title: .powerFlowOutput, value: plan.sinkTotalText)
             }
+            .padding(.horizontal, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PowerFlowDiagramSurface())
             .diagramFrame(center)
         }
+    }
+
+    private func groupedBusConnector(source: CGRect, sink: CGRect, center: CGRect) -> some View {
+        let connector = CGRect(
+            x: source.maxX,
+            y: center.midY - 12,
+            width: max(0, sink.minX - source.maxX),
+            height: 24
+        )
+        return RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .fill(Color.primary.opacity(0.06))
+            .frame(width: connector.width, height: connector.height)
+            .position(x: connector.midX, y: connector.midY)
+            .accessibilityHidden(true)
     }
 
     private func aggregateLabel(title: AppLocalization.Key, value: String?) -> some View {
@@ -227,12 +239,6 @@ struct PowerFlowDiagramView: View {
                 PowerFlowDiagramWattLabel(text: value)
             }
         }
-    }
-
-    private var sharedBus: some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(.secondary.opacity(0.16))
-            .accessibilityHidden(true)
     }
 }
 
@@ -254,7 +260,30 @@ private struct PowerFlowDiagramWattLabel: View {
     }
 }
 
+// Shared node metrics keep icon and title content inside the 28 pt two-lane
+// tiles while allowing a larger icon on the 64 pt single-lane tiles.
+enum PowerFlowDiagramNodeVisual {
+    static let baseFillOpacity: Double = 0.05
+    static let compactHeightThreshold: CGFloat = 40
+    static let compactIconPointSize: CGFloat = 14
+    static let compactTitlePointSize: CGFloat = 9
+    static let regularIconPointSize: CGFloat = 22
+    static let regularTitlePointSize: CGFloat = 11
+    // Compact tiles stack the icon over a full-width title: the horizontal
+    // arrangement left only a few points of title width on 40 pt nodes.
+    static let compactSpacing: CGFloat = 0
+    static let regularSpacing: CGFloat = 2
+    static let tilePadding: CGFloat = 3
+    static let compactTilePadding: CGFloat = 1
+
+    static func fillOpacity(for appearance: DashboardStyleAppearance) -> Double {
+        max(appearance.moduleFillOpacity, baseFillOpacity)
+    }
+}
+
 // Internal layers reuse the resolved dashboard policy, never nested glass.
+// A small base fill keeps tiles visible even when the standard policy's
+// moduleFillOpacity is zero.
 private struct PowerFlowDiagramSurface: View {
     var isSynthetic = false
     @Environment(\.dashboardStyleAppearance) private var appearance
@@ -265,7 +294,8 @@ private struct PowerFlowDiagramSurface: View {
         let stroke = contrast == .increased
             ? max(appearance.strokeOpacity, DashboardPresentationPolicy.increasedContrastStrokeOpacity)
             : appearance.strokeOpacity
-        shape.fill(Color.primary.opacity(appearance.moduleFillOpacity))
+        shape
+            .fill(Color.primary.opacity(PowerFlowDiagramNodeVisual.fillOpacity(for: appearance)))
             .overlay {
                 shape.strokeBorder(
                     Color.primary.opacity(stroke),
@@ -275,59 +305,227 @@ private struct PowerFlowDiagramSurface: View {
     }
 }
 
-private struct PowerFlowDiagramNodeTile: View {
+struct PowerFlowDiagramNodeTile: View {
     let node: PowerFlowDiagramNode
+    let isCompact: Bool
 
     var body: some View {
-        VStack(spacing: 1) {
-            Image(systemName: PowerFlowDiagramPalette.symbol(for: node.kind))
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(PowerFlowDiagramPalette.color(for: node.kind))
-                .accessibilityHidden(true)
-            Text(node.title)
-                .font(.caption2)
-                .lineLimit(1)
-                .minimumScaleFactor(0.72)
-                .help(node.title)
+        content
+            .padding(isCompact ? PowerFlowDiagramNodeVisual.compactTilePadding : PowerFlowDiagramNodeVisual.tilePadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(PowerFlowDiagramSurface(isSynthetic: node.isSynthetic))
+    }
+
+    @ViewBuilder
+    var content: some View {
+        if isCompact {
+            compactContent
+        } else {
+            regularContent
         }
-        .padding(.horizontal, 2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(PowerFlowDiagramSurface(isSynthetic: node.isSynthetic))
+    }
+
+    var compactContent: some View {
+        VStack(spacing: PowerFlowDiagramNodeVisual.compactSpacing) {
+            symbol(pointSize: PowerFlowDiagramNodeVisual.compactIconPointSize)
+            title(pointSize: PowerFlowDiagramNodeVisual.compactTitlePointSize)
+        }
+    }
+
+    var regularContent: some View {
+        VStack(spacing: PowerFlowDiagramNodeVisual.regularSpacing) {
+            symbol(pointSize: PowerFlowDiagramNodeVisual.regularIconPointSize)
+            title(pointSize: PowerFlowDiagramNodeVisual.regularTitlePointSize)
+        }
+    }
+
+    private func symbol(pointSize: CGFloat) -> some View {
+        Image(systemName: PowerFlowDiagramPalette.symbol(for: node.kind))
+            .font(.system(size: pointSize, weight: .semibold))
+            .foregroundStyle(PowerFlowDiagramPalette.color(for: node.kind))
+            // The SF power plug is drawn horizontally; rotate it upright to match
+            // the reference instead of depending on a non-native symbol.
+            .rotationEffect(.degrees(node.kind == .externalPower ? 90 : 0))
+            .accessibilityHidden(true)
+    }
+
+    private func title(pointSize: CGFloat) -> some View {
+        Text(node.title)
+            .font(.system(size: pointSize, weight: .medium))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+            .help(node.title)
     }
 }
 
-private struct PowerFlowDiagramSideSummaryView: View {
+struct PowerFlowDiagramSideSummaryView: View {
     let summary: PowerFlowDiagramSideSummary
     let countKey: AppLocalization.Key
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 1) {
             let count = AppLocalization.string(countKey, Int64(summary.memberCount))
             Text(count).font(.caption2.weight(.semibold)).lineLimit(1).help(count)
             ForEach(summary.representatives) { node in
-                HStack(spacing: 2) {
-                    Image(systemName: PowerFlowDiagramPalette.symbol(for: node.kind))
-                        .accessibilityHidden(true)
-                    Text(node.title).lineLimit(1).help(node.title)
-                    Spacer(minLength: 0)
-                    if let value = PowerFlowDiagramRenderPlan.powerText(node.measurement, provenance: node.provenance) {
-                        PowerFlowDiagramWattLabel(text: value).layoutPriority(1)
-                    }
-                }
-                .font(.caption2)
+                representativeRow(node)
             }
+            bottomRow
+        }
+        .padding(3)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(PowerFlowDiagramSurface())
+    }
+
+    private func representativeRow(_ node: PowerFlowDiagramNode) -> some View {
+        HStack(spacing: 2) {
+            Image(systemName: PowerFlowDiagramPalette.symbol(for: node.kind))
+                .accessibilityHidden(true)
+            Text(node.title).lineLimit(1).minimumScaleFactor(0.7).help(node.title)
+            Spacer(minLength: 0)
+            if let value = PowerFlowDiagramRenderPlan.powerText(node.measurement, provenance: node.provenance) {
+                valueLabel(value).layoutPriority(1)
+            }
+        }
+        .font(.caption2)
+    }
+
+    private var bottomRow: some View {
+        HStack(spacing: 4) {
+            if let total = PowerFlowDiagramRenderPlan.powerText(summary.total, provenance: summary.provenance) {
+                valueLabel(total)
+            }
+            Spacer(minLength: 0)
             let hidden = summary.memberCount - summary.representatives.count
             if hidden > 0 {
                 let more = AppLocalization.string(.powerFlowMoreCount, Int64(hidden))
                 Text(more).font(.caption2).foregroundStyle(.secondary).lineLimit(1).help(more)
             }
-            if let total = PowerFlowDiagramRenderPlan.powerText(summary.total, provenance: summary.provenance) {
-                PowerFlowDiagramWattLabel(text: total)
+        }
+    }
+
+    private func valueLabel(_ text: String) -> some View {
+        Text(text)
+            .font(.caption2.monospacedDigit().weight(.semibold))
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)
+    }
+}
+
+// Each ribbon fades from its endpoint tint to the same neutral-blue bus tint at
+// the seam, so the two halves share one continuous color and opacity without a
+// mid-band reset. Endpoint colors stay meaningful (battery green, Mac blue);
+// external/unknown sources stay neutral.
+enum PowerFlowDiagramFlowStyle {
+    static let busCornerRadius: CGFloat = 8
+    static let busTint = Color(red: 0.36, green: 0.55, blue: 0.88)
+
+    static func opacities(
+        contrast: ColorSchemeContrast,
+        colorScheme: ColorScheme
+    ) -> (edge: Double, peak: Double) {
+        switch (contrast, colorScheme) {
+        case (.increased, .dark): return (0.34, 0.74)
+        case (.increased, _): return (0.28, 0.66)
+        case (_, .dark): return (0.22, 0.56)
+        default: return (0.16, 0.44)
+        }
+    }
+
+    static func shading(
+        ribbon: PowerFlowDiagramRibbonLayout,
+        isSource: Bool,
+        tint: Color,
+        contrast: ColorSchemeContrast,
+        colorScheme: ColorScheme
+    ) -> GraphicsContext.Shading {
+        let (edge, peak) = opacities(contrast: contrast, colorScheme: colorScheme)
+        let shoulder = (edge + peak) / 2
+        let stops: [Gradient.Stop] = isSource
+            ? [
+                Gradient.Stop(color: tint.opacity(edge), location: 0),
+                Gradient.Stop(color: tint.opacity(shoulder), location: 0.5),
+                Gradient.Stop(color: busTint.opacity(peak), location: 1),
+            ]
+            : [
+                Gradient.Stop(color: busTint.opacity(peak), location: 0),
+                Gradient.Stop(color: tint.opacity(shoulder), location: 0.5),
+                Gradient.Stop(color: tint.opacity(edge), location: 1),
+            ]
+        return .linearGradient(
+            Gradient(stops: stops),
+            startPoint: CGPoint(x: ribbon.frame.minX, y: ribbon.frame.midY),
+            endPoint: CGPoint(x: ribbon.frame.maxX, y: ribbon.frame.midY)
+        )
+    }
+
+    static func busFill(contrast: ColorSchemeContrast) -> Color {
+        Color.primary.opacity(contrast == .increased ? 0.10 : 0.05)
+    }
+
+    static func busStroke(contrast: ColorSchemeContrast) -> Color {
+        Color.primary.opacity(contrast == .increased ? 0.45 : 0.16)
+    }
+}
+
+private struct PowerFlowDiagramFlowCanvas: View {
+    let layout: PowerFlowDiagramLayoutResult
+    let sources: [PowerFlowDiagramNode]
+    let sinks: [PowerFlowDiagramNode]
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        Canvas { context, _ in
+            draw(ribbons: layout.sourceRibbons, nodes: sources, isSource: true, in: &context)
+            draw(ribbons: layout.sinkRibbons, nodes: sinks, isSource: false, in: &context)
+            if let bus = layout.busFrame {
+                let path = Path(roundedRect: bus, cornerRadius: PowerFlowDiagramFlowStyle.busCornerRadius)
+                context.fill(path, with: .color(PowerFlowDiagramFlowStyle.busFill(contrast: contrast)))
+                context.stroke(
+                    path,
+                    with: .color(PowerFlowDiagramFlowStyle.busStroke(contrast: contrast)),
+                    lineWidth: 0.5
+                )
             }
         }
-        .padding(2)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(PowerFlowDiagramSurface())
+        .frame(width: layout.cardFrame.width, height: layout.cardFrame.height)
+        .allowsHitTesting(false)
+    }
+
+    private func draw(
+        ribbons: [PowerFlowDiagramRibbonLayout],
+        nodes: [PowerFlowDiagramNode],
+        isSource: Bool,
+        in context: inout GraphicsContext
+    ) {
+        for (node, ribbon) in zip(nodes, ribbons) {
+            switch node.measurement {
+            case .idle:
+                continue
+            case .unavailable:
+                let path = PowerFlowRibbonShape(layout: ribbon).path(in: ribbon.frame)
+                let outline = PowerFlowDiagramPalette.color(for: node.kind)
+                context.fill(path, with: .color(outline.opacity(0.06)))
+                context.stroke(
+                    path,
+                    with: .color(outline.opacity(0.55)),
+                    style: StrokeStyle(lineWidth: 1, dash: node.isSynthetic ? [2, 3] : [3, 4])
+                )
+            case .exact, .lowerBound:
+                let shading = PowerFlowDiagramFlowStyle.shading(
+                    ribbon: ribbon,
+                    isSource: isSource,
+                    tint: PowerFlowDiagramPalette.color(for: node.kind),
+                    contrast: contrast,
+                    colorScheme: colorScheme
+                )
+                context.fill(
+                    PowerFlowRibbonShape(layout: ribbon).path(in: ribbon.frame),
+                    with: shading
+                )
+            }
+        }
     }
 }
 
@@ -335,49 +533,25 @@ private struct PowerFlowRibbonShape: Shape {
     var layout: PowerFlowDiagramRibbonLayout
 
     func path(in rect: CGRect) -> Path {
-        let startTop = layout.startCenterY - layout.startHeight / 2
-        let startBottom = layout.startCenterY + layout.startHeight / 2
-        let endTop = layout.endCenterY - layout.endHeight / 2
-        let endBottom = layout.endCenterY + layout.endHeight / 2
+        let startTop = rect.minY + layout.startCenterY - layout.startHeight / 2
+        let startBottom = rect.minY + layout.startCenterY + layout.startHeight / 2
+        let endTop = rect.minY + layout.endCenterY - layout.endHeight / 2
+        let endBottom = rect.minY + layout.endCenterY + layout.endHeight / 2
         let controlX = rect.width * 0.52
         var path = Path()
-        path.move(to: CGPoint(x: 0, y: startTop))
+        path.move(to: CGPoint(x: rect.minX, y: startTop))
         path.addCurve(
-            to: CGPoint(x: rect.width, y: endTop),
-            control1: CGPoint(x: controlX, y: startTop),
-            control2: CGPoint(x: rect.width - controlX, y: endTop)
+            to: CGPoint(x: rect.maxX, y: endTop),
+            control1: CGPoint(x: rect.minX + controlX, y: startTop),
+            control2: CGPoint(x: rect.maxX - controlX, y: endTop)
         )
-        path.addLine(to: CGPoint(x: rect.width, y: endBottom))
+        path.addLine(to: CGPoint(x: rect.maxX, y: endBottom))
         path.addCurve(
-            to: CGPoint(x: 0, y: startBottom),
-            control1: CGPoint(x: rect.width - controlX, y: endBottom),
-            control2: CGPoint(x: controlX, y: startBottom)
+            to: CGPoint(x: rect.minX, y: startBottom),
+            control1: CGPoint(x: rect.maxX - controlX, y: endBottom),
+            control2: CGPoint(x: rect.minX + controlX, y: startBottom)
         )
         path.closeSubpath()
         return path
-    }
-}
-
-private struct PowerFlowRibbon: View {
-    let layout: PowerFlowDiagramRibbonLayout
-    let kind: PowerFlowDiagramNodeKind
-    let measurement: PowerFlowDisplayMeasurement
-
-    var body: some View {
-        let shape = PowerFlowRibbonShape(layout: layout)
-        let color = PowerFlowDiagramPalette.color(for: kind)
-        switch measurement {
-        case .exact:
-            shape.fill(LinearGradient(
-                colors: [color.opacity(0.20), color.opacity(0.58)],
-                startPoint: .leading, endPoint: .trailing
-            ))
-        case .unavailable:
-            shape.stroke(color.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
-        case .lowerBound:
-            shape.fill(color.opacity(0.32))
-        case .idle:
-            EmptyView()
-        }
     }
 }

@@ -25,21 +25,25 @@ struct PowerFlowDiagramLayoutResult: Equatable {
     private func ribbons(isSource: Bool) -> [PowerFlowDiagramRibbonLayout] {
         guard case .expanded = effectiveMode else { return [] }
         let nodes = isSource ? sourceFrames : sinkFrames
-        let startX = isSource ? flowFrame.minX : (busFrame?.maxX ?? flowFrame.midX)
-        let endX = isSource ? (busFrame?.minX ?? flowFrame.midX) : flowFrame.maxX
+        guard !nodes.isEmpty else { return [] }
+        // Both sides meet exactly at the shared seam so a single absolute
+        // gradient stays continuous across the middle or shared bus.
+        let startX = isSource ? flowFrame.minX : flowFrame.midX
+        let endX = isSource ? flowFrame.midX : flowFrame.maxX
+        guard endX > startX else { return [] }
         let frame = CGRect(x: startX, y: flowFrame.minY, width: endX - startX, height: flowFrame.height)
         // Equal lanes communicate membership, never a watt-proportional allocation.
-        let trunkHeight: CGFloat = 24
-        let joinHeight = trunkHeight / CGFloat(max(1, nodes.count))
+        let trunkHeight = min(PowerFlowDiagramLayout.flowTrunkHeight, frame.height)
+        let branchHeight = trunkHeight / CGFloat(nodes.count)
         return nodes.enumerated().map { index, node in
             let nodeY = node.midY - frame.minY
-            let joinY = frame.height / 2 - trunkHeight / 2 + joinHeight * (CGFloat(index) + 0.5)
+            let joinY = frame.height / 2 - trunkHeight / 2 + branchHeight * (CGFloat(index) + 0.5)
             return PowerFlowDiagramRibbonLayout(
                 frame: frame,
                 startCenterY: isSource ? nodeY : joinY,
-                startHeight: isSource ? trunkHeight : joinHeight,
+                startHeight: branchHeight,
                 endCenterY: isSource ? joinY : nodeY,
-                endHeight: isSource ? joinHeight : trunkHeight
+                endHeight: branchHeight
             )
         }
     }
@@ -66,6 +70,11 @@ enum PowerFlowDiagramLayout {
     static let maximumNodeWidth: CGFloat = 48
     static let minimumFlowLabelWidth: CGFloat = 58
     static let flowLabelHeight: CGFloat = 16
+    // Substantial non-watt-proportional trunk. Two-lane nodes are 28 pt each,
+    // so a 56 pt trunk splits and merges exactly onto the lanes; a single lane
+    // approaches the 64 pt node height without fully filling it.
+    static let flowTrunkHeight: CGFloat = 56
+    static let busWidth: CGFloat = 24
 
     static func effectiveMode(
         preferredMode: PowerFlowDiagramMode,
@@ -244,11 +253,12 @@ enum PowerFlowDiagramLayout {
         flowFrame: CGRect
     ) -> CGRect? {
         guard topology == .manyToMany else { return nil }
+        let height = min(flowTrunkHeight, flowFrame.height)
         return CGRect(
-            x: flowFrame.midX - 14,
-            y: flowFrame.midY - 12,
-            width: 28,
-            height: 24
+            x: flowFrame.midX - busWidth / 2,
+            y: flowFrame.midY - height / 2,
+            width: busWidth,
+            height: height
         )
     }
 
@@ -259,7 +269,9 @@ enum PowerFlowDiagramLayout {
         diagram: CGRect
     ) -> PowerFlowDiagramLayoutResult {
         let gap: CGFloat = 6
-        let sideWidth = min(112, max(80, (diagram.width - 56 - gap * 2) * 0.36))
+        // Slightly wider side cards so count, two representatives, an
+        // additional-members line, and the aggregate stay readable.
+        let sideWidth = min(124, max(88, (diagram.width - 56 - gap * 2) * 0.36))
         let source = CGRect(
             x: diagram.minX,
             y: diagram.minY,
