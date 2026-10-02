@@ -31,13 +31,8 @@ enum PowerFlowPresentation {
     ) -> String? {
         switch measurement {
         case .exact(let watts):
-            let value = powerText(.watts(watts), locale: locale, bundle: bundle)
-            switch provenance {
-            case .derived, .mixed:
-                return "≈\(value)"
-            case .measured, .absent:
-                return value
-            }
+            // Provenance remains in help/accessibility wording, not a prefix.
+            return powerText(.watts(watts), locale: locale, bundle: bundle)
 
         case .lowerBound(let knownWatts, _):
             let value = powerText(

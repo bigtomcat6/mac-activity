@@ -34,9 +34,14 @@ enum DashboardCardChrome {
 struct DashboardFallbackCardSurface: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    // Custom silhouette for the three-segment power-flow panel; defaults to the
+    // shared rounded-card shape so every existing caller is unchanged.
+    var shape: AnyShape = AnyShape(
+        RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
+    )
 
     var body: some View {
-        RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
+        shape
             .fill(reduceTransparency
                 ? AnyShapeStyle(DashboardCardChrome.surfaceColor(for: colorScheme))
                 : AnyShapeStyle(.ultraThinMaterial))
@@ -104,31 +109,70 @@ private struct DashboardCardChromeModifier: ViewModifier {
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
     @Environment(\.dashboardStyleAppearance) private var appearance
     let isHovered: Bool
+    // nil keeps the shared rounded-card silhouette for every existing caller.
+    var customShape: AnyShape? = nil
+    // Panel-only native-glass tint; default shared cards pass nil and stay exact.
+    var glassTint: Color? = nil
+    // Non-opaque panel calibration layer above the glass, below the content.
+    var glassOverlay: Color? = nil
 
     func body(content: Content) -> some View {
-        let shape = RoundedRectangle(
+        let shape = customShape ?? AnyShape(RoundedRectangle(
             cornerRadius: appearance.moduleCornerRadius,
             style: .continuous
-        )
+        ))
         let borderOpacity = resolvedBorderOpacity
         let clippedContent = content.contentShape(shape).clipShape(shape)
 
         Group {
             if #available(macOS 26.0, *), !reduceTransparency {
+                let glass = glassTint.map { Glass.regular.tint($0) } ?? Glass.regular
                 if appearance.usesRootGlass {
                     clippedContent
                         .background(shape.fill(Color.primary.opacity(appearance.moduleFillOpacity)))
+                } else if customShape != nil {
+                    // Panel-only custom silhouette: keep the native glass surface
+                    // as a background layer so the glow and readouts sit above it
+                    // and are not part of the glass foreground processing. This
+                    // makes the calibration predictable; default shared rounded
+                    // cards keep the exact legacy path below.
+                    ZStack {
+                        shape.fill(Color.clear)
+                            .glassEffect(glass, in: shape)
+                        if let glassOverlay { shape.fill(glassOverlay) }
+                        clippedContent
+                    }
                 } else {
-                    clippedContent.glassEffect(.regular, in: shape)
+                    clippedContent
+                        .background {
+                            if let glassOverlay { shape.fill(glassOverlay) }
+                        }
+                        .glassEffect(glass, in: shape)
                 }
             } else {
                 clippedContent.background {
-                    DashboardFallbackCardSurface()
+                    if let customShape {
+                        DashboardFallbackCardSurface(shape: customShape)
+                    } else {
+                        DashboardFallbackCardSurface()
+                    }
                 }
             }
         }
         .overlay {
-            shape.strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+            if let customShape {
+                // Borderless reference: the custom silhouette owns no ordinary
+                // stroke. Increased-contrast still gets a stronger edge.
+                if contrast == .increased {
+                    customShape.stroke(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+                }
+            } else {
+                RoundedRectangle(
+                    cornerRadius: appearance.moduleCornerRadius,
+                    style: .continuous
+                )
+                .strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
+            }
         }
     }
 
@@ -146,6 +190,21 @@ private struct DashboardCardChromeModifier: ViewModifier {
 extension View {
     func dashboardCardChrome(isHovered: Bool = false) -> some View {
         modifier(DashboardCardChromeModifier(isHovered: isHovered))
+    }
+
+    // Panel-only custom silhouette; the default rounded shape is untouched.
+    func dashboardCardChrome(
+        shape: AnyShape,
+        isHovered: Bool = false,
+        glassTint: Color? = nil,
+        glassOverlay: Color? = nil
+    ) -> some View {
+        modifier(
+            DashboardCardChromeModifier(
+                isHovered: isHovered, customShape: shape,
+                glassTint: glassTint, glassOverlay: glassOverlay
+            )
+        )
     }
 
     func activeCleanupCardChrome() -> some View {

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		4FF0E7F8AA1B442BBC147E0D /* PowerFlowDiagramRibbon.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04B30E7BA5C45488270C3A0 /* PowerFlowDiagramRibbon.swift */; };
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
 		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
 		078F652EDE21CCEB0AC6E491 /* ActiveProcessMemoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */; };
@@ -259,6 +260,7 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		D04B30E7BA5C45488270C3A0 /* PowerFlowDiagramRibbon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramRibbon.swift; sourceTree = "<group>"; };
 		004ECCFE3B2C36753F3F26B9 /* AudioProcessServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessServiceTests.swift; sourceTree = "<group>"; };
 		00BBC1CE28299769CF06DE96 /* zh-Hans */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = "zh-Hans"; path = "zh-Hans.lproj/Localizable.strings"; sourceTree = "<group>"; };
 		018FE6516B13F8FCE943C7CB /* MetricProviderSampleTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricProviderSampleTests.swift; sourceTree = "<group>"; };
@@ -746,6 +748,7 @@
 				EB4F29166FB636C6A7A43659 /* EnergyImpactView.swift */,
 				98D9223A23FC96035099E89A /* MemoryReleaseStatusView.swift */,
 				88BD91E9197805330CB6529E /* PowerFlowDiagramLayout.swift */,
+				D04B30E7BA5C45488270C3A0 /* PowerFlowDiagramRibbon.swift */,
 				11E55F0E3D5AD31F60211097 /* PowerFlowDiagramView.swift */,
 				EF8E0BAFDB04562CF81807E7 /* PowerFlowView.swift */,
 				C6FC2DC1E33B102AB8EE4AFA /* PreferencesView.swift */,
@@ -1251,6 +1254,7 @@
 				4B9C952E9262F082C4242903 /* EnergyImpactView.swift in Sources */,
 				63C09E96706D5628D706B2ED /* MemoryReleaseStatusView.swift in Sources */,
 				ECA435D1CC73C853735B2BD0 /* PowerFlowDiagramLayout.swift in Sources */,
+				4FF0E7F8AA1B442BBC147E0D /* PowerFlowDiagramRibbon.swift in Sources */,
 				DFBD4B889645F4398B37DA90 /* PowerFlowDiagramPresentation.swift in Sources */,
 				7CCFD0D6A2110FBF70012A81 /* PowerFlowDiagramView.swift in Sources */,
 				1DD175A5FE9EF36992C90E59 /* PowerFlowModel.swift in Sources */,

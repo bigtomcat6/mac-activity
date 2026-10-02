@@ -3,78 +3,58 @@ import CoreGraphics
 struct PowerFlowDiagramLayoutResult: Equatable {
     var effectiveMode: PowerFlowDiagramMode
     var cardFrame: CGRect
-    var statusFrame: CGRect
     var diagramFrame: CGRect
+    var sourceSegment: CGRect
+    var sourceSeparator: CGRect
+    var middleSegment: CGRect
+    var sinkSeparator: CGRect
+    var sinkSegment: CGRect
+    var outerCornerRadius: CGFloat
     var sourceFrames: [CGRect]
     var sinkFrames: [CGRect]
-    var flowFrame: CGRect
     var flowLabelFrames: [CGRect]
-    var busFrame: CGRect?
     var groupedSourceFrame: CGRect?
     var groupedCenterFrame: CGRect?
     var groupedSinkFrame: CGRect?
+    /// Reserved bottom strip inside the middle piece when an expanded topology
+    /// has to render localized In/Out totals (partial or unbalanced data).
+    var totalsFooterFrame: CGRect?
 
-    var sourceRibbons: [PowerFlowDiagramRibbonLayout] {
-        ribbons(isSource: true)
-    }
+    var busFrame: CGRect? = nil
+    var ribbons: [PowerFlowRibbonGeometry] = []
 
-    var sinkRibbons: [PowerFlowDiagramRibbonLayout] {
-        ribbons(isSource: false)
-    }
-
-    private func ribbons(isSource: Bool) -> [PowerFlowDiagramRibbonLayout] {
-        guard case .expanded = effectiveMode else { return [] }
-        let nodes = isSource ? sourceFrames : sinkFrames
-        guard !nodes.isEmpty else { return [] }
-        // Both sides meet exactly at the shared seam so a single absolute
-        // gradient stays continuous across the middle or shared bus.
-        let startX = isSource ? flowFrame.minX : flowFrame.midX
-        let endX = isSource ? flowFrame.midX : flowFrame.maxX
-        guard endX > startX else { return [] }
-        let frame = CGRect(x: startX, y: flowFrame.minY, width: endX - startX, height: flowFrame.height)
-        // Equal lanes communicate membership, never a watt-proportional allocation.
-        let trunkHeight = min(PowerFlowDiagramLayout.flowTrunkHeight, frame.height)
-        let branchHeight = trunkHeight / CGFloat(nodes.count)
-        return nodes.enumerated().map { index, node in
-            let nodeY = node.midY - frame.minY
-            let joinY = frame.height / 2 - trunkHeight / 2 + branchHeight * (CGFloat(index) + 0.5)
-            return PowerFlowDiagramRibbonLayout(
-                frame: frame,
-                startCenterY: isSource ? nodeY : joinY,
-                startHeight: branchHeight,
-                endCenterY: isSource ? joinY : nodeY,
-                endHeight: branchHeight
-            )
-        }
-    }
-}
-
-struct PowerFlowDiagramRibbonLayout: Equatable {
-    var frame: CGRect
-    var startCenterY: CGFloat
-    var startHeight: CGFloat
-    var endCenterY: CGFloat
-    var endHeight: CGFloat
+    /// The middle frosted piece is the only flow region.
+    var flowFrame: CGRect { middleSegment }
 }
 
 enum PowerFlowDiagramLayout {
     static let minimumExpandedWidth: CGFloat = 320
-    static let cardHeight: CGFloat = 104
-    static let outerPadding: CGFloat = 8
-    static let statusHeight: CGFloat = 16
-    static let statusDiagramSpacing: CGFloat = 6
-    static let diagramHeight: CGFloat = 64
-    static let nodeToFlowGap: CGFloat = 4
-    static let minimumLaneGap: CGFloat = 8
-    static let minimumNodeWidth: CGFloat = 40
-    static let maximumNodeWidth: CGFloat = 48
-    static let minimumFlowLabelWidth: CGFloat = 58
-    static let flowLabelHeight: CGFloat = 16
-    // Substantial non-watt-proportional trunk. Two-lane nodes are 28 pt each,
-    // so a 56 pt trunk splits and merges exactly onto the lanes; a single lane
-    // approaches the 64 pt node height without fully filling it.
-    static let flowTrunkHeight: CGFloat = 56
-    static let busWidth: CGFloat = 24
+    static let cardHeight: CGFloat = 78
+    static let referenceWidth: CGFloat = 384
+    // Approved reference: left 52, separator 5, middle 270, separator 5, right 52.
+    static let referenceSideWidth: CGFloat = 52
+    static let referenceSeparatorWidth: CGFloat = 5
+    static let outerCornerRadius: CGFloat = 21
+    static let readoutHeight: CGFloat = 18
+    /// Minimum width a grouped side gets so counts / representatives stay legible.
+    static let groupedMinimumSideWidth: CGFloat = 94
+    static let groupedMaximumSideWidth: CGFloat = 112
+    /// Reserved bottom strip (within the middle piece) for the In/Out totals footer.
+    static let expandedFooterHeight: CGFloat = 20
+
+    /// Grouped summaries need more room than the 1→1 icon columns. The middle
+    /// piece absorbs the remainder, but never shrinks below its share.
+    ///
+    /// Controller-approved readability trade-off: only the grouped mode uses the
+    /// wider 94–112 pt sides so counts, representative watt values and the
+    /// aggregate stay legible. Every other mode (including the 1→1 reference)
+    /// keeps the exact 52/5/270/5/52 ratio and transparent endpoint separators.
+    /// Additional branches increase height from the compact 78 pt baseline.
+    static func groupedSideWidth(forWidth width: CGFloat) -> CGFloat {
+        let proportional = width * 0.26
+        let clamped = min(groupedMaximumSideWidth, max(groupedMinimumSideWidth, proportional))
+        return min(width * 0.4, clamped)
+    }
 
     static func effectiveMode(
         preferredMode: PowerFlowDiagramMode,
@@ -87,245 +67,356 @@ enum PowerFlowDiagramLayout {
         return preferredMode
     }
 
+    static func height(for mode: PowerFlowDiagramMode, sourceCount: Int, sinkCount: Int) -> CGFloat {
+        guard case .expanded = mode else { return cardHeight }
+        // Preserve the compact single lane; add space only for extra branches.
+        return cardHeight * (1 + 0.25 * CGFloat(max(0, max(sourceCount, sinkCount) - 1)))
+    }
+
     static func resolve(
         width rawWidth: CGFloat,
         preferredMode: PowerFlowDiagramMode,
         sourceCount: Int,
-        sinkCount: Int
+        sinkCount: Int,
+        reservesTotalsFooter: Bool = false,
+        sourceWatts: [Double?] = [],
+        sinkWatts: [Double?] = []
     ) -> PowerFlowDiagramLayoutResult {
         let width = max(rawWidth, 1)
         let mode = effectiveMode(preferredMode: preferredMode, width: width)
-        let card = CGRect(x: 0, y: 0, width: width, height: cardHeight)
-        let status = CGRect(
-            x: outerPadding,
-            y: outerPadding,
-            width: max(0, width - outerPadding * 2),
-            height: statusHeight
+        let panelHeight = height(for: mode, sourceCount: sourceCount, sinkCount: sinkCount)
+        let card = CGRect(x: 0, y: 0, width: width, height: panelHeight)
+
+        let scale = width / referenceWidth
+        // The approved 1→1 ratio is fixed; grouped summaries may widen the sides.
+        let side = mode == .grouped
+            ? groupedSideWidth(forWidth: width)
+            : referenceSideWidth * scale
+        let separator = referenceSeparatorWidth * scale
+        let middle = max(0, width - side * 2 - separator * 2)
+
+        let sourceSegment = CGRect(x: 0, y: 0, width: side, height: panelHeight)
+        let sourceSeparator = CGRect(x: side, y: 0, width: separator, height: panelHeight)
+        let middleSegment = CGRect(x: side + separator, y: 0, width: middle, height: panelHeight)
+        let sinkSeparator = CGRect(
+            x: middleSegment.maxX, y: 0, width: separator, height: panelHeight
         )
-        let diagram = CGRect(
-            x: outerPadding,
-            y: status.maxY + statusDiagramSpacing,
-            width: max(0, width - outerPadding * 2),
-            height: diagramHeight
+        let sinkSegment = CGRect(
+            x: width - side, y: 0, width: side, height: panelHeight
         )
 
+        let radius = outerCornerRadius * scale
+
         if mode == .grouped {
-            return groupedResult(mode: mode, card: card, status: status, diagram: diagram)
+            return PowerFlowDiagramLayoutResult(
+                effectiveMode: mode,
+                cardFrame: card,
+                diagramFrame: card,
+                sourceSegment: sourceSegment,
+                sourceSeparator: sourceSeparator,
+                middleSegment: middleSegment,
+                sinkSeparator: sinkSeparator,
+                sinkSegment: sinkSegment,
+                outerCornerRadius: radius,
+                sourceFrames: [],
+                sinkFrames: [],
+                flowLabelFrames: readoutFrames(
+                    mode: .grouped, middle: middleSegment,
+                    sourceCount: sourceCount, sinkCount: sinkCount,
+                    reservesFooter: false
+                ),
+                groupedSourceFrame: sourceSegment,
+                groupedCenterFrame: middleSegment,
+                groupedSinkFrame: sinkSegment,
+                totalsFooterFrame: nil
+            )
         }
 
         guard case .expanded(let topology) = mode else {
-            return emptyResult(mode: mode, card: card, status: status, diagram: diagram)
+            return PowerFlowDiagramLayoutResult(
+                effectiveMode: mode,
+                cardFrame: card,
+                diagramFrame: card,
+                sourceSegment: sourceSegment,
+                sourceSeparator: sourceSeparator,
+                middleSegment: middleSegment,
+                sinkSeparator: sinkSeparator,
+                sinkSegment: sinkSegment,
+                outerCornerRadius: radius,
+                sourceFrames: [],
+                sinkFrames: [],
+                flowLabelFrames: [],
+                groupedSourceFrame: nil,
+                groupedCenterFrame: nil,
+                groupedSinkFrame: nil,
+                totalsFooterFrame: nil
+            )
         }
 
-        let nodeWidth = min(
-            maximumNodeWidth,
-            max(
-                minimumNodeWidth,
-                minimumNodeWidth
-                    + (width - minimumExpandedWidth)
-                    / (384 - minimumExpandedWidth)
-                    * (maximumNodeWidth - minimumNodeWidth)
+        let flowHeight = panelHeight - (reservesTotalsFooter ? expandedFooterHeight : 0)
+        var sourceFrames = laneFrames(count: sourceCount, watts: sourceWatts, in: CGRect(
+            x: sourceSegment.minX, y: 0, width: side, height: flowHeight
+        ))
+        var sinkFrames = laneFrames(count: sinkCount, watts: sinkWatts, in: CGRect(
+            x: sinkSegment.minX, y: 0, width: side, height: flowHeight
+        ))
+        if topology != .oneToOne {
+            let singleHeight = flowHeight * 0.8
+            if sourceCount == 1 {
+                sourceFrames[0].origin.y = (flowHeight - singleHeight) / 2
+                sourceFrames[0].size.height = singleHeight
+            }
+            if sinkCount == 1 {
+                sinkFrames[0].origin.y = (flowHeight - singleHeight) / 2
+                sinkFrames[0].size.height = singleHeight
+            }
+        }
+        let footer = reservesTotalsFooter
+            ? CGRect(
+                x: middleSegment.minX + 4,
+                y: middleSegment.maxY - expandedFooterHeight,
+                width: max(0, middleSegment.width - 8),
+                height: expandedFooterHeight
             )
-        )
-        let sourceColumn = CGRect(
-            x: diagram.minX,
-            y: diagram.minY,
-            width: nodeWidth,
-            height: diagram.height
-        )
-        let sinkColumn = CGRect(
-            x: diagram.maxX - nodeWidth,
-            y: diagram.minY,
-            width: nodeWidth,
-            height: diagram.height
-        )
-        let flow = CGRect(
-            x: sourceColumn.maxX + nodeToFlowGap,
-            y: diagram.minY,
-            width: max(0, sinkColumn.minX - sourceColumn.maxX - nodeToFlowGap * 2),
-            height: diagram.height
-        )
-        let sourceFrames = laneFrames(count: sourceCount, in: sourceColumn)
-        let sinkFrames = laneFrames(count: sinkCount, in: sinkColumn)
+            : nil
 
-        return PowerFlowDiagramLayoutResult(
+        var result = PowerFlowDiagramLayoutResult(
             effectiveMode: mode,
             cardFrame: card,
-            statusFrame: status,
-            diagramFrame: diagram,
+            diagramFrame: card,
+            sourceSegment: sourceSegment,
+            sourceSeparator: sourceSeparator,
+            middleSegment: middleSegment,
+            sinkSeparator: sinkSeparator,
+            sinkSegment: sinkSegment,
+            outerCornerRadius: radius,
             sourceFrames: sourceFrames,
             sinkFrames: sinkFrames,
-            flowFrame: flow,
-            flowLabelFrames: flowLabelFrames(
-                topology: topology,
-                flowFrame: flow,
-                sourceFrames: sourceFrames,
-                sinkFrames: sinkFrames
+            flowLabelFrames: readoutFrames(
+                mode: .expanded(topology),
+                middle: middleSegment,
+                sourceCount: sourceCount,
+                sinkCount: sinkCount,
+                reservesFooter: reservesTotalsFooter
             ),
-            busFrame: busFrame(topology: topology, flowFrame: flow),
             groupedSourceFrame: nil,
             groupedCenterFrame: nil,
-            groupedSinkFrame: nil
+            groupedSinkFrame: nil,
+            totalsFooterFrame: footer
         )
+        let active = CGRect(x: middleSegment.minX, y: 0, width: middleSegment.width, height: flowHeight)
+        result.ribbons = ribbons(topology: topology, area: active,
+                                 sources: sourceFrames, sinks: sinkFrames)
+        if topology == .manyToMany {
+            result.busFrame = result.ribbons.first { $0.role == .bus }?.bounds
+        }
+        result.flowLabelFrames = labelFrames(topology: topology, ribbons: result.ribbons)
+        return result
     }
 
-    private static func laneFrames(count: Int, in column: CGRect) -> [CGRect] {
-        switch count {
-        case 0:
-            return []
-        case 1:
-            return [column]
-        default:
-            let laneHeight = (column.height - minimumLaneGap) / 2
-            return [
-                CGRect(
-                    x: column.minX,
-                    y: column.minY,
-                    width: column.width,
-                    height: laneHeight
-                ),
-                CGRect(
-                    x: column.minX,
-                    y: column.maxY - laneHeight,
-                    width: column.width,
-                    height: laneHeight
-                ),
-            ]
+    private static func laneFrames(count: Int, watts: [Double?], in segment: CGRect) -> [CGRect] {
+        guard count > 0, segment.height > 0 else { return [] }
+        if count == 1 { return [segment] }
+        // Reference: 240 px total ribbon thickness + 60 px open gap.
+        let gap = segment.height * 0.2
+        let usable = segment.height - gap * CGFloat(count - 1)
+        var heights = Array(repeating: usable / CGFloat(count), count: count)
+        let known = watts.compactMap { $0 }
+        if count == 2, known.count == count, known.allSatisfy({ $0.isFinite && $0 > 0 }),
+           known.reduce(0, +).isFinite {
+            // Keep tiny branches readable, and never invent a ratio when a
+            // measurement is missing. Width is not a pairwise allocation.
+            let minimum = min(readoutHeight + 4, usable / 2)
+            let first = usable * CGFloat(known[0] / known.reduce(0, +))
+            heights[0] = min(usable - minimum, max(minimum, first))
+            heights[1] = usable - heights[0]
+        }
+        var top = segment.minY
+        return heights.map { height in
+            defer { top += height + gap }
+            return CGRect(x: segment.minX, y: top, width: segment.width, height: height)
         }
     }
 
-    private static func flowLabelFrames(
-        topology: PowerFlowDiagramTopology,
-        flowFrame: CGRect,
-        sourceFrames: [CGRect],
-        sinkFrames: [CGRect]
-    ) -> [CGRect] {
-        let labelWidth = min(
-            max(minimumFlowLabelWidth, flowFrame.width * 0.34),
-            max(minimumFlowLabelWidth, flowFrame.width / 2 - 4)
-        )
-
-        func frame(centerX: CGFloat, centerY: CGFloat) -> CGRect {
-            CGRect(
-                x: min(
-                    max(centerX - labelWidth / 2, flowFrame.minX),
-                    max(flowFrame.minX, flowFrame.maxX - labelWidth)
-                ),
-                y: min(
-                    max(centerY - flowLabelHeight / 2, flowFrame.minY),
-                    flowFrame.maxY - flowLabelHeight
-                ),
-                width: labelWidth,
-                height: flowLabelHeight
-            )
+    private static func ribbons(
+        topology: PowerFlowDiagramTopology, area: CGRect, sources: [CGRect], sinks: [CGRect]
+    ) -> [PowerFlowRibbonGeometry] {
+        let packedHeight = area.height * 0.8
+        let packedTop = area.midY - packedHeight / 2
+        func band(_ role: PowerFlowRibbonRole, _ x0: CGFloat, _ x1: CGFloat,
+                  _ y0: CGFloat, _ h0: CGFloat, _ y1: CGFloat, _ h1: CGFloat) -> PowerFlowRibbonGeometry {
+            PowerFlowRibbonGeometry(role: role, startX: x0, endX: x1,
+                                    startCenterY: y0, endCenterY: y1,
+                                    startHeight: h0, endHeight: h1)
         }
-
+        func packedCenters(_ lanes: [CGRect]) -> [CGFloat] {
+            var top = packedTop
+            return lanes.map { lane in
+                defer { top += lane.height }
+                return top + lane.height / 2
+            }
+        }
         switch topology {
         case .oneToOne:
-            return [frame(centerX: flowFrame.midX, centerY: flowFrame.midY)]
-
+            return [band(.direct, area.minX, area.maxX, area.midY, area.height, area.midY, area.height)]
         case .oneToMany:
-            return sinkFrames.map {
-                frame(centerX: flowFrame.maxX - labelWidth / 2, centerY: $0.midY)
+            let centers = packedCenters(sinks)
+            return sinks.enumerated().map { index, lane in
+                band(.sink(index), area.minX, area.maxX,
+                     centers[index], lane.height, lane.midY, lane.height)
             }
-
         case .manyToOne:
-            let branchLabels = sourceFrames.map {
-                frame(centerX: flowFrame.minX + labelWidth / 2, centerY: $0.midY)
+            let centers = packedCenters(sources)
+            return sources.enumerated().map { index, lane in
+                band(.source(index), area.minX, area.maxX,
+                     lane.midY, lane.height, centers[index], lane.height)
             }
-            return branchLabels + [
-                frame(centerX: flowFrame.maxX - labelWidth / 2, centerY: flowFrame.midY),
-            ]
-
         case .manyToMany:
-            let sourceLabels = sourceFrames.map {
-                frame(centerX: flowFrame.minX + labelWidth / 2, centerY: $0.midY)
-            }
-            let sinkLabels = sinkFrames.map {
-                frame(centerX: flowFrame.maxX - labelWidth / 2, centerY: $0.midY)
-            }
-            return sourceLabels + sinkLabels
+            let left = area.minX + area.width * 0.45
+            let right = area.minX + area.width * 0.55
+            let sourceCenters = packedCenters(sources)
+            let sinkCenters = packedCenters(sinks)
+            return sources.enumerated().map { index, lane in
+                band(.source(index), area.minX, left, lane.midY, lane.height,
+                     sourceCenters[index], lane.height)
+            } + [band(.bus, left, right, area.midY, packedHeight, area.midY, packedHeight)]
+                + sinks.enumerated().map { index, lane in
+                    band(.sink(index), right, area.maxX,
+                         sinkCenters[index], lane.height, lane.midY, lane.height)
+                }
         }
     }
 
-    private static func busFrame(
-        topology: PowerFlowDiagramTopology,
-        flowFrame: CGRect
-    ) -> CGRect? {
-        guard topology == .manyToMany else { return nil }
-        let height = min(flowTrunkHeight, flowFrame.height)
-        return CGRect(
-            x: flowFrame.midX - busWidth / 2,
-            y: flowFrame.midY - height / 2,
-            width: busWidth,
-            height: height
-        )
+    private static func labelFrames(
+        topology: PowerFlowDiagramTopology, ribbons: [PowerFlowRibbonGeometry]
+    ) -> [CGRect] {
+        ribbons.compactMap { ribbon in
+            if ribbon.role == .bus { return nil }
+
+            let inset: CGFloat = 4
+            let width: CGFloat
+            let x: CGFloat
+            switch ribbon.role {
+            case .source where topology != .manyToMany, .sink where topology != .manyToMany:
+                width = max(0, ribbon.bounds.width - inset * 2)
+                x = ribbon.startX + inset
+            case .source:
+                width = max(0, ribbon.bounds.width * 0.76 - inset * 2)
+                x = ribbon.startX + inset
+            case .sink where topology != .manyToOne:
+                width = max(0, ribbon.bounds.width * 0.76 - inset * 2)
+                x = ribbon.endX - inset - width
+            default:
+                width = max(0, ribbon.bounds.width - inset * 2)
+                x = ribbon.startX + inset
+            }
+            return CGRect(x: x, y: ribbon.centerY(atX: x + width / 2) - readoutHeight / 2,
+                          width: width, height: readoutHeight)
+        }
     }
 
-    private static func groupedResult(
+    private static func readoutFrames(
         mode: PowerFlowDiagramMode,
-        card: CGRect,
-        status: CGRect,
-        diagram: CGRect
-    ) -> PowerFlowDiagramLayoutResult {
-        let gap: CGFloat = 6
-        // Slightly wider side cards so count, two representatives, an
-        // additional-members line, and the aggregate stay readable.
-        let sideWidth = min(124, max(88, (diagram.width - 56 - gap * 2) * 0.36))
-        let source = CGRect(
-            x: diagram.minX,
-            y: diagram.minY,
-            width: sideWidth,
-            height: diagram.height
-        )
-        let sink = CGRect(
-            x: diagram.maxX - sideWidth,
-            y: diagram.minY,
-            width: sideWidth,
-            height: diagram.height
-        )
-        let center = CGRect(
-            x: source.maxX + gap,
-            y: diagram.minY,
-            width: max(56, sink.minX - source.maxX - gap * 2),
-            height: diagram.height
-        )
+        middle: CGRect,
+        sourceCount: Int,
+        sinkCount: Int,
+        reservesFooter: Bool
+    ) -> [CGRect] {
+        let inset: CGFloat = 4
+        let columnGap: CGFloat = 6
+        let usable = max(0, middle.width - inset * 2)
+        let labelWidth = max(0, (usable - columnGap) / 2)
+        let leftX = middle.minX + inset
+        let rightX = middle.maxX - inset - labelWidth
+        // Labels live above the reserved totals footer so the two never overlap.
+        let activeHeight = max(0, middle.height - (reservesFooter ? expandedFooterHeight : 0))
+        let activeTop = middle.minY
 
-        return PowerFlowDiagramLayoutResult(
-            effectiveMode: mode,
-            cardFrame: card,
-            statusFrame: status,
-            diagramFrame: diagram,
-            sourceFrames: [],
-            sinkFrames: [],
-            flowFrame: center,
-            flowLabelFrames: [center.insetBy(dx: 4, dy: 20)],
-            busFrame: center.insetBy(dx: 0, dy: 20),
-            groupedSourceFrame: source,
-            groupedCenterFrame: center,
-            groupedSinkFrame: sink
-        )
+        func centered(_ centerY: CGFloat, width: CGFloat, x: CGFloat) -> CGRect {
+            CGRect(x: x, y: centerY - readoutHeight / 2, width: width, height: readoutHeight)
+        }
+
+        func rowCenter(_ index: Int, of count: Int) -> CGFloat {
+            guard count > 0 else { return activeTop + activeHeight / 2 }
+            let laneHeight = activeHeight / CGFloat(count)
+            return activeTop + laneHeight * (CGFloat(index) + 0.5)
+        }
+
+        func left(_ centerY: CGFloat) -> CGRect {
+            centered(centerY, width: labelWidth, x: leftX)
+        }
+
+        func right(_ centerY: CGFloat) -> CGRect {
+            centered(centerY, width: labelWidth, x: rightX)
+        }
+
+        switch mode {
+        case .expanded(.oneToOne):
+            return [centered(activeTop + activeHeight / 2, width: usable, x: middle.minX + inset)]
+        case .expanded(.oneToMany):
+            return (0..<max(0, sinkCount)).map { right(rowCenter($0, of: sinkCount)) }
+        case .expanded(.manyToOne):
+            return (0..<max(0, sourceCount)).map { left(rowCenter($0, of: sourceCount)) }
+                + [right(activeTop + activeHeight / 2)]
+        case .expanded(.manyToMany):
+            return (0..<max(0, sourceCount)).map { left(rowCenter($0, of: sourceCount)) }
+                + (0..<max(0, sinkCount)).map { right(rowCenter($0, of: sinkCount)) }
+        case .grouped:
+            // Input total over output total, centered in the middle piece.
+            let stackedWidth = usable
+            let rowHeight = readoutHeight
+            let gap: CGFloat = 2
+            let totalHeight = rowHeight * 2 + gap
+            let originY = middle.midY - totalHeight / 2
+            return [
+                CGRect(x: middle.minX + inset, y: originY, width: stackedWidth, height: rowHeight),
+                CGRect(
+                    x: middle.minX + inset,
+                    y: originY + rowHeight + gap,
+                    width: stackedWidth,
+                    height: rowHeight
+                ),
+            ]
+        case .waiting, .idle, .unavailable:
+            return []
+        }
+    }
+}
+
+/// Roles connect endpoints to a shared region, never one endpoint to another.
+enum PowerFlowRibbonRole: Equatable, Hashable {
+    case direct
+    case source(Int)
+    case sink(Int)
+    case bus
+}
+
+struct PowerFlowRibbonGeometry: Equatable {
+    var role: PowerFlowRibbonRole
+    var startX: CGFloat
+    var endX: CGFloat
+    var startCenterY: CGFloat
+    var endCenterY: CGFloat
+    var startHeight: CGFloat
+    var endHeight: CGFloat
+
+    var bounds: CGRect {
+        let top = min(startCenterY - startHeight / 2, endCenterY - endHeight / 2)
+        let bottom = max(startCenterY + startHeight / 2, endCenterY + endHeight / 2)
+        return CGRect(x: startX, y: top, width: endX - startX, height: bottom - top)
     }
 
-    private static func emptyResult(
-        mode: PowerFlowDiagramMode,
-        card: CGRect,
-        status: CGRect,
-        diagram: CGRect
-    ) -> PowerFlowDiagramLayoutResult {
-        PowerFlowDiagramLayoutResult(
-            effectiveMode: mode,
-            cardFrame: card,
-            statusFrame: status,
-            diagramFrame: diagram,
-            sourceFrames: [],
-            sinkFrames: [],
-            flowFrame: diagram,
-            flowLabelFrames: [],
-            busFrame: nil,
-            groupedSourceFrame: nil,
-            groupedCenterFrame: nil,
-            groupedSinkFrame: nil
-        )
+    func centerY(atX x: CGFloat) -> CGFloat {
+        let unitX = min(1, max(0, (x - startX) / max(1, endX - startX)))
+        var low: CGFloat = 0
+        var high: CGFloat = 1
+        for _ in 0..<20 {
+            let t = (low + high) / 2
+            let bx = 3 * (1 - t) * (1 - t) * t * 0.5 + 3 * (1 - t) * t * t * 0.5 + t * t * t
+            if bx < unitX { low = t } else { high = t }
+        }
+        let t = (low + high) / 2
+        let eased = t * t * (3 - 2 * t)
+        return startCenterY + (endCenterY - startCenterY) * eased
     }
 }
