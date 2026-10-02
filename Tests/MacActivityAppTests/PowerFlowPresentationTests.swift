@@ -9,7 +9,7 @@ final class PowerFlowPresentationTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
-    func testDiagramPowerTextDistinguishesMeasuredDerivedAndMixedValues() {
+    func testDiagramPowerTextOmitsApproximationForEveryProvenance() {
         let locale = Locale(identifier: "en")
 
         XCTAssertEqual(
@@ -26,7 +26,7 @@ final class PowerFlowPresentationTests: XCTestCase {
                 provenance: .derived,
                 locale: locale
             ),
-            "≈26.1 W"
+            "26.1 W"
         )
         XCTAssertEqual(
             PowerFlowPresentation.diagramPowerText(
@@ -34,7 +34,7 @@ final class PowerFlowPresentationTests: XCTestCase {
                 provenance: .mixed,
                 locale: locale
             ),
-            "≈44 W"
+            "44 W"
         )
     }
 

@@ -972,7 +972,9 @@ final class DashboardCardLayoutTests: XCTestCase {
     func testGlassAPIsAreAvailabilityGatedAndDoNotMergeCards() throws {
         let source = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
         XCTAssertTrue(source.contains("#available(macOS 26.0, *)"))
-        XCTAssertTrue(source.contains(".glassEffect(.regular, in: shape)"))
+        XCTAssertTrue(source.contains("glassEffect("))
+        XCTAssertTrue(source.contains("Glass.regular"))
+        XCTAssertTrue(source.contains("in: shape)"))
         XCTAssertFalse(source.contains(".glassEffect(.clear"))
         XCTAssertTrue(source.contains("Color.primary.opacity"))
         XCTAssertFalse(
@@ -1003,6 +1005,66 @@ final class DashboardCardLayoutTests: XCTestCase {
         }
     }
 
+    func testCustomChromeShapeHonorsItsSilhouetteWithoutChangingDefault() throws {
+        for scheme in [ColorScheme.light, .dark] {
+            let custom = Color.clear.frame(width: 80, height: 40)
+                .dashboardCardChrome(shape: AnyShape(DashboardCardHalfShape()))
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            let left = try XCTUnwrap(Self.renderedColor(of: custom, atTopLeft: CGPoint(x: 20, y: 20)))
+            let right = try XCTUnwrap(Self.renderedColor(of: custom, atTopLeft: CGPoint(x: 60, y: 20)))
+            XCTAssertLessThan(left.alphaComponent, 0.05, "custom silhouette must drop the left half")
+            XCTAssertGreaterThan(right.alphaComponent, 0.9, "custom silhouette must fill the right half")
+
+            let standard = Color.clear.frame(width: 80, height: 40)
+                .dashboardCardChrome()
+                .environment(\.colorScheme, scheme)
+                .environment(\._accessibilityReduceTransparency, true)
+            let standardLeft = try XCTUnwrap(Self.renderedColor(of: standard, atTopLeft: CGPoint(x: 20, y: 20)))
+            XCTAssertGreaterThan(standardLeft.alphaComponent, 0.9, "default rounded shape must still fill the card")
+        }
+    }
+
+    func testCustomShapeChromeSuppressesOrdinaryStrokeWhileDefaultKeepsIt() throws {
+        func card(_ chrome: some View) -> some View {
+            ZStack {
+                Color.white
+                chrome
+            }
+            .frame(width: 80, height: 40)
+            .environment(\.colorScheme, .light)
+            .environment(\._accessibilityReduceTransparency, true)
+        }
+        let custom = card(
+            Color.clear.frame(width: 80, height: 40)
+                .dashboardCardChrome(shape: AnyShape(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                ))
+        )
+        let standard = card(Color.clear.frame(width: 80, height: 40).dashboardCardChrome())
+
+        // The ordinary stroke darkens the top edge; the custom silhouette must not.
+        func darkestEdgeBrightness(_ view: some View) throws -> CGFloat {
+            var darkest: CGFloat = 1
+            for x in stride(from: CGFloat(8), through: 72, by: 4) {
+                for y in [CGFloat(0), 0.5] {
+                    let color = try XCTUnwrap(
+                        Self.renderedColor(of: view, atTopLeft: CGPoint(x: x, y: y))
+                    )
+                    darkest = min(darkest, color.brightnessComponent)
+                }
+            }
+            return darkest
+        }
+
+        let customEdge = try darkestEdgeBrightness(custom)
+        let standardEdge = try darkestEdgeBrightness(standard)
+        XCTAssertLessThan(
+            standardEdge, customEdge - 0.01,
+            "default card keeps its stroke; custom silhouette suppresses it"
+        )
+    }
+
     func testActivesAndEnergyModulesUseSharedChromeWithoutRaisingRows() throws {
         for file in ["DiskCleanupStatusView.swift", "ActiveProcessMemoryList.swift"] {
             XCTAssertTrue(try Self.dashboardViewSource(file).contains(".activeCleanupCardChrome()"), file)
@@ -1012,9 +1074,11 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(powerFlow.contains(".dashboardCardChrome("))
         let diagram = try Self.dashboardViewSource("PowerFlowDiagramView.swift")
         let outerBodyStart = try XCTUnwrap(diagram.range(of: "struct PowerFlowDiagramView: View"))
-        let contentStart = try XCTUnwrap(diagram.range(of: "private func statusRow("))
+        let contentStart = try XCTUnwrap(diagram.range(of: "private func animatedPanel("))
         let outerBody = diagram[outerBodyStart.upperBound..<contentStart.lowerBound]
-        XCTAssertTrue(outerBody.contains(".frame(height: PowerFlowDiagramLayout.cardHeight)\n        .dashboardCardChrome()"))
+        XCTAssertTrue(outerBody.contains("PowerFlowDiagramSizingLayout(presentation: presentation)"))
+        XCTAssertTrue(outerBody.contains(".dashboardCardChrome("))
+        XCTAssertTrue(outerBody.contains("shape: AnyShape(PowerFlowDiagramSurfaceShape(layout: plan.layout))"))
         XCTAssertEqual(
             diagram.components(separatedBy: ".dashboardCardChrome(").count - 1, 1,
             "Only the outer diagram card owns chrome; internal tiles and summaries must not add nested cards"
@@ -2477,6 +2541,16 @@ final class DashboardCardLayoutTests: XCTestCase {
             .appendingPathComponent("Sources/MacActivityApp/Views")
             .appendingPathComponent(fileName)
         return try String(contentsOf: sourceURL, encoding: .utf8)
+    }
+}
+
+private struct DashboardCardHalfShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        Path {
+            $0.addRect(
+                CGRect(x: rect.midX, y: rect.minY, width: rect.width / 2, height: rect.height)
+            )
+        }
     }
 }
 
