@@ -48,7 +48,10 @@ struct PowerFlowDiagramSurfaceShape: Shape {
                 source: includesEndpoints ? layout.sourceSegment : .zero,
                 middle: includesChannel ? layout.middleSegment : .zero,
                 sink: includesEndpoints ? layout.sinkSegment : .zero,
-                radius: layout.outerCornerRadius
+                radius: layout.outerCornerRadius,
+                // Each piece reads as its own rounded glass module; small square-ish
+                // corners make the glass refraction draw hard diagonal seams.
+                innerRadius: layout.outerCornerRadius
             ).path(in: rect)
         }
         var path = Path()
@@ -107,10 +110,11 @@ struct PowerFlowDiagramGlassSurface<Light: View, Content: View>: View {
         let surface = PowerFlowDiagramSurfaceShape(layout: layout)
         let channel = PowerFlowDiagramSurfaceShape(layout: layout, part: .channel)
         ZStack(alignment: .topLeading) {
-            if #available(macOS 26.0, *), !reduceTransparency {
+            if DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency) {
                 if isFlowing {
-                    // Clear glass needs a dimming base so the backdrop never shows raw.
-                    channel.fill(.regularMaterial)
+                    // Clear glass needs the module scrim underneath so the backdrop never
+                    // shows raw; system materials cannot blur the desktop in this panel.
+                    channel.fill(DashboardCardChrome.glassScrim(for: colorScheme, contrast: contrast))
                     // On the light frosted base the pastel wash (yellow above all)
                     // would wash out; deepen it there so the pulse stays visible.
                     light
@@ -118,8 +122,13 @@ struct PowerFlowDiagramGlassSurface<Light: View, Content: View>: View {
                         .brightness(colorScheme == .dark ? 0 : -0.1)
                         .clipShape(channel)
                 }
-                Color.clear.glassEffect(.regular, in: PowerFlowDiagramSurfaceShape(layout: layout, part: .endpoints))
-                Color.clear.glassEffect(isFlowing ? .clear : .regular, in: channel)
+                Color.clear.dashboardModuleGlass(in: PowerFlowDiagramSurfaceShape(layout: layout, part: .endpoints))
+                if isFlowing, #available(macOS 26.0, *) {
+                    // The material base already dims the backdrop; a scrim would mute the light.
+                    Color.clear.glassEffect(.clear, in: channel)
+                } else {
+                    Color.clear.dashboardModuleGlass(in: channel)
+                }
             } else {
                 DashboardFallbackCardSurface(shape: AnyShape(surface))
                 light.clipShape(channel)

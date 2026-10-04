@@ -231,7 +231,7 @@ final class AudioDashboardViewTests: XCTestCase {
             "struct AudioVolumeMotionTrigger",
             "trigger: muteMotion",
             "hasWriteFailure: snapshot.error != nil",
-            "AudioMuteButtonStyle"
+            "dashboardIconButtonStyle()"
         ] {
             XCTAssertTrue(source.contains(fragment), fragment)
         }

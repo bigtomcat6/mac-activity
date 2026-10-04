@@ -652,9 +652,7 @@ struct DashboardView: View {
         VStack(spacing: 0) {
             DashboardMeasuredSegment(segment: .header, onHeightChange: onMeasuredSegmentHeight) {
                 header
-                    .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
-                    .padding(.top, DashboardHeaderChrome.topPadding)
-                    .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+                    .modifier(DashboardHeaderSurface())
             }
 
             DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: onMeasuredSegmentHeight) {
@@ -672,6 +670,7 @@ struct DashboardView: View {
             .mask(DashboardScrollEdgeFade())
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .dashboardPanelBackdrop()
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
         }
@@ -805,6 +804,30 @@ struct DashboardView: View {
         activeCleanupModel.setDiskCleanupCategories(categories)
         if refreshActives && selectedTab == .actives {
             activesRefreshTrigger += 1
+        }
+    }
+}
+
+// In the floating panel the title and tabs sit in their own glass capsule, like the
+// pill above Control Center's modules; the popover keeps the plain header row.
+private struct DashboardHeaderSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency) {
+            content
+                .padding(.leading, DashboardHeaderChrome.capsuleLeadingPadding)
+                .padding(.trailing, DashboardHeaderChrome.capsuleTrailingPadding)
+                .padding(.vertical, DashboardHeaderChrome.capsuleVerticalPadding)
+                .dashboardModuleGlass(in: Capsule())
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+        } else {
+            content
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
         }
     }
 }

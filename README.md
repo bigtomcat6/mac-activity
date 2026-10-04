@@ -116,7 +116,7 @@ swift test
 ## Runtime behavior
 
 - App launches as an accessory app with a menu bar item by default.
-- Clicking the menu bar item opens the dashboard popover.
+- Clicking the menu bar item opens the dashboard: floating Liquid Glass modules on macOS 26, a popover on earlier systems or with Reduce Transparency.
 - You can disable the menu bar item in Preferences; the app remains reachable until you re-enable it.
 - When launched with menu bar hidden, the app can still be recovered from the preferences flow.
 

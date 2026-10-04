@@ -144,17 +144,6 @@ private struct AudioMuteGlyph: View {
     }
 }
 
-private struct AudioMuteButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
 private struct AudioAnimatedVolumeSlider: View {
     @Binding var value: Double
     let accessibility: AudioAccessibilityContract
@@ -488,7 +477,7 @@ private struct AudioDeviceControlRow: View {
             } label: {
                 AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
             }
-            .buttonStyle(AudioMuteButtonStyle())
+            .dashboardIconButtonStyle()
             .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
@@ -577,7 +566,7 @@ struct AudioProcessControlRow: View {
                         motion: muteVisualMotion
                     )
                 }
-                .buttonStyle(AudioMuteButtonStyle())
+                .dashboardIconButtonStyle()
                 .audioAccessibility(presentation.muteAccessibility)
 
                 routeMenu
@@ -588,9 +577,8 @@ struct AudioProcessControlRow: View {
                     model.reset(processObjectID: snapshot.id)
                 } label: {
                     Image(systemName: "arrow.counterclockwise")
-                        .frame(width: 20, height: 20)
                 }
-                .buttonStyle(.borderless)
+                .dashboardIconButtonStyle()
                 .help(AppLocalization.string(.audioReset))
                 .audioAccessibility(presentation.resetAccessibility)
             }
@@ -671,7 +659,7 @@ struct AudioProcessControlRow: View {
         } label: {
             Image(systemName: "airplayaudio")
         }
-        .menuStyle(.borderlessButton)
+        .dashboardIconMenuStyle()
         .menuIndicator(.hidden)
         .fixedSize()
         .help(AppLocalization.string(.audioRouteTitle))

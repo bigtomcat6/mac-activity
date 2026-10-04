@@ -426,24 +426,47 @@ struct PowerFlowDiagramSegmentedShape: Shape {
     var middle: CGRect
     var sink: CGRect
     var radius: CGFloat
+    // Corners facing the separators; glass draws a hard bevel on square corners.
+    var innerRadius: CGFloat = 0
 
     func path(in rect: CGRect) -> Path {
         var path = Path()
         addLeadingPiece(&path, rect: source)
-        path.addRect(middle)
+        if innerRadius > 0, !middle.isEmpty {
+            path.addRoundedRect(
+                in: middle,
+                cornerSize: CGSize(width: cornerRadius(for: middle, limit: innerRadius),
+                                   height: cornerRadius(for: middle, limit: innerRadius))
+            )
+        } else {
+            path.addRect(middle)
+        }
         addTrailingPiece(&path, rect: sink)
         return path
     }
 
     private func cornerRadius(for rect: CGRect) -> CGFloat {
-        max(0, min(radius, min(rect.width, rect.height) / 2))
+        cornerRadius(for: rect, limit: radius)
+    }
+
+    private func cornerRadius(for rect: CGRect, limit: CGFloat) -> CGFloat {
+        max(0, min(limit, min(rect.width, rect.height) / 2))
     }
 
     private func addLeadingPiece(_ path: inout Path, rect: CGRect) {
         let r = cornerRadius(for: rect)
+        let inner = cornerRadius(for: rect, limit: innerRadius)
         path.move(to: CGPoint(x: rect.minX + r, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.maxX - inner, y: rect.minY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX, y: rect.minY + inner),
+            control: CGPoint(x: rect.maxX, y: rect.minY)
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY - inner))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.maxX - inner, y: rect.maxY),
+            control: CGPoint(x: rect.maxX, y: rect.maxY)
+        )
         path.addLine(to: CGPoint(x: rect.minX + r, y: rect.maxY))
         path.addQuadCurve(
             to: CGPoint(x: rect.minX, y: rect.maxY - r),
@@ -459,7 +482,8 @@ struct PowerFlowDiagramSegmentedShape: Shape {
 
     private func addTrailingPiece(_ path: inout Path, rect: CGRect) {
         let r = cornerRadius(for: rect)
-        path.move(to: CGPoint(x: rect.minX, y: rect.minY))
+        let inner = cornerRadius(for: rect, limit: innerRadius)
+        path.move(to: CGPoint(x: rect.minX + inner, y: rect.minY))
         path.addLine(to: CGPoint(x: rect.maxX - r, y: rect.minY))
         path.addQuadCurve(
             to: CGPoint(x: rect.maxX, y: rect.minY + r),
@@ -470,7 +494,16 @@ struct PowerFlowDiagramSegmentedShape: Shape {
             to: CGPoint(x: rect.maxX - r, y: rect.maxY),
             control: CGPoint(x: rect.maxX, y: rect.maxY)
         )
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX + inner, y: rect.maxY))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX, y: rect.maxY - inner),
+            control: CGPoint(x: rect.minX, y: rect.maxY)
+        )
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + inner))
+        path.addQuadCurve(
+            to: CGPoint(x: rect.minX + inner, y: rect.minY),
+            control: CGPoint(x: rect.minX, y: rect.minY)
+        )
         path.closeSubpath()
     }
 }

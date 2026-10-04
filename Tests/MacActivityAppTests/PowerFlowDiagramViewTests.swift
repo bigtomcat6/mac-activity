@@ -320,6 +320,55 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         }
     }
 
+    func testGlassSurfaceRoundsEveryPieceWithoutMovingTheSeparators() {
+        let layout = PowerFlowDiagramLayout.resolve(
+            width: 384, preferredMode: .expanded(.oneToOne), sourceCount: 1, sinkCount: 1
+        )
+        // CGPath hit testing: SwiftUI's Path.contains misreads multi-subpath rounded rects.
+        let surface = PowerFlowDiagramSurfaceShape(layout: layout).path(in: .zero).cgPath
+        let square = PowerFlowDiagramSegmentedShape(
+            source: layout.sourceSegment,
+            middle: layout.middleSegment,
+            sink: layout.sinkSegment,
+            radius: layout.outerCornerRadius
+        ).path(in: .zero).cgPath
+
+        // Corners facing the separators are rounded on the glass silhouette only.
+        let innerCorners = [
+            CGPoint(x: layout.sourceSegment.maxX - 1, y: layout.sourceSegment.minY + 1),
+            CGPoint(x: layout.middleSegment.minX + 1, y: layout.middleSegment.minY + 1),
+            CGPoint(x: layout.middleSegment.maxX - 1, y: layout.middleSegment.maxY - 1),
+            CGPoint(x: layout.sinkSegment.minX + 1, y: layout.sinkSegment.maxY - 1),
+        ]
+        for corner in innerCorners {
+            XCTAssertFalse(surface.contains(corner), "\(corner)")
+            XCTAssertTrue(square.contains(corner), "\(corner)")
+        }
+        // Separators stay open and every piece keeps its frame.
+        XCTAssertFalse(surface.contains(CGPoint(x: layout.sourceSegment.maxX + 1, y: layout.sourceSegment.midY)))
+        XCTAssertFalse(surface.contains(CGPoint(x: layout.middleSegment.maxX + 1, y: layout.middleSegment.midY)))
+        XCTAssertEqual(surface.boundingBoxOfPath, square.boundingBoxOfPath)
+        for segment in [layout.sourceSegment, layout.middleSegment, layout.sinkSegment] {
+            XCTAssertTrue(surface.contains(CGPoint(x: segment.midX, y: segment.minY + 0.5)))
+            XCTAssertTrue(surface.contains(CGPoint(x: segment.midX, y: segment.maxY - 0.5)))
+        }
+    }
+
+    func testFlowingChannelUsesModuleScrimInsteadOfSystemMaterial() throws {
+        let source = try String(
+            contentsOf: URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .deletingLastPathComponent()
+                .appendingPathComponent("Sources/MacActivityApp/Views/PowerFlowDiagramRibbon.swift"),
+            encoding: .utf8
+        )
+        XCTAssertFalse(source.contains("Material"))
+        XCTAssertTrue(source.contains("channel.fill(DashboardCardChrome.glassScrim(for: colorScheme, contrast: contrast))"))
+        XCTAssertTrue(source.contains("Color.clear.glassEffect(.clear, in: channel)"))
+        XCTAssertEqual(source.components(separatedBy: ".dashboardModuleGlass(in:").count - 1, 2)
+    }
+
     func testGroupedSideSummaryContentHoldsTwoRepresentativesWithinDiagramHeight() throws {
         let plan = PowerFlowDiagramRenderPlan(presentation: Fixtures.grouped, width: 384)
         let cases: [(PowerFlowDiagramSideSummary, AppLocalization.Key, CGRect)] = [

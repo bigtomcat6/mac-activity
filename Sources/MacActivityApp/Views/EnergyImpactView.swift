@@ -71,9 +71,9 @@ struct EnergyImpactView: View {
         Button {
             showsInfoPopover.toggle()
         } label: {
-            Image(systemName: "info.circle")
+            Image(systemName: "info")
         }
-        .buttonStyle(.borderless)
+        .dashboardIconButtonStyle()
         .help(AppLocalization.string(.energyImpactInfo))
         .accessibilityLabel(AppLocalization.string(.energyImpactInfo))
         .popover(isPresented: $showsInfoPopover) {

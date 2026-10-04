@@ -13,7 +13,11 @@ app and opens a compact dashboard from the menu bar.
 ## Opening MacActivity
 
 Launch the app from Finder, Spotlight, a release artifact, or Xcode. When the
-menu bar item is visible, click it to open the dashboard popover.
+menu bar item is visible, click it to open the dashboard. On macOS 26 the
+dashboard floats under the menu bar as a Liquid Glass panel with clear glass
+modules, like Control Center, and follows the system light or dark appearance. With Reduce
+Transparency turned on, on earlier macOS versions, or when the menu bar item is
+not in the menu bar, it opens as a standard popover instead.
 
 MacActivity is an accessory app. If the menu bar item is hidden or unavailable,
 reopen the app and use Preferences to restore the menu bar item.

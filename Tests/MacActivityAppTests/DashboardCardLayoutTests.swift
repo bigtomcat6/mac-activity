@@ -844,12 +844,74 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testRaisedCardUsesCompactRadiusAndPreservesHoverEmphasis() {
-        XCTAssertEqual(DashboardCardChrome.cornerRadius, 12)
+    func testCardUsesControlCenterModuleRadiusAndPreservesHoverEmphasis() {
+        XCTAssertEqual(DashboardCardChrome.cornerRadius, 18)
         XCTAssertGreaterThan(
             DashboardCardChrome.borderOpacity(isHovered: true),
             DashboardCardChrome.borderOpacity(isHovered: false)
         )
+    }
+
+    func testGlassScrimDimsDarkModulesAndOnlyShadesLightOnes() {
+        XCTAssertEqual(DashboardCardChrome.glassScrim(for: .dark, contrast: .standard), Color.black.opacity(0.30))
+        XCTAssertEqual(DashboardCardChrome.glassScrim(for: .dark, contrast: .increased), Color.black.opacity(0.48))
+        // Light glass already renders near white in the key panel; a white lift glared.
+        XCTAssertEqual(DashboardCardChrome.glassScrim(for: .light, contrast: .standard), Color.black.opacity(0.06))
+        XCTAssertEqual(DashboardCardChrome.glassScrim(for: .light, contrast: .increased), Color.clear)
+        // Light panels get a faint shade so bright windows behind do not make them glare.
+        XCTAssertEqual(DashboardCardChrome.panelShade(for: .light), Color.black.opacity(0.10))
+        XCTAssertEqual(DashboardCardChrome.panelShade(for: .dark), Color.clear)
+    }
+
+    func testFloatingModulesFollowThePanelHostDecision() {
+        XCTAssertFalse(DashboardCardChrome.usesFloatingModules(reduceTransparency: true))
+        let majorVersion = ProcessInfo.processInfo.operatingSystemVersion.majorVersion
+        for reduceTransparency in [false, true] {
+            XCTAssertEqual(
+                DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency),
+                DashboardPresentationHostKind.resolve(
+                    majorVersion: majorVersion,
+                    reduceTransparency: reduceTransparency
+                ) == .panel
+            )
+        }
+    }
+
+    func testFloatingPanelBackdropIsRegularLiquidGlassOnlyWithFullTransparency() throws {
+        let layout = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
+        let modifierStart = try XCTUnwrap(layout.range(of: "private struct DashboardPanelBackdropModifier"))
+        let modifierEnd = try XCTUnwrap(layout.range(
+            of: "\n}\n",
+            range: modifierStart.upperBound..<layout.endIndex
+        ))
+        let modifier = layout[modifierStart.lowerBound..<modifierEnd.upperBound]
+        XCTAssertTrue(modifier.contains("#available(macOS 26.0, *)"))
+        XCTAssertTrue(modifier.contains("DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency)"))
+        XCTAssertTrue(modifier.contains(".glassEffect(.regular, in: shape)"))
+        XCTAssertTrue(modifier.contains(".fill(DashboardCardChrome.panelShade(for: colorScheme))"))
+        XCTAssertTrue(
+            modifier.contains(".clipShape(shape)"),
+            "the slab's glass shadow must not spill into the window corners"
+        )
+        XCTAssertTrue(modifier.contains("cornerRadius: DashboardCardChrome.panelCornerRadius"))
+        XCTAssertFalse(layout.contains("NSVisualEffectView"), "the slab is Liquid Glass, not an AppKit blur")
+
+        let dashboard = try Self.dashboardViewSource()
+        XCTAssertEqual(dashboard.components(separatedBy: ".dashboardPanelBackdrop()").count - 1, 1)
+    }
+
+    func testIconOnlyControlsUseRoundGlassButtons() throws {
+        let audio = try Self.dashboardViewSource("AudioDashboardView.swift")
+        XCTAssertEqual(audio.components(separatedBy: ".dashboardIconButtonStyle()").count - 1, 3)
+        XCTAssertEqual(audio.components(separatedBy: ".dashboardIconMenuStyle()").count - 1, 1)
+        XCTAssertFalse(audio.contains("AudioMuteButtonStyle"))
+        XCTAssertFalse(audio.contains(".menuStyle(.borderlessButton)"))
+
+        let energy = try Self.dashboardViewSource("EnergyImpactView.swift")
+        XCTAssertTrue(energy.contains(".dashboardIconButtonStyle()"))
+
+        let layout = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
+        XCTAssertTrue(layout.contains(".buttonBorderShape(.circle)"))
     }
 
     func testReducedTransparencyCardHasOpaqueSurfaceAndExternalShadowInBothAppearances() throws {
@@ -952,8 +1014,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         let source = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
         XCTAssertTrue(source.contains("#available(macOS 26.0, *)"))
         XCTAssertTrue(source.contains("glassEffect("))
-        XCTAssertTrue(source.contains(".glassEffect(.regular, in: shape)"))
-        XCTAssertFalse(source.contains(".glassEffect(.clear"))
+        XCTAssertTrue(source.contains("clippedContent.dashboardModuleGlass(in: shape)"))
         XCTAssertTrue(source.contains("Color.primary.opacity"))
         XCTAssertFalse(
             source.contains("GlassEffectContainer"),
@@ -1026,10 +1087,10 @@ final class DashboardCardLayoutTests: XCTestCase {
         // The ordinary stroke darkens the top edge; the power-flow glass must not.
         func darkestEdgeBrightness(_ view: some View, from minX: CGFloat, to maxX: CGFloat) throws -> CGFloat {
             var darkest: CGFloat = 1
-            for x in stride(from: minX, through: maxX, by: 4) {
-                for y in [CGFloat(0), 0.5] {
+            for sampleX in stride(from: minX, through: maxX, by: 4) {
+                for sampleY in [CGFloat(0), 0.5] {
                     let color = try XCTUnwrap(
-                        Self.renderedColor(of: view, atTopLeft: CGPoint(x: x, y: y))
+                        Self.renderedColor(of: view, atTopLeft: CGPoint(x: sampleX, y: sampleY))
                     )
                     darkest = min(darkest, color.brightnessComponent)
                 }
@@ -1195,7 +1256,9 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertTrue(DashboardOverviewLayout.showsTrendYAxisLabels(for: .battery, isCompactOverviewChart: false))
     }
 
-    func testDashboardRegionsLeaveClearMarginsAroundNativeBackdrop() throws {
+    // The floating panel draws its own blurred backdrop (see the backdrop test); the
+    // popover fallback must leave its margins clear for the popover's native backing.
+    func testPopoverFallbackLeavesClearMarginsAroundNativeBackdrop() throws {
         let model = DashboardModel(store: MetricsStore())
         let contentWidth: CGFloat = 420
         let contentHeight: CGFloat = 260
@@ -1207,6 +1270,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             )
             .frame(width: contentWidth, height: contentHeight)
             .environment(\.colorScheme, scheme)
+            .environment(\._accessibilityReduceTransparency, true)
 
             for point in [CGPoint(x: 2, y: 2), CGPoint(x: 2, y: 130), CGPoint(x: 2, y: 254)] {
                 let color = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: point))
@@ -2079,7 +2143,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         XCTAssertFalse(dashboardSource.contains("footerDivider"))
     }
 
-    func testDashboardHeaderPaintsNoPerAreaBacking() throws {
+    func testDashboardHeaderFloatsInGlassCapsuleOnlyInThePanel() throws {
         let source = try Self.dashboardViewSource()
         let headerStart = try XCTUnwrap(source.range(of: "segment: .header,"))
         let headerEnd = try XCTUnwrap(source.range(
@@ -2087,10 +2151,20 @@ final class DashboardCardLayoutTests: XCTestCase {
             range: headerStart.upperBound..<source.endIndex
         ))
         let header = source[headerStart.lowerBound..<headerEnd.lowerBound]
-        XCTAssertTrue(header.contains(".padding(.horizontal, DashboardHeaderChrome.horizontalPadding)"))
-        XCTAssertFalse(header.contains(".dashboardShellSurface"))
+        XCTAssertTrue(header.contains(".modifier(DashboardHeaderSurface())"))
         XCTAssertFalse(header.contains(".background("))
         XCTAssertFalse(header.contains(".dashboardCardChrome("))
+
+        let surfaceStart = try XCTUnwrap(source.range(of: "private struct DashboardHeaderSurface"))
+        let surfaceEnd = try XCTUnwrap(source.range(
+            of: "struct DashboardScrollEdgeFade",
+            range: surfaceStart.upperBound..<source.endIndex
+        ))
+        let surface = source[surfaceStart.lowerBound..<surfaceEnd.lowerBound]
+        XCTAssertTrue(surface.contains("DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency)"))
+        XCTAssertTrue(surface.contains(".dashboardModuleGlass(in: Capsule())"))
+        XCTAssertTrue(surface.contains(".padding(.top, DashboardHeaderChrome.topPadding)"))
+        XCTAssertEqual(surface.components(separatedBy: ".dashboardModuleGlass(").count - 1, 1)
     }
 
     func testTrendChartGridLinesUseSystemSecondary() throws {
@@ -2102,13 +2176,22 @@ final class DashboardCardLayoutTests: XCTestCase {
         )
     }
 
-    func testDashboardSourceHasNoClearGlassOrForcedDarkScheme() throws {
+    func testClearGlassAlwaysCarriesScrimAndFollowsSystemScheme() throws {
+        let layout = try Self.dashboardViewSource("ActiveCleanReleaseLayout.swift")
+        XCTAssertEqual(layout.components(separatedBy: ".glassEffect(.clear").count - 1, 1)
+        let modifierStart = try XCTUnwrap(layout.range(of: "private struct DashboardModuleGlassModifier"))
+        let modifier = layout[modifierStart.lowerBound...]
+        XCTAssertTrue(modifier.contains("DashboardCardChrome.glassScrim(for: colorScheme, contrast: contrast)"))
+        XCTAssertTrue(modifier.contains(".glassEffect(.clear, in: shape)"))
+
         for file in [
             "DashboardView.swift",
             "ActiveCleanReleaseLayout.swift",
         ] {
             let source = try Self.dashboardViewSource(file)
-            XCTAssertFalse(source.contains(".glassEffect(.clear"), file)
+            if file == "DashboardView.swift" {
+                XCTAssertFalse(source.contains(".glassEffect(.clear"), file)
+            }
             XCTAssertFalse(source.contains("colorScheme, .dark"), file)
             XCTAssertFalse(source.contains("DashboardClearPalette"), file)
             XCTAssertFalse(source.contains("DashboardClearReadabilityModifier"), file)

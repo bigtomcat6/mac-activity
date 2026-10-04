@@ -490,6 +490,16 @@ No new bespoke blur or opaque background system is introduced.
 > accessibility are unchanged; Reduce Transparency and macOS < 26 draw the light
 > over the opaque fallback surface.
 
+> **Update 2026-10-05 — Control Center modules.** The dashboard now floats as
+> clear glass modules on a `.regular` Liquid Glass panel backdrop. The diagram follows the shared module
+> surface (`dashboardModuleGlass`: `.clear` glass with a light/dark scrim that
+> follows the system appearance); the flowing channel keeps clear glass over the
+> light, with the same scrim replacing `.regularMaterial`, which cannot blur the
+> desktop through the transparent panel. The corners facing the two separators
+> are now rounded to the outer radius so each piece reads as its own module —
+> square corners made the glass draw hard diagonal seams. Segment frames, the
+> 52/5/270/5/52 ratio and the open separators are unchanged.
+
 ### 14.2 Size targets
 
 Initial design targets at the real Energy content width:

@@ -399,7 +399,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         onVisibilityChange: @escaping (Bool) -> Void
     ) {
         self.init(
-            popover: NSPopover(),
+            popover: DashboardAdaptivePopoverHost(),
             focusController: SharedDashboardPopoverFocusController(),
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,

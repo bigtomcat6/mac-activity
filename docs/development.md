@@ -104,8 +104,9 @@ metric snapshots, history, providers, cleanup services, scheduling, formatting,
 preferences state, update selection, and presentation models.
 
 `MacActivityApp` owns the macOS app shell: status item rendering, dashboard
-popover hosting, preferences window coordination, localization, Sparkle updater
-integration, and SwiftUI views.
+hosting (a clear floating panel on macOS 26, a popover under Reduce Transparency
+or on earlier systems), preferences window coordination, localization, Sparkle
+updater integration, and SwiftUI views.
 
 Prefer putting logic in `MacActivityCore` when it can be expressed without
 AppKit or SwiftUI. Keep app-shell code focused on lifecycle, presentation, and
