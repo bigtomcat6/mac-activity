@@ -50,7 +50,6 @@ enum AppLocalization {
         case audioRouteFollowOriginal = "audio.route.followOriginal"
         case audioRouteDeviceUnavailable = "audio.route.deviceUnavailable"
         case audioRouteSelectedSummary = "audio.route.selectedSummary"
-        case audioRouteClearHelp = "audio.route.clearHelp"
         case audioVolumeAccessibility = "audio.accessibility.volume"
         case audioMuteAccessibility = "audio.accessibility.mute"
         case audioUnmuteAccessibility = "audio.accessibility.unmute"
@@ -107,11 +106,6 @@ enum AppLocalization {
         case preferencesUpdateChannel = "preferences.updateChannel"
         case preferencesLanguage = "preferences.language"
         case preferencesLanguageHelp = "preferences.languageHelp"
-        case preferencesDashboardStyle = "preferences.dashboardStyle"
-        case preferencesDashboardStyleStandard = "preferences.dashboardStyle.standard"
-        case preferencesDashboardStyleTransparent = "preferences.dashboardStyle.transparent"
-        case preferencesDashboardStyleHelp = "preferences.dashboardStyle.help"
-        case preferencesDashboardStyleUnavailable = "preferences.dashboardStyle.unavailable"
         case preferencesTemperatureSource = "preferences.temperatureSource"
         case preferencesTemperatureHelp = "preferences.temperatureHelp"
         case preferencesHardwareBatteryPercentage = "preferences.hardwareBatteryPercentage"
@@ -130,44 +124,6 @@ enum AppLocalization {
         case diskCleanupCategoryUserCaches = "diskCleanup.category.userCaches"
         case diskCleanupCategoryTrash = "diskCleanup.category.trash"
         case diskCleanupCategoryUserLogs = "diskCleanup.category.userLogs"
-        case memoryReleaseActionRelease = "memoryRelease.action.release"
-        case memoryReleaseActionReleasing = "memoryRelease.action.releasing"
-        case memoryReleaseTitleIdle = "memoryRelease.title.idle"
-        case memoryReleaseTitleUsage = "memoryRelease.title.usage"
-        case memoryReleaseTitleReclaimable = "memoryRelease.title.reclaimable"
-        case memoryReleaseTitleReleasing = "memoryRelease.title.releasing"
-        case memoryReleaseTitleReleased = "memoryRelease.title.released"
-        case memoryReleaseTitleNoSignificantRelease = "memoryRelease.title.noSignificantRelease"
-        case memoryReleaseTitleCooldown = "memoryRelease.title.cooldown"
-        case memoryReleaseTitleUnavailable = "memoryRelease.title.unavailable"
-        case memoryReleaseTitleFailed = "memoryRelease.title.failed"
-        case memoryReleaseTitleReadFailed = "memoryRelease.title.readFailed"
-        case memoryReleaseSubtitleUsage = "memoryRelease.subtitle.usage"
-        case memoryReleaseSubtitlePercentOfTotal = "memoryRelease.subtitle.percentOfTotal"
-        case memoryReleaseSubtitleNoRelease = "memoryRelease.subtitle.noSignificantRelease"
-        case memoryReleaseSubtitleCooldown = "memoryRelease.subtitle.cooldown"
-        case memoryReleaseSubtitleUnavailable = "memoryRelease.subtitle.unavailable"
-        case memoryReleaseSubtitleReadFailed = "memoryRelease.subtitle.readFailed"
-        case memoryReleaseSubtitleDefault = "memoryRelease.subtitle.default"
-        case memoryReleaseSubtitleFailedWithExitCode = "memoryRelease.subtitle.failedWithExitCode"
-        case trashActionRetry = "trash.action.retry"
-        case trashActionClean = "trash.action.clean"
-        case trashTitleScanning = "trash.title.scanning"
-        case trashTitleClean = "trash.title.clean"
-        case trashTitleCleanable = "trash.title.cleanable"
-        case trashTitleCleaning = "trash.title.cleaning"
-        case trashTitleCleaned = "trash.title.cleaned"
-        case trashTitleFailed = "trash.title.failed"
-        case trashSubtitleScanning = "trash.subtitle.scanning"
-        case trashSubtitleClean = "trash.subtitle.clean"
-        case trashSubtitleCleanable = "trash.subtitle.cleanable"
-        case trashSubtitleCleaning = "trash.subtitle.cleaning"
-        case trashSubtitleCleaned = "trash.subtitle.cleaned"
-        case trashSubtitlePartial = "trash.subtitle.partial"
-        case trashSubtitlePartialWithRemaining = "trash.subtitle.partialWithRemaining"
-        case trashSubtitleFailedUnableToDeleteItems = "trash.subtitle.failed.unableToDeleteItems"
-        case trashItemSingular = "trash.item.singular"
-        case trashItemPlural = "trash.item.plural"
         case diskCleanupActionRetry = "diskCleanup.action.retry"
         case diskCleanupActionClean = "diskCleanup.action.clean"
         case diskCleanupTitleScanning = "diskCleanup.title.scanning"
@@ -191,7 +147,6 @@ enum AppLocalization {
         case energyImpactEmpty = "energyImpact.empty"
         case energyImpactEmptyExpanded = "energyImpact.empty.expanded"
         case energyImpactUnavailable = "energyImpact.unavailable"
-        case energyImpactTitle = "energyImpact.title"
         case energyImpactSubtitleSustained = "energyImpact.subtitle.sustained"
         case energyImpactAppColumn = "energyImpact.column.app"
         case energyImpactSustainedColumn = "energyImpact.column.sustained"
@@ -611,15 +566,6 @@ enum AppLocalization {
             return string(.temperatureSourceCPUSMC, bundle: bundle)
         case .battery:
             return string(.temperatureSourceBattery, bundle: bundle)
-        }
-    }
-
-    static func dashboardStyleTitle(for style: DashboardStyle, bundle: Bundle? = nil) -> String {
-        switch style {
-        case .standard:
-            return string(.preferencesDashboardStyleStandard, bundle: bundle)
-        case .transparent:
-            return string(.preferencesDashboardStyleTransparent, bundle: bundle)
         }
     }
 

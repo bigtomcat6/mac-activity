@@ -29,36 +29,113 @@ struct PowerFlowRibbonShape: Shape {
 }
 
 /// The glass follows the actual branches; gaps reveal the dashboard backdrop.
+/// `endpoints` and `channel` split the same silhouette so each can use its own glass.
 struct PowerFlowDiagramSurfaceShape: Shape {
+    enum Part {
+        case all
+        case endpoints
+        case channel
+    }
+
     var layout: PowerFlowDiagramLayoutResult
+    var part: Part = .all
 
     func path(in rect: CGRect) -> Path {
+        let includesEndpoints = part != .channel
+        let includesChannel = part != .endpoints
         guard case .expanded(let topology) = layout.effectiveMode, topology != .oneToOne else {
             return PowerFlowDiagramSegmentedShape(
-                source: layout.sourceSegment, middle: layout.middleSegment,
-                sink: layout.sinkSegment, radius: layout.outerCornerRadius
+                source: includesEndpoints ? layout.sourceSegment : .zero,
+                middle: includesChannel ? layout.middleSegment : .zero,
+                sink: includesEndpoints ? layout.sinkSegment : .zero,
+                radius: layout.outerCornerRadius
             ).path(in: rect)
         }
         var path = Path()
-        for frame in layout.sourceFrames {
-            path.addPath(PowerFlowDiagramSegmentedShape(
-                source: frame, middle: .zero, sink: .zero,
-                radius: min(layout.outerCornerRadius, frame.height * 0.28)
-            ).path(in: rect))
+        if includesEndpoints {
+            for frame in layout.sourceFrames {
+                path.addPath(PowerFlowDiagramSegmentedShape(
+                    source: frame, middle: .zero, sink: .zero,
+                    radius: min(layout.outerCornerRadius, frame.height * 0.28)
+                ).path(in: rect))
+            }
+            for frame in layout.sinkFrames {
+                path.addPath(PowerFlowDiagramSegmentedShape(
+                    source: .zero, middle: .zero, sink: frame,
+                    radius: min(layout.outerCornerRadius, frame.height * 0.28)
+                ).path(in: rect))
+            }
         }
-        for frame in layout.sinkFrames {
-            path.addPath(PowerFlowDiagramSegmentedShape(
-                source: .zero, middle: .zero, sink: frame,
-                radius: min(layout.outerCornerRadius, frame.height * 0.28)
-            ).path(in: rect))
-        }
-        for ribbon in layout.ribbons {
-            path.addPath(PowerFlowRibbonShape(geometry: ribbon).path(in: rect))
-        }
-        if let footer = layout.totalsFooterFrame {
-            path.addRoundedRect(in: footer, cornerSize: CGSize(width: 3, height: 3))
+        if includesChannel {
+            for ribbon in layout.ribbons {
+                path.addPath(PowerFlowRibbonShape(geometry: ribbon).path(in: rect))
+            }
+            if let footer = layout.totalsFooterFrame {
+                path.addRoundedRect(in: footer, cornerSize: CGSize(width: 3, height: 3))
+            }
         }
         return path
+    }
+}
+
+/// The diagram is its own Liquid Glass element: frosted endpoint nodes and a
+/// glass channel. While power flows, the light layer sits *under* clear glass so
+/// the glass refracts it like energy inside a tube. Without glass (macOS < 26 or
+/// Reduce Transparency) the light is drawn over the opaque fallback surface.
+struct PowerFlowDiagramGlassSurface<Light: View, Content: View>: View {
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let layout: PowerFlowDiagramLayoutResult
+    let isFlowing: Bool
+    let light: Light
+    let content: Content
+
+    init(
+        layout: PowerFlowDiagramLayoutResult,
+        isFlowing: Bool,
+        @ViewBuilder light: () -> Light,
+        @ViewBuilder content: () -> Content
+    ) {
+        self.layout = layout
+        self.isFlowing = isFlowing
+        self.light = light()
+        self.content = content()
+    }
+
+    var body: some View {
+        let surface = PowerFlowDiagramSurfaceShape(layout: layout)
+        let channel = PowerFlowDiagramSurfaceShape(layout: layout, part: .channel)
+        ZStack(alignment: .topLeading) {
+            if #available(macOS 26.0, *), !reduceTransparency {
+                if isFlowing {
+                    // Clear glass needs a dimming base so the backdrop never shows raw.
+                    channel.fill(.regularMaterial)
+                    // On the light frosted base the pastel wash (yellow above all)
+                    // would wash out; deepen it there so the pulse stays visible.
+                    light
+                        .saturation(colorScheme == .dark ? 1 : 1.5)
+                        .brightness(colorScheme == .dark ? 0 : -0.1)
+                        .clipShape(channel)
+                }
+                Color.clear.glassEffect(.regular, in: PowerFlowDiagramSurfaceShape(layout: layout, part: .endpoints))
+                Color.clear.glassEffect(isFlowing ? .clear : .regular, in: channel)
+            } else {
+                DashboardFallbackCardSurface(shape: AnyShape(surface))
+                light.clipShape(channel)
+            }
+            content
+        }
+        .contentShape(surface)
+        .overlay {
+            // Borderless like the glass; Increase Contrast still gets an outline.
+            if contrast == .increased {
+                surface.stroke(
+                    Color.primary.opacity(DashboardCardChrome.increasedContrastBorderOpacity),
+                    lineWidth: 0.5
+                )
+            }
+        }
     }
 }
 

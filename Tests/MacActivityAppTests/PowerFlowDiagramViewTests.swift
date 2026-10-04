@@ -160,19 +160,12 @@ final class PowerFlowDiagramViewTests: XCTestCase {
             Fixtures.grouped, Fixtures.missingSource, Fixtures.missingSink,
             Fixtures.waiting, Fixtures.idle, Fixtures.unavailable,
         ]
-        let appearances = [
-            DashboardPresentationPolicy.standardAppearance,
-            DashboardPresentationPolicy.translucentAppearance(
-                moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
-                strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
-            ),
-        ]
-        for appearance in appearances {
+        for colorScheme in [ColorScheme.light, .dark] {
             for width: CGFloat in [384, 320, 319] {
                 for presentation in presentations {
                     let renderer = ImageRenderer(content: PowerFlowDiagramView(presentation: presentation)
                         .frame(width: width)
-                        .environment(\.dashboardStyleAppearance, appearance))
+                        .environment(\.colorScheme, colorScheme))
                     renderer.scale = 1
                     let image = try XCTUnwrap(renderer.nsImage)
                     let expectedHeight: CGFloat = width >= 320 && presentation.sources.count + presentation.sinks.count > 2
@@ -337,7 +330,6 @@ final class PowerFlowDiagramViewTests: XCTestCase {
             let host = NSHostingView(
                 rootView: PowerFlowDiagramSideSummaryView(summary: summary, countKey: key)
                     .frame(width: frame.width, height: frame.height)
-                    .environment(\.dashboardStyleAppearance, DashboardPresentationPolicy.standardAppearance)
             )
             host.layoutSubtreeIfNeeded()
             XCTAssertLessThanOrEqual(
@@ -358,10 +350,6 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         )
         let renderer = ImageRenderer(content: PowerFlowDiagramView(presentation: presentation)
             .frame(width: 320)
-            .environment(\.dashboardStyleAppearance, DashboardPresentationPolicy.translucentAppearance(
-                moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacityIncreasedContrast,
-                strokeOpacity: DashboardPresentationPolicy.increasedContrastStrokeOpacity
-            ))
             .environment(\.colorScheme, .dark))
         XCTAssertNotNil(renderer.nsImage)
         XCTAssertFalse(presentation.accessibilityLabel.isEmpty)
@@ -703,7 +691,6 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         let content = PowerFlowDiagramView(presentation: presentation)
             .frame(width: width)
             .environment(\._accessibilityReduceTransparency, true)
-            .environment(\.dashboardStyleAppearance, .standardAppearance)
             .environment(\.colorScheme, .light)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2

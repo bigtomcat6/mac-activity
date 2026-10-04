@@ -292,7 +292,8 @@ final class AudioDashboardViewTests: XCTestCase {
     func testProcessRowIconPresentationUsesGenericFallbackAndTwentyPointFrames() throws {
         let source = try audioDashboardViewSource()
         let rowSource = try XCTUnwrap(source.components(separatedBy: "struct AudioProcessControlRow").last)
-        let iconSource = try XCTUnwrap(rowSource.components(separatedBy: "private var volumeBinding").first)
+        let iconStart = try XCTUnwrap(rowSource.components(separatedBy: "private var processIcon").last)
+        let iconSource = try XCTUnwrap(iconStart.components(separatedBy: "private var volumeBinding").first)
 
         XCTAssertTrue(iconSource.contains("case .bundle(let bundleURL):"))
         XCTAssertTrue(iconSource.contains("case .fallbackSystemSymbol:\n            Image(systemName: \"app\")"))
@@ -311,12 +312,12 @@ final class AudioDashboardViewTests: XCTestCase {
 
         for fragment in [
             "@State private var displayedValue: Double",
-            "AudioVolumeTrack(value: displayedValue)",
             "Slider(value: $displayedValue, in: 0...1",
             "withAnimation(motionPolicy.animation)"
         ] {
             XCTAssertTrue(source.contains(fragment), fragment)
         }
+        XCTAssertFalse(source.contains(".opacity(0.01)"), "the native slider must stay visible")
     }
 
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {

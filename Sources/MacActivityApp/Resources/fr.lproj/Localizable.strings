@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "Suivre la sortie d’origine";
 "audio.route.deviceUnavailable" = "%@ (indisponible)";
 "audio.route.selectedSummary" = "%d sorties sélectionnées";
-"audio.route.clearHelp" = "Choisissez « Suivre la sortie d’origine » pour effacer le routage explicite.";
 "audio.accessibility.volume" = "Volume de %@, %d pour cent";
 "audio.accessibility.mute" = "Couper le son de %@";
 "audio.accessibility.unmute" = "Réactiver le son de %@";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "Canal de mise à jour";
 "preferences.language" = "Langue";
 "preferences.languageHelp" = "Contrôle la langue d’affichage des préférences et du tableau de bord.";
-"preferences.dashboardStyle" = "Style du tableau de bord";
-"preferences.dashboardStyle.standard" = "Standard";
-"preferences.dashboardStyle.transparent" = "Transparent";
-"preferences.dashboardStyle.help" = "« Transparent » utilise un panneau clair sans bordure sur macOS 26 ou version ultérieure. Si « Réduire la transparence » est activé, l’apparence « Standard » est conservée.";
-"preferences.dashboardStyle.unavailable" = "« Transparent » nécessite macOS 26 ou version ultérieure. Sur ce Mac, l’apparence « Standard » est conservée.";
 "preferences.temperatureSource" = "Source de température";
 "preferences.temperatureHelp" = "Contrôle la métrique de température dans la barre de menu et le tableau de bord.";
 "preferences.hardwareBatteryPercentage" = "Afficher le pourcentage matériel de la batterie";
@@ -126,7 +120,6 @@
 "diskCleanup.category.trash" = "Corbeille";
 "diskCleanup.category.userLogs" = "Journaux";
 
-"energyImpact.title" = "Impact énergétique";
 "energyImpact.subtitle.sustained" = "Estimation d’énergie CPU sur 30 s max. · Plus bas est préférable";
 "energyImpact.column.app" = "App";
 "energyImpact.column.sustained" = "30 s";
@@ -158,45 +151,7 @@
 "powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
 
 
-"memoryRelease.action.release" = "Libérer";
-"memoryRelease.action.releasing" = "Libération en cours";
-"memoryRelease.title.idle" = "Mémoire";
-"memoryRelease.title.usage" = "Mémoire %d%%";
-"memoryRelease.title.reclaimable" = "%@ libérable";
-"memoryRelease.title.releasing" = "Libération de la mémoire";
-"memoryRelease.title.released" = "%@ libérée";
-"memoryRelease.title.noSignificantRelease" = "Mémoire inchangée";
-"memoryRelease.title.cooldown" = "Libération en pause";
-"memoryRelease.title.unavailable" = "Libération de mémoire non disponible";
-"memoryRelease.title.failed" = "Échec de la libération de mémoire";
-"memoryRelease.title.readFailed" = "Lecture mémoire échouée";
-"memoryRelease.subtitle.usage" = "Mémoire %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "%.1f%% de la mémoire totale";
-"memoryRelease.subtitle.noSignificantRelease" = "Aucune mémoire libérable immédiatement n’a été trouvée.";
-"memoryRelease.subtitle.cooldown" = "Réessayez dans %.1f secondes.";
-"memoryRelease.subtitle.unavailable" = "Aucune méthode de libération de mémoire n’est disponible sur ce Mac.";
-"memoryRelease.subtitle.readFailed" = "Impossible de comparer les lectures mémoire avant/après.";
-"memoryRelease.subtitle.default" = "Libérer la mémoire système récupérable.";
-"memoryRelease.subtitle.failedWithExitCode" = "Échec de la libération mémoire avec le code %d.";
 
-"trash.action.retry" = "Réessayer";
-"trash.action.clean" = "Nettoyer";
-"trash.title.scanning" = "Analyse de la corbeille";
-"trash.title.clean" = "La corbeille est vide";
-"trash.title.cleanable" = "%@ dans la corbeille";
-"trash.title.cleaning" = "Nettoyage de la corbeille";
-"trash.title.cleaned" = "%@ supprimé";
-"trash.title.failed" = "Échec du nettoyage de la corbeille";
-"trash.subtitle.scanning" = "Vérification de la corbeille de l’utilisateur actuel.";
-"trash.subtitle.clean" = "Aucun élément nettoyable trouvé.";
-"trash.subtitle.cleanable" = "Suppression possible après confirmation : %d %@.";
-"trash.subtitle.cleaning" = "Suppression du contenu confirmé de la corbeille.";
-"trash.subtitle.cleaned" = "Suppression de %d %@ terminée.";
-"trash.subtitle.partial" = "Suppression réussie : %d %@ ; échec : %d %@.";
-"trash.subtitle.partialWithRemaining" = "Suppression réussie : %d %@ ; échec : %d %@. Il reste %@.";
-"trash.subtitle.failed.unableToDeleteItems" = "Impossible de supprimer les éléments de la corbeille.";
-"trash.item.singular" = "élément";
-"trash.item.plural" = "éléments";
 
 "diskCleanup.action.retry" = "Réessayer";
 "diskCleanup.action.clean" = "Nettoyer";

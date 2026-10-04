@@ -85,13 +85,9 @@ xcodebuild test \
 
 The project includes focused executables and command wrappers for local checks:
 
-- `DebugMemoryRelease`
 - `DebugActiveProcessMemory`
-- `DebugMemoryReleaseUI`
 - `DebugDiskCleanup`
-- `scripts/debug-memory-release.command`
 - `scripts/debug-active-process-memory.command`
-- `scripts/debug-memory-release-ui.command`
 - `scripts/debug-disk-cleanup.command`
 
 Use these for narrow cleanup or Actives checks before broad app validation.

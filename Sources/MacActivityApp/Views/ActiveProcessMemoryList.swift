@@ -49,7 +49,7 @@ struct ActiveProcessMemoryList: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
-        .activeCleanupCardChrome()
+        .dashboardCardChrome()
     }
 
     private var processRows: some View {

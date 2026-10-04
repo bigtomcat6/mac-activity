@@ -183,22 +183,8 @@ install can still update to a newer beta or final release.
 
 ## Cleanup Features
 
-MacActivity has cleanup surfaces for memory, Trash, and selected disk cleanup
-categories.
-
-Memory Release:
-
-- Reads current memory before and after cleanup.
-- Attempts the local cleanup strategy first.
-- Falls back to the system `purge` path when local cleanup is unavailable or not
-  significant.
-- Uses a short cooldown to avoid repeated cleanup clicks.
-
-Trash cleanup:
-
-- Scans the current user's `~/.Trash`.
-- Deletes confirmed Trash contents.
-- Reports partial cleanup if some items cannot be removed.
+MacActivity can clean selected disk cleanup categories from the Actives page,
+after a confirmation click.
 
 Disk Cleanup categories:
 

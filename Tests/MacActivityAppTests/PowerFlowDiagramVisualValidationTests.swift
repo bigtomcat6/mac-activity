@@ -8,9 +8,8 @@ import XCTest
 //
 // `MACACTIVITY_POWER_FLOW_VISUAL_OUTPUT` writes the capturable ImageRenderer
 // content matrix. macOS 26 native `.glassEffect` interiors cannot be captured by
-// ImageRenderer, so the `standard` rows are rendered through the opaque fallback
-// card surface (capturable) and a truthful `metadata.txt` describes the route.
-// The `translucent` rows use the capturable root-glass fill route.
+// ImageRenderer, so rows are rendered through the opaque fallback surface
+// (Reduce Transparency, capturable) and a truthful `metadata.txt` describes the route.
 //
 // `MACACTIVITY_POWER_FLOW_NATIVE_OUTPUT` opens a real borderless NSWindow
 // labelled as a synthetic fixture, pins its appearance, and captures the
@@ -18,9 +17,6 @@ import XCTest
 // actually composites the native glass. No `cacheDisplay` and no appearance
 // substitution. The window carries mixed widths so grouped and German-320 rows
 // share one capture.
-//
-// `MACACTIVITY_POWER_FLOW_TINT_OUTPUT` captures bounded panel tint candidates
-// over the neutral reference backdrop used only to calibrate the product tint.
 @MainActor
 final class PowerFlowDiagramVisualValidationTests: XCTestCase {
     private typealias Fixtures = PowerFlowDiagramFixtures
@@ -57,40 +53,26 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         let outputURL = URL(fileURLWithPath: outputPath, isDirectory: true)
         try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
 
-        let appearances: [(String, DashboardStyleAppearance)] = [
-            ("standard", .standardAppearance),
-            ("translucent", DashboardPresentationPolicy.translucentAppearance(
-                moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
-                strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
-            )),
-        ]
         let schemes: [(String, ColorScheme)] = [("light", .light), ("dark", .dark)]
 
         for (name, presentation) in fixtures {
-            for (appearanceName, appearance) in appearances {
-                for (schemeName, scheme) in schemes {
-                    for width: CGFloat in [384, 320] {
-                        try render(
-                            presentation: presentation, width: width, scheme: scheme,
-                            appearance: appearance,
-                            destination: outputURL.appendingPathComponent(
-                                "\(name)-\(appearanceName)-\(schemeName)-\(Int(width)).png"
-                            )
+            for (schemeName, scheme) in schemes {
+                for width: CGFloat in [384, 320] {
+                    try render(
+                        presentation: presentation, width: width, scheme: scheme,
+                        destination: outputURL.appendingPathComponent(
+                            "\(name)-\(schemeName)-\(Int(width)).png"
                         )
-                    }
+                    )
                 }
             }
         }
 
-        // German pressure width via the capturable root-glass route, all topologies.
+        // German pressure width via the capturable fallback route, all topologies.
         let previousLanguage = AppLocalization.explicitPreferredLanguageIdentifier()
         defer { AppLocalization.setPreferredLanguageIdentifier(previousLanguage) }
         AppLocalization.setPreferredLanguageIdentifier("de")
         let german = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "de"))
-        let germanRootAppearance = DashboardPresentationPolicy.translucentAppearance(
-            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
-            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
-        )
         let controlURL = outputURL.appendingPathComponent("control", isDirectory: true)
         try FileManager.default.createDirectory(at: controlURL, withIntermediateDirectories: true)
         for (name, snapshot) in germanTopologySnapshots() {
@@ -99,11 +81,10 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
             )
             for (schemeName, scheme) in schemes {
                 let destination = outputURL.appendingPathComponent(
-                    "long-german-\(name)-root-\(schemeName)-320.png"
+                    "long-german-\(name)-\(schemeName)-320.png"
                 )
                 try render(
                     presentation: presentation, width: 320, scheme: scheme,
-                    appearance: germanRootAppearance,
                     destination: destination
                 )
                 // Meaningful nonblank check: subtract a content-free control with
@@ -113,10 +94,10 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
                 let regions = textRegions(plan: plan)
                 XCTAssertFalse(regions.isEmpty, "\(name) should reserve text frames")
                 let controlDestination = controlURL.appendingPathComponent(
-                    "long-german-\(name)-root-\(schemeName)-320-control.png"
+                    "long-german-\(name)-\(schemeName)-320-control.png"
                 )
                 try renderControl(
-                    presentation: presentation, plan: plan, width: 320, scheme: scheme, appearance: germanRootAppearance,
+                    presentation: presentation, plan: plan, width: 320, scheme: scheme,
                     destination: controlDestination
                 )
                 let contentInk = try textInkContrast(
@@ -210,7 +191,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         }
 
         try exportGermanNativeWindow(outputURL: outputURL)
-        try exportGlowCandidates(outputURL: outputURL)
     }
 
     // Separate German window so runtime values are captured while the in-app
@@ -251,30 +231,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         }
     }
 
-    // Bounded raw-gradient candidates over the neutral reference backdrop; the
-    // chosen value is baked into PowerFlowDiagramGlowStyle, not a product knob.
-    private func exportGlowCandidates(outputURL: URL) throws {
-        let glowURL = outputURL.appendingPathComponent("glow", isDirectory: true)
-        try FileManager.default.createDirectory(at: glowURL, withIntermediateDirectories: true)
-        let candidates: [(String, Color)] = [
-            ("a", Color(red: 0.33, green: 0.635, blue: 1.0)),
-            ("b", Color(red: 0.35, green: 0.645, blue: 1.0)),
-            ("c", Color(red: 0.37, green: 0.655, blue: 1.0)),
-        ]
-        for (name, tint) in candidates {
-            for scheme in [ColorScheme.light, ColorScheme.dark] {
-                let schemeName = scheme == .dark ? "dark" : "light"
-                try captureTintPanel(
-                    tintOpacity: scheme == .dark ? 0.10 : 0.20,
-                    overlayOpacity: scheme == .dark ? 0 : 0.22,
-                    scheme: scheme,
-                    destination: glowURL.appendingPathComponent("glow-\(name)-\(schemeName).png"),
-                    glowTint: tint
-                )
-            }
-        }
-    }
-
     // German grouped / partial / unbalanced / idle pressure rows. English
     // variants already live in the content matrix.
     private func germanPressureSnapshots() -> [(String, PowerFlowSnapshot)] {
@@ -297,39 +253,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
                 .init(id: "battery", type: .battery, direction: .idle, measurement: .watts(0))
             )),
         ]
-    }
-
-    // Bounded tint calibration over the neutral reference backdrop. The backdrop
-    // color is fixture context only; it is never baked into the product.
-    func testExportNativeTintCalibrationWhenExplicitlyRequested() throws {
-        guard let outputPath = ProcessInfo.processInfo.environment[
-            "MACACTIVITY_POWER_FLOW_TINT_OUTPUT"
-        ], !outputPath.isEmpty else {
-            throw XCTSkip("Set MACACTIVITY_POWER_FLOW_TINT_OUTPUT to export tint calibration PNGs")
-        }
-        _ = NSApplication.shared
-        let outputURL = URL(fileURLWithPath: outputPath, isDirectory: true)
-        try FileManager.default.createDirectory(at: outputURL, withIntermediateDirectories: true)
-
-        for value in [0.12, 0.20, 0.28] {
-            for scheme in [ColorScheme.light, ColorScheme.dark] {
-                let name = "tint-\(Int(value * 100))-\(scheme == .dark ? "dark" : "light").png"
-                try captureTintPanel(
-                    tintOpacity: value, overlayOpacity: 0, scheme: scheme,
-                    destination: outputURL.appendingPathComponent(name)
-                )
-            }
-        }
-        // Non-opaque calibration layer above the glass, below content.
-        for value in [0.14, 0.18, 0.22, 0.26] {
-            for scheme in [ColorScheme.light, ColorScheme.dark] {
-                let name = "overlay-\(Int(value * 100))-\(scheme == .dark ? "dark" : "light").png"
-                try captureTintPanel(
-                    tintOpacity: 0.20, overlayOpacity: value, scheme: scheme,
-                    destination: outputURL.appendingPathComponent(name)
-                )
-            }
-        }
     }
 
     // MARK: - native capture
@@ -359,7 +282,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         let content = ZStack {
             PowerFlowNeutralBackdrop()
             PowerFlowDiagramView(presentation: presentation)
-                .environment(\.dashboardStyleAppearance, .standardAppearance)
                 .environment(\.colorScheme, scheme)
                 .frame(width: width)
         }
@@ -417,8 +339,7 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
                             .foregroundStyle(.secondary)
                             .frame(width: labelWidth, alignment: .trailing)
                         PowerFlowDiagramView(presentation: entry.presentation)
-                            .environment(\.dashboardStyleAppearance, .standardAppearance)
-                            .environment(\.colorScheme, scheme)
+                                        .environment(\.colorScheme, scheme)
                             .frame(width: entry.width)
                     }
                 }
@@ -448,62 +369,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         host.layoutSubtreeIfNeeded()
         RunLoop.current.run(until: Date().addingTimeInterval(0.6))
 
-        try capture(window: window, destination: destination)
-    }
-
-    private func captureTintPanel(
-        tintOpacity: Double,
-        overlayOpacity: Double,
-        scheme: ColorScheme,
-        destination: URL,
-        glowTint: Color? = nil
-    ) throws {
-        let width: CGFloat = 384
-        let height = PowerFlowDiagramLayout.cardHeight
-        let layout = PowerFlowDiagramLayout.resolve(
-            width: width, preferredMode: .expanded(.oneToOne), sourceCount: 1, sinkCount: 1
-        )
-        let shape = PowerFlowDiagramSegmentedShape(
-            source: layout.sourceSegment,
-            middle: layout.middleSegment,
-            sink: layout.sinkSegment,
-            radius: layout.outerCornerRadius
-        )
-        let content = ZStack {
-            PowerFlowNeutralBackdrop()
-            ZStack {
-                if let glowTint {
-                    PowerFlowDiagramGlow(middle: layout.middleSegment, tint: glowTint)
-                }
-            }
-            .frame(width: width, height: height)
-            .dashboardCardChrome(
-                shape: AnyShape(shape),
-                glassTint: Color.black.opacity(tintOpacity),
-                glassOverlay: overlayOpacity > 0 ? Color.black.opacity(overlayOpacity) : nil
-            )
-        }
-        .frame(width: width, height: height)
-
-        let host = NSHostingView(rootView: content)
-        host.frame = NSRect(x: 0, y: 0, width: width, height: height)
-        let appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
-        host.appearance = appearance
-        let window = NSWindow(
-            contentRect: host.frame,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isOpaque = true
-        window.backgroundColor = NSColor(red: 0.51, green: 0.505, blue: 0.535, alpha: 1)
-        window.appearance = appearance
-        window.contentView = host
-        window.setFrameOrigin(NSPoint(x: 40, y: 40))
-        window.orderFrontRegardless()
-        defer { window.orderOut(nil) }
-        host.layoutSubtreeIfNeeded()
-        RunLoop.current.run(until: Date().addingTimeInterval(0.5))
         try capture(window: window, destination: destination)
     }
 
@@ -549,7 +414,6 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         presentation: PowerFlowDiagramPresentation,
         width: CGFloat,
         scheme: ColorScheme,
-        appearance: DashboardStyleAppearance,
         destination: URL
     ) throws {
         let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
@@ -557,10 +421,9 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
             PowerFlowFixtureBackdrop()
             PowerFlowDiagramView(presentation: presentation)
                 .environment(\.colorScheme, scheme)
-                .environment(\.dashboardStyleAppearance, appearance)
-                // The per-card native glass interior is invisible to ImageRenderer,
-                // so the capturable fallback surface is used for the content matrix.
-                .environment(\._accessibilityReduceTransparency, !appearance.usesRootGlass)
+                // The native glass interior is invisible to ImageRenderer, so the
+                // capturable fallback surface is used for the content matrix.
+                .environment(\._accessibilityReduceTransparency, true)
                 .frame(width: width)
         }
         .frame(width: width, height: plan.layout.cardFrame.height)
@@ -578,27 +441,21 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         plan: PowerFlowDiagramRenderPlan,
         width: CGFloat,
         scheme: ColorScheme,
-        appearance: DashboardStyleAppearance,
         destination: URL
     ) throws {
-        let shape = PowerFlowDiagramSurfaceShape(layout: plan.layout)
         let content = ZStack {
             PowerFlowFixtureBackdrop()
-            ZStack {
+            PowerFlowDiagramGlassSurface(layout: plan.layout, isFlowing: false) {
                 PowerFlowDiagramView(presentation: presentation)
                     .flowLayer(plan: plan, phase: PowerFlowDiagramMotion.restingPhase)
+            } content: {
+                EmptyView()
             }
             .frame(width: plan.layout.cardFrame.width, height: plan.layout.cardFrame.height)
-            .dashboardCardChrome(
-                shape: AnyShape(shape),
-                glassTint: PowerFlowDiagramGlassTint.panel(for: scheme),
-                glassOverlay: PowerFlowDiagramGlassTint.overlay(for: scheme)
-            )
         }
         .frame(width: width, height: plan.layout.cardFrame.height)
         .environment(\.colorScheme, scheme)
-        .environment(\.dashboardStyleAppearance, appearance)
-        .environment(\._accessibilityReduceTransparency, !appearance.usesRootGlass)
+        .environment(\._accessibilityReduceTransparency, true)
         let renderer = ImageRenderer(content: content)
         renderer.scale = 2
         let image = try XCTUnwrap(renderer.nsImage)
@@ -658,24 +515,19 @@ final class PowerFlowDiagramVisualValidationTests: XCTestCase {
         """
         # Power flow diagram content matrix — truthful route metadata
 
-        standard-*.png   : opaque fallback card surface (content route). The macOS 26
-                           native `.glassEffect` interior is NOT captured by ImageRenderer.
-        translucent-*.png: root-glass fill route (translucentAppearance), capturable.
-        long-german-*-root-*.png: capturable root-glass route at 320 pt (German). The
+        *-{light,dark}-*.png: opaque fallback surface (Reduce Transparency route). The
+                           macOS 26 native `.glassEffect` interior is NOT captured by ImageRenderer.
+        long-german-*.png: capturable fallback route at 320 pt (German). The
                            nonblank check subtracts the matching content-free control
                            inside the real text frames (control/long-german-*-control.png).
         native/native-mosaic-*.png: real borderless NSWindow captured with `screencapture -l`,
-                           so WindowServer composites the native per-card glass. English rows
-                           only; standardAppearance.
+                           so WindowServer composites the native glass. English rows only.
         native/native-german-*.png: separate own native window captured while
                            AppLocalization.setPreferredLanguageIdentifier("de") is active
                            (restored with defer; Foundation AppleLanguages is never touched),
                            so runtime values use German decimal separators (21,46 W).
         native/native-1to1-*.png: clean panel-only native capture, no fixture labels; 384 pt
                            panel + 2 pt margin (~776 px wide on a 2x display).
-        glow/glow-*-{light,dark}.png: bounded raw-gradient glow candidates over the neutral
-                           reference backdrop. The chosen raw tint is baked into
-                           PowerFlowDiagramGlowStyle (a constant, not a product knob).
         """
     }
 
@@ -702,8 +554,8 @@ struct PowerFlowFixtureBackdrop: View {
     }
 }
 
-/// Neutral gray reference backdrop (~RGB 0.51/0.505/0.535) used to calibrate the
-/// panel material tint. Not a product color.
+/// Neutral gray reference backdrop (~RGB 0.51/0.505/0.535) behind native captures.
+/// Not a product color.
 struct PowerFlowNeutralBackdrop: View {
     var body: some View {
         Color(red: 0.51, green: 0.505, blue: 0.535)

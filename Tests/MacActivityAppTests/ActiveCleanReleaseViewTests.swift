@@ -17,10 +17,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
 
     func testPageCanHostDiskCleanupAndProcessZones() {
         let model = ActiveCleanupModel(
-            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
-            memoryService: ViewMemoryReleaseServiceRecorder(
-                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
-            ),
             diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
             appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 2))
         )
@@ -28,15 +24,10 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         let hostingView = NSHostingView(rootView: ActiveCleanReleaseView(model: model))
 
         XCTAssertNotNil(hostingView)
-        XCTAssertEqual(ActiveCleanReleaseLayout.zoneOrder, ["diskCleanup", "processes"])
     }
 
     func testPageBodyForwardsProcessDisplayInputs() {
         let model = ActiveCleanupModel(
-            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
-            memoryService: ViewMemoryReleaseServiceRecorder(
-                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
-            ),
             diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
             appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 2))
         )
@@ -51,10 +42,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
 
     func testProcessListBodyForwardsProcessDisplayInputs() async {
         let model = ActiveCleanupModel(
-            trashService: ViewTrashCleanupServiceRecorder(scanResults: [.clean]),
-            memoryService: ViewMemoryReleaseServiceRecorder(
-                currentReadings: [MemoryReading(usedBytes: 4, totalBytes: 10)]
-            ),
             diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
             appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 2))
         )
@@ -126,58 +113,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertTrue(
             Self.colorsApproximatelyEqual(inactiveColor, inactiveReference, tolerance: 0.08),
             "Expected inactive process fill to switch to the neutral dark tone. reference=\(Self.debugColor(inactiveReference)) actual=\(Self.debugColor(inactiveColor))"
-        )
-    }
-
-    func testRenderedProcessProgressUsesPrimaryDimmingInTranslucentAppearance() throws {
-        let app = ActiveAppMemoryEntry(
-            processIdentifier: 2_211,
-            name: "B",
-            bundleIdentifier: "c",
-            bundleURL: nil,
-            residentMemoryBytes: 1_000,
-            isTerminable: true
-        )
-        let translucentAppearance = DashboardPresentationPolicy.translucentAppearance(
-            moduleFillOpacity: DashboardPresentationPolicy.translucentModuleFillOpacity,
-            strokeOpacity: DashboardPresentationPolicy.defaultStrokeOpacity
-        )
-
-        let translucentInactiveRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
-            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
-            .environment(\.appearsActive, false)
-            .environment(\.dashboardStyleAppearance, translucentAppearance)
-        let standardInactiveRow = ActiveProcessMemoryRow(app: app, usedMemoryBytes: 1_000, quit: {})
-            .frame(width: 360, height: ActiveProcessMemoryLayout.rowHeight)
-            .environment(\.appearsActive, false)
-
-        let expectedTranslucent = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle().fill(Color.primary.opacity(0.22)).frame(width: 32, height: 32),
-                atTopLeft: CGPoint(x: 16, y: 16)
-            )
-        )
-        let expectedStandard = try XCTUnwrap(
-            Self.renderedColor(
-                of: Rectangle().fill(Color.black.opacity(0.22)).frame(width: 32, height: 32),
-                atTopLeft: CGPoint(x: 16, y: 16)
-            )
-        )
-
-        let translucentColor = try XCTUnwrap(
-            Self.renderedColor(of: translucentInactiveRow, atTopLeft: CGPoint(x: 200, y: 19))
-        )
-        let standardColor = try XCTUnwrap(
-            Self.renderedColor(of: standardInactiveRow, atTopLeft: CGPoint(x: 200, y: 19))
-        )
-
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(translucentColor, expectedTranslucent, tolerance: 0.08),
-            "Expected the translucent inactive process fill to use the adaptive primary dimming. expected=\(Self.debugColor(expectedTranslucent)) actual=\(Self.debugColor(translucentColor))"
-        )
-        XCTAssertTrue(
-            Self.colorsApproximatelyEqual(standardColor, expectedStandard, tolerance: 0.08),
-            "Expected the standard inactive process fill to keep the dark neutral tone. expected=\(Self.debugColor(expectedStandard)) actual=\(Self.debugColor(standardColor))"
         )
     }
 
@@ -273,13 +208,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
                 isQuitPending: true
             ),
             .quitting
-        )
-    }
-
-    func testPendingQuitRefreshAnimationUsesTrailingAlignment() {
-        XCTAssertEqual(
-            ActiveProcessMemoryRow.trailingContentAlignment(for: .quitting),
-            .trailing
         )
     }
 
@@ -447,13 +375,8 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
     func testSectionLocalErrorTextComesFromProducingSection() {
         let english = Self.englishBundle
 
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Trash Cleanup Failed")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
         XCTAssertEqual(DiskCleanupStatusView.title(for: .failed(.message("boom")), bundle: english), "Disk Cleanup Failed")
         XCTAssertEqual(DiskCleanupStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed(.message("boom")), bundle: english), "Memory Release Failed")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable, bundle: english), "Memory Release Not Available")
     }
 
     func testDiskCleanupStateShowsProgressIndicator() {
@@ -480,57 +403,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         XCTAssertTrue(DiskCleanupStatusView.showsProgressIndicator(for: .scanning))
         XCTAssertTrue(DiskCleanupStatusView.showsProgressIndicator(for: .cleaning))
         XCTAssertFalse(DiskCleanupStatusView.showsProgressIndicator(for: .cleanable(bytes: 512, itemCount: 1, categories: [.userCaches])))
-    }
-
-    func testTrashHelperTextMatchesCleanReleasePlan() {
-        let cleanableBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
-        let cleanedBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 8_192)
-        let partialBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 12_288)
-        let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
-        let english = Self.englishBundle
-
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .idle, bundle: english), "Scanning Trash")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .idle, bundle: english), "Checking the current user's Trash.")
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .scanning, bundle: english), "Scanning Trash")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .scanning, bundle: english), "Checking the current user's Trash.")
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .clean, bundle: english), "Trash Is Clean")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .clean, bundle: english), "No cleanable Trash items found.")
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: english), "\(cleanableBytes) in Trash")
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: english),
-            "2 items can be removed after confirmation."
-        )
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleaning, bundle: english), "Cleaning Trash")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .cleaning, bundle: english), "Deleting confirmed Trash contents.")
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .cleaned(bytes: 8_192, itemCount: 1), bundle: english), "Cleaned \(cleanedBytes)")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .cleaned(bytes: 8_192, itemCount: 1), bundle: english), "Removed 1 item.")
-        XCTAssertEqual(
-            TrashCleanupStatusView.title(
-                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
-                bundle: english
-            ),
-            "Cleaned \(partialBytes)"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(
-                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
-                bundle: english
-            ),
-            "Removed 3 items; 1 item could not be deleted. \(remainingBytes) remains."
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(
-                for: .partial(bytes: 12_288, deletedCount: 1, failedCount: 2, remainingBytes: nil),
-                bundle: english
-            ),
-            "Removed 1 item; 2 items could not be deleted."
-        )
-        XCTAssertEqual(TrashCleanupStatusView.title(for: .failed(.message("denied")), bundle: english), "Trash Cleanup Failed")
-        XCTAssertEqual(TrashCleanupStatusView.subtitle(for: .failed(.message("denied")), bundle: english), "denied")
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: english),
-            "Unable to delete Trash items."
-        )
     }
 
     func testDiskCleanupHelperTextMatchesCleanReleasePlan() {
@@ -591,75 +463,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             DiskCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: english),
             "Unable to delete selected disk cleanup items."
         )
-    }
-
-    func testMemoryHelperTextMatchesCleanReleasePlan() {
-        let releasedBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 65_536)
-        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
-        let english = Self.englishBundle
-
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .idle, bundle: english), "Memory")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .idle, bundle: english), "Release reclaimable system memory.")
-        XCTAssertEqual(
-            MemoryReleaseStatusView.title(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: english
-            ),
-            "\(releasableBytes) Releasable"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: english
-            ),
-            "Memory 44%"
-        )
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .releasing(previousPercent: 44), bundle: english), "Releasing Memory")
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .releasing(previousPercent: 44), bundle: english),
-            "Release reclaimable system memory."
-        )
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: english), "Released \(releasedBytes)")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: english), "2.5% of total memory")
-        XCTAssertEqual(
-            MemoryReleaseStatusView.title(for: .noSignificantRelease(observedBytes: 512), bundle: english),
-            "Memory Unchanged"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 512), bundle: english),
-            "No immediately releasable memory was found."
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.title(for: .cooldown(remainingSeconds: 5), bundle: english),
-            "Release Cooling Down"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 5), bundle: english),
-            "Try again in 5.0 seconds."
-        )
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .unavailable, bundle: english), "Memory Release Not Available")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .unavailable, bundle: english), "No supported memory release method is available on this Mac.")
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failed(.message("boom")), bundle: english), "Memory Release Failed")
-        XCTAssertEqual(MemoryReleaseStatusView.subtitle(for: .failed(.message("boom")), bundle: english), "boom")
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .failed(.exitCode(7)), bundle: english),
-            "Memory release failed with exit code 7."
-        )
-        XCTAssertEqual(MemoryReleaseStatusView.title(for: .failedToReadMemory, bundle: english), "Memory Reading Failed")
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .failedToReadMemory, bundle: english),
-            "Unable to compare before and after memory readings."
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.trailingAction(isReleasingMemory: true, bundle: english),
-            .progressIndicator
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.trailingAction(isReleasingMemory: false, bundle: english),
-            .button(title: "Release")
-        )
-        XCTAssertTrue(MemoryReleaseStatusView.showsProgressIndicator(for: .releasing(previousPercent: 44)))
-        XCTAssertFalse(MemoryReleaseStatusView.showsProgressIndicator(for: .idle))
     }
 
     func testProcessActionMessagesMatchCleanReleasePlan() {
@@ -738,62 +541,6 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
             color.blueComponent,
             color.alphaComponent
         )
-    }
-}
-
-@MainActor
-private final class ViewTrashCleanupServiceRecorder: TrashCleanupServicing {
-    var scanResults: [TrashScanResult]
-    var cleanResults: [TrashCleanupResult]
-
-    init(
-        scanResults: [TrashScanResult] = [],
-        cleanResults: [TrashCleanupResult] = [.cleaned(bytes: 0, itemCount: 0)]
-    ) {
-        self.scanResults = scanResults
-        self.cleanResults = cleanResults
-    }
-
-    func scan() async -> TrashScanResult {
-        guard scanResults.isEmpty == false else { return .clean }
-        return scanResults.removeFirst()
-    }
-
-    func clean() async -> TrashCleanupResult {
-        guard cleanResults.isEmpty == false else { return .cleaned(bytes: 0, itemCount: 0) }
-        return cleanResults.removeFirst()
-    }
-}
-
-@MainActor
-private final class ViewMemoryReleaseServiceRecorder: MemoryReleaseServicing {
-    var currentReadings: [MemoryReading]
-    var releasableByteResults: [UInt64?]
-    var releaseResults: [MemoryReleaseResult]
-
-    init(
-        currentReadings: [MemoryReading] = [],
-        releasableByteResults: [UInt64?] = [],
-        releaseResults: [MemoryReleaseResult] = [.unavailable]
-    ) {
-        self.currentReadings = currentReadings
-        self.releasableByteResults = releasableByteResults
-        self.releaseResults = releaseResults
-    }
-
-    func currentReading() async -> MemoryReading? {
-        guard currentReadings.isEmpty == false else { return nil }
-        return currentReadings.removeFirst()
-    }
-
-    func release() async -> MemoryReleaseResult {
-        guard releaseResults.isEmpty == false else { return .unavailable }
-        return releaseResults.removeFirst()
-    }
-
-    func currentReleasableBytes() async -> UInt64? {
-        guard releasableByteResults.isEmpty == false else { return nil }
-        return releasableByteResults.removeFirst()
     }
 }
 

@@ -155,28 +155,6 @@ private struct AudioMuteButtonStyle: ButtonStyle {
     }
 }
 
-private struct AudioVolumeTrack: View {
-    let value: Double
-
-    private var clampedValue: CGFloat {
-        CGFloat(min(max(value, 0), 1))
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.12))
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: geometry.size.width * clampedValue)
-            }
-        }
-        .frame(height: 4)
-        .accessibilityHidden(true)
-    }
-}
-
 private struct AudioAnimatedVolumeSlider: View {
     @Binding var value: Double
     let accessibility: AudioAccessibilityContract
@@ -212,31 +190,28 @@ private struct AudioAnimatedVolumeSlider: View {
         )
     }
 
+    // Native slider: Liquid Glass knob on macOS 26; it still interpolates
+    // `displayedValue` under `withAnimation`, so mute transitions stay animated.
     var body: some View {
-        ZStack {
-            AudioVolumeTrack(value: displayedValue)
-                .allowsHitTesting(false)
-
-            Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
-                .opacity(0.01)
-        }
-        .frame(height: 20)
-        .onChange(of: displayedValue) { updatedValue in
-            guard isEditing else { return }
-            value = updatedValue
-        }
-        .onChange(of: value) { updatedValue in
-            synchronizeDisplayedValue(to: updatedValue)
-
-            if let trigger, trigger.id != consumedTriggerID {
-                consumedTriggerID = trigger.id
+        Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
+            .controlSize(.small)
+            .frame(height: 20)
+            .onChange(of: displayedValue) { updatedValue in
+                guard isEditing else { return }
+                value = updatedValue
             }
-        }
-        .onChange(of: hasWriteFailure) { didFail in
-            guard didFail else { return }
-            synchronizeDisplayedValue(to: value)
-        }
-        .audioAccessibility(accessibility)
+            .onChange(of: value) { updatedValue in
+                synchronizeDisplayedValue(to: updatedValue)
+
+                if let trigger, trigger.id != consumedTriggerID {
+                    consumedTriggerID = trigger.id
+                }
+            }
+            .onChange(of: hasWriteFailure) { didFail in
+                guard didFail else { return }
+                synchronizeDisplayedValue(to: value)
+            }
+            .audioAccessibility(accessibility)
     }
 
     private func synchronizeDisplayedValue(to updatedValue: Double) {
@@ -588,7 +563,8 @@ struct AudioProcessControlRow: View {
                     trigger: muteMotion,
                     hasWriteFailure: snapshot.error != nil
                 )
-                    .frame(maxWidth: 130)
+                    // Fixed lane keeps every row's slider aligned regardless of name length.
+                    .frame(width: 110)
 
                 Button {
                     recordMuteToggle(from: presentation.showsMutedIcon)
@@ -606,10 +582,16 @@ struct AudioProcessControlRow: View {
 
                 routeMenu
 
-                Button(AppLocalization.string(.audioReset)) {
+                // Icon-only trailing controls leave the row's width to the app name;
+                // the accessibility contracts still carry the full labels.
+                Button {
                     model.reset(processObjectID: snapshot.id)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .frame(width: 20, height: 20)
                 }
-                .buttonStyle(.link)
+                .buttonStyle(.borderless)
+                .help(AppLocalization.string(.audioReset))
                 .audioAccessibility(presentation.resetAccessibility)
             }
 
@@ -687,9 +669,12 @@ struct AudioProcessControlRow: View {
                 .audioAccessibility(contract)
             }
         } label: {
-            Label(AppLocalization.string(.audioRouteTitle), systemImage: "airplayaudio")
+            Image(systemName: "airplayaudio")
         }
-        .help(AppLocalization.string(.audioRouteClearHelp))
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(AppLocalization.string(.audioRouteTitle))
         .audioAccessibility(presentation.routeAccessibility)
     }
 
@@ -889,7 +874,7 @@ private struct AudioSystemAccessPermissionGate: View {
             }
 
             Button(presentation.actionTitle, action: performAction)
-                .buttonStyle(.borderedProminent)
+                .dashboardActionButtonStyle(prominent: true)
                 .disabled(presentation.action == .none)
                 .audioAccessibility(.init(
                     identifier: "audio.permission.gate.action",

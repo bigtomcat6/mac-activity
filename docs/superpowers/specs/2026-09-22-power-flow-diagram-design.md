@@ -480,6 +480,16 @@ The implementation must respect `DashboardStyleAppearance`:
 
 No new bespoke blur or opaque background system is introduced.
 
+> **Update 2026-10-04 — Liquid Glass surface.** The transparent dashboard style
+> and `DashboardStyleAppearance` were removed. The diagram now owns its surface
+> (`PowerFlowDiagramGlassSurface`): endpoints use frosted `.regular` glass, and
+> while power flows the channel uses `.clear` glass over the flow light with a
+> `.regularMaterial` dimming base, so the glass refracts the light like energy in
+> a tube. Idle/waiting/unavailable channels fall back to `.regular` glass. The
+> AlDente-calibrated gray tint and overlay were dropped. Geometry, motion and
+> accessibility are unchanged; Reduce Transparency and macOS < 26 draw the light
+> over the opaque fallback surface.
+
 ### 14.2 Size targets
 
 Initial design targets at the real Energy content width:
@@ -753,7 +763,7 @@ The feature is ready for branch review when all of the following are true:
 9. No wattage is inferred from balance, adapter rating, or UI needs.
 10. Input/output mismatches remain visible as separate totals and a partial-data state.
 11. The card remains stable and legible at 384 pt, and does not overlap at 320 pt.
-12. The implementation uses existing dashboard appearance policy and does not add nested custom glass.
+12. ~~The implementation uses existing dashboard appearance policy and does not add nested custom glass.~~ Superseded 2026-10-04 by the Liquid Glass surface note in §14.1.
 13. There is no continuous animation.
 14. The combined accessibility label fully describes grouped and unknown states.
 15. Existing service and lifecycle behavior remains covered and passing.

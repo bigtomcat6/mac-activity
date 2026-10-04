@@ -382,7 +382,6 @@ final class LocalizationTests: XCTestCase {
     func testEnergyImpactPageStringsAreLocalized() throws {
         let expectations: [String: [AppLocalization.Key: String]] = [
             "en": [
-                .energyImpactTitle: "Energy Impact",
                 .energyImpactSubtitleSustained: "Up to 30 sec CPU energy estimate · Lower is better",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 sec",
@@ -410,7 +409,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "Show application ID in process lists"
             ],
             "de": [
-                .energyImpactTitle: "Energieeinfluss",
                 .energyImpactSubtitleSustained: "CPU-Energieschätzung für bis zu 30 Sek. · Niedriger ist besser",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 Sek.",
@@ -438,7 +436,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "App-ID in Prozesslisten anzeigen"
             ],
             "fr": [
-                .energyImpactTitle: "Impact énergétique",
                 .energyImpactSubtitleSustained: "Estimation d’énergie CPU sur 30 s max. · Plus bas est préférable",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 s",
@@ -466,7 +463,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "Afficher l’identifiant d’app dans les listes de processus"
             ],
             "ja": [
-                .energyImpactTitle: "エネルギー影響",
                 .energyImpactSubtitleSustained: "最大30秒のCPUエネルギー推定 · 低いほど良好",
                 .energyImpactAppColumn: "アプリ",
                 .energyImpactSustainedColumn: "30秒",
@@ -494,7 +490,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "プロセスリストにアプリIDを表示"
             ],
             "ko": [
-                .energyImpactTitle: "에너지 영향",
                 .energyImpactSubtitleSustained: "최대 30초 CPU 에너지 추정치 · 낮을수록 좋음",
                 .energyImpactAppColumn: "앱",
                 .energyImpactSustainedColumn: "30초",
@@ -522,7 +517,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "프로세스 목록에 앱 ID 표시"
             ],
             "zh-Hans": [
-                .energyImpactTitle: "耗电影响",
                 .energyImpactSubtitleSustained: "最近最多 30 秒 CPU 能耗估算 · 越低越好",
                 .energyImpactAppColumn: "应用",
                 .energyImpactSustainedColumn: "30 秒",
@@ -550,7 +544,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "在进程列表中显示应用 ID"
             ],
             "zh-Hant": [
-                .energyImpactTitle: "耗電影響",
                 .energyImpactSubtitleSustained: "最近最多 30 秒 CPU 能耗估算 · 越低越好",
                 .energyImpactAppColumn: "應用程式",
                 .energyImpactSustainedColumn: "30 秒",
@@ -827,55 +820,9 @@ final class LocalizationTests: XCTestCase {
 
     func testCleanReleaseStringsResolveWithArguments() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
-        let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
-        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
+        let remainingBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
         let cleanableBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
 
-        XCTAssertEqual(
-            MemoryReleaseStatusView.title(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: simplifiedChinese
-            ),
-            "可释放 \(releasableBytes)"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: simplifiedChinese
-            ),
-            "内存 44%"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: simplifiedChinese),
-            "占总内存的 2.5%"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 0), bundle: simplifiedChinese),
-            "没有发现可立即释放的内存。"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 7.5), bundle: simplifiedChinese),
-            "7.5 秒后再试。"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .failed(.exitCode(7)), bundle: simplifiedChinese),
-            "内存释放失败，退出代码 7。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
-            "确认后可移除 2 个项目。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: simplifiedChinese),
-            "无法删除废纸篓项目。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(
-                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
-                bundle: simplifiedChinese
-            ),
-            "已移除 3 个项目；1 个项目无法删除。仍剩余 \(remainingBytes)。"
-        )
         XCTAssertEqual(
             DiskCleanupStatusView.title(
                 for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
@@ -959,46 +906,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertTrue(
             violations.isEmpty,
             "Hard-coded production UI strings must use AppLocalization keys:\n\(violations.joined(separator: "\n"))"
-        )
-    }
-
-    func testDashboardStyleStringsExistForAllSupportedLanguages() throws {
-        let styleKeys: [AppLocalization.Key] = [
-            .preferencesDashboardStyle,
-            .preferencesDashboardStyleStandard,
-            .preferencesDashboardStyleTransparent,
-            .preferencesDashboardStyleHelp,
-            .preferencesDashboardStyleUnavailable,
-        ]
-
-        for language in AppLanguage.supportedLanguages() {
-            guard let languageIdentifier = language.preferredLanguageIdentifier else {
-                continue
-            }
-            let bundle = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: languageIdentifier))
-            for key in styleKeys {
-                let localized = AppLocalization.string(key, bundle: bundle)
-                XCTAssertNotEqual(localized, key.rawValue, "Missing \(key.rawValue) in \(languageIdentifier)")
-                XCTAssertFalse(localized.isEmpty, "\(key.rawValue) in \(languageIdentifier) must not be empty")
-            }
-        }
-    }
-
-    func testDashboardStyleTitlesUseSharedCopy() throws {
-        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
-        let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
-
-        XCTAssertEqual(
-            AppLocalization.string(.preferencesDashboardStyle, bundle: english),
-            "Dashboard style"
-        )
-        XCTAssertEqual(
-            AppLocalization.dashboardStyleTitle(for: .standard, bundle: simplifiedChinese),
-            "标准"
-        )
-        XCTAssertEqual(
-            AppLocalization.dashboardStyleTitle(for: .transparent, bundle: simplifiedChinese),
-            "通透"
         )
     }
 

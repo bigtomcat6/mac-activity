@@ -279,7 +279,7 @@ final class EnergyImpactViewTests: XCTestCase {
         )] = [
             (
                 "en",
-                "Energy Impact",
+                "Energy",
                 "Up to 30 sec CPU energy estimate · Lower is better",
                 "30 sec",
                 "Safari, rank 1, up to 30 seconds 1 mW, rising"
@@ -295,7 +295,7 @@ final class EnergyImpactViewTests: XCTestCase {
 
         for expectation in expectations {
             AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
-            XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
+            XCTAssertEqual(AppLocalization.string(.dashboardTabEnergyImpact), expectation.title)
             XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleSustained), expectation.subtitle)
             XCTAssertEqual(AppLocalization.string(.energyImpactSustainedColumn), expectation.sustainedLabel)
             XCTAssertEqual(

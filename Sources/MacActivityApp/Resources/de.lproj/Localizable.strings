@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "Ursprünglicher Ausgabe folgen";
 "audio.route.deviceUnavailable" = "%@ (nicht verfügbar)";
 "audio.route.selectedSummary" = "%d Ausgänge ausgewählt";
-"audio.route.clearHelp" = "Wähle „Ursprünglicher Ausgabe folgen“, um den expliziten Ausgabeweg zu löschen.";
 "audio.accessibility.volume" = "Lautstärke von %@, %d Prozent";
 "audio.accessibility.mute" = "%@ stummschalten";
 "audio.accessibility.unmute" = "Stummschaltung für %@ aufheben";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "Update-Kanal";
 "preferences.language" = "Sprache";
 "preferences.languageHelp" = "Steuert die Anzeigesprache für Einstellungen und Dashboard.";
-"preferences.dashboardStyle" = "Dashboard-Stil";
-"preferences.dashboardStyle.standard" = "Standard";
-"preferences.dashboardStyle.transparent" = "Transparent";
-"preferences.dashboardStyle.help" = "„Transparent“ verwendet auf macOS 26 oder neuer ein klares, rahmenloses Panel. Wenn „Transparenz reduzieren“ aktiviert ist, bleibt die Darstellung „Standard“.";
-"preferences.dashboardStyle.unavailable" = "„Transparent“ erfordert macOS 26 oder neuer. Auf diesem Mac bleibt die Darstellung „Standard“.";
 "preferences.temperatureSource" = "Temperaturquelle";
 "preferences.temperatureHelp" = "Steuert die Temperaturmetrik in Statusleiste und Dashboard.";
 "preferences.hardwareBatteryPercentage" = "Hardware-Akku-Prozentsatz anzeigen";
@@ -126,7 +120,6 @@
 "diskCleanup.category.trash" = "Papierkorb";
 "diskCleanup.category.userLogs" = "Protokolle";
 
-"energyImpact.title" = "Energieeinfluss";
 "energyImpact.subtitle.sustained" = "CPU-Energieschätzung für bis zu 30 Sek. · Niedriger ist besser";
 "energyImpact.column.app" = "App";
 "energyImpact.column.sustained" = "30 Sek.";
@@ -158,45 +151,7 @@
 "powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
 
 
-"memoryRelease.action.release" = "Freigeben";
-"memoryRelease.action.releasing" = "Wird freigegeben";
-"memoryRelease.title.idle" = "Arbeitsspeicher";
-"memoryRelease.title.usage" = "Arbeitsspeicher %d%%";
-"memoryRelease.title.reclaimable" = "%@ freigebbar";
-"memoryRelease.title.releasing" = "Arbeitsspeicher wird freigegeben";
-"memoryRelease.title.released" = "%@ freigegeben";
-"memoryRelease.title.noSignificantRelease" = "Arbeitsspeicher unverändert";
-"memoryRelease.title.cooldown" = "Freigabe pausiert";
-"memoryRelease.title.unavailable" = "Arbeitsspeicherfreigabe nicht verfügbar";
-"memoryRelease.title.failed" = "Arbeitsspeicherfreigabe fehlgeschlagen";
-"memoryRelease.title.readFailed" = "Arbeitsspeicherauslesung fehlgeschlagen";
-"memoryRelease.subtitle.usage" = "Arbeitsspeicher %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "%.1f%% des Gesamtspeichers";
-"memoryRelease.subtitle.noSignificantRelease" = "Es wurde kein sofort freigebbarer Speicher gefunden.";
-"memoryRelease.subtitle.cooldown" = "Erneuter Versuch in %.1f Sekunden.";
-"memoryRelease.subtitle.unavailable" = "Auf diesem Mac ist keine unterstützte Speicherfreigabe verfügbar.";
-"memoryRelease.subtitle.readFailed" = "Vorherige und neue Speicherwerte konnten nicht verglichen werden.";
-"memoryRelease.subtitle.default" = "Freigebbaren Systemspeicher freigeben.";
-"memoryRelease.subtitle.failedWithExitCode" = "Arbeitsspeicherfreigabe mit Exitcode %d fehlgeschlagen.";
 
-"trash.action.retry" = "Wiederholen";
-"trash.action.clean" = "Bereinigen";
-"trash.title.scanning" = "Papierkorb wird gescannt";
-"trash.title.clean" = "Papierkorb ist leer";
-"trash.title.cleanable" = "%@ im Papierkorb";
-"trash.title.cleaning" = "Papierkorb wird bereinigt";
-"trash.title.cleaned" = "%@ bereinigt";
-"trash.title.failed" = "Papierkorbbereinigung fehlgeschlagen";
-"trash.subtitle.scanning" = "Papierkorb des aktuellen Benutzers wird geprüft.";
-"trash.subtitle.clean" = "Keine bereinigbaren Papierkorb-Einträge gefunden.";
-"trash.subtitle.cleanable" = "Nach Bestätigung entfernbar: %d %@.";
-"trash.subtitle.cleaned" = "%d %@ entfernt.";
-"trash.subtitle.cleaning" = "Bestätigte Papierkorbinhalte werden gelöscht.";
-"trash.subtitle.partial" = "Entfernt: %d %@; nicht gelöscht: %d %@.";
-"trash.subtitle.partialWithRemaining" = "Entfernt: %d %@; nicht gelöscht: %d %@. Verbleibend: %@.";
-"trash.subtitle.failed.unableToDeleteItems" = "Papierkorbeinträge können nicht gelöscht werden.";
-"trash.item.singular" = "Element";
-"trash.item.plural" = "Elemente";
 
 "diskCleanup.action.retry" = "Wiederholen";
 "diskCleanup.action.clean" = "Bereinigen";

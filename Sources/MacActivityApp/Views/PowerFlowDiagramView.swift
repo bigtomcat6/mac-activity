@@ -201,20 +201,6 @@ enum PowerFlowDiagramPalette {
     }
 }
 
-/// Panel-specific glass calibration, measured against the neutral reference
-/// backdrop. Default shared cards never receive it.
-enum PowerFlowDiagramGlassTint {
-    static func panel(for scheme: ColorScheme) -> Color {
-        scheme == .dark ? Color.black.opacity(0.10) : Color.black.opacity(0.20)
-    }
-
-    /// Non-opaque calibration layer above the glass; light mode only. Measured
-    /// ~205 → ~160 neutral gray on the reference backdrop.
-    static func overlay(for scheme: ColorScheme) -> Color? {
-        scheme == .dark ? nil : Color.black.opacity(0.22)
-    }
-}
-
 struct PowerFlowDiagramSizingLayout: Layout {
     let presentation: PowerFlowDiagramPresentation
 
@@ -235,7 +221,6 @@ struct PowerFlowDiagramSizingLayout: Layout {
 struct PowerFlowDiagramView: View {
     let presentation: PowerFlowDiagramPresentation
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
 
     var body: some View {
@@ -244,11 +229,6 @@ struct PowerFlowDiagramView: View {
                 let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: proxy.size.width)
                 animatedPanel(plan: plan)
                     .frame(width: plan.layout.cardFrame.width, height: plan.layout.cardFrame.height)
-                    .dashboardCardChrome(
-                        shape: AnyShape(PowerFlowDiagramSurfaceShape(layout: plan.layout)),
-                        glassTint: PowerFlowDiagramGlassTint.panel(for: colorScheme),
-                        glassOverlay: PowerFlowDiagramGlassTint.overlay(for: colorScheme)
-                    )
             }
         }
         .accessibilityElement(children: .ignore)
@@ -274,8 +254,12 @@ struct PowerFlowDiagramView: View {
     }
 
     func panel(plan: PowerFlowDiagramRenderPlan, phase: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
+        PowerFlowDiagramGlassSurface(
+            layout: plan.layout,
+            isFlowing: plan.layout.effectiveMode.showsFlowGlow && PowerFlowDiagramActivity.hasKnownFlow(presentation)
+        ) {
             flowLayer(plan: plan, phase: phase)
+        } content: {
             content(plan: plan, phase: phase)
         }
     }

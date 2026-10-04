@@ -7,7 +7,6 @@ enum ActiveCleanReleaseLayout {
     static let processRowHeight: CGFloat = ActiveProcessMemoryLayout.rowHeight
     static let processListSpacing: CGFloat = 0
     static let sectionSpacing: CGFloat = 10
-    static let zoneOrder = ["diskCleanup", "processes"]
 }
 
 enum DashboardCardChrome {
@@ -34,8 +33,7 @@ enum DashboardCardChrome {
 struct DashboardFallbackCardSurface: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    // Custom silhouette for the three-segment power-flow panel; defaults to the
-    // shared rounded-card shape so every existing caller is unchanged.
+    // The power-flow diagram passes its own silhouette; cards use the rounded default.
     var shape: AnyShape = AnyShape(
         RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
     )
@@ -59,18 +57,6 @@ enum DashboardHeaderChrome {
     static let topPadding: CGFloat = 18
     static let bottomPadding: CGFloat = 12
     static let titlePickerSpacing: CGFloat = 12
-    static let tabPickerMinWidth: CGFloat = 160
-}
-
-enum DashboardTabChrome {
-    static let iconButtonWidth: CGFloat = 30
-    static let iconButtonHeight: CGFloat = 20
-    static let itemSpacing: CGFloat = 2
-    static let trackPadding: CGFloat = 2
-    static let trackFillOpacity: Double = 0.06
-    static let selectedFillOpacity: Double = 0.12
-    static let hoverFillOpacity: Double = 0.06
-    static let focusRingWidth: CGFloat = 2
 }
 
 enum ActiveCleanupChrome {
@@ -79,14 +65,8 @@ enum ActiveCleanupChrome {
     static let activeProgressFill = Color.accentColor.opacity(0.12)
     static let inactiveProgressFill = Color.black.opacity(0.22)
 
-    static func progressFillColor(
-        appearsActive: Bool,
-        appearance: DashboardStyleAppearance = .standardAppearance
-    ) -> Color {
-        guard appearsActive == false else { return activeProgressFill }
-        return appearance.usesTranslucentChrome
-            ? DashboardOverviewChrome.translucentInactiveEmphasisFill
-            : inactiveProgressFill
+    static func progressFillColor(appearsActive: Bool) -> Color {
+        appearsActive ? activeProgressFill : inactiveProgressFill
     }
 }
 
@@ -107,79 +87,25 @@ enum ActiveProcessQuitButtonStyling {
 private struct DashboardCardChromeModifier: ViewModifier {
     @Environment(\.colorSchemeContrast) private var contrast
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    @Environment(\.dashboardStyleAppearance) private var appearance
     let isHovered: Bool
-    // nil keeps the shared rounded-card silhouette for every existing caller.
-    var customShape: AnyShape? = nil
-    // Panel-only native-glass tint; default shared cards pass nil and stay exact.
-    var glassTint: Color? = nil
-    // Non-opaque panel calibration layer above the glass, below the content.
-    var glassOverlay: Color? = nil
 
     func body(content: Content) -> some View {
-        let shape = customShape ?? AnyShape(RoundedRectangle(
-            cornerRadius: appearance.moduleCornerRadius,
-            style: .continuous
-        ))
-        let borderOpacity = resolvedBorderOpacity
+        let shape = RoundedRectangle(cornerRadius: DashboardCardChrome.cornerRadius, style: .continuous)
         let clippedContent = content.contentShape(shape).clipShape(shape)
 
         Group {
             if #available(macOS 26.0, *), !reduceTransparency {
-                let glass = glassTint.map { Glass.regular.tint($0) } ?? Glass.regular
-                if appearance.usesRootGlass {
-                    clippedContent
-                        .background(shape.fill(Color.primary.opacity(appearance.moduleFillOpacity)))
-                } else if customShape != nil {
-                    // Panel-only custom silhouette: keep the native glass surface
-                    // as a background layer so the glow and readouts sit above it
-                    // and are not part of the glass foreground processing. This
-                    // makes the calibration predictable; default shared rounded
-                    // cards keep the exact legacy path below.
-                    ZStack {
-                        shape.fill(Color.clear)
-                            .glassEffect(glass, in: shape)
-                        if let glassOverlay { shape.fill(glassOverlay) }
-                        clippedContent
-                    }
-                } else {
-                    clippedContent
-                        .background {
-                            if let glassOverlay { shape.fill(glassOverlay) }
-                        }
-                        .glassEffect(glass, in: shape)
-                }
+                clippedContent.glassEffect(.regular, in: shape)
             } else {
-                clippedContent.background {
-                    if let customShape {
-                        DashboardFallbackCardSurface(shape: customShape)
-                    } else {
-                        DashboardFallbackCardSurface()
-                    }
-                }
+                clippedContent.background { DashboardFallbackCardSurface() }
             }
         }
         .overlay {
-            if let customShape {
-                // Borderless reference: the custom silhouette owns no ordinary
-                // stroke. Increased-contrast still gets a stronger edge.
-                if contrast == .increased {
-                    customShape.stroke(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
-                }
-            } else {
-                RoundedRectangle(
-                    cornerRadius: appearance.moduleCornerRadius,
-                    style: .continuous
-                )
-                .strokeBorder(Color.primary.opacity(borderOpacity), lineWidth: 0.5)
-            }
+            shape.strokeBorder(Color.primary.opacity(resolvedBorderOpacity), lineWidth: 0.5)
         }
     }
 
     private var resolvedBorderOpacity: Double {
-        if appearance.usesTranslucentChrome {
-            return appearance.strokeOpacity + (isHovered ? 0.10 : 0)
-        }
         if contrast == .increased {
             return DashboardCardChrome.increasedContrastBorderOpacity + (isHovered ? 0.10 : 0)
         }
@@ -192,22 +118,42 @@ extension View {
         modifier(DashboardCardChromeModifier(isHovered: isHovered))
     }
 
-    // Panel-only custom silhouette; the default rounded shape is untouched.
-    func dashboardCardChrome(
-        shape: AnyShape,
-        isHovered: Bool = false,
-        glassTint: Color? = nil,
-        glassOverlay: Color? = nil
-    ) -> some View {
-        modifier(
-            DashboardCardChromeModifier(
-                isHovered: isHovered, customShape: shape,
-                glassTint: glassTint, glassOverlay: glassOverlay
-            )
-        )
+    // Hover overlays float above the cards, which is the layer Liquid Glass is
+    // meant for; older systems and Reduce Transparency keep the material bubble.
+    func dashboardFloatingSurface(cornerRadius: CGFloat = 8) -> some View {
+        modifier(DashboardFloatingSurfaceModifier(cornerRadius: cornerRadius))
     }
 
-    func activeCleanupCardChrome() -> some View {
-        dashboardCardChrome()
+    // Card actions use native glass buttons on macOS 26 and bordered buttons before it.
+    @ViewBuilder
+    func dashboardActionButtonStyle(prominent: Bool = false) -> some View {
+        if #available(macOS 26.0, *) {
+            if prominent {
+                buttonStyle(.glassProminent)
+            } else {
+                buttonStyle(.glass)
+            }
+        } else if prominent {
+            buttonStyle(.borderedProminent)
+        } else {
+            buttonStyle(.bordered)
+        }
+    }
+}
+
+private struct DashboardFloatingSurfaceModifier: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+    let cornerRadius: CGFloat
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+        if #available(macOS 26.0, *), !reduceTransparency {
+            content.glassEffect(.regular, in: shape)
+        } else {
+            content
+                .background(.regularMaterial, in: shape)
+                .overlay { shape.stroke(Color.primary.opacity(0.08), lineWidth: 1) }
+                .shadow(radius: 4, y: 2)
+        }
     }
 }

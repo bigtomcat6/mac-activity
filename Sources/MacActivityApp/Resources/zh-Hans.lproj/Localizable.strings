@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "跟随原始输出";
 "audio.route.deviceUnavailable" = "%@（不可用）";
 "audio.route.selectedSummary" = "已选择 %d 个输出";
-"audio.route.clearHelp" = "请选择“跟随原始输出”以清除显式路由。";
 "audio.accessibility.volume" = "%@ 音量，百分之 %d";
 "audio.accessibility.mute" = "将 %@ 静音";
 "audio.accessibility.unmute" = "取消 %@ 静音";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "选择更新频道";
 "preferences.language" = "语言";
 "preferences.languageHelp" = "控制偏好设置和仪表盘的显示语言。";
-"preferences.dashboardStyle" = "界面风格";
-"preferences.dashboardStyle.standard" = "标准";
-"preferences.dashboardStyle.transparent" = "通透";
-"preferences.dashboardStyle.help" = "“通透”会在 macOS 26 或更高版本上使用透明无边框面板。若系统开启了“降低透明度”，将保持“标准”外观。";
-"preferences.dashboardStyle.unavailable" = "“通透”需要 macOS 26 或更高版本。此 Mac 将保持“标准”外观。";
 "preferences.temperatureSource" = "温度来源";
 "preferences.temperatureHelp" = "控制菜单栏和仪表盘中的温度指标。";
 "preferences.hardwareBatteryPercentage" = "显示硬件电池百分比";
@@ -126,45 +120,7 @@
 "diskCleanup.category.trash" = "废纸篓";
 "diskCleanup.category.userLogs" = "日志";
 
-"memoryRelease.action.release" = "释放";
-"memoryRelease.action.releasing" = "释放中";
-"memoryRelease.title.idle" = "内存";
-"memoryRelease.title.usage" = "内存 %d%%";
-"memoryRelease.title.reclaimable" = "可释放 %@";
-"memoryRelease.title.releasing" = "正在释放内存";
-"memoryRelease.title.released" = "已释放 %@";
-"memoryRelease.title.noSignificantRelease" = "内存未变化";
-"memoryRelease.title.cooldown" = "释放冷却中";
-"memoryRelease.title.unavailable" = "无法释放内存";
-"memoryRelease.title.failed" = "内存释放失败";
-"memoryRelease.title.readFailed" = "内存读取失败";
-"memoryRelease.subtitle.usage" = "内存 %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "占总内存的 %.1f%%";
-"memoryRelease.subtitle.noSignificantRelease" = "没有发现可立即释放的内存。";
-"memoryRelease.subtitle.cooldown" = "%.1f 秒后再试。";
-"memoryRelease.subtitle.unavailable" = "这台 Mac 没有可用的内存释放方式。";
-"memoryRelease.subtitle.readFailed" = "无法比较释放前后的内存读数。";
-"memoryRelease.subtitle.default" = "释放可回收的系统内存。";
-"memoryRelease.subtitle.failedWithExitCode" = "内存释放失败，退出代码 %d。";
 
-"trash.action.retry" = "重试";
-"trash.action.clean" = "清理";
-"trash.title.scanning" = "正在扫描废纸篓";
-"trash.title.clean" = "废纸篓已清空";
-"trash.title.cleanable" = "废纸篓中有 %@";
-"trash.title.cleaning" = "正在清理废纸篓";
-"trash.title.cleaned" = "已清理 %@";
-"trash.title.failed" = "废纸篓清理失败";
-"trash.subtitle.scanning" = "正在检查当前用户的废纸篓。";
-"trash.subtitle.clean" = "未找到可清理的废纸篓项目。";
-"trash.subtitle.cleanable" = "确认后可移除 %d %@。";
-"trash.subtitle.cleaning" = "正在删除已确认的废纸篓内容。";
-"trash.subtitle.cleaned" = "已移除 %d %@。";
-"trash.subtitle.partial" = "已移除 %d %@；%d %@无法删除。";
-"trash.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@无法删除。仍剩余 %@。";
-"trash.subtitle.failed.unableToDeleteItems" = "无法删除废纸篓项目。";
-"trash.item.singular" = "个项目";
-"trash.item.plural" = "个项目";
 
 "diskCleanup.action.retry" = "重试";
 "diskCleanup.action.clean" = "清理";
@@ -187,7 +143,6 @@
 "diskCleanup.category.singular" = "个分类";
 "diskCleanup.category.plural" = "个分类";
 
-"energyImpact.title" = "耗电影响";
 "energyImpact.subtitle.sustained" = "最近最多 30 秒 CPU 能耗估算 · 越低越好";
 "energyImpact.column.app" = "应用";
 "energyImpact.column.sustained" = "30 秒";
