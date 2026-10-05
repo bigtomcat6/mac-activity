@@ -173,7 +173,24 @@ struct PowerFlowDiagramGlassSurface<Light: View, Content: View>: View {
                 Color.clear.dashboardModuleGlass(in: PowerFlowDiagramSurfaceShape(layout: layout, part: .endpoints))
                 if isFlowing, #available(macOS 26.0, *) {
                     // The material base already dims the backdrop; a scrim would mute the light.
-                    Color.clear.glassEffect(.clear, in: channel)
+                    if layout.effectiveMode == .expanded(.oneToMany)
+                        || layout.effectiveMode == .expanded(.manyToOne) {
+                        // Independent glass avoids the compound channel's large end facets.
+                        // Keep the original coordinates and full diagram hosts.
+                        Group {
+                            ForEach(Array(layout.ribbons.enumerated()), id: \.offset) { _, ribbon in
+                                Color.clear.glassEffect(.clear, in: PowerFlowRibbonShape(geometry: ribbon, layout: layout))
+                                    .frame(width: layout.cardFrame.width, height: layout.cardFrame.height)
+                            }
+                            if let footer = layout.totalsFooterFrame {
+                                Color.clear.glassEffect(.clear, in: Path(roundedRect: footer, cornerRadius: 3))
+                            }
+                        }
+                        // Do not retain outgoing branch glass over a new grouped/bus surface.
+                        .transition(.identity)
+                    } else {
+                        Color.clear.glassEffect(.clear, in: channel)
+                    }
                 } else {
                     Color.clear.dashboardModuleGlass(in: channel)
                 }
