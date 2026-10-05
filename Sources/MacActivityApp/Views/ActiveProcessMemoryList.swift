@@ -21,18 +21,20 @@ struct ActiveProcessMemoryList: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
-            if model.apps.isEmpty {
-                Text(AppLocalization.string(.processEmpty))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, minHeight: ActiveProcessMemoryLayout.rowHeight, alignment: .leading)
-                    .padding(.horizontal, 12)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        confirmingQuitProcessIdentifier = nil
-                    }
-            } else {
-                processRows
+            DashboardMeasuredList(spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                if model.apps.isEmpty {
+                    Text(AppLocalization.string(.processEmpty))
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity, minHeight: ActiveProcessMemoryLayout.rowHeight, alignment: .leading)
+                        .padding(.horizontal, 12)
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            confirmingQuitProcessIdentifier = nil
+                        }
+                } else {
+                    processRows
+                }
             }
 
             if let message = Self.processActionMessage(for: model.processActionState) {
@@ -42,6 +44,8 @@ struct ActiveProcessMemoryList: View {
                     .lineLimit(2)
                     .padding(.horizontal, 12)
                     .padding(.top, 6)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
                     .contentShape(Rectangle())
                     .onTapGesture {
                         confirmingQuitProcessIdentifier = nil

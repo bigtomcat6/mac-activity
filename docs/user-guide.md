@@ -27,6 +27,14 @@ reopen the app and use Preferences to restore the menu bar item.
 The dashboard summarizes current system activity and shows trend views when
 history is available.
 
+The dashboard stays compact when application lists are long. On Energy, scroll
+the application rows while the power summary and column header stay in place.
+Actives keeps disk cleanup and process-action messages outside the scrolling
+application rows. Audio's output-device and application lists scroll independently;
+short lists use only the space they need. If the available window is too short
+for those fixed sections, the page scrolls as a whole instead. Overview retains
+its whole-page scrolling.
+
 Current metric surfaces:
 
 - CPU usage.

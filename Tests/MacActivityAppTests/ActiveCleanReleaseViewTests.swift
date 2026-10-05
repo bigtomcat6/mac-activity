@@ -10,6 +10,43 @@ final class ActiveCleanReleaseViewTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
+    func testHostedActivesRowsScrollWithCleanupAndActionMessageReserved() async throws {
+        let provider = ViewActiveAppProviderRecorder(entries: Self.entries(count: 20))
+        let model = ActiveCleanupModel(
+            diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
+            appProvider: provider
+        )
+        await model.refreshVisibleCleanReleaseSections()
+        model.quit(try XCTUnwrap(model.apps.first))
+        XCTAssertNotNil(ActiveProcessMemoryList.processActionMessage(for: model.processActionState))
+        var naturalHeight: CGFloat = 0
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { naturalHeight = $0 }) {
+            ActiveCleanReleaseView(model: model).padding(18)
+        }.environment(\.dashboardPresentationIsPresented, false), height: 300)
+        defer { host.close() }
+        host.settle()
+        XCTAssertEqual(host.scrollViews.count, 1)
+        let scroll = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertGreaterThan(host.rect(scroll).minY, 18 + 44)
+        XCTAssertLessThan(host.rect(scroll).maxY, host.controller.view.bounds.height - 18,
+                          "action message must have its own reserved space below the rows")
+        XCTAssertGreaterThan(naturalHeight, 560)
+        try host.assertBottomReachable(scroll)
+        let longHeight = naturalHeight
+        host.resize(height: 250)
+        XCTAssertEqual(naturalHeight, longHeight, accuracy: 1)
+        provider.entries = Self.entries(count: 2)
+        await model.refreshVisibleCleanReleaseSections()
+        host.settle()
+        XCTAssertLessThan(naturalHeight, longHeight)
+        let short = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertEqual(short.documentView!.frame.height, short.contentView.bounds.height, accuracy: 1)
+        provider.entries = []
+        await model.refreshVisibleCleanReleaseSections()
+        host.settle()
+        XCTAssertLessThan(naturalHeight, 250)
+    }
+
     func testLayoutConstantsMatchCompactCleanReleaseShape() {
         XCTAssertEqual(ActiveCleanReleaseLayout.diskCleanupStripHeight, 44)
         XCTAssertEqual(ActiveCleanReleaseLayout.processRowHeight, ActiveProcessMemoryLayout.rowHeight)

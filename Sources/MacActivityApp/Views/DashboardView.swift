@@ -660,14 +660,24 @@ struct DashboardView: View {
                     .hidden()
             }
 
-            ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
-                DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+            if selectedTab == .overview {
+                ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
+                    DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+                        dashboardContent
+                            .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .mask(DashboardScrollEdgeFade())
+            } else {
+                DashboardListPage(onNaturalHeightChange: {
+                    onMeasuredSegmentHeight(.scrollContent, $0)
+                }) {
                     dashboardContent
                         .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .id(selectedTab)
             }
-            .mask(DashboardScrollEdgeFade())
         }
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .dashboardPanelBackdrop()
@@ -866,6 +876,121 @@ struct DashboardMeasuredSegment<Content: View>: View {
     private func report(_ height: CGFloat) {
         guard height.isFinite, height > 0 else { return }
         onHeightChange(segment, height)
+    }
+}
+
+private struct DashboardNaturalListsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var dashboardNaturalLists: Bool {
+        get { self[DashboardNaturalListsKey.self] }
+        set { self[DashboardNaturalListsKey.self] = newValue }
+    }
+}
+
+private struct DashboardListHeight: Equatable {
+    var document: CGFloat
+    var viewport: CGFloat
+}
+
+private struct DashboardListMeasurements: Equatable {
+    var pageHeight: CGFloat = 0
+    var lists: [UUID: DashboardListHeight] = [:]
+}
+
+private struct DashboardListMeasurementsKey: PreferenceKey {
+    static let defaultValue = DashboardListMeasurements()
+    static func reduce(value: inout DashboardListMeasurements, nextValue: () -> DashboardListMeasurements) {
+        let next = nextValue()
+        value.pageHeight = max(value.pageHeight, next.pageHeight)
+        value.lists.merge(next.lists) { _, new in new }
+    }
+}
+
+// Measure the real document, not the compressed viewport. Native ScrollView supplies
+// scrolling; its measured maximum lets a short list give space to its longer sibling.
+struct DashboardMeasuredList<Content: View>: View {
+    var spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+    @Environment(\.dashboardNaturalLists) private var naturalLists
+    @State private var documentHeight: CGFloat = 0
+    @State private var measurementID = UUID()
+
+    private var document: some View {
+        VStack(alignment: .leading, spacing: spacing, content: content)
+            .padding(.bottom, 6)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { documentHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { documentHeight = $0 }
+                }
+            }
+    }
+
+    var body: some View {
+        ScrollView(.vertical) { document }
+        // Override the disabled outer scope for row-only scrolling. Keep the
+        // document in the same structural position even in page-overflow mode.
+        .environment(\.isScrollEnabled, !naturalLists)
+        .frame(height: naturalLists && documentHeight > 0 ? documentHeight : nil)
+        .frame(minHeight: 0, maxHeight: documentHeight > 0 ? documentHeight : nil)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: DashboardListMeasurementsKey.self, value:
+                    DashboardListMeasurements(lists: [measurementID: DashboardListHeight(
+                        document: documentHeight, viewport: proxy.size.height
+                    )]))
+            }
+        }
+    }
+}
+
+struct DashboardListPage<Content: View>: View {
+    let onNaturalHeightChange: (CGFloat) -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var needsPageOverflow = false
+    @State private var measurements = DashboardListMeasurements()
+
+    private var measuredContent: some View {
+        content().background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: DashboardListMeasurementsKey.self,
+                    value: DashboardListMeasurements(pageHeight: proxy.size.height))
+            }
+        }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(.vertical) {
+                measuredContent
+                    .environment(\.dashboardNaturalLists, needsPageOverflow)
+                    .fixedSize(horizontal: false, vertical: needsPageOverflow)
+                    .frame(height: needsPageOverflow ? nil : proxy.size.height, alignment: .top)
+            }
+            .scrollDisabled(!needsPageOverflow)
+            .onPreferenceChange(DashboardListMeasurementsKey.self) { measurement in
+                measurements = measurement
+                update(measurement, availableHeight: proxy.size.height)
+            }
+            .onChange(of: proxy.size.height) { height in
+                update(measurements, availableHeight: height)
+            }
+        }
+    }
+
+    private func update(_ measurement: DashboardListMeasurements, availableHeight: CGFloat) {
+        guard measurement.pageHeight > 0,
+              measurement.lists.values.allSatisfy({ $0.document > 0 }) else { return }
+        let lists = measurement.lists.values
+        let chrome = measurement.pageHeight - lists.reduce(0) { $0 + $1.viewport }
+        onNaturalHeightChange(chrome + lists.reduce(0) { $0 + $1.document })
+        guard availableHeight > 0 else { return }
+        needsPageOverflow = availableHeight + 1 < chrome + lists.reduce(0) { $0 + min(32, $1.document) }
     }
 }
 

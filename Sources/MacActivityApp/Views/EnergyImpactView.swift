@@ -24,6 +24,8 @@ struct EnergyImpactView: View {
                 model: powerFlowModel,
                 refreshTrigger: refreshTrigger
             )
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
 
             VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
                 HStack(spacing: 4) {
@@ -36,24 +38,28 @@ struct EnergyImpactView: View {
                 .foregroundStyle(.secondary)
                 .padding(.horizontal, 12)
                 .padding(.top, 6)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
 
-                if model.entries.isEmpty {
-                    Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .frame(
-                            maxWidth: .infinity,
-                            minHeight: ActiveProcessMemoryLayout.rowHeight,
-                            alignment: .leading
-                        )
-                        .padding(.horizontal, 12)
-                } else {
-                    ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                        EnergyImpactRow(
-                            entry: entry,
-                            rank: index + 1,
-                            showsApplicationIdentifier: showsApplicationIdentifier
-                        )
+                DashboardMeasuredList(spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                    if model.entries.isEmpty {
+                        Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: ActiveProcessMemoryLayout.rowHeight,
+                                alignment: .leading
+                            )
+                            .padding(.horizontal, 12)
+                    } else {
+                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
+                            EnergyImpactRow(
+                                entry: entry,
+                                rank: index + 1,
+                                showsApplicationIdentifier: showsApplicationIdentifier
+                            )
+                        }
                     }
                 }
             }

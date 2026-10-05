@@ -324,7 +324,7 @@ struct AudioDashboardView: View {
             snapshot: model.snapshot,
             supportsProcessControls: model.supportsProcessControls
         )
-        LazyVStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             AudioDashboardSection(
                 title: AppLocalization.string(.audioDevicesTitle),
                 accessibility: presentation.devicesAccessibility
@@ -336,6 +336,8 @@ struct AudioDashboardView: View {
 
             if let permissionGate = presentation.permissionGate {
                 AudioSystemAccessPermissionGate(presentation: permissionGate, model: model)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             } else if let processSection = presentation.processSection {
                 AudioDashboardSection(
                     title: AppLocalization.string(.audioProcessesTitle),
@@ -380,7 +382,9 @@ private struct AudioDashboardSection<Content: View>: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            content
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            DashboardMeasuredList(spacing: 8) { content }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)

@@ -1394,6 +1394,54 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertTrue(reports.heights.allSatisfy { $0.isFinite && $0 > 0 })
     }
 
+    func testHostedListDashboardFeedsNaturalMeasurementWithoutResizeOrTabReopenFeedback() throws {
+        let devices = (0..<20).map { index in
+            AudioDeviceControlSnapshot(device: AudioOutputDeviceSnapshot(id: "output-\(index)",
+                objectID: UInt32(index + 1), name: "Output \(index)",
+                volume: .value(0.5, isWritable: true), mute: .value(false, isWritable: true)), error: nil)
+        }
+        let audio = AudioDashboardModel(coordinator: TestAudioControlCoordinator(
+            snapshot: AudioControlSnapshot(devices: devices, processes: [])))
+        let selection = DashboardTabSelectionState(initialTab: .audio)
+        let measurement = DashboardPopoverContentMeasurement()
+        let host = DashboardListTestHost(DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(), audioDashboardModel: audio,
+            onMeasuredSegmentHeight: { measurement.report($1, for: $0) },
+            tabSelectionState: selection
+        ).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        var appliedSizes: [NSSize] = []
+        defer { measurement.onContentSizeChange = nil }
+        measurement.onContentSizeChange = { size in
+            guard let capped = DashboardPopoverLayout.contentSize(for: size) else { return }
+            appliedSizes.append(capped)
+            host.panel.setContentSize(capped)
+        }
+        host.settle()
+        host.settle()
+        let natural = try XCTUnwrap(measurement.latestContentSize)
+        XCTAssertGreaterThan(natural.height, 560)
+        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, 560, accuracy: 1)
+        XCTAssertEqual(host.scrollViews.count, 1)
+        try host.assertBottomReachable(try XCTUnwrap(host.scrollViews.first))
+        let stableCount = appliedSizes.count
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, stableCount)
+        selection.selectedTab = .overview
+        host.settle()
+        XCTAssertLessThan(try XCTUnwrap(measurement.latestContentSize).height, natural.height)
+        selection.selectedTab = .audio
+        host.settle()
+        host.settle()
+        XCTAssertEqual(try XCTUnwrap(measurement.latestContentSize).height, natural.height, accuracy: 1)
+        let reopenCount = appliedSizes.count
+        host.panel.orderOut(nil)
+        host.panel.orderFront(nil)
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, reopenCount)
+    }
+
     func testMeasuredSegmentReportsNaturalScrollContentHeightAboveConstrainedViewport() throws {
         let viewportHeight: CGFloat = 200
         var reportedScrollContentHeights: [CGFloat] = []
