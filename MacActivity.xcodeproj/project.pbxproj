@@ -162,6 +162,7 @@
 		CFCE940970D4E01B263187AE /* DashboardPanelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8480495257E54BEFA5505CB /* DashboardPanelHost.swift */; };
 		D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */; };
 		D2EED3D79D2450518952BAE5 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D21F3C01CE00EFD700E003 /* DashboardView.swift */; };
+		EFA001000000000000000001 /* DashboardTabPicker.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFA001000000000000000002 /* DashboardTabPicker.swift */; };
 		D490D4024E6274B6F559D0A3 /* DashboardTrendChartLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */; };
 		D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */; };
 		D7A61186072D694962A32AEC /* CoreAudioHALBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B047FCBC5C7F972AA959067 /* CoreAudioHALBackend.swift */; };
@@ -361,6 +362,7 @@
 		7B87283E6D09D63E041FCDE7 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
 		7F7B5639CB348DA6FDAE9279 /* EnergyImpactStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactStatisticsTests.swift; sourceTree = "<group>"; };
 		80D21F3C01CE00EFD700E003 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
+		EFA001000000000000000002 /* DashboardTabPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTabPicker.swift; sourceTree = "<group>"; };
 		816FA588F170D262AE6910E1 /* PowerFlowPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowPresentationTests.swift; sourceTree = "<group>"; };
 		828478C7D6573CE146721823 /* PowerFlowDiagramPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramPresentation.swift; sourceTree = "<group>"; };
 		839C30208126CCC3005C10C3 /* PowerFlowModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowModelTests.swift; sourceTree = "<group>"; };
@@ -723,6 +725,7 @@
 				A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */,
 				C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */,
 				80D21F3C01CE00EFD700E003 /* DashboardView.swift */,
+				EFA001000000000000000002 /* DashboardTabPicker.swift */,
 				A4C1E8C83F10B1990CFA1E02 /* DiskCleanupStatusView.swift */,
 				EB4F29166FB636C6A7A43659 /* EnergyImpactView.swift */,
 				88BD91E9197805330CB6529E /* PowerFlowDiagramLayout.swift */,
@@ -1214,6 +1217,7 @@
 				457D9DCD12136541E854413A /* DashboardTrendAverager.swift in Sources */,
 				C34CFD6BA2083C5B981BFE7F /* DashboardTrendChart.swift in Sources */,
 				D2EED3D79D2450518952BAE5 /* DashboardView.swift in Sources */,
+				EFA001000000000000000001 /* DashboardTabPicker.swift in Sources */,
 				551B137A9AD7F434850FD5EB /* DiskCleanupStatusView.swift in Sources */,
 				15F7BD4C4625677230D370A6 /* EnergyImpactModel.swift in Sources */,
 				49C9BA829BAC11CEB659459C /* EnergyImpactPresentation.swift in Sources */,

@@ -696,20 +696,10 @@ struct DashboardView: View {
         }
     }
 
-    // Native segmented control: Liquid Glass selection on macOS 26, plus built-in
-    // keyboard navigation, focus ring and per-segment tooltips on every version.
+    // Native selection and input, with independent symbol replacement on macOS 26.
     private var tabPicker: some View {
-        Picker(AppLocalization.string(.dashboardSection), selection: selectedTabBinding) {
-            ForEach(DashboardTab.allCases) { tab in
-                tab.segmentImage
-                    .help(tab.title)
-                    .tag(tab)
-            }
-        }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-        .controlSize(.large)
-        .fixedSize()
+        DashboardTabPicker(selection: selectedTabBinding)
+            .fixedSize()
     }
 
     @ViewBuilder

@@ -1000,6 +1000,172 @@ final class DashboardCardLayoutTests: XCTestCase {
         return nil
     }
 
+    // Catches losing the independent foreground or using the wrong selected symbol.
+    func testNavigationForegroundUsesFourLocalizedOutlineFillPairs() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Symbol replacement targets macOS 26") }
+        let expected = ["square.grid.2x2", "list.bullet.rectangle", "bolt", "speaker.wave.2"]
+        for selected in 0..<4 {
+            let (window, control) = try navigationFixture(selected: DashboardTab.allCases[selected])
+            defer { window.close() }
+            let owner = try XCTUnwrap(control.superview)
+            let icons = owner.subviews.compactMap { $0 as? NSImageView }
+            XCTAssertEqual(icons.count, 4, "Foreground must survive outside the native segment image")
+            guard icons.count == 4 else { continue }
+            for i in 0..<4 {
+                let image = try XCTUnwrap(icons[i].image)
+                let wanted = try XCTUnwrap(NSImage(systemSymbolName: expected[i] + (i == selected ? ".fill" : ""), accessibilityDescription: DashboardTab.allCases[i].title))
+                XCTAssertEqual(image.tiffRepresentation, wanted.tiffRepresentation)
+                XCTAssertEqual(image.accessibilityDescription, DashboardTab.allCases[i].title)
+                XCTAssertTrue(icons[i].isAccessibilityHidden())
+                XCTAssertNil(icons[i].hitTest(CGPoint(x: icons[i].frame.midX, y: icons[i].frame.midY)))
+            }
+        }
+    }
+
+    // Catches stale geometry leaving an empty control after its window disappears.
+    func testNavigationLosingWindowRestoresVisibleNativeSymbols() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Symbol replacement targets macOS 26") }
+        let (window, control) = try navigationFixture(selected: .audio)
+        defer { window.close() }
+        let owner = try XCTUnwrap(control.superview)
+        let icons = owner.subviews.compactMap { $0 as? NSImageView }
+        XCTAssertEqual(icons.count, 4)
+        owner.removeFromSuperview()
+        XCTAssertTrue(icons.allSatisfy(\.isHidden))
+        for (i, name) in ["square.grid.2x2", "list.bullet.rectangle", "bolt", "speaker.wave.2.fill"].enumerated() {
+            let expected = try XCTUnwrap(NSImage(systemSymbolName: name, accessibilityDescription: DashboardTab.allCases[i].title))
+            XCTAssertEqual(control.image(forSegment: i)?.tiffRepresentation, expected.tiffRepresentation)
+        }
+    }
+
+    private func navigationFixture(selected: DashboardTab) throws -> (NSWindow, NSSegmentedControl) {
+        let host = NSHostingView(rootView: DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            initialSelectedTab: selected
+        ))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        return (window, try XCTUnwrap(Self.firstSubview(ofType: NSSegmentedControl.self, in: host)))
+    }
+
+    // Catches sending the binding twice, or putting a hit/AX handler above native input.
+    func testNavigationNativeAXAndKeyboardDoNotRepeatBindingChanges() throws {
+        var selected: DashboardTab = .overview
+        var changes: [DashboardTab] = []
+        let host = NSHostingView(rootView: DashboardTabPicker(selection: Binding(
+            get: { selected }, set: { selected = $0; changes.append($0) }
+        )).fixedSize())
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 220, height: 80), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        let control = try XCTUnwrap(Self.firstSubview(ofType: NSSegmentedControl.self, in: host))
+        for target in [1, 1, 2, 3, 0] {
+            let segments = Self.navigationSegments(control)
+            XCTAssertEqual(segments.count, 4)
+            guard segments.count == 4 else { return }
+            _ = segments[target].accessibilityPerformPress()
+            XCTAssertEqual(selected, DashboardTab.allCases[target])
+            XCTAssertEqual(control.selectedSegment, target)
+            XCTAssertEqual((segments[target].accessibilityValue() as? NSNumber)?.boolValue, true)
+        }
+        XCTAssertEqual(changes, [.actives, .energyImpact, .audio, .overview])
+        XCTAssertTrue(window.makeFirstResponder(control))
+        func key(_ text: String, _ code: UInt16) {
+            control.keyDown(with: NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, characters: text, charactersIgnoringModifiers: text, isARepeat: false, keyCode: code)!)
+        }
+        key(String(UnicodeScalar(NSRightArrowFunctionKey)!), 124)
+        key(" ", 49)
+        XCTAssertEqual(selected, .actives)
+        key(" ", 49)
+        XCTAssertEqual(changes.count, 5)
+        key(String(UnicodeScalar(NSLeftArrowFunctionKey)!), 123)
+        key(" ", 49)
+        XCTAssertEqual(selected, .overview)
+        XCTAssertEqual(changes, [.actives, .energyImpact, .audio, .overview, .actives, .overview])
+    }
+
+    // Catches cached screen coordinates after native layout and window-origin changes.
+    func testNavigationForegroundTracksOwnedSegmentGeometry() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Symbol replacement targets macOS 26") }
+        let (window, control) = try navigationFixture(selected: .overview)
+        defer { window.close() }
+        let owner = try XCTUnwrap(control.superview)
+        let icons = owner.subviews.compactMap { $0 as? NSImageView }
+        XCTAssertEqual(icons.count, 4)
+        guard icons.count == 4 else { return }
+        for step in 0..<8 {
+            window.setFrameOrigin(CGPoint(x: 40 + step * 7, y: 70 + step * 5))
+            owner.setFrameSize(CGSize(width: 126 + step, height: 28))
+            owner.layoutSubtreeIfNeeded()
+            let segments = Self.navigationSegments(control)
+            XCTAssertEqual(segments.count, 4)
+            guard segments.count == 4 else { return }
+            for i in 0..<4 {
+                XCTAssertTrue((segments[i].accessibilityParent() as AnyObject?) === control.cell)
+                let screen = segments[i].accessibilityFrame()
+                let local = owner.convert(window.convertPoint(fromScreen: CGPoint(x: screen.midX, y: screen.midY)), from: nil)
+                XCTAssertFalse(icons[i].isHidden)
+                XCTAssertEqual(icons[i].frame.midX, local.x, accuracy: 0.001)
+            }
+        }
+    }
+
+    private static func navigationSegments(_ element: any NSAccessibilityProtocol) -> [any NSAccessibilityProtocol] {
+        if element.accessibilityRole() == .radioButton { return [element] }
+        return (element.accessibilityChildren() ?? []).flatMap {
+            ($0 as? any NSAccessibilityProtocol).map(navigationSegments) ?? []
+        }
+    }
+
+    func testNavigationMissingOwnedAXGeometryRestoresAndRecoversWithoutBlankIcons() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Symbol replacement targets macOS 26") }
+        let (window, control) = try navigationFixture(selected: .audio)
+        defer { window.close() }
+        let owner = try XCTUnwrap(control.superview)
+        let icons = owner.subviews.compactMap { $0 as? NSImageView }
+        XCTAssertEqual(icons.count, 4)
+        let originalChildren = control.accessibilityChildren()
+        control.setAccessibilityChildren([])
+        owner.needsLayout = true
+        owner.layoutSubtreeIfNeeded()
+        XCTAssertTrue(icons.allSatisfy(\.isHidden))
+        for (i, name) in ["square.grid.2x2", "list.bullet.rectangle", "bolt", "speaker.wave.2.fill"].enumerated() {
+            let expected = try XCTUnwrap(NSImage(systemSymbolName: name, accessibilityDescription: DashboardTab.allCases[i].title))
+            XCTAssertEqual(control.image(forSegment: i)?.tiffRepresentation, expected.tiffRepresentation)
+        }
+        control.setAccessibilityChildren(originalChildren)
+        owner.needsLayout = true
+        owner.layoutSubtreeIfNeeded()
+        XCTAssertEqual(Self.navigationSegments(control).count, 4)
+        XCTAssertTrue(icons.allSatisfy { !$0.isHidden })
+
+        // A second real control at the same coordinates must not supply our geometry.
+        let foreign = NSSegmentedControl(images: DashboardTab.allCases.map {
+            NSImage(systemSymbolName: $0.systemImage, accessibilityDescription: $0.title)!
+        }, trackingMode: .selectOne, target: nil, action: nil)
+        foreign.controlSize = .large
+        foreign.segmentDistribution = .fillEqually
+        foreign.frame = control.frame
+        owner.addSubview(foreign)
+        foreign.layoutSubtreeIfNeeded()
+        XCTAssertEqual(Self.navigationSegments(foreign).count, 4)
+        control.setAccessibilityChildren(foreign.accessibilityChildren())
+        owner.needsLayout = true
+        owner.layoutSubtreeIfNeeded()
+        XCTAssertTrue(icons.allSatisfy(\.isHidden), "Matching labels and coordinates cannot replace instance ownership")
+        foreign.removeFromSuperview()
+        control.setAccessibilityChildren(originalChildren)
+        owner.needsLayout = true
+        owner.layoutSubtreeIfNeeded()
+        XCTAssertTrue(icons.allSatisfy { !$0.isHidden })
+    }
+
     func testDashboardHeaderShowsCurrentPageTitleAndInlineTabPicker() throws {
         let dashboardSource = try Self.dashboardViewSource()
 
