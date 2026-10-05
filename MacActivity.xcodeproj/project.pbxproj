@@ -111,6 +111,7 @@
 		8677186DFD2E23787BCA45DC /* PowerFlowTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114186488F622ACBE78995BC /* PowerFlowTypes.swift */; };
 		867FAEE8D9ACD8D9BB154049 /* ReleaseVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB6298EE54FFEF176A7403A /* ReleaseVersion.swift */; };
 		86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */; };
+		EFB001000000000000000001 /* DashboardGlassNavigationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB001000000000000000002 /* DashboardGlassNavigationTests.swift */; };
 		8D254CD3AD58B0DC4724B599 /* AudioSystemAuthorizationReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */; };
 		8EFC7A6A40CDB70ADADBDE95 /* DashboardPanelSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E4041EDCCD545E8366EF6C /* DashboardPanelSupportTests.swift */; };
 		8F1DC13379FCD95356F84172 /* PowerFlowPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B452A7B4CBE18AF20A5DF093 /* PowerFlowPresentation.swift */; };
@@ -338,6 +339,7 @@
 		622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FanProvider.swift; sourceTree = "<group>"; };
 		624FBB5E67E53667C38E4F6E /* PowerFlowDiagramViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramViewTests.swift; sourceTree = "<group>"; };
 		64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardLayoutTests.swift; sourceTree = "<group>"; };
+		EFB001000000000000000002 /* DashboardGlassNavigationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardGlassNavigationTests.swift; sourceTree = "<group>"; };
 		67191FA29FAD0078810BA81D /* AudioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardView.swift; sourceTree = "<group>"; };
 		67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationReaderTests.swift; sourceTree = "<group>"; };
@@ -817,6 +819,7 @@
 				581CD316F6F5E02DFF4BEA52 /* AudioSystemAccessCoordinatorTests.swift */,
 				9149AE30AD6FF272340491E9 /* DashboardAdaptiveHostTests.swift */,
 				64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */,
+				EFB001000000000000000002 /* DashboardGlassNavigationTests.swift */,
 				0B086DAA51C893B2C5983DFB /* DashboardPanelHostTests.swift */,
 				E0E4041EDCCD545E8366EF6C /* DashboardPanelSupportTests.swift */,
 				0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */,
@@ -1041,6 +1044,7 @@
 				7D107F3CBF7D0F208AE9CDE6 /* AudioSystemAccessCoordinatorTests.swift in Sources */,
 				DEA923B3877A8A24387093F3 /* DashboardAdaptiveHostTests.swift in Sources */,
 				86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */,
+				EFB001000000000000000001 /* DashboardGlassNavigationTests.swift in Sources */,
 				5A1E4E5BB55A15711E5F6750 /* DashboardPanelHostTests.swift in Sources */,
 				8EFC7A6A40CDB70ADADBDE95 /* DashboardPanelSupportTests.swift in Sources */,
 				A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */,

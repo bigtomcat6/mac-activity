@@ -2,8 +2,182 @@ import AppKit
 import SwiftUI
 import Symbols
 
-/// The system owns selection, focus, input and accessibility; only the glyphs animate separately.
-struct DashboardTabPicker: NSViewRepresentable {
+struct DashboardTabPicker: View {
+    @Binding var selection: DashboardTab
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    var body: some View {
+        if #available(macOS 26.0, *), !reduceTransparency {
+            DashboardGlassTabPicker(selection: $selection)
+        } else {
+            DashboardNativeTabPicker(selection: $selection)
+        }
+    }
+}
+
+@available(macOS 26.0, *)
+private struct DashboardGlassTabPicker: View {
+    @Binding var selection: DashboardTab
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorSchemeContrast) private var contrast
+    @Namespace private var glassNamespace
+    @State private var focusGroup = DashboardNavigationFocus()
+
+    private var selectedGlass: Glass {
+        contrast == .increased ? .regular.tint(.accentColor) : .regular
+    }
+
+    var body: some View {
+        ZStack {
+            // The track is outside the morphing container: it never merges with the lens.
+            Color.clear.glassEffect(.regular, in: Capsule())
+            GlassEffectContainer(spacing: 0) {
+                HStack(spacing: 0) {
+                    ForEach(DashboardTab.allCases) { tab in
+                        Color.clear.frame(width: 31.5, height: 28)
+                            .background {
+                                if selection == tab {
+                                    if reduceMotion {
+                                        Color.clear.glassEffect(selectedGlass, in: Capsule())
+                                    } else {
+                                        Color.clear
+                                            .glassEffect(selectedGlass.interactive(), in: Capsule())
+                                            .glassEffectID("selection", in: glassNamespace)
+                                            .glassEffectTransition(.matchedGeometry)
+                                            // Bridge layout across slots after the native effect; before it the lens jumps.
+                                            .matchedGeometryEffect(id: "selection-frame", in: glassNamespace)
+                                    }
+                                }
+                            }
+                        }
+                }
+            }
+            // Recreate only effect nodes to cancel an in-flight morph; retain native focus.
+            .id(reduceMotion)
+            .animation(reduceMotion ? nil : .smooth(duration: 0.28), value: selection)
+            HStack(spacing: 0) {
+                ForEach(DashboardTab.allCases) { tab in
+                    DashboardTabButton(tab: tab, selected: selection == tab, reduceMotion: reduceMotion, focusGroup: focusGroup) { select(tab) }
+                        .frame(width: 31.5, height: 28)
+                }
+            }
+        }
+        .frame(width: 126, height: 28)
+        .transaction { if reduceMotion { $0.animation = nil; $0.disablesAnimations = true } }
+    }
+
+    private func select(_ tab: DashboardTab) {
+        guard tab != selection else { return }
+        withTransaction(Transaction(animation: nil)) { selection = tab }
+    }
+
+}
+
+@available(macOS 26.0, *)
+private struct DashboardTabButton: NSViewRepresentable {
+    var tab: DashboardTab
+    var selected: Bool
+    var reduceMotion: Bool
+    var focusGroup: DashboardNavigationFocus
+    var action: () -> Void
+
+    func makeNSView(context: Context) -> DashboardNavigationButton {
+        DashboardNavigationButton()
+    }
+
+    func updateNSView(_ button: DashboardNavigationButton, context: Context) {
+        button.actionHandler = action
+        focusGroup.buttons[tab] = DashboardNavigationFocus.ButtonReference(button)
+        button.moveFocus = { [weak focusGroup] offset in
+            let tabs = DashboardTab.allCases
+            let index = tabs.firstIndex(of: tab) ?? 0
+            let target = tabs[min(max(index + offset, 0), tabs.count - 1)]
+            if let next = focusGroup?.buttons[target]?.button { next.window?.makeFirstResponder(next) }
+        }
+        button.selected = selected
+        button.setAccessibilityLabel(tab.title)
+        button.cell?.setAccessibilityLabel(tab.title)
+        button.cell?.setAccessibilityValue(NSNumber(value: selected))
+        button.toolTip = tab.title
+        let view = button.icon
+        let image = NSImage(systemSymbolName: tab.systemImage + (selected ? ".fill" : ""), accessibilityDescription: tab.title) ?? NSImage()
+        if reduceMotion || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion || view.image == nil {
+            view.removeAllSymbolEffects(animated: false)
+            view.image = image
+        } else if view.image?.tiffRepresentation != image.tiffRepresentation {
+            view.setSymbolImage(image, contentTransition: .replace)
+        }
+    }
+}
+
+private final class DashboardNavigationFocus {
+    final class ButtonReference {
+        weak var button: DashboardNavigationButton?
+        init(_ button: DashboardNavigationButton) { self.button = button }
+    }
+    var buttons: [DashboardTab: ButtonReference] = [:]
+}
+
+/// A borderless native button owns input and AX; the non-hit foreground cannot intercept it.
+private final class DashboardNavigationButton: NSButton {
+    let icon = DashboardTabForeground()
+    var selected = false
+    var actionHandler: () -> Void = {}
+    var moveFocus: (Int) -> Void = { _ in }
+    override var acceptsFirstResponder: Bool { true }
+    override var intrinsicContentSize: NSSize { NSSize(width: 31.5, height: 28) }
+
+    init() {
+        super.init(frame: .zero)
+        title = ""
+        isBordered = false
+        focusRingType = .exterior
+        setButtonType(.momentaryChange)
+        imagePosition = .imageOnly
+        symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        target = self
+        action = #selector(activate)
+        setAccessibilityRole(.radioButton)
+        cell?.setAccessibilityRole(.radioButton)
+        icon.imageScaling = .scaleNone
+        icon.symbolConfiguration = .init(pointSize: 13, weight: .semibold)
+        icon.contentTintColor = .labelColor
+        icon.setAccessibilityElement(false)
+        icon.setAccessibilityHidden(true)
+        addSubview(icon)
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    @objc private func activate() { actionHandler() }
+    override func accessibilityValue() -> Any? { NSNumber(value: selected) }
+    override func accessibilityPerformPress() -> Bool {
+        guard isEnabled else { return false }
+        performClick(nil)
+        return true
+    }
+    override func layout() { super.layout(); icon.frame = bounds }
+    override func highlight(_ flag: Bool) {
+        // Let the native borderless button render its own pressed glyph, not a custom scale/opacity.
+        image = flag ? icon.image : nil
+        icon.isHidden = flag
+        super.highlight(flag)
+    }
+    override var focusRingMaskBounds: NSRect { bounds }
+    override func drawFocusRingMask() { NSBezierPath(roundedRect: bounds, xRadius: 14, yRadius: 14).fill() }
+
+    override func keyDown(with event: NSEvent) {
+        switch event.keyCode {
+        case 123, 124:
+            moveFocus(event.keyCode == 123 ? -1 : 1)
+        case 49, 36, 76:
+            if !event.isARepeat { performClick(nil) }
+        default: super.keyDown(with: event)
+        }
+    }
+}
+
+/// Existing native route for older deployments and opaque accessibility presentation.
+struct DashboardNativeTabPicker: NSViewRepresentable {
     @Binding var selection: DashboardTab
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 

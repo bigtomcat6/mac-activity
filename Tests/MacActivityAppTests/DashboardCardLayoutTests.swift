@@ -962,12 +962,14 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     func testDashboardTabPickerIsNativeSegmentedControlWithLocalizedSegments() throws {
+        // Stage A remains the old-deployment component contract, not the 26 product UI.
         let host = NSHostingView(rootView: DashboardView(
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             initialSelectedTab: .energyImpact
-        ))
+        ).environment(\._accessibilityReduceTransparency, false)
+            .environment(\._accessibilityReduceMotion, true))
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 420, height: 300),
             styleMask: [.titled],
@@ -979,6 +981,25 @@ final class DashboardCardLayoutTests: XCTestCase {
         window.contentView = host
         host.layoutSubtreeIfNeeded()
 
+        if #available(macOS 26.0, *) {
+            XCTAssertNil(Self.firstSubview(ofType: NSSegmentedControl.self, in: host), "Glass navigation must not retain a native bezel underneath")
+            func buttons(_ view: NSView) -> [NSButton] {
+                (view as? NSButton).map { [$0] } ?? view.subviews.flatMap(buttons)
+            }
+            let navigation = buttons(host).filter { $0.accessibilityRole() == .radioButton }
+                .sorted { $0.convert($0.bounds, to: host).minX < $1.convert($1.bounds, to: host).minX }
+            XCTAssertEqual(navigation.count, 4)
+            guard navigation.count == 4 else { return }
+            XCTAssertEqual(navigation.map { $0.accessibilityLabel() }, DashboardTab.allCases.map(\.title))
+            XCTAssertEqual(navigation.map(\.toolTip), DashboardTab.allCases.map(\.title))
+            XCTAssertEqual(navigation.filter { ($0.accessibilityValue() as? NSNumber)?.boolValue == true }.count, 1)
+            XCTAssertEqual((navigation[2].accessibilityValue() as? NSNumber)?.boolValue, true)
+            let rects = navigation.map { $0.convert($0.bounds, to: host) }
+            XCTAssertEqual(rects.last!.maxX - rects.first!.minX, 126, accuracy: 1)
+            XCTAssertTrue(rects.allSatisfy { abs($0.height - 28) < 1 })
+            XCTAssertEqual(rects.last!.maxX, 396, accuracy: 1, "Preserve the header's 18-point outer and 6-point capsule trailing insets")
+            return
+        }
         let control = try XCTUnwrap(Self.firstSubview(ofType: NSSegmentedControl.self, in: host))
         XCTAssertEqual(control.segmentCount, DashboardTab.allCases.count)
         XCTAssertEqual(control.selectedSegment, DashboardTab.allCases.firstIndex(of: .energyImpact))
@@ -999,6 +1020,7 @@ final class DashboardCardLayoutTests: XCTestCase {
         }
         return nil
     }
+
 
     // Catches losing the independent foreground or using the wrong selected symbol.
     func testNavigationForegroundUsesFourLocalizedOutlineFillPairs() throws {
@@ -1039,12 +1061,7 @@ final class DashboardCardLayoutTests: XCTestCase {
     }
 
     private func navigationFixture(selected: DashboardTab) throws -> (NSWindow, NSSegmentedControl) {
-        let host = NSHostingView(rootView: DashboardView(
-            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
-            preferencesController: Self.preferencesController(),
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            initialSelectedTab: selected
-        ))
+        let host = NSHostingView(rootView: DashboardNativeTabPicker(selection: .constant(selected)).fixedSize())
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 420, height: 300), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         window.contentView = host
@@ -1056,7 +1073,7 @@ final class DashboardCardLayoutTests: XCTestCase {
     func testNavigationNativeAXAndKeyboardDoNotRepeatBindingChanges() throws {
         var selected: DashboardTab = .overview
         var changes: [DashboardTab] = []
-        let host = NSHostingView(rootView: DashboardTabPicker(selection: Binding(
+        let host = NSHostingView(rootView: DashboardNativeTabPicker(selection: Binding(
             get: { selected }, set: { selected = $0; changes.append($0) }
         )).fixedSize())
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 220, height: 80), styleMask: [.titled], backing: .buffered, defer: false)
