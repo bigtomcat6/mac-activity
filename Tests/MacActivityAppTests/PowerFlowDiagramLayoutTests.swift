@@ -245,6 +245,160 @@ final class PowerFlowDiagramLayoutTests: XCTestCase {
         }
     }
 
+    // Regression: omitting the multi-node inner radius leaves the two corners
+    // facing the channel square; rounding a bus join would instead open a crack.
+    func testMultiBranchSurfaceCutsAllExposedCornersButKeepsBusJoinsFilled() throws {
+        for width: CGFloat in [320, 384] {
+            for item in expandedCases where item.mode != .expanded(.oneToOne) {
+                for watts in [[50.0, 50], [95, 5], [32.65, 9.70], [99.999, 0.001]] {
+                    for footer in [false, true] {
+                        let layout = PowerFlowDiagramLayout.resolve(
+                            width: width, preferredMode: item.mode, sourceCount: item.sources,
+                            sinkCount: item.sinks, reservesTotalsFooter: footer,
+                            sourceWatts: item.sources == 2 ? watts : [watts.reduce(0, +)],
+                            sinkWatts: item.sinks == 2 ? watts : [watts.reduce(0, +)]
+                        )
+                        let nodes = PowerFlowDiagramSurfaceShape(layout: layout, part: .endpoints)
+                            .path(in: .zero).cgPath
+                        for frame in layout.sourceFrames + layout.sinkFrames {
+                            for x in [frame.minX + 0.25, frame.maxX - 0.25] {
+                                for y in [frame.minY + 0.25, frame.maxY - 0.25] {
+                                    XCTAssertFalse(nodes.contains(CGPoint(x: x, y: y)), "square node corner: \(item.mode) \(frame)")
+                                }
+                            }
+                            XCTAssertTrue(nodes.contains(CGPoint(x: frame.midX, y: frame.midY)))
+                            // Small lanes must still contain the visible icon footprint.
+                            XCTAssertTrue(nodes.contains(CGPoint(x: frame.midX - 9, y: frame.midY - 7.5)))
+                            XCTAssertTrue(nodes.contains(CGPoint(x: frame.midX + 9, y: frame.midY + 7.5)))
+                            if frame.height == 22 {
+                                // A height-adaptive cap, not the old 0.28 * h bevel.
+                                XCTAssertFalse(nodes.contains(CGPoint(x: frame.minX + 1, y: frame.minY + 3)))
+                                XCTAssertFalse(nodes.contains(CGPoint(x: frame.maxX - 1, y: frame.minY + 3)))
+                            }
+                        }
+                        let channel = PowerFlowDiagramSurfaceShape(layout: layout, part: .channel)
+                            .path(in: .zero).cgPath
+                        for ribbon in layout.ribbons where ribbon.role != .bus {
+                            if ribbon.startX == layout.middleSegment.minX {
+                                XCTAssertFalse(channel.contains(CGPoint(x: ribbon.startX + 0.1,
+                                    y: ribbon.startCenterY - ribbon.startHeight / 2 + 0.1)), "sharp flow start")
+                            }
+                            if ribbon.endX == layout.middleSegment.maxX {
+                                XCTAssertFalse(channel.contains(CGPoint(x: ribbon.endX - 0.1,
+                                    y: ribbon.endCenterY + ribbon.endHeight / 2 - 0.1)), "sharp flow end")
+                            }
+                        }
+                        if let bus = layout.busFrame {
+                            for x in [bus.minX - 0.01, bus.minX + 0.01, bus.maxX - 0.01, bus.maxX + 0.01] {
+                                for y in stride(from: bus.minY + 0.1, through: bus.maxY - 0.1, by: 0.5) {
+                                    XCTAssertTrue(channel.contains(CGPoint(x: x, y: y)), "crack at bus \(x),\(y)")
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    func testUserPairKeepsOriginalFramesThicknessAndReadoutSpace() {
+        let layout = PowerFlowDiagramLayout.resolve(width: 384, preferredMode: .expanded(.oneToMany),
+            sourceCount: 1, sinkCount: 2, sourceWatts: [42.35], sinkWatts: [32.65, 9.70])
+        XCTAssertEqual(layout.sourceFrames, [CGRect(x: 0, y: 9.75, width: 52, height: 78)])
+        XCTAssertEqual(layout.sinkFrames, [CGRect(x: 332, y: 0, width: 52, height: 56),
+                                         CGRect(x: 332, y: 75.5, width: 52, height: 22)])
+        XCTAssertEqual(layout.middleSegment, CGRect(x: 57, y: 0, width: 270, height: 97.5))
+        XCTAssertEqual(layout.ribbons.map(\.startHeight), [56, 22])
+        XCTAssertEqual(layout.ribbons.map(\.endHeight), [56, 22])
+        XCTAssertEqual(layout.flowLabelFrames.map(\.size), Array(repeating: CGSize(width: 262, height: 18), count: 2))
+    }
+
+    func testRoundedRibbonsPreserveCubicTrackAndHaveNoFoldedOrOutOfBoundsSections() {
+        for width: CGFloat in [320, 384] {
+            for item in expandedCases {
+                let layout = PowerFlowDiagramLayout.resolve(width: width, preferredMode: item.mode,
+                    sourceCount: item.sources, sinkCount: item.sinks,
+                    sourceWatts: [32.65, 9.70], sinkWatts: [95, 5])
+                for ribbon in layout.ribbons {
+                    let path = PowerFlowRibbonShape(geometry: ribbon, layout: layout).path(in: .zero).cgPath
+                    XCTAssertTrue(ribbon.bounds.insetBy(dx: -0.001, dy: -0.001).contains(path.boundingBoxOfPath))
+                    // The interior still follows the original two cubic boundaries,
+                    // not a straight rounded rectangle or a stroked centreline.
+                    for t: CGFloat in [0.25, 0.5, 0.75] {
+                        let x = ribbon.startX + (ribbon.endX - ribbon.startX) * (1.5 * t - 1.5 * t * t + t * t * t)
+                        let center = ribbon.startCenterY + (ribbon.endCenterY - ribbon.startCenterY) * t * t * (3 - 2 * t)
+                        let half = (ribbon.startHeight + (ribbon.endHeight - ribbon.startHeight) * t * t * (3 - 2 * t)) / 2
+                        XCTAssertTrue(path.contains(CGPoint(x: x, y: center - half + 0.01)))
+                        XCTAssertTrue(path.contains(CGPoint(x: x, y: center + half - 0.01)))
+                        XCTAssertFalse(path.contains(CGPoint(x: x, y: center - half - 0.01)))
+                        XCTAssertFalse(path.contains(CGPoint(x: x, y: center + half + 0.01)))
+                    }
+                    assertFiniteAndSimple(path)
+                }
+            }
+        }
+        // Short/very thin geometry with an excessively large requested radius.
+        for width: CGFloat in [0, 0.01, 2, 10] {
+            for height: CGFloat in [0, 0.01, 2, 22] {
+                let g = PowerFlowRibbonGeometry(role: .sink(0), startX: 10, endX: 10 + width,
+                    startCenterY: 12, endCenterY: 12, startHeight: height, endHeight: height)
+                let shapePath = PowerFlowRibbonShape(geometry: g, startRadius: 1000, endRadius: 1000).path(in: .zero)
+                let path = shapePath.cgPath
+                if width == 0 || height == 0 {
+                    // Path().cgPath reports isEmpty=false on this SDK despite a
+                    // null ink bounds. Check the actual Shape result before bridging.
+                    XCTAssertTrue(shapePath.isEmpty)
+                    XCTAssertTrue(path.boundingBoxOfPath.isNull)
+                }
+                else {
+                    XCTAssertTrue(g.bounds.insetBy(dx: -0.001, dy: -0.001).contains(path.boundingBoxOfPath))
+                    XCTAssertTrue(path.contains(CGPoint(x: g.bounds.midX, y: 12)))
+                    assertFiniteAndSimple(path)
+                }
+            }
+        }
+    }
+
+    private func assertFiniteAndSimple(_ path: CGPath, file: StaticString = #filePath, line: UInt = #line) {
+        // Flatten for a geometric edge-intersection check, not source inspection.
+        var vertices: [CGPoint] = []
+        path.flattened(threshold: 0.01).applyWithBlock { pointer in
+            let element = pointer.pointee
+            if element.type == .moveToPoint || element.type == .addLineToPoint {
+                let p = element.points[0]
+                XCTAssertTrue(p.x.isFinite && p.y.isFinite, file: file, line: line)
+                if vertices.last != p { vertices.append(p) }
+            }
+        }
+        if vertices.first == vertices.last { vertices.removeLast() }
+        guard vertices.count > 3 else { return }
+        func cross(_ a: CGPoint, _ b: CGPoint, _ c: CGPoint) -> CGFloat {
+            (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x)
+        }
+        for i in vertices.indices {
+            let a = vertices[i], b = vertices[(i + 1) % vertices.count]
+            for j in vertices.indices where j > i + 1 && !(i == 0 && j == vertices.count - 1) {
+                let c = vertices[j], d = vertices[(j + 1) % vertices.count]
+                XCTAssertFalse(cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0,
+                               "self-intersecting contour", file: file, line: line)
+            }
+        }
+    }
+
+    func testOversizedCapsOnShortBentRibbonsDoNotOvershootOrIntersect() {
+        for width: CGFloat in [0.01, 2, 10] {
+            for height: CGFloat in [0.01, 2, 22] {
+                let g = PowerFlowRibbonGeometry(role: .sink(0), startX: 10, endX: 10 + width,
+                    startCenterY: 12, endCenterY: 21.75, startHeight: height, endHeight: height)
+                let path = PowerFlowRibbonShape(geometry: g, startRadius: 1000, endRadius: 1000).path(in: .zero).cgPath
+                XCTAssertTrue(g.bounds.insetBy(dx: -0.00001, dy: -0.00001).contains(path.boundingBoxOfPath),
+                              "cap overshoot on bent \(width)x\(height): \(path.boundingBoxOfPath)")
+                XCTAssertTrue(path.contains(CGPoint(x: g.bounds.midX, y: 16.875)))
+                assertFiniteAndSimple(path)
+            }
+        }
+    }
+
     private func resolve(
         _ width: CGFloat,
         _ mode: PowerFlowDiagramMode,

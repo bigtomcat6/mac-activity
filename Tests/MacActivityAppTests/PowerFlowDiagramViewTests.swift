@@ -154,6 +154,36 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         }
     }
 
+    func testThinRoundedBranchesKeepVisibleNumberBoundsAndZeroHundredTopology() {
+        for pair in [[50.0, 50], [95, 5], [32.65, 9.70], [99.999, 0.001], [0, 100], [100, 0], [0, 0]] {
+            let presentation = Fixtures.presentation(endpoints: [
+                Fixtures.endpoint("source", type: .usbC, direction: .input, measurement: .watts(pair.reduce(0, +))),
+                Fixtures.endpoint("battery", type: .battery, direction: .output, measurement: .watts(pair[0])),
+                Fixtures.endpoint("mac", type: .mac, direction: .output, measurement: .watts(pair[1])),
+            ])
+            let expectedMode: PowerFlowDiagramMode = pair == [0, 0] ? .idle
+                : pair.contains(0) ? .expanded(.oneToOne) : .expanded(.oneToMany)
+            XCTAssertEqual(presentation.preferredMode, expectedMode)
+            for width: CGFloat in [320, 384] {
+                let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
+                XCTAssertEqual(plan.layout.effectiveMode, expectedMode)
+                XCTAssertEqual(plan.flowLabels.count, pair == [0, 0] ? 0 : pair.contains(0) ? 1 : 2)
+                let channel = PowerFlowDiagramSurfaceShape(layout: plan.layout, part: .channel).path(in: .zero).cgPath
+                for (label, frame) in zip(plan.flowLabels, plan.layout.flowLabelFrames) {
+                    let size = (label.text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold)])
+                    XCTAssertLessThanOrEqual(size.width * 0.72, frame.width, label.text)
+                    XCTAssertLessThanOrEqual(size.height, frame.height, label.text)
+                    let halfWidth = min(size.width, frame.width) / 2
+                    for x in [frame.midX - halfWidth, frame.midX + halfWidth] {
+                        for y in [frame.midY - size.height / 2, frame.midY + size.height / 2] {
+                            XCTAssertTrue(channel.contains(CGPoint(x: x, y: y)), "number ink escapes rounded branch: \(pair) \(label.text)")
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     func testAllDiagramModesRenderAtRealEnergyWidthAndPressureWidth() throws {
         let presentations = [
             Fixtures.oneToOne, Fixtures.oneToMany, Fixtures.manyToOne, Fixtures.manyToMany,
