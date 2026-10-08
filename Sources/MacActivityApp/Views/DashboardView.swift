@@ -661,7 +661,7 @@ struct DashboardView: View {
             }
 
             if selectedTab == .overview {
-                ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
+                ScrollView(.vertical) {
                     DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
                         dashboardContent
                             .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
@@ -679,6 +679,7 @@ struct DashboardView: View {
                 .id(selectedTab)
             }
         }
+        .scrollIndicators(scrollIndicatorVisibility)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .dashboardPanelBackdrop()
         .onAppear {
@@ -712,18 +713,25 @@ struct DashboardView: View {
             .fixedSize()
     }
 
-    @ViewBuilder
+    private var scrollIndicatorVisibility: ScrollIndicatorVisibility {
+        scrollIndicatorState.isHeightTransitioning ? .never : .automatic
+    }
+
     private var dashboardContent: some View {
-        switch selectedTab {
-        case .overview:
-            overviewContent
-        case .actives:
-            activesContent
-        case .energyImpact:
-            energyImpactContent
-        case .audio:
-            audioContent
+        Group {
+            switch selectedTab {
+            case .overview:
+                overviewContent
+            case .actives:
+                activesContent
+            case .energyImpact:
+                energyImpactContent
+            case .audio:
+                audioContent
+            }
         }
+        // Outer ScrollView consumes the policy; deliver it again to nested row scopes.
+        .scrollIndicators(scrollIndicatorVisibility)
     }
 
     private var overviewContent: some View {
@@ -915,6 +923,7 @@ struct DashboardMeasuredList<Content: View>: View {
     var spacing: CGFloat
     @ViewBuilder let content: () -> Content
     @Environment(\.dashboardNaturalLists) private var naturalLists
+    @Environment(\.verticalScrollIndicatorVisibility) private var indicatorVisibility
     @State private var documentHeight: CGFloat = 0
     @State private var measurementID = UUID()
 
@@ -933,6 +942,7 @@ struct DashboardMeasuredList<Content: View>: View {
 
     var body: some View {
         ScrollView(.vertical) { document }
+        .scrollIndicators(indicatorVisibility)
         // Override the disabled outer scope for row-only scrolling. Keep the
         // document in the same structural position even in page-overflow mode.
         .environment(\.isScrollEnabled, !naturalLists)

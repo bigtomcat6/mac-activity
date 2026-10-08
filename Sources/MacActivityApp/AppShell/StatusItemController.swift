@@ -118,10 +118,16 @@ final class StatusItemController: NSObject {
             keyEquivalent: ""
         )
         preferencesItem.target = target
+        preferencesItem.image = NSImage(systemSymbolName: "gearshape", accessibilityDescription: preferencesTitle)
+        preferencesItem.image?.size = NSSize(width: 16, height: 16)
+        preferencesItem.image?.isTemplate = true
         menu.addItem(preferencesItem)
         menu.addItem(.separator())
         let quitItem = NSMenuItem(title: quitTitle, action: quitAction, keyEquivalent: "")
         quitItem.target = target
+        quitItem.image = NSImage(systemSymbolName: "power", accessibilityDescription: quitTitle)
+        quitItem.image?.size = NSSize(width: 16, height: 16)
+        quitItem.image?.isTemplate = true
         menu.addItem(quitItem)
         return menu
     }

@@ -22,24 +22,33 @@ enum DashboardPresentationHostKind: Equatable, Sendable {
 }
 
 @MainActor
-final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
+final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSPopoverDelegate {
     private let hostKindProvider: () -> DashboardPresentationHostKind
     private let panelHost: DashboardPanelHost
     private let popover = NSPopover()
     private weak var storedDelegate: NSPopoverDelegate?
     private var storedContentViewController: NSViewController?
     private var storedContentSize: NSSize = .zero
+    private var popoverIsShown = false
+    private var storedAnimates = true
+    private let shouldReduceMotion: () -> Bool
 
     init(
         hostKindProvider: @escaping () -> DashboardPresentationHostKind = { .live() },
-        panelHost: DashboardPanelHost = DashboardPanelHost()
+        panelHost: DashboardPanelHost = DashboardPanelHost(),
+        shouldReduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     ) {
         self.hostKindProvider = hostKindProvider
         self.panelHost = panelHost
+        self.shouldReduceMotion = shouldReduceMotion
         super.init()
         popover.behavior = .transient
         popover.animates = true
+        popover.delegate = self
         panelHost.onClose = { [weak self] in
+            self?.notifyPopoverWillClose()
+        }
+        panelHost.onDidClose = { [weak self] in
             self?.notifyPopoverDidClose()
         }
     }
@@ -50,20 +59,24 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
     }
 
     var animates: Bool {
-        get { popover.animates }
-        set { popover.animates = newValue }
+        get { storedAnimates }
+        set {
+            storedAnimates = newValue
+            popover.animates = newValue && !shouldReduceMotion()
+            panelHost.animates = newValue
+        }
     }
 
     var contentSize: NSSize {
         get {
-            if panelHost.isVisible, let size = panelHost.contentSize {
+            if panelHost.isShown, let size = panelHost.contentSize {
                 return size
             }
             return storedContentSize == .zero ? popover.contentSize : storedContentSize
         }
         set {
             storedContentSize = newValue
-            if panelHost.isVisible {
+            if panelHost.isShown {
                 panelHost.resizeContent(to: newValue)
             } else {
                 popover.contentSize = newValue
@@ -80,15 +93,14 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
         get { storedDelegate }
         set {
             storedDelegate = newValue
-            popover.delegate = newValue
         }
     }
 
-    var isShown: Bool { popover.isShown || panelHost.isVisible }
+    var isShown: Bool { popoverIsShown || panelHost.isShown }
 
     var activeHostKind: DashboardPresentationHostKind? {
-        if panelHost.isVisible { return .panel }
-        if popover.isShown { return .popover }
+        if panelHost.isShown { return .panel }
+        if popoverIsShown { return .popover }
         return nil
     }
 
@@ -110,15 +122,18 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
     private func showPopover(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
         detachPanel()
         popover.contentViewController = storedContentViewController
+        popover.animates = storedAnimates && !shouldReduceMotion()
         popover.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
+        popoverIsShown = popover.isShown
     }
 
     func performClose(_ sender: Any?) {
-        if panelHost.isVisible {
+        if panelHost.isShown {
             panelHost.close()
             return
         }
-        if popover.isShown {
+        if popoverIsShown {
+            popover.animates = storedAnimates && !shouldReduceMotion()
             popover.performClose(nil)
         }
     }
@@ -147,7 +162,7 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
             visibleFrame: visibleFrame,
             contentSize: contentSize
         )
-        return true
+        return panelHost.isShown
     }
 
     private func detachPanel() {
@@ -157,7 +172,41 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
     }
 
     private func notifyPopoverDidClose() {
+        guard !isShown else { return }
         storedDelegate?.popoverDidClose?(Notification(name: NSPopover.didCloseNotification, object: self))
+    }
+
+    private func notifyPopoverWillClose() {
+        storedDelegate?.popoverWillClose?(Notification(name: NSPopover.willCloseNotification, object: self))
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        guard popoverIsShown else { return }
+        popoverIsShown = false
+        notifyPopoverWillClose()
+    }
+
+    func popoverDidClose(_ notification: Notification) {
+        notifyPopoverDidClose()
+    }
+
+    func popoverShouldClose(_ popover: NSPopover) -> Bool {
+        storedDelegate?.popoverShouldClose?(popover) ?? true
+    }
+
+    func popoverWillShow(_ notification: Notification) {
+        storedDelegate?.popoverWillShow?(notification)
+    }
+
+    func popoverDidShow(_ notification: Notification) {
+        storedDelegate?.popoverDidShow?(notification)
+    }
+
+    func invalidate() {
+        panelHost.destroy()
+        popover.animates = false
+        if popover.isShown { popover.close() }
+        popoverIsShown = false
     }
 
     #if DEBUG
