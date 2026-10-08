@@ -7,6 +7,46 @@ import XCTest
 
 @MainActor
 final class DashboardCardLayoutTests: XCTestCase {
+    // Missing the root policy leaves the real nested list and overflow indicators enabled.
+    func testEveryDashboardPageHidesAllNativeIndicatorsWithoutReplacingScrollViews() throws {
+        for tab in DashboardTab.allCases {
+            for style in [NSScroller.Style.overlay, .legacy] {
+                let state = DashboardPopoverScrollIndicatorState()
+                let host = DashboardListTestHost(DashboardView(
+                    dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+                    preferencesController: Self.preferencesController(),
+                    audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+                    scrollIndicatorState: state, initialSelectedTab: tab
+                ).environment(\.dashboardPresentationIsPresented, false)
+                    .environment(\._accessibilityReduceMotion, false))
+                defer { host.close() }
+                host.settle()
+                let scrolls = host.allScrollViews
+                XCTAssertGreaterThanOrEqual(scrolls.count, tab == .overview ? 1 : 2, "\(tab)")
+                for scroll in scrolls { scroll.scrollerStyle = style }
+                let offsets = scrolls.map { $0.contentView.bounds.origin }
+                state.setHeightTransitioning(true)
+                host.settle()
+                XCTAssertEqual(Set(host.allScrollViews.map(ObjectIdentifier.init)), Set(scrolls.map(ObjectIdentifier.init)))
+                for (index, scroll) in scrolls.enumerated() {
+                    scroll.flashScrollers()
+                    scroll.scrollerStyle = style
+                    XCTAssertFalse(DashboardListTestHost.indicatorIsVisible(scroll.verticalScroller), "\(tab) \(style)")
+                    XCTAssertFalse(DashboardListTestHost.indicatorIsVisible(scroll.horizontalScroller), "\(tab) \(style)")
+                    XCTAssertEqual(scroll.contentView.bounds.origin.x, offsets[index].x, accuracy: 1)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.y, offsets[index].y, accuracy: 1)
+                }
+                state.setHeightTransitioning(false)
+                host.settle()
+                for (index, scroll) in scrolls.enumerated() {
+                    XCTAssertEqual(scroll.contentView.bounds.origin.x, offsets[index].x, accuracy: 1)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.y, offsets[index].y, accuracy: 1)
+                }
+                XCTAssertEqual(Set(host.allScrollViews.map(ObjectIdentifier.init)), Set(scrolls.map(ObjectIdentifier.init)))
+            }
+        }
+    }
+
     func testDashboardTabsIncludeEnergyImpactAndAudioAsSeparatePages() {
         XCTAssertEqual(DashboardTab.allCases, [.overview, .actives, .energyImpact, .audio])
         XCTAssertEqual(DashboardTab.energyImpact.title, AppLocalization.string(.dashboardTabEnergyImpact))

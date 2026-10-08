@@ -6,6 +6,21 @@ import MacActivityCore
 
 @MainActor
 final class ActiveCleanReleaseViewTests: XCTestCase {
+    func testLongActivesIndicatorsHideAndRestoreInBothOverflowModes() async throws {
+        let model = ActiveCleanupModel(
+            diskCleanupService: ViewDiskCleanupServiceRecorder(scanResults: [.clean]),
+            appProvider: ViewActiveAppProviderRecorder(entries: Self.entries(count: 120)))
+        await model.refreshVisibleCleanReleaseSections()
+        for height: CGFloat in [480, 80] {
+            let state = DashboardPopoverScrollIndicatorState()
+            let host = DashboardListTestHost(DashboardIndicatorTestPage(state: state) {
+                ActiveCleanReleaseView(model: model).padding(18)
+            }.environment(\.dashboardPresentationIsPresented, false), height: height)
+            defer { host.close() }
+            try host.assertIndicatorTransition(state)
+        }
+    }
+
     private static var englishBundle: Bundle {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }

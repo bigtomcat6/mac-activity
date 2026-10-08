@@ -93,6 +93,131 @@ final class DashboardAdaptiveHostTests: XCTestCase {
         XCTAssertEqual(DashboardPresentationHostKind.resolve(majorVersion: 15, reduceTransparency: false), .popover)
     }
 
+    func testPanelFadeCloseIntentAllowsReopenBeforeOldPhysicalCompletion() throws {
+        var completions: [@MainActor () -> Void] = []
+        let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { panel, alpha, _, completion in
+            panel.alphaValue = alpha
+            completions.append(completion)
+        })
+        defer { panelHost.destroy() }
+        let host = makeHost(state: makeState(.panel), panelHost: panelHost)
+        let counter = AdaptiveHostCloseCounter()
+        host.delegate = counter
+        host.contentViewController = NSHostingController(rootView: Text("intent"))
+        host.contentSize = NSSize(width: 420, height: 320)
+        let anchor = try makeAnchorView()
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        let panel = try XCTUnwrap(panelHost.panel)
+        host.performClose(nil)
+        XCTAssertFalse(host.isShown)
+        XCTAssertNil(host.activeHostKind)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertEqual(counter.willCloseCount, 1)
+        XCTAssertEqual(counter.closeCount, 0)
+        host.performClose(nil)
+        XCTAssertEqual(counter.willCloseCount, 1)
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        completions[1]()
+        XCTAssertTrue(host.isShown)
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertEqual(counter.closeCount, 0, "stale physical close must not notify the new session")
+        host.performClose(nil)
+        completions.last?()
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertEqual(counter.willCloseCount, 2)
+        XCTAssertEqual(counter.closeCount, 1)
+    }
+
+    func testPanelAnimatesFalseAndHostReplacementCancelOldFade() throws {
+        var completions: [@MainActor () -> Void] = []
+        let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { _, _, _, completion in
+            completions.append(completion)
+        })
+        let state = makeState(.panel)
+        let host = makeHost(state: state, panelHost: panelHost)
+        let content = NSHostingController(rootView: Text("swap while closing"))
+        host.contentViewController = content
+        host.contentSize = NSSize(width: 420, height: 320)
+        let anchor = try makeAnchorView()
+        host.animates = false
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        XCTAssertTrue(completions.isEmpty)
+        host.performClose(nil)
+        XCTAssertFalse(panelHost.panel?.isVisible == true)
+        host.animates = true
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        host.performClose(nil)
+        state.kind = .popover // Same resolved boundary as Reduce Transparency.
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        completions.forEach { $0() }
+        XCTAssertTrue(host.isShown)
+        XCTAssertEqual(host.activeHostKind, .popover)
+        XCTAssertNil(panelHost.panel)
+        XCTAssertTrue(host.contentViewController === content)
+        host.performClose(nil)
+        drainRunLoop()
+    }
+
+    func testNativePopoverForwardsWillCloseIntentOnceAndKeepsNativeAnimationChoice() throws {
+        for reduceMotion in [false, true] {
+            let host = DashboardAdaptivePopoverHost(hostKindProvider: { .popover }, shouldReduceMotion: { reduceMotion })
+            let counter = AdaptiveHostCloseCounter()
+            host.delegate = counter
+            host.contentViewController = NSHostingController(rootView: Text("native arrow"))
+            host.contentSize = NSSize(width: 420, height: 320)
+            let anchor = try makeAnchorView()
+            host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+            XCTAssertTrue(host.isShown)
+            XCTAssertEqual(host.activeHostKind, .popover)
+            XCTAssertTrue(host.animates, "requested native animation remains enabled; Reduce Motion only snaps presentation")
+            host.performClose(nil)
+            XCTAssertFalse(host.isShown, "native willClose must clear intent before didClose")
+            XCTAssertEqual(counter.willCloseCount, 1)
+            host.performClose(nil)
+            drainRunLoop()
+            XCTAssertEqual(counter.closeCount, 1)
+            XCTAssertEqual(counter.willCloseCount, 1)
+        }
+    }
+
+    func testInvalidateForcesNativePopoverClosedWithNestedInfoPopover() throws {
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { .popover })
+        host.animates = false
+        let content = NSViewController()
+        content.view = NSView(frame: NSRect(x: 0, y: 0, width: 420, height: 320))
+        let infoAnchor = NSView(frame: NSRect(x: 20, y: 20, width: 24, height: 24))
+        content.view.addSubview(infoAnchor)
+        host.contentViewController = content
+        host.contentSize = NSSize(width: 420, height: 320)
+        let counter = AdaptiveHostCloseCounter()
+        host.delegate = counter
+        let info = NSPopover()
+        info.behavior = .applicationDefined
+        info.animates = false
+        info.contentViewController = NSHostingController(rootView: Text("nested energy info"))
+        info.contentSize = NSSize(width: 180, height: 80)
+        defer { info.close(); host.invalidate() }
+        let anchor = try makeAnchorView()
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        let parentWindow = try XCTUnwrap(content.view.window)
+        info.show(relativeTo: infoAnchor.bounds, of: infoAnchor, preferredEdge: .maxX)
+        let childWindow = try XCTUnwrap(info.contentViewController?.view.window)
+        XCTAssertTrue(info.isShown)
+        XCTAssertTrue(childWindow.isVisible)
+        XCTAssertTrue(childWindow.parent === parentWindow)
+        host.performClose(nil)
+        XCTAssertTrue(host.isShown, "ordinary user close must retain AppKit's nested-popover veto")
+        XCTAssertTrue(parentWindow.isVisible)
+        XCTAssertEqual(counter.willCloseCount, 0)
+        host.invalidate()
+        XCTAssertFalse(host.isShown)
+        XCTAssertFalse(parentWindow.isVisible, "teardown must physically close the native parent")
+        XCTAssertFalse(info.isShown)
+        XCTAssertFalse(childWindow.isVisible)
+        XCTAssertEqual(counter.willCloseCount, 1)
+        XCTAssertEqual(counter.closeCount, 1)
+    }
+
     func testPopoverHostKindUsesPopoverHost() throws {
         let state = makeState(.popover)
         let host = makeHost(state: state)
@@ -349,6 +474,11 @@ private final class HostKindBox {
 @MainActor
 private final class AdaptiveHostCloseCounter: NSObject, NSPopoverDelegate {
     private(set) var closeCount = 0
+    private(set) var willCloseCount = 0
+
+    func popoverWillClose(_ notification: Notification) {
+        willCloseCount += 1
+    }
 
     func popoverDidClose(_ notification: Notification) {
         closeCount += 1

@@ -213,6 +213,33 @@ final class StatusBarSummaryLayoutTests: XCTestCase {
         XCTAssertEqual(menu.items[2].action, #selector(ContextMenuActionTarget.quit(_:)))
     }
 
+    func testContextMenuRebuildKeepsLocalizedTemplateSymbolsWithoutTracking() throws {
+        let target = ContextMenuActionTarget()
+        for titles in [("Settings…", "Quit"), ("偏好设置…", "退出")] {
+            let menu = StatusItemController.makeContextMenu(
+                preferencesTitle: titles.0, quitTitle: titles.1, target: target,
+                preferencesAction: #selector(ContextMenuActionTarget.openPreferences(_:)),
+                quitAction: #selector(ContextMenuActionTarget.quit(_:))
+            )
+            XCTAssertEqual(menu.items.count, 3)
+            for (index, title) in [(0, titles.0), (2, titles.1)] {
+                let item = menu.items[index]
+                let image = try XCTUnwrap(item.image)
+                XCTAssertEqual(image.size, NSSize(width: 16, height: 16))
+                XCTAssertTrue(image.isTemplate)
+                XCTAssertEqual(image.accessibilityDescription, title)
+                XCTAssertEqual(item.title, title)
+                XCTAssertTrue(item.target === target)
+                XCTAssertTrue(item.isEnabled)
+                XCTAssertEqual(item.keyEquivalent, "")
+            }
+            XCTAssertTrue(menu.items[1].isSeparatorItem)
+            XCTAssertNil(menu.items[1].image)
+            XCTAssertEqual(menu.items[0].action, #selector(ContextMenuActionTarget.openPreferences(_:)))
+            XCTAssertEqual(menu.items[2].action, #selector(ContextMenuActionTarget.quit(_:)))
+        }
+    }
+
     func testStatusItemContextMenuActionsForwardToInjectedClosures() {
         var preferencesCalls = 0
         var quitCalls = 0
