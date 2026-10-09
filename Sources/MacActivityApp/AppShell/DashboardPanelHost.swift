@@ -11,6 +11,8 @@ final class DashboardPanelHost {
     private var menuTrackingDepth = 0
     private let makeMonitorBag: () -> DashboardEventMonitorBag
     var onClose: (() -> Void)?
+    // No window-alpha fade: Liquid Glass shown while the window is transparent stays
+    // stuck in an over-bright state, so the panel appears at once like a menu.
     var presentPanel: (DashboardPresentationPanel) -> Void = { $0.makeKeyAndOrderFront(nil) }
 
     init(makeMonitorBag: @escaping () -> DashboardEventMonitorBag = { .live() }) {

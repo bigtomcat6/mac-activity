@@ -1,8 +1,29 @@
 import AppKit
 
+enum DashboardPresentationHostKind: Equatable, Sendable {
+    case popover
+    case panel
+
+    // Floating glass modules need Liquid Glass to stay legible over the desktop;
+    // earlier systems and Reduce Transparency keep the popover's own backing.
+    static func resolve(majorVersion: Int, reduceTransparency: Bool) -> Self {
+        majorVersion >= 26 && !reduceTransparency ? .panel : .popover
+    }
+
+    static func live(
+        workspace: NSWorkspace = .shared,
+        processInfo: ProcessInfo = .processInfo
+    ) -> Self {
+        resolve(
+            majorVersion: processInfo.operatingSystemVersion.majorVersion,
+            reduceTransparency: workspace.accessibilityDisplayShouldReduceTransparency
+        )
+    }
+}
+
 @MainActor
 final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
-    private let resolutionProvider: () -> DashboardPresentationResolution
+    private let hostKindProvider: () -> DashboardPresentationHostKind
     private let panelHost: DashboardPanelHost
     private let popover = NSPopover()
     private weak var storedDelegate: NSPopoverDelegate?
@@ -10,10 +31,10 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
     private var storedContentSize: NSSize = .zero
 
     init(
-        resolutionProvider: @escaping () -> DashboardPresentationResolution,
+        hostKindProvider: @escaping () -> DashboardPresentationHostKind = { .live() },
         panelHost: DashboardPanelHost = DashboardPanelHost()
     ) {
-        self.resolutionProvider = resolutionProvider
+        self.hostKindProvider = hostKindProvider
         self.panelHost = panelHost
         super.init()
         popover.behavior = .transient
@@ -72,14 +93,24 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
     }
 
     func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
-        switch resolutionProvider().hostKind {
+        switch hostKindProvider() {
         case .popover:
-            detachPanel()
-            popover.contentViewController = storedContentViewController
-            popover.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
+            showPopover(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
         case .panel:
-            showPanel(positioningView: positioningView)
+            guard showPanel(positioningView: positioningView) else {
+                // An anchor outside the menu bar (a menu bar manager's overflow, say)
+                // cannot place the panel, but a popover still attaches to any window.
+                guard positioningView.window != nil else { return }
+                showPopover(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
+                return
+            }
         }
+    }
+
+    private func showPopover(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
+        detachPanel()
+        popover.contentViewController = storedContentViewController
+        popover.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
     }
 
     func performClose(_ sender: Any?) {
@@ -92,14 +123,14 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
         }
     }
 
-    private func showPanel(positioningView: NSView) {
+    private func showPanel(positioningView: NSView) -> Bool {
         guard let contentViewController = storedContentViewController,
               let anchorRect = DashboardPanelAnchor.screenRect(for: positioningView),
               DashboardPanelAnchor.isPlausibleMenuBarRect(
                   anchorRect,
                   screenFrames: NSScreen.screens.map(\.frame)
               ) else {
-            return
+            return false
         }
 
         if popover.isShown {
@@ -116,6 +147,7 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting {
             visibleFrame: visibleFrame,
             contentSize: contentSize
         )
+        return true
     }
 
     private func detachPanel() {

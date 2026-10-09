@@ -1084,14 +1084,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
     func testPresentationGateTracksSuccessfulShowAndCloseOnly() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
+        let presentationState = DashboardPresentationState()
         let controller = DashboardPopoverController(
             popover: popover,
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
@@ -1115,14 +1108,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
     func testFailedShowKeepsPresentationGateClosed() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = FailingShowPopoverHost()
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
+        let presentationState = DashboardPresentationState()
         let controller = DashboardPopoverController(
             popover: popover,
             focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
@@ -1136,73 +1122,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
 
         XCTAssertFalse(presentationState.isPresented)
-    }
-
-    func testStyleChangeClosesShownHostAndOnlyWhenHostKindChanges() {
-        let recorder = DashboardPopoverEventRecorder()
-        let popover = RecordingPopoverHost(recorder: recorder)
-        popover.isShown = true
-        let preferencesController = Self.preferencesController()
-        let controller = DashboardPopoverController(
-            popover: popover,
-            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
-            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
-            preferencesController: preferencesController,
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            onVisibilityChange: { _ in },
-            accessibilityEnvironmentProvider: {
-                DashboardPresentationAccessibilityEnvironment(
-                    reduceTransparency: false,
-                    increaseContrast: false,
-                    majorVersion: 26
-                )
-            }
-        )
-        defer { withExtendedLifetime(controller) {} }
-
-        preferencesController.setShowsHardwareBatteryPercentage(true)
-        XCTAssertEqual(recorder.events, [])
-
-        preferencesController.setDashboardStyle(.transparent)
-        XCTAssertEqual(recorder.events, ["close-popover"])
-
-        recorder.clear()
-        popover.isShown = false
-        preferencesController.setDashboardStyle(.standard)
-        XCTAssertEqual(recorder.events, [])
-    }
-
-    func testAccessibilityDisplayOptionsChangeReappliesPresentationForShownHost() {
-        let recorder = DashboardPopoverEventRecorder()
-        let popover = RecordingPopoverHost(recorder: recorder)
-        popover.isShown = true
-        let preferencesController = Self.preferencesController()
-        preferencesController.setDashboardStyle(.transparent)
-        var reduceTransparency = false
-        let controller = DashboardPopoverController(
-            popover: popover,
-            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
-            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
-            preferencesController: preferencesController,
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            onVisibilityChange: { _ in },
-            accessibilityEnvironmentProvider: {
-                DashboardPresentationAccessibilityEnvironment(
-                    reduceTransparency: reduceTransparency,
-                    increaseContrast: false,
-                    majorVersion: 26
-                )
-            }
-        )
-
-        reduceTransparency = true
-        NSWorkspace.shared.notificationCenter.post(
-            name: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification,
-            object: nil
-        )
-
-        XCTAssertEqual(recorder.events, ["close-popover"])
-        withExtendedLifetime(controller) {}
     }
 
     func testOpeningThenClosingReportsPairedVisibilityOnce() {
@@ -1236,14 +1155,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
     func testLateDidCloseFromReplacedHostDoesNotClearActiveSession() {
         let recorder = DashboardPopoverEventRecorder()
         let popover = RecordingPopoverHost(recorder: recorder)
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
+        let presentationState = DashboardPresentationState()
         var visibility: [Bool] = []
         let controller = DashboardPopoverController(
             popover: popover,
@@ -1438,14 +1350,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         let host = DashboardPopoverHostingController(
             rootView: DashboardPopoverRootView(
                 content: content,
-                presentationState: DashboardPresentationState(
-                    style: .standard,
-                    environment: DashboardPresentationAccessibilityEnvironment(
-                        reduceTransparency: false,
-                        increaseContrast: false,
-                        majorVersion: 26
-                    )
-                )
+                presentationState: DashboardPresentationState()
             )
         )
         host.sizingOptions = [.preferredContentSize]
@@ -1487,6 +1392,54 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
         XCTAssertEqual(Set(reports.segments), Set(DashboardContentMeasurementSegment.allCases))
         XCTAssertTrue(reports.heights.allSatisfy { $0.isFinite && $0 > 0 })
+    }
+
+    func testHostedListDashboardFeedsNaturalMeasurementWithoutResizeOrTabReopenFeedback() throws {
+        let devices = (0..<20).map { index in
+            AudioDeviceControlSnapshot(device: AudioOutputDeviceSnapshot(id: "output-\(index)",
+                objectID: UInt32(index + 1), name: "Output \(index)",
+                volume: .value(0.5, isWritable: true), mute: .value(false, isWritable: true)), error: nil)
+        }
+        let audio = AudioDashboardModel(coordinator: TestAudioControlCoordinator(
+            snapshot: AudioControlSnapshot(devices: devices, processes: [])))
+        let selection = DashboardTabSelectionState(initialTab: .audio)
+        let measurement = DashboardPopoverContentMeasurement()
+        let host = DashboardListTestHost(DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(), audioDashboardModel: audio,
+            onMeasuredSegmentHeight: { measurement.report($1, for: $0) },
+            tabSelectionState: selection
+        ).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        var appliedSizes: [NSSize] = []
+        defer { measurement.onContentSizeChange = nil }
+        measurement.onContentSizeChange = { size in
+            guard let capped = DashboardPopoverLayout.contentSize(for: size) else { return }
+            appliedSizes.append(capped)
+            host.panel.setContentSize(capped)
+        }
+        host.settle()
+        host.settle()
+        let natural = try XCTUnwrap(measurement.latestContentSize)
+        XCTAssertGreaterThan(natural.height, 560)
+        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, 560, accuracy: 1)
+        XCTAssertEqual(host.scrollViews.count, 1)
+        try host.assertBottomReachable(try XCTUnwrap(host.scrollViews.first))
+        let stableCount = appliedSizes.count
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, stableCount)
+        selection.selectedTab = .overview
+        host.settle()
+        XCTAssertLessThan(try XCTUnwrap(measurement.latestContentSize).height, natural.height)
+        selection.selectedTab = .audio
+        host.settle()
+        host.settle()
+        XCTAssertEqual(try XCTUnwrap(measurement.latestContentSize).height, natural.height, accuracy: 1)
+        let reopenCount = appliedSizes.count
+        host.panel.orderOut(nil)
+        host.panel.orderFront(nil)
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, reopenCount)
     }
 
     func testMeasuredSegmentReportsNaturalScrollContentHeightAboveConstrainedViewport() throws {
@@ -1619,14 +1572,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
             observationIntervalNanoseconds: 5_000_000,
             sleep: { try await Task.sleep(nanoseconds: $0) }
         )
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
+        let presentationState = DashboardPresentationState()
         let hosting = NSHostingController(
             rootView: DashboardPresentationHarness(presentationState: presentationState) {
                 PowerFlowView(model: model, refreshTrigger: 0)
@@ -1660,14 +1606,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
     func testHiddenPresentationDeactivatesAudioPage() throws {
         let coordinator = TestAudioControlCoordinator()
         let audioModel = AudioDashboardModel(coordinator: coordinator)
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
+        let presentationState = DashboardPresentationState()
         let content = DashboardView(
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
@@ -1699,219 +1638,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
         )
     }
 
-    func testHiddenPanelStopsPollingAndReopenResumesOnce() throws {
-        let presentationState = DashboardPresentationState(
-            style: .transparent,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
-        let provider = PowerFlowProviderSpy()
-        let model = PowerFlowModel(
-            provider: provider,
-            observationIntervalNanoseconds: 5_000_000,
-            sleep: { try await Task.sleep(nanoseconds: $0) }
-        )
-        let hosting = NSHostingController(
-            rootView: DashboardPresentationHarness(presentationState: presentationState) {
-                PowerFlowView(model: model, refreshTrigger: 0)
-            }
-        )
-        let host = DashboardAdaptivePopoverHost(
-            resolutionProvider: { presentationState.resolution }
-        )
-        host.contentViewController = hosting
-        host.contentSize = NSSize(width: 420, height: 200)
-        let anchorView = try Self.makeMenuBarAnchorView()
-        let anchorRect = NSRect(x: 0, y: 0, width: 24, height: 24)
-
-        presentationState.setPresented(true)
-        host.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
-        XCTAssertEqual(host.activeHostKind, .panel)
-        try Self.assertPanel(host, avoidsAnchorView: anchorView)
-        XCTAssertTrue(Self.waitUntil { provider.snapshotCallCount >= 2 })
-
-        presentationState.setPresented(false)
-        host.performClose(nil)
-        Self.drainMainRunLoop()
-        let countAtHide = provider.snapshotCallCount
-        XCTAssertFalse(host.isShown)
-        XCTAssertNotNil(
-            host.panelForTesting,
-            "the hidden panel stays attached so the shared root keeps receiving visibility updates"
-        )
-        let hideDeadline = Date().addingTimeInterval(0.4)
-        while Date() < hideDeadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
-        XCTAssertEqual(
-            provider.snapshotCallCount,
-            countAtHide,
-            "a hidden but attached panel must not keep polling"
-        )
-
-        presentationState.setPresented(true)
-        host.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
-        XCTAssertEqual(host.activeHostKind, .panel)
-        XCTAssertTrue(
-            Self.waitUntil { provider.snapshotCallCount > countAtHide },
-            "reopening the panel must resume exactly one polling run"
-        )
-
-        host.performClose(nil)
-    }
-
-    func testHostSwitchStopsPollingAcrossRootReparentingAndResumesWhenPresented() throws {
-        let presentationState = DashboardPresentationState(
-            style: .transparent,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
-        let provider = PowerFlowProviderSpy()
-        let model = PowerFlowModel(
-            provider: provider,
-            observationIntervalNanoseconds: 5_000_000,
-            sleep: { try await Task.sleep(nanoseconds: $0) }
-        )
-        let hosting = NSHostingController(
-            rootView: DashboardPresentationHarness(presentationState: presentationState) {
-                PowerFlowView(model: model, refreshTrigger: 0)
-            }
-        )
-        let host = DashboardAdaptivePopoverHost(
-            resolutionProvider: { presentationState.resolution }
-        )
-        host.contentViewController = hosting
-        host.contentSize = NSSize(width: 420, height: 200)
-        let anchorView = try Self.makeMenuBarAnchorView()
-        let anchorRect = NSRect(x: 0, y: 0, width: 24, height: 24)
-
-        presentationState.setPresented(true)
-        host.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
-        XCTAssertEqual(host.activeHostKind, .panel)
-        try Self.assertPanel(host, avoidsAnchorView: anchorView)
-        XCTAssertTrue(Self.waitUntil { provider.snapshotCallCount >= 2 })
-
-        presentationState.setPresented(false)
-        host.performClose(nil)
-        Self.drainMainRunLoop()
-
-        presentationState.apply(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
-        host.show(relativeTo: anchorRect, of: anchorView, preferredEdge: .minY)
-        XCTAssertEqual(host.activeHostKind, .popover)
-        XCTAssertNil(
-            host.panelForTesting,
-            "the hidden panel is destroyed when the root is reparented to the popover host"
-        )
-        Self.drainMainRunLoop()
-        let countAfterReparent = provider.snapshotCallCount
-        let deadline = Date().addingTimeInterval(0.4)
-        while Date() < deadline {
-            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
-        }
-        XCTAssertEqual(
-            provider.snapshotCallCount,
-            countAfterReparent,
-            "reparenting the root between hosts must not restart polling while hidden"
-        )
-
-        presentationState.setPresented(true)
-        XCTAssertTrue(
-            Self.waitUntil { provider.snapshotCallCount > countAfterReparent },
-            "showing again must resume exactly one polling run after the root is reparented"
-        )
-        host.performClose(nil)
-    }
-
-    func testProductRiskHostedRootKeepsDashboardTabAndStateAcrossStyleTransitions() throws {
-        let coordinator = TestAudioControlCoordinator()
-        let audioModel = AudioDashboardModel(coordinator: coordinator)
-        let presentationState = DashboardPresentationState(
-            style: .standard,
-            environment: DashboardPresentationAccessibilityEnvironment(
-                reduceTransparency: false,
-                increaseContrast: false,
-                majorVersion: 26
-            )
-        )
-        let content = DashboardView(
-            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
-            preferencesController: Self.preferencesController(),
-            audioDashboardModel: audioModel,
-            initialSelectedTab: .audio
-        )
-        let hosting = DashboardPopoverHostingController(
-            rootView: DashboardPopoverRootView(content: content, presentationState: presentationState)
-        )
-        let window = NSWindow(contentViewController: hosting)
-        defer { window.close() }
-        window.setContentSize(NSSize(width: 420, height: 560))
-        window.orderFront(nil)
-        Self.drainMainRunLoop()
-
-        presentationState.setPresented(true)
-        XCTAssertTrue(Self.waitUntil { coordinator.refreshSystemAudioAuthorizationCallCount == 1 })
-
-        hosting.dashboardTabSelection.selectedTab = .actives
-        Self.drainMainRunLoop()
-        XCTAssertEqual(hosting.dashboardTabSelection.selectedTab, .actives)
-
-        presentationState.setPresented(false)
-        Self.drainMainRunLoop()
-        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
-        Self.drainMainRunLoop()
-        let hiddenRefreshCount = coordinator.refreshSystemAudioAuthorizationCallCount
-        XCTAssertEqual(hiddenRefreshCount, 1)
-
-        let clearEnvironment = DashboardPresentationAccessibilityEnvironment(
-            reduceTransparency: false,
-            increaseContrast: false,
-            majorVersion: 26
-        )
-        presentationState.apply(style: .transparent, environment: clearEnvironment)
-        Self.drainMainRunLoop()
-        XCTAssertTrue(hosting.view.window === window)
-        XCTAssertTrue(content.audioDashboardModel === audioModel)
-        XCTAssertEqual(
-            hosting.dashboardTabSelection.selectedTab,
-            .actives,
-            "the real dashboard tab state must survive standard -> transparent"
-        )
-
-        presentationState.apply(style: .standard, environment: clearEnvironment)
-        Self.drainMainRunLoop()
-        XCTAssertEqual(
-            hosting.dashboardTabSelection.selectedTab,
-            .actives,
-            "the real dashboard tab state must survive transparent -> standard"
-        )
-        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, hiddenRefreshCount)
-
-        hosting.dashboardTabSelection.selectedTab = .audio
-        Self.drainMainRunLoop()
-        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, hiddenRefreshCount)
-
-        presentationState.setPresented(true)
-        XCTAssertTrue(
-            Self.waitUntil {
-                coordinator.refreshSystemAudioAuthorizationCallCount == hiddenRefreshCount + 1
-            },
-            "the audio page must activate exactly once when the retained root is shown again"
-        )
-    }
-
     private static func makeDashboardPopoverController(
         popover: DashboardPopoverHosting,
         store: MetricsStore? = nil
@@ -1938,63 +1664,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             .fan(FanReading(rpm: 2_497)),
             .battery(BatteryReading(percentage: 92, isCharging: true))
         ]
-    }
-
-    private static var retainedAnchorWindows: [NSWindow] = []
-
-    private static func makeMenuBarAnchorView() throws -> NSView {
-        let screen = try XCTUnwrap(
-            NSScreen.main ?? NSScreen.screens.first,
-            "a screen is required to place the menu bar anchor fixture"
-        )
-        let windowSize = NSSize(width: 300, height: 40)
-        let viewFrame = NSRect(x: 20, y: 8, width: 24, height: 24)
-        let bandBottom = screen.frame.maxY - DashboardPanelAnchor.menuBarBandHeight
-        let desiredWindowRect = NSRect(
-            x: screen.frame.minX + 120 - viewFrame.minX,
-            y: bandBottom + 16 - viewFrame.minY,
-            width: windowSize.width,
-            height: windowSize.height
-        )
-        let windowRect = NSRect(
-            x: desiredWindowRect.minX,
-            y: min(desiredWindowRect.minY, screen.visibleFrame.maxY - windowSize.height),
-            width: desiredWindowRect.width,
-            height: desiredWindowRect.height
-        )
-        let window = NSWindow(
-            contentRect: windowRect,
-            styleMask: [.borderless],
-            backing: .buffered,
-            defer: false
-        )
-        window.isReleasedWhenClosed = false
-        window.setFrame(windowRect, display: false)
-        retainedAnchorWindows.append(window)
-        let view = NSView(frame: viewFrame)
-        window.contentView?.addSubview(view)
-        window.orderFront(nil)
-        let anchorRect = try XCTUnwrap(
-            DashboardPanelAnchor.screenRect(for: view),
-            "the anchor fixture view must be attached to the on-screen test window"
-        )
-        XCTAssertTrue(
-            DashboardPanelAnchor.isPlausibleMenuBarRect(
-                anchorRect,
-                screenFrames: NSScreen.screens.map(\.frame)
-            ),
-            "anchor fixture must land in a menu bar band; anchorRect=\(anchorRect) screens=\(NSScreen.screens.map(\.frame))"
-        )
-        return view
-    }
-
-    private static func assertPanel(_ host: DashboardAdaptivePopoverHost, avoidsAnchorView anchorView: NSView) throws {
-        let anchorRect = try XCTUnwrap(DashboardPanelAnchor.screenRect(for: anchorView))
-        let panel = try XCTUnwrap(host.panelForTesting)
-        XCTAssertFalse(
-            panel.frame.intersects(anchorRect),
-            "panel frame \(panel.frame) must not cover the anchor \(anchorRect)"
-        )
     }
 
     private static func preferencesController() -> PreferencesController {

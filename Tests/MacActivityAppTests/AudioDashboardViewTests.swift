@@ -8,6 +8,123 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    func testHostedAudioSectionsHaveIndependentMeasuredViewports() throws {
+        for (deviceCount, processCount) in [(1, 20), (20, 1), (20, 20)] {
+            let deviceRows: [AudioDeviceControlSnapshot] = (0..<deviceCount).map { .fixture(uid: "Output \($0)") }
+            let processRows: [AudioProcessControlSnapshot] = (0..<processCount).map { index in
+                let objectID = UInt32(index + 11)
+                let process = AudioProcessEntry(processObjectID: objectID,
+                    processIdentifier: pid_t(index + 101), name: "Audio app \(index)",
+                    bundleIdentifier: nil, bundleURL: nil)
+                let state: ProcessTapSessionState = index.isMultiple(of: 2) ? .idle : .running
+                let session = ProcessTapSessionSnapshot(processObjectID: objectID, generation: 1,
+                    state: state, error: nil, commandSequence: 1, emissionOrdinal: 0)
+                return AudioProcessControlSnapshot(
+                    process: process,
+                    volume: 0.7, isMuted: false, route: .followOriginal, pendingValues: nil,
+                    routeOptions: [], session: session, error: nil
+                )
+            }
+            var snapshot = AudioControlSnapshot(devices: deviceRows, processes: processRows,
+                                                processControlsAreVisible: true)
+            snapshot.systemAudioAccess = .authorized
+            let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+            let model = AudioDashboardModel(coordinator: coordinator)
+            var naturalHeight: CGFloat = 0
+            let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { naturalHeight = $0 }) {
+                AudioDashboardView(model: model).padding(18)
+            }, height: 360)
+            defer { host.close() }
+            host.settle()
+            XCTAssertEqual(host.scrollViews.count, 2, "devices=\(deviceCount), processes=\(processCount)")
+            guard host.scrollViews.count == 2 else { continue }
+            let devices = host.scrollViews[0]
+            let processes = host.scrollViews[1]
+            for (scroll, count) in [(devices, deviceCount), (processes, processCount)] {
+                XCTAssertGreaterThanOrEqual(host.rect(scroll).minY, 18)
+                XCTAssertLessThanOrEqual(host.rect(scroll).maxY, 360 - 18 + 1)
+                if count == 1 {
+                    XCTAssertEqual(scroll.documentView!.frame.height, scroll.contentView.bounds.height, accuracy: 1)
+                } else {
+                    try host.assertBottomReachable(scroll)
+                }
+            }
+            let deviceFrame = host.rect(devices)
+            let processFrame = host.rect(processes)
+            XCTAssertLessThan(deviceFrame.maxY, processFrame.minY, "both fixed section headers need space")
+            if processCount == 20 {
+                XCTAssertGreaterThan(processes.documentView!.frame.height, CGFloat(878),
+                                     "running status rows must be measured at their variable height")
+            }
+            let longHeight = naturalHeight
+            host.resize(height: 320)
+            XCTAssertEqual(naturalHeight, longHeight, accuracy: 1, "viewport compression must not resize the natural page")
+            host.resize(height: 80)
+            XCTAssertEqual(host.scrollViews.count, 1, "fallback has one active outer scope, not nested active lists")
+            let outer = try XCTUnwrap(host.scrollViews.first)
+            XCTAssertEqual(host.rect(outer).minY, 0, accuracy: 1)
+            try host.assertBottomReachable(outer)
+            XCTAssertEqual(naturalHeight, longHeight, accuracy: 1)
+            host.resize(height: 360)
+            XCTAssertEqual(host.scrollViews.count, 2)
+            XCTAssertEqual(naturalHeight, longHeight, accuracy: 1)
+            coordinator.update { $0.devices = [.fixture()]; $0.processes = [.fixture()] }
+            host.settle()
+            XCTAssertLessThan(naturalHeight, longHeight)
+            XCTAssertEqual(coordinator.intentCount, 0, "layout must not operate interactive controls")
+        }
+    }
+
+    func testHostedAudioNaturalMeasurementResizesActualWindowForShortEmptyAndPermissionStates() throws {
+        var snapshot = AudioControlSnapshot(devices: (0..<20).map { .fixture(uid: "Output \($0)") },
+                                            processes: [.fixture()], processControlsAreVisible: true)
+        snapshot.systemAudioAccess = .authorized
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        let model = AudioDashboardModel(coordinator: coordinator)
+        let measurement = DashboardPopoverContentMeasurement()
+        let selection = DashboardTabSelectionState(initialTab: .audio)
+        let host = DashboardListTestHost(DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: PreferencesController(store: PreferencesStoreFake(),
+                                                         launchService: NoopLaunchAtLoginService()),
+            audioDashboardModel: model,
+            onMeasuredSegmentHeight: { measurement.report($1, for: $0) },
+            tabSelectionState: selection
+        ).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close(); measurement.onContentSizeChange = nil }
+        var appliedSizes: [NSSize] = []
+        measurement.onContentSizeChange = { size in
+            guard let capped = DashboardPopoverLayout.contentSize(for: size) else { return }
+            appliedSizes.append(capped)
+            host.panel.setContentSize(capped)
+        }
+        host.settle()
+        host.settle()
+        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, 560, accuracy: 1)
+        for access: AudioSystemAccessState in [.authorized, .denied] {
+            coordinator.update {
+                $0.devices = access == .authorized ? [.fixture()] : []
+                $0.processes = []
+                $0.systemAudioAccess = access
+            }
+            host.settle()
+            host.settle()
+            let natural = try XCTUnwrap(measurement.latestContentSize)
+            XCTAssertLessThan(natural.height, 560)
+            XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, natural.height, accuracy: 1,
+                           "natural measurement must actually shrink the window, not merely report a smaller value")
+            let stableCount = appliedSizes.count
+            host.settle()
+            XCTAssertEqual(appliedSizes.count, stableCount)
+            host.resize(height: 80)
+            XCTAssertEqual(host.scrollViews.count, 1)
+            try host.assertBottomReachable(try XCTUnwrap(host.scrollViews.first))
+            host.resize(height: natural.height)
+            XCTAssertEqual(try XCTUnwrap(measurement.latestContentSize).height, natural.height, accuracy: 1)
+            XCTAssertFalse(host.scrollViews.contains { host.rect($0).minY == 0 })
+        }
+        XCTAssertEqual(coordinator.intentCount, 0)
+    }
     func testPermissionGateReplacesTheApplicationRegionWithoutATopBanner() throws {
         let source = try audioDashboardViewSource()
 
@@ -231,7 +348,7 @@ final class AudioDashboardViewTests: XCTestCase {
             "struct AudioVolumeMotionTrigger",
             "trigger: muteMotion",
             "hasWriteFailure: snapshot.error != nil",
-            "AudioMuteButtonStyle"
+            "dashboardIconButtonStyle()"
         ] {
             XCTAssertTrue(source.contains(fragment), fragment)
         }
@@ -292,7 +409,8 @@ final class AudioDashboardViewTests: XCTestCase {
     func testProcessRowIconPresentationUsesGenericFallbackAndTwentyPointFrames() throws {
         let source = try audioDashboardViewSource()
         let rowSource = try XCTUnwrap(source.components(separatedBy: "struct AudioProcessControlRow").last)
-        let iconSource = try XCTUnwrap(rowSource.components(separatedBy: "private var volumeBinding").first)
+        let iconStart = try XCTUnwrap(rowSource.components(separatedBy: "private var processIcon").last)
+        let iconSource = try XCTUnwrap(iconStart.components(separatedBy: "private var volumeBinding").first)
 
         XCTAssertTrue(iconSource.contains("case .bundle(let bundleURL):"))
         XCTAssertTrue(iconSource.contains("case .fallbackSystemSymbol:\n            Image(systemName: \"app\")"))
@@ -311,12 +429,12 @@ final class AudioDashboardViewTests: XCTestCase {
 
         for fragment in [
             "@State private var displayedValue: Double",
-            "AudioVolumeTrack(value: displayedValue)",
             "Slider(value: $displayedValue, in: 0...1",
             "withAnimation(motionPolicy.animation)"
         ] {
             XCTAssertTrue(source.contains(fragment), fragment)
         }
+        XCTAssertFalse(source.contains(".opacity(0.01)"), "the native slider must stay visible")
     }
 
     func testRealViewWiresContractsWithoutAnAccessibilityManifest() throws {
@@ -354,8 +472,12 @@ final class AudioDashboardViewTests: XCTestCase {
         guard case .unavailable(let evidence) = hostingAXEvidence(for: controller.view) else {
             return XCTFail("SwiftPM unexpectedly exposed the audio accessibility contract")
         }
+        #if SWIFT_PACKAGE
         XCTAssertEqual(evidence.typedChildren, 0)
         XCTAssertEqual(evidence.navigationChildren, 0)
+        #endif
+        // App-hosted runs can expose native scroll containers as structural AX
+        // children. That is not evidence of target-specific audio contracts.
         XCTAssertTrue(evidence.audioIdentifiers.isEmpty)
     }
 

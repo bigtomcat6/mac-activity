@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 
@@ -56,6 +57,60 @@ final class AudioSystemAccessCoordinatorTests: XCTestCase {
             XCTAssertFalse(fixture.coordinator.snapshot.processControlsAreVisible)
             XCTAssertEqual(fixture.processProvider.callCount, 0)
             XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+        }
+    }
+
+    func testUnauthorizedDeviceVolumeNotificationsKeepPermissionStateStable() async {
+        let cases: [(AudioSystemAuthorizationStatus, AudioSystemAccessState)] = [
+            (.notDetermined, .notDetermined),
+            (.denied, .denied),
+            (.unavailable, .unavailable),
+        ]
+
+        for (status, expectedState) in cases {
+            let reader = AudioSystemAuthorizationReaderFake(statuses: [status])
+            let requester = AudioSystemAuthorizationRequesterFake()
+            let fixture = CoordinatorFixture(
+                availability: .supported,
+                systemAudioAuthorizationReader: reader,
+                systemAudioAuthorizationRequester: requester
+            )
+            await fixture.coordinator.start()
+            let initialReadCount = reader.readCount
+            var accessStates: [AudioSystemAccessState] = []
+            let observation = fixture.coordinator.snapshotPublisher.sink {
+                accessStates.append($0.systemAudioAccess)
+            }
+
+            for volume in [0.6, 0.7, 0.8] {
+                fixture.deviceProvider.confirmedVolume = volume
+                fixture.deviceProvider.snapshotVolume = volume
+                fixture.coordinator.setDeviceVolume(volume, for: "BuiltIn")
+                await fixture.coordinator.testingWaitUntilIdle()
+                await fixture.emit([.device(10, .volume)])
+
+                XCTAssertEqual(fixture.coordinator.snapshot.devices.first?.device.volume.value, volume)
+            }
+            fixture.deviceProvider.confirmedMute = true
+            fixture.deviceProvider.snapshotMute = true
+            fixture.coordinator.setDeviceMuted(true, for: "BuiltIn")
+            await fixture.coordinator.testingWaitUntilIdle()
+            await fixture.emit([
+                .device(10, .mute), .device(10, .nominalSampleRate),
+                .defaultOutputDevice, .processList,
+            ])
+
+            XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.6, 0.7, 0.8])
+            XCTAssertEqual(fixture.deviceProvider.muteWrites, [true])
+            XCTAssertEqual(fixture.coordinator.snapshot.devices.first?.device.mute.value, true)
+            XCTAssertTrue(accessStates.allSatisfy { $0 == expectedState }, "\(status): \(accessStates)")
+            XCTAssertEqual(reader.readCount, initialReadCount, "\(status)")
+            XCTAssertEqual(requester.requestCount, 0)
+            XCTAssertTrue(fixture.coordinator.snapshot.processes.isEmpty)
+            XCTAssertEqual(fixture.processProvider.callCount, 0)
+            XCTAssertEqual(fixture.engine.prepareRuntimeCount, 0)
+            observation.cancel()
+            await fixture.coordinator.shutdown()
         }
     }
 
@@ -319,8 +374,25 @@ final class AudioSystemAccessCoordinatorTests: XCTestCase {
         XCTAssertEqual(reader.readCount, 1)
         XCTAssertEqual(fixture.engine.applyCount, 0)
 
+        fixture.deviceProvider.confirmedVolume = 0.8
+        fixture.deviceProvider.snapshotVolume = 0.8
+        fixture.coordinator.setDeviceVolume(0.8, for: "BuiltIn")
+        await fixture.coordinator.testingWaitForDeviceControl("BuiltIn")
+        let notificationFinished = expectation(description: "volume notification does not wait for grant")
+        let notification = Task { @MainActor in
+            await fixture.emit([.device(10, .volume)])
+            notificationFinished.fulfill()
+        }
+        await fulfillment(of: [notificationFinished], timeout: 1)
+        XCTAssertEqual(fixture.deviceProvider.volumeWrites, [0.8])
+        XCTAssertEqual(fixture.coordinator.snapshot.devices.first?.device.volume.value, 0.8)
+        XCTAssertEqual(fixture.coordinator.snapshot.systemAudioAccess, .requesting)
+        XCTAssertEqual(reader.readCount, 1)
+        XCTAssertEqual(requester.requestCount, 1)
+
         requester.complete(.authorized)
         await request.value
+        await notification.value
         await fixture.coordinator.testingWaitUntilIdle()
 
         XCTAssertEqual(requester.requestCount, 1)

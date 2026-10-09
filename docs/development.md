@@ -85,13 +85,9 @@ xcodebuild test \
 
 The project includes focused executables and command wrappers for local checks:
 
-- `DebugMemoryRelease`
 - `DebugActiveProcessMemory`
-- `DebugMemoryReleaseUI`
 - `DebugDiskCleanup`
-- `scripts/debug-memory-release.command`
 - `scripts/debug-active-process-memory.command`
-- `scripts/debug-memory-release-ui.command`
 - `scripts/debug-disk-cleanup.command`
 
 Use these for narrow cleanup or Actives checks before broad app validation.
@@ -108,8 +104,9 @@ metric snapshots, history, providers, cleanup services, scheduling, formatting,
 preferences state, update selection, and presentation models.
 
 `MacActivityApp` owns the macOS app shell: status item rendering, dashboard
-popover hosting, preferences window coordination, localization, Sparkle updater
-integration, and SwiftUI views.
+hosting (a clear floating panel on macOS 26, a popover under Reduce Transparency
+or on earlier systems), preferences window coordination, localization, Sparkle
+updater integration, and SwiftUI views.
 
 Prefer putting logic in `MacActivityCore` when it can be expressed without
 AppKit or SwiftUI. Keep app-shell code focused on lifecycle, presentation, and

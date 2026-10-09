@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "Follow original output";
 "audio.route.deviceUnavailable" = "%@ (unavailable)";
 "audio.route.selectedSummary" = "%d outputs selected";
-"audio.route.clearHelp" = "Choose Follow original output to clear the explicit route.";
 "audio.accessibility.volume" = "%@ volume, %d percent";
 "audio.accessibility.mute" = "Mute %@";
 "audio.accessibility.unmute" = "Unmute %@";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "Update channel";
 "preferences.language" = "Language";
 "preferences.languageHelp" = "Controls the display language for Preferences and Dashboard.";
-"preferences.dashboardStyle" = "Dashboard style";
-"preferences.dashboardStyle.standard" = "Standard";
-"preferences.dashboardStyle.transparent" = "Transparent";
-"preferences.dashboardStyle.help" = "Transparent uses a clear, borderless panel on macOS 26 or later. If Reduce Transparency is enabled, the Standard appearance is kept.";
-"preferences.dashboardStyle.unavailable" = "Transparent requires macOS 26 or later. This Mac keeps the Standard appearance.";
 "preferences.temperatureSource" = "Temperature source";
 "preferences.temperatureHelp" = "Controls the Temperature metric in the status bar and dashboard.";
 "preferences.hardwareBatteryPercentage" = "Show hardware battery percentage";
@@ -126,45 +120,7 @@
 "diskCleanup.category.trash" = "Trash";
 "diskCleanup.category.userLogs" = "Logs";
 
-"memoryRelease.action.release" = "Release";
-"memoryRelease.action.releasing" = "Releasing";
-"memoryRelease.title.idle" = "Memory";
-"memoryRelease.title.usage" = "Memory %d%%";
-"memoryRelease.title.reclaimable" = "%@ Releasable";
-"memoryRelease.title.releasing" = "Releasing Memory";
-"memoryRelease.title.released" = "Released %@";
-"memoryRelease.title.noSignificantRelease" = "Memory Unchanged";
-"memoryRelease.title.cooldown" = "Release Cooling Down";
-"memoryRelease.title.unavailable" = "Memory Release Not Available";
-"memoryRelease.title.failed" = "Memory Release Failed";
-"memoryRelease.title.readFailed" = "Memory Reading Failed";
-"memoryRelease.subtitle.usage" = "Memory %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "%.1f%% of total memory";
-"memoryRelease.subtitle.noSignificantRelease" = "No immediately releasable memory was found.";
-"memoryRelease.subtitle.cooldown" = "Try again in %.1f seconds.";
-"memoryRelease.subtitle.unavailable" = "No supported memory release method is available on this Mac.";
-"memoryRelease.subtitle.readFailed" = "Unable to compare before and after memory readings.";
-"memoryRelease.subtitle.default" = "Release reclaimable system memory.";
-"memoryRelease.subtitle.failedWithExitCode" = "Memory release failed with exit code %d.";
 
-"trash.action.retry" = "Retry";
-"trash.action.clean" = "Clean";
-"trash.title.scanning" = "Scanning Trash";
-"trash.title.clean" = "Trash Is Clean";
-"trash.title.cleanable" = "%@ in Trash";
-"trash.title.cleaning" = "Cleaning Trash";
-"trash.title.cleaned" = "Cleaned %@";
-"trash.title.failed" = "Trash Cleanup Failed";
-"trash.subtitle.scanning" = "Checking the current user's Trash.";
-"trash.subtitle.clean" = "No cleanable Trash items found.";
-"trash.subtitle.cleanable" = "%d %@ can be removed after confirmation.";
-"trash.subtitle.cleaning" = "Deleting confirmed Trash contents.";
-"trash.subtitle.cleaned" = "Removed %d %@.";
-"trash.subtitle.partial" = "Removed %d %@; %d %@ could not be deleted.";
-"trash.subtitle.partialWithRemaining" = "Removed %d %@; %d %@ could not be deleted. %@ remains.";
-"trash.subtitle.failed.unableToDeleteItems" = "Unable to delete Trash items.";
-"trash.item.singular" = "item";
-"trash.item.plural" = "items";
 
 "diskCleanup.action.retry" = "Retry";
 "diskCleanup.action.clean" = "Clean";
@@ -187,7 +143,6 @@
 "diskCleanup.category.singular" = "category";
 "diskCleanup.category.plural" = "categories";
 
-"energyImpact.title" = "Energy Impact";
 "energyImpact.subtitle.sustained" = "Up to 30 sec CPU energy estimate · Lower is better";
 "energyImpact.column.app" = "App";
 "energyImpact.column.sustained" = "30 sec";
@@ -225,3 +180,29 @@
 "process.action.notTerminable" = "%@ could not be quit safely.";
 "process.action.quit" = "Quit";
 "process.action.confirm" = "Confirm";
+
+"powerFlow.unknownInput" = "Unknown Input";
+"powerFlow.unknownOutput" = "Unknown Output";
+"powerFlow.sources.count" = "%lld sources";
+"powerFlow.outputs.count" = "%lld outputs";
+"powerFlow.more.count" = "%lld more";
+"powerFlow.partialData" = "Partial Data";
+"powerFlow.status.externalPower" = "External Power";
+"powerFlow.status.batteryPower" = "Battery Power";
+"powerFlow.status.charging" = "Charging";
+"powerFlow.status.multipleSources" = "Multiple Sources";
+"powerFlow.status.multipleFlows" = "Multiple Power Flows";
+"powerFlow.status.summary" = "Power Flow Summary";
+"powerFlow.status.waiting" = "Waiting for Power Data";
+"powerFlow.status.unavailable" = "Power Data Unavailable";
+"powerFlow.status.idle" = "No Active Power Flow";
+"powerFlow.totals" = "In %1$@ · Out %2$@";
+"powerFlow.accessibility.component" = "%1$@. %2$@: %3$@. %4$@: %5$@.%6$@";
+"powerFlow.accessibility.node.measured" = "%1$@, %2$@";
+"powerFlow.accessibility.node.derived" = "%1$@, approximately %2$@";
+"powerFlow.accessibility.node.unavailable" = "%1$@, power unavailable";
+"powerFlow.accessibility.sideSummary" = "Total: %1$@. %2$@";
+"powerFlow.accessibility.aggregate.derived" = "approximately %1$@";
+"powerFlow.accessibility.aggregate.lowerBound" = "at least %1$@; unavailable readings: %2$lld";
+"powerFlow.accessibility.aggregate.unavailable" = "power unavailable";
+"powerFlow.accessibility.partialSuffix" = " Partial data.";

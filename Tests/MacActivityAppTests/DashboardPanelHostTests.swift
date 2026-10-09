@@ -408,6 +408,18 @@ final class DashboardPanelHostTests: XCTestCase {
         XCTAssertFalse(host.shouldDismiss(forEventWindow: child, mouseLocation: NSPoint(x: 5, y: 5)))
     }
 
+    func testPanelAppearsAtFullOpacityWithoutWindowFade() {
+        let host = DashboardPanelHost()
+        let panel = DashboardPanelFactory.makePanel(contentRect: NSRect(x: 0, y: 0, width: 40, height: 40))
+        defer { panel.close() }
+        panel.alphaValue = 1
+
+        host.presentPanel(panel)
+
+        XCTAssertTrue(panel.isVisible)
+        XCTAssertEqual(panel.alphaValue, 1, "glass shown in a transparent window stays over-bright")
+    }
+
     func testMenuTrackingStateIsClearedWithMonitorsOnClose() {
         let host = makeShownHost()
         NotificationCenter.default.post(name: NSMenu.didBeginTrackingNotification, object: NSMenu())
