@@ -1748,7 +1748,8 @@ private extension AudioControlCoordinator {
                 && latestSystemAudioAuthorization == .authorized
                 && isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration)
         }
-        guard supportsProcessControls, acceptsMutations else { return false }
+        guard supportsProcessControls, acceptsMutations,
+              latestSystemAudioAuthorization == .authorized else { return false }
         await refreshSystemAudioAuthorization()
         return latestSystemAudioAuthorization == .authorized
             && isCurrentSystemAudioAuthorizationWork(authorizationWorkGeneration)

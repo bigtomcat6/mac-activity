@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "跟隨原始輸出";
 "audio.route.deviceUnavailable" = "%@（無法使用）";
 "audio.route.selectedSummary" = "已選取 %d 個輸出";
-"audio.route.clearHelp" = "請選擇「跟隨原始輸出」以清除明確路由。";
 "audio.accessibility.volume" = "%@ 音量，百分之 %d";
 "audio.accessibility.mute" = "將 %@ 靜音";
 "audio.accessibility.unmute" = "取消 %@ 靜音";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "更新頻道";
 "preferences.language" = "語言";
 "preferences.languageHelp" = "控制偏好設定與儀表板的顯示語言。";
-"preferences.dashboardStyle" = "介面風格";
-"preferences.dashboardStyle.standard" = "標準";
-"preferences.dashboardStyle.transparent" = "通透";
-"preferences.dashboardStyle.help" = "「通透」會在 macOS 26 或以上版本使用透明無邊框面板。若系統開啟「降低透明度」，將維持「標準」外觀。";
-"preferences.dashboardStyle.unavailable" = "「通透」需要 macOS 26 或以上版本。此 Mac 將維持「標準」外觀。";
 "preferences.temperatureSource" = "溫度來源";
 "preferences.temperatureHelp" = "控制選單列與儀表板的溫度指標。";
 "preferences.hardwareBatteryPercentage" = "顯示硬體電池百分比";
@@ -126,7 +120,6 @@
 "diskCleanup.category.trash" = "垃圾桶";
 "diskCleanup.category.userLogs" = "日誌";
 
-"energyImpact.title" = "耗電影響";
 "energyImpact.subtitle.sustained" = "最近最多 30 秒 CPU 能耗估算 · 越低越好";
 "energyImpact.column.app" = "應用程式";
 "energyImpact.column.sustained" = "30 秒";
@@ -158,45 +151,7 @@
 "powerFlow.accessibility.row" = "%1$@、%2$@、%3$@";
 
 
-"memoryRelease.action.release" = "釋放";
-"memoryRelease.action.releasing" = "釋放中";
-"memoryRelease.title.idle" = "記憶體";
-"memoryRelease.title.usage" = "記憶體 %d%%";
-"memoryRelease.title.reclaimable" = "%@ 可回收";
-"memoryRelease.title.releasing" = "正在釋放記憶體";
-"memoryRelease.title.released" = "已釋放 %@";
-"memoryRelease.title.noSignificantRelease" = "記憶體未變化";
-"memoryRelease.title.cooldown" = "釋放冷卻中";
-"memoryRelease.title.unavailable" = "無法釋放記憶體";
-"memoryRelease.title.failed" = "記憶體釋放失敗";
-"memoryRelease.title.readFailed" = "記憶體讀取失敗";
-"memoryRelease.subtitle.usage" = "記憶體 %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "佔總記憶體的 %.1f%%";
-"memoryRelease.subtitle.noSignificantRelease" = "沒有發現可立即釋放的記憶體。";
-"memoryRelease.subtitle.cooldown" = "%.1f 秒後重試。";
-"memoryRelease.subtitle.unavailable" = "這台 Mac 沒有可用的記憶體釋放方式。";
-"memoryRelease.subtitle.readFailed" = "無法比較釋放前後的記憶體讀數。";
-"memoryRelease.subtitle.default" = "釋放可回收的系統記憶體。";
-"memoryRelease.subtitle.failedWithExitCode" = "記憶體釋放失敗，退出代碼 %d。";
 
-"trash.action.retry" = "重試";
-"trash.action.clean" = "清理";
-"trash.title.scanning" = "正在掃描垃圾桶";
-"trash.title.clean" = "垃圾桶已清空";
-"trash.title.cleanable" = "垃圾桶有 %@";
-"trash.title.cleaning" = "正在清理垃圾桶";
-"trash.title.cleaned" = "已清理 %@";
-"trash.title.failed" = "垃圾桶清理失敗";
-"trash.subtitle.scanning" = "正在檢查目前使用者的垃圾桶。";
-"trash.subtitle.clean" = "找不到可清理的垃圾項目。";
-"trash.subtitle.cleanable" = "確認後可移除 %d %@。";
-"trash.subtitle.cleaning" = "正在刪除已確認的垃圾桶內容。";
-"trash.subtitle.cleaned" = "已移除 %d %@。";
-"trash.subtitle.partial" = "已移除 %d %@；%d %@ 無法刪除。";
-"trash.subtitle.partialWithRemaining" = "已移除 %d %@；%d %@ 無法刪除。仍剩餘 %@。";
-"trash.subtitle.failed.unableToDeleteItems" = "無法刪除垃圾桶項目。";
-"trash.item.singular" = "個項目";
-"trash.item.plural" = "個項目";
 
 "diskCleanup.action.retry" = "重試";
 "diskCleanup.action.clean" = "清理";
@@ -226,3 +181,29 @@
 "process.action.notTerminable" = "%@ 無法安全結束。";
 "process.action.quit" = "結束";
 "process.action.confirm" = "確認";
+
+"powerFlow.unknownInput" = "未知輸入";
+"powerFlow.unknownOutput" = "未知輸出";
+"powerFlow.sources.count" = "%lld 個輸入來源";
+"powerFlow.outputs.count" = "%lld 個輸出";
+"powerFlow.more.count" = "另外 %lld 個";
+"powerFlow.partialData" = "部分資料";
+"powerFlow.status.externalPower" = "外部電源";
+"powerFlow.status.batteryPower" = "電池供電";
+"powerFlow.status.charging" = "正在充電";
+"powerFlow.status.multipleSources" = "多個電源";
+"powerFlow.status.multipleFlows" = "多路功率流";
+"powerFlow.status.summary" = "功率流摘要";
+"powerFlow.status.waiting" = "正在等待功率資料";
+"powerFlow.status.unavailable" = "功率資料無法使用";
+"powerFlow.status.idle" = "沒有作用中的功率流";
+"powerFlow.totals" = "輸入 %1$@ · 輸出 %2$@";
+"powerFlow.accessibility.component" = "%1$@。%2$@：%3$@。%4$@：%5$@。%6$@";
+"powerFlow.accessibility.node.measured" = "%1$@，%2$@";
+"powerFlow.accessibility.node.derived" = "%1$@，約 %2$@";
+"powerFlow.accessibility.node.unavailable" = "%1$@，功率無法使用";
+"powerFlow.accessibility.sideSummary" = "總計：%1$@。%2$@";
+"powerFlow.accessibility.aggregate.derived" = "約 %1$@";
+"powerFlow.accessibility.aggregate.lowerBound" = "至少 %1$@；無法使用的讀數：%2$lld 個";
+"powerFlow.accessibility.aggregate.unavailable" = "功率無法使用";
+"powerFlow.accessibility.partialSuffix" = "僅有部分資料。";

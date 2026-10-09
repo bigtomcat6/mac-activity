@@ -6,8 +6,262 @@ import XCTest
 
 @MainActor
 final class EnergyImpactViewTests: XCTestCase {
+    // Catches the measured-list re-enable modifier defeating inherited .never.
+    func testLongEnergyIndicatorsHideAfterFlashAndRestoreWithoutLosingScrolling() async throws {
+        let model = EnergyImpactModel(provider: EnergyImpactViewProviderStub(responses: [
+            publication(entries: (1...120).map { entry(processIdentifier: pid_t($0)) })
+        ]), observationIntervalNanoseconds: 1, nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() })
+        await model.refreshWhileVisible()
+        for height: CGFloat in [480, 80] {
+            let state = DashboardPopoverScrollIndicatorState()
+            let host = DashboardListTestHost(DashboardIndicatorTestPage(state: state) {
+                EnergyImpactView(model: model, powerFlowModel: self.testPowerFlowModel(), refreshTrigger: 0,
+                                 showsApplicationIdentifier: true).padding(18)
+            }.environment(\.dashboardPresentationIsPresented, false), height: height)
+            defer { host.close() }
+            try host.assertIndicatorTransition(state)
+        }
+    }
+
+    func testHostedListOverflowPreservesPageAndDocumentSessionsAndInteractionState() throws {
+        let page = DashboardListLifecycleRecorder()
+        let document = DashboardListLifecycleRecorder()
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { _ in }) {
+            DashboardListLifecyclePage(page: page, document: document)
+        })
+        defer { host.close() }
+        host.settle()
+        let pageID = try XCTUnwrap(page.identities.first)
+        let documentID = try XCTUnwrap(document.identities.first)
+        page.edit?()
+        document.edit?()
+        host.settle()
+        for height: CGFloat in [80, 480] {
+            host.resize(height: height)
+            XCTAssertEqual(page.identities, [pageID])
+            XCTAssertEqual(document.identities, [documentID])
+            XCTAssertEqual(page.interaction, "pending confirmation")
+            XCTAssertEqual(document.interaction, "pending confirmation")
+            XCTAssertEqual(page.starts, 1)
+            XCTAssertEqual(document.starts, 1)
+            XCTAssertEqual(page.cancellations, 0)
+            XCTAssertEqual(document.cancellations, 0)
+            XCTAssertEqual(host.scrollViews.count, 1)
+            for inactive in host.allScrollViews where !inactive.hasVerticalScroller {
+                XCTAssertEqual(inactive.documentView!.frame.height, inactive.contentView.bounds.height, accuracy: 1,
+                               "inactive native containers must have no hidden scrollable overflow")
+            }
+        }
+    }
+
+    func testHostedDynamicSummaryAtOverflowThresholdSettlesWithoutTaskRestarts() {
+        let page = DashboardListLifecycleRecorder()
+        let document = DashboardListLifecycleRecorder()
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { _ in }) {
+            DashboardListLifecyclePage(page: page, document: document, expandsSummary: true)
+        }, height: 160)
+        defer { host.close() }
+        host.settle()
+        host.settle()
+        XCTAssertEqual(page.starts, 1)
+        XCTAssertEqual(document.starts, 1)
+        XCTAssertEqual(page.cancellations, 0)
+        XCTAssertEqual(document.cancellations, 0)
+        XCTAssertEqual(page.identities.count, 1)
+        XCTAssertEqual(document.identities.count, 1)
+    }
+
     private static var englishBundle: Bundle {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
+    }
+
+    func testHostedTwentyRowsScrollInsideEnergyCard() async throws {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: (1...20).map {
+                entry(processIdentifier: pid_t($0))
+            })]),
+            observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible()
+        let host = DashboardListTestHost(EnergyImpactView(
+            model: model, powerFlowModel: testPowerFlowModel(), refreshTrigger: 0,
+            showsApplicationIdentifier: true
+        ).padding(18).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        host.settle()
+        XCTAssertEqual(host.scrollViews.count, 1, "only application rows should own scrolling")
+        let scroll = try XCTUnwrap(host.scrollViews.first)
+        let document = try XCTUnwrap(scroll.documentView)
+        let viewport = host.rect(scroll)
+        XCTAssertGreaterThan(viewport.minY, 18, "summary and columns must precede the rows")
+        XCTAssertLessThanOrEqual(viewport.maxY, host.controller.view.bounds.height - 18 + 1)
+        try host.assertBottomReachable(scroll)
+        XCTAssertTrue(document.visibleRect.contains(NSRect(x: 0,
+            y: document.bounds.maxY - 6 - 32, width: 1, height: 32 + 6)),
+            "the last 32-point row and bottom padding are inside the visible document at the bottom")
+        XCTAssertGreaterThanOrEqual(document.frame.height, 20 * 32 + 6)
+    }
+
+    func testHostedEnergyNaturalHeightSurvivesPanelClampAndListUpdates() async throws {
+        let rowCounts = [20, 2, 1, 0]
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: rowCounts.map { count in
+                publication(entries: (0..<count).map { entry(processIdentifier: pid_t($0 + 1)) })
+            }), observationIntervalNanoseconds: 1, nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible()
+        var heights: [CGFloat] = []
+        let power = testPowerFlowModel()
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { heights.append($0) }) {
+            EnergyImpactView(model: model, powerFlowModel: power, refreshTrigger: 0,
+                             showsApplicationIdentifier: true).padding(18)
+        }.environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        host.settle()
+        let naturalHeight = try XCTUnwrap(heights.last)
+        XCTAssertGreaterThan(naturalHeight, 560)
+        let panelHost = DashboardPanelHost()
+        host.panel.contentViewController = nil
+        panelHost.show(contentViewController: host.controller,
+            anchorRect: NSRect(x: 300, y: 500, width: 24, height: 24),
+            visibleFrame: NSRect(x: 100, y: 100, width: 800, height: 330),
+            contentSize: NSSize(width: 420, height: 560))
+        defer { panelHost.destroy() }
+        host.settle()
+        XCTAssertLessThan(try XCTUnwrap(panelHost.contentSize).height, 560)
+        XCTAssertEqual(try XCTUnwrap(heights.last), naturalHeight, accuracy: 1)
+        let scroll = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertGreaterThan(host.rect(scroll).minY, 18)
+        XCTAssertLessThanOrEqual(host.rect(scroll).maxY, host.controller.view.bounds.height - 18 + 1)
+        try host.assertBottomReachable(scroll)
+        let stableCount = heights.count
+        host.settle()
+        host.settle()
+        XCTAssertEqual(heights.count, stableCount, "no idle measurement/resize feedback")
+        for count in rowCounts.dropFirst() {
+            await model.refreshWhileVisible()
+            host.settle()
+            XCTAssertEqual(model.entries.count, count)
+            XCTAssertLessThan(try XCTUnwrap(heights.last), naturalHeight)
+            let short = try XCTUnwrap(host.scrollViews.first)
+            XCTAssertEqual(short.documentView!.frame.height, short.contentView.bounds.height, accuracy: 1)
+        }
+    }
+
+    func testHostedEnergyLoadingAndEmptyDocumentsStayCompact() async throws {
+        let provider = EnergyImpactViewProviderStub(responses: [publication(entries: [])])
+        var resume: CheckedContinuation<Void, Never>?
+        provider.beforeObservation = {
+            await withCheckedContinuation { resume = $0 }
+        }
+        let model = EnergyImpactModel(provider: provider, observationIntervalNanoseconds: 1,
+            nowNanoseconds: { 0 }, sleep: { _ in throw CancellationError() })
+        let refresh = Task { await model.refreshWhileVisible() }
+        for _ in 0..<100 where resume == nil { await Task.yield() }
+        let continuation = try XCTUnwrap(resume)
+        let power = testPowerFlowModel()
+        var naturalHeight: CGFloat = 0
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { naturalHeight = $0 }) {
+            EnergyImpactView(model: model, powerFlowModel: power, refreshTrigger: 0,
+                             showsApplicationIdentifier: true).padding(18)
+        }.environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        host.settle()
+        XCTAssertTrue(model.isRefreshing)
+        XCTAssertLessThan(naturalHeight, 300)
+        let loading = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertEqual(loading.documentView!.frame.height, loading.contentView.bounds.height, accuracy: 1)
+        provider.beforeObservation = nil
+        continuation.resume()
+        await refresh.value
+        host.settle()
+        XCTAssertFalse(model.isRefreshing)
+        XCTAssertTrue(model.entries.isEmpty)
+        XCTAssertLessThan(naturalHeight, 300)
+        let empty = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertEqual(empty.documentView!.frame.height, empty.contentView.bounds.height, accuracy: 1)
+    }
+
+    func testHostedEnergyFallsBackToOnePageScrollerOnlyWhenChromeCannotFit() async throws {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: (1...20).map {
+                entry(processIdentifier: pid_t($0))
+            })]), observationIntervalNanoseconds: 1, nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible()
+        var naturalHeight: CGFloat = 0
+        let power = testPowerFlowModel()
+        let host = DashboardListTestHost(DashboardListPage(onNaturalHeightChange: { naturalHeight = $0 }) {
+            EnergyImpactView(model: model, powerFlowModel: power, refreshTrigger: 0,
+                             showsApplicationIdentifier: true).padding(18)
+        }.environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        host.settle()
+        let initialHeight = naturalHeight
+        host.resize(height: 80)
+        XCTAssertEqual(host.scrollViews.count, 1, "no nested active scrollers in overflow fallback")
+        let outer = try XCTUnwrap(host.scrollViews.first)
+        XCTAssertEqual(host.rect(outer).minY, 0, accuracy: 1)
+        XCTAssertEqual(naturalHeight, initialHeight, accuracy: 1)
+        try host.assertBottomReachable(outer)
+        outer.contentView.scroll(to: .zero)
+        outer.reflectScrolledClipView(outer.contentView)
+        XCTAssertEqual(outer.contentView.bounds.minY, 0, accuracy: 1, "fixed content remains accessible at page top")
+        host.resize(height: 480)
+        XCTAssertEqual(host.scrollViews.count, 1)
+        XCTAssertGreaterThan(host.rect(try XCTUnwrap(host.scrollViews.first)).minY, 18,
+                             "return to rows-only scrolling when space becomes available")
+        XCTAssertEqual(naturalHeight, initialHeight, accuracy: 1)
+    }
+
+    func testForcedLegacyPopoverHostsEnergyRowsAndReopensWithoutNaturalHeightDrift() async throws {
+        let model = EnergyImpactModel(
+            provider: EnergyImpactViewProviderStub(responses: [publication(entries: (1...20).map {
+                entry(processIdentifier: pid_t($0))
+            })]), observationIntervalNanoseconds: 1, nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() }
+        )
+        await model.refreshWhileVisible()
+        let power = testPowerFlowModel()
+        var naturalHeight: CGFloat = 0
+        let controller = NSHostingController(rootView: DashboardListPage(onNaturalHeightChange: { naturalHeight = $0 }) {
+            EnergyImpactView(model: model, powerFlowModel: power, refreshTrigger: 0,
+                             showsApplicationIdentifier: true).padding(18)
+        }.environment(\.dashboardPresentationIsPresented, false))
+        let adaptive = DashboardAdaptivePopoverHost(hostKindProvider: { .popover })
+        adaptive.animates = false
+        adaptive.contentViewController = controller
+        adaptive.contentSize = NSSize(width: 420, height: 480)
+        let screen = try XCTUnwrap(NSScreen.main)
+        let anchorWindow = NSWindow(contentRect: NSRect(x: screen.visibleFrame.midX,
+            y: screen.visibleFrame.midY, width: 80, height: 40),
+            styleMask: [.borderless], backing: .buffered, defer: false)
+        anchorWindow.isReleasedWhenClosed = false
+        let anchor = NSView(frame: NSRect(x: 8, y: 8, width: 24, height: 24))
+        anchorWindow.contentView?.addSubview(anchor)
+        anchorWindow.orderFront(nil)
+        defer { adaptive.performClose(nil); anchorWindow.orderOut(nil) }
+        var firstHeight: CGFloat?
+        for _ in 0..<2 {
+            adaptive.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+            try await Task.sleep(nanoseconds: 300_000_000)
+            XCTAssertEqual(adaptive.activeHostKind, .popover)
+            XCTAssertTrue(adaptive.isShown)
+            func scrollViews(_ view: NSView) -> [NSScrollView] {
+                ((view as? NSScrollView).map { $0.hasVerticalScroller ? [$0] : [] } ?? [])
+                    + view.subviews.flatMap(scrollViews)
+            }
+            let scroll = try XCTUnwrap(scrollViews(controller.view).first)
+            XCTAssertGreaterThan(scroll.documentView!.frame.height, scroll.contentView.bounds.height)
+            if let firstHeight { XCTAssertEqual(naturalHeight, firstHeight, accuracy: 1) }
+            else { firstHeight = naturalHeight }
+            adaptive.performClose(nil)
+        }
     }
 
     func testEnergyImpactViewShowsLocalizedEmptyMessage() {
@@ -279,7 +533,7 @@ final class EnergyImpactViewTests: XCTestCase {
         )] = [
             (
                 "en",
-                "Energy Impact",
+                "Energy",
                 "Up to 30 sec CPU energy estimate · Lower is better",
                 "30 sec",
                 "Safari, rank 1, up to 30 seconds 1 mW, rising"
@@ -295,7 +549,7 @@ final class EnergyImpactViewTests: XCTestCase {
 
         for expectation in expectations {
             AppLocalization.setPreferredLanguageIdentifier(expectation.languageIdentifier)
-            XCTAssertEqual(AppLocalization.string(.energyImpactTitle), expectation.title)
+            XCTAssertEqual(AppLocalization.string(.dashboardTabEnergyImpact), expectation.title)
             XCTAssertEqual(AppLocalization.string(.energyImpactSubtitleSustained), expectation.subtitle)
             XCTAssertEqual(AppLocalization.string(.energyImpactSustainedColumn), expectation.sustainedLabel)
             XCTAssertEqual(
@@ -486,6 +740,7 @@ final class EnergyImpactViewTests: XCTestCase {
 
 @MainActor
 private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
+    var beforeObservation: (() async -> Void)?
     private var responses: [EnergyImpactPublication]
     private var nextGeneration: UInt64 = 0
     private(set) var beginCount = 0
@@ -508,6 +763,7 @@ private final class EnergyImpactViewProviderStub: EnergyImpactProviding {
         limit: Int,
         scope: EnergyImpactAppScope
     ) async -> EnergyImpactPublication? {
+        await beforeObservation?()
         observeCount += 1
         requestedScopes.append(scope)
         guard responses.isEmpty == false else { return nil }
@@ -530,5 +786,206 @@ private final class EnergyImpactPowerFlowProviderStub: PowerFlowProviding {
     func snapshot() async -> PowerFlowSnapshot {
         guard responses.isEmpty == false else { return .empty }
         return responses.removeFirst()
+    }
+}
+
+// Shared real AppKit hosting/geometry fixture for bounded dashboard lists.
+@MainActor
+private final class DashboardListLifecycleRecorder {
+    var starts = 0
+    var cancellations = 0
+    var identities: Set<UUID> = []
+    var interaction = ""
+    var edit: (() -> Void)?
+}
+
+@MainActor
+private struct DashboardListLifecyclePage: View {
+    let page: DashboardListLifecycleRecorder
+    let document: DashboardListLifecycleRecorder
+    var expandsSummary = false
+    @State private var identity = UUID()
+    @State private var interaction = ""
+    @State private var summaryHeight: CGFloat = 78
+
+    var body: some View {
+        VStack(spacing: 8) {
+            Color.clear.frame(height: summaryHeight).fixedSize().layoutPriority(1)
+            DashboardMeasuredList(spacing: 0) {
+                DashboardListLifecycleDocument(recorder: document)
+            }
+        }
+        .padding(18)
+        .onAppear {
+            page.identities.insert(identity)
+            page.interaction = interaction
+            page.edit = { interaction = "pending confirmation" }
+        }
+        .onChange(of: interaction) { page.interaction = $0 }
+        .task {
+            page.starts += 1
+            if expandsSummary { summaryHeight = 97.5 }
+            defer { page.cancellations += 1 }
+            try? await Task.sleep(nanoseconds: 60_000_000_000)
+        }
+    }
+}
+
+@MainActor
+private struct DashboardListLifecycleDocument: View {
+    let recorder: DashboardListLifecycleRecorder
+    @State private var identity = UUID()
+    @State private var interaction = ""
+
+    var body: some View {
+        Text(interaction).frame(height: 700)
+            .onAppear {
+                recorder.identities.insert(identity)
+                recorder.interaction = interaction
+                recorder.edit = { interaction = "pending confirmation" }
+            }
+            .onChange(of: interaction) { recorder.interaction = $0 }
+            .task {
+                recorder.starts += 1
+                defer { recorder.cancellations += 1 }
+                try? await Task.sleep(nanoseconds: 60_000_000_000)
+            }
+    }
+}
+
+@MainActor
+final class DashboardListTestHost {
+    let controller: NSHostingController<AnyView>
+    let panel: NSPanel
+
+    init<Content: View>(_ view: Content, height: CGFloat = 480) {
+        controller = NSHostingController(rootView: AnyView(view))
+        panel = NSPanel(contentRect: NSRect(x: 100, y: 100, width: 420, height: height),
+                        styleMask: [.borderless], backing: .buffered, defer: false)
+        panel.isReleasedWhenClosed = false
+        panel.contentViewController = controller
+        panel.setContentSize(NSSize(width: 420, height: height))
+        panel.orderFront(nil)
+    }
+
+    func settle() {
+        RunLoop.main.run(until: Date().addingTimeInterval(0.15))
+        controller.view.layoutSubtreeIfNeeded()
+    }
+
+    func resize(height: CGFloat) {
+        panel.setContentSize(NSSize(width: 420, height: height))
+        settle()
+    }
+
+    func close() { panel.orderOut(nil) }
+
+    static func indicatorIsVisible(_ scroller: NSScroller?) -> Bool {
+        guard let scroller, scroller.frame.width > 0, scroller.frame.height > 0 else { return false }
+        var view: NSView? = scroller
+        while let current = view {
+            if current.isHidden || current.alphaValue <= 0.01 { return false }
+            view = current.superview
+        }
+        return true
+    }
+
+    // Positive oracle: overflowing real documents, not hasScroller capability or AX existence.
+    func assertIndicatorTransition(_ state: DashboardPopoverScrollIndicatorState,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
+        settle()
+        let scrolls = allScrollViews
+        let identities = Set(scrolls.map(ObjectIdentifier.init))
+        let overflowing = scrolls.filter {
+            ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height + 1 && $0.hasVerticalScroller
+        }
+        XCTAssertFalse(overflowing.isEmpty, "requires a long, enabled document", file: file, line: line)
+        for style in [NSScroller.Style.legacy, .overlay] {
+            func flash() {
+                for scroll in scrolls { scroll.scrollerStyle = style; scroll.flashScrollers() }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            flash()
+            for scroll in overflowing {
+                XCTAssertTrue(Self.indicatorIsVisible(scroll.verticalScroller), "automatic positive baseline", file: file, line: line)
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+            let offsets = scrolls.map { $0.contentView.bounds.origin }
+            state.setHeightTransitioning(true)
+            settle()
+            flash()
+            for delay in [0.02, 0.08, 0.25] {
+                RunLoop.main.run(until: Date().addingTimeInterval(delay))
+                XCTAssertEqual(Set(allScrollViews.map(ObjectIdentifier.init)), identities, file: file, line: line)
+                for (index, scroll) in scrolls.enumerated() {
+                    XCTAssertFalse(Self.indicatorIsVisible(scroll.verticalScroller), "never must survive flash", file: file, line: line)
+                    XCTAssertFalse(Self.indicatorIsVisible(scroll.horizontalScroller), file: file, line: line)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.x, offsets[index].x, accuracy: 1, file: file, line: line)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.y, offsets[index].y, accuracy: 1, file: file, line: line)
+                }
+            }
+            for scroll in overflowing {
+                let beforeWheel = scroll.contentView.bounds.origin.y
+                let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+                    wheelCount: 1, wheel1: -80, wheel2: 0, wheel3: 0), file: file, line: line)
+                let event = try XCTUnwrap(NSEvent(cgEvent: cg), file: file, line: line)
+                scroll.scrollWheel(with: event) // Owned view only; never post global input.
+                RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+                XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, beforeWheel, file: file, line: line)
+                try assertBottomReachable(scroll, file: file, line: line)
+                XCTAssertFalse(Self.indicatorIsVisible(scroll.verticalScroller), file: file, line: line)
+            }
+            let bottoms = scrolls.map { $0.contentView.bounds.origin }
+            state.setHeightTransitioning(false)
+            settle()
+            flash()
+            for (index, scroll) in scrolls.enumerated() {
+                XCTAssertEqual(scroll.contentView.bounds.origin.y, bottoms[index].y, accuracy: 1, file: file, line: line)
+            }
+            for scroll in overflowing {
+                XCTAssertTrue(Self.indicatorIsVisible(scroll.verticalScroller), "automatic must restore", file: file, line: line)
+                try assertBottomReachable(scroll, file: file, line: line)
+            }
+            XCTAssertEqual(Set(allScrollViews.map(ObjectIdentifier.init)), identities, file: file, line: line)
+        }
+    }
+
+    // SwiftUI's disabled scroll scopes remove their native vertical scroller.
+    // Count enabled scopes, not the stable but inactive wrapper containers.
+    var scrollViews: [NSScrollView] { allScrollViews.filter(\.hasVerticalScroller) }
+
+    var allScrollViews: [NSScrollView] {
+        func descendants(_ view: NSView) -> [NSView] {
+            [view] + view.subviews.flatMap(descendants)
+        }
+        return descendants(controller.view).compactMap { $0 as? NSScrollView }.sorted {
+            rect($0).minY < rect($1).minY
+        }
+    }
+
+    func rect(_ view: NSView) -> NSRect { view.convert(view.bounds, to: controller.view) }
+
+    func assertBottomReachable(_ scroll: NSScrollView, file: StaticString = #filePath, line: UInt = #line) throws {
+        let document = try XCTUnwrap(scroll.documentView, file: file, line: line)
+        let viewport = rect(scroll)
+        XCTAssertGreaterThan(document.frame.height, scroll.contentView.bounds.height, file: file, line: line)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: document.bounds.maxY - scroll.contentView.bounds.height))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        settle()
+        XCTAssertEqual(rect(scroll), viewport, file: file, line: line)
+        XCTAssertEqual(scroll.contentView.bounds.maxY, document.bounds.maxY, accuracy: 1, file: file, line: line)
+    }
+}
+
+// Uses the real shared constructors and real page fields; no copied row/list implementation.
+struct DashboardIndicatorTestPage<Content: View>: View {
+    @ObservedObject var state: DashboardPopoverScrollIndicatorState
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        DashboardListPage(onNaturalHeightChange: { _ in }) {
+            content().scrollIndicators(state.isHeightTransitioning ? .never : .automatic)
+        }
+        .scrollIndicators(state.isHeightTransitioning ? .never : .automatic)
     }
 }

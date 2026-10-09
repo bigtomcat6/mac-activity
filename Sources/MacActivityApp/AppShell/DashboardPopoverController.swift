@@ -106,6 +106,7 @@ typealias DashboardPopoverFrameAnimator = @MainActor (
 @MainActor
 final class DashboardPopoverContentSizeCoordinator {
     private weak var popover: DashboardPopoverHosting?
+    var dashboardRootIdentity: ObjectIdentifier?
     private var pendingContentSize: NSSize?
     private var isUpdateScheduled = false
     private var animationGeneration = 0
@@ -183,6 +184,11 @@ final class DashboardPopoverContentSizeCoordinator {
             }
 
             self.isUpdateScheduled = false
+            if let identity = self.dashboardRootIdentity,
+               self.popover?.contentViewController.map(ObjectIdentifier.init) != identity {
+                self.pendingContentSize = nil
+                return
+            }
             guard let contentSize = self.pendingContentSize else {
                 return
             }
@@ -295,6 +301,7 @@ final class DashboardPopoverContentSizeCoordinator {
         animationGeneration += 1
         animatingContentSize = contentSize
         let generation = animationGeneration
+        let rootIdentity = popover.contentViewController.map(ObjectIdentifier.init)
         setHeightTransitioning(true)
 
         animateFrame(window, animatedFrame) { [weak self] in
@@ -305,6 +312,7 @@ final class DashboardPopoverContentSizeCoordinator {
             guard let popover = self.popover else {
                 return
             }
+            guard popover.contentViewController.map(ObjectIdentifier.init) == rootIdentity else { return }
             popover.contentSize = contentSize
             self.setHeightTransitioning(false)
         }
@@ -334,14 +342,13 @@ final class SharedDashboardPopoverFocusController: DashboardPopoverFocusControll
     }
 
     func focusPresentedPopover(_ popover: DashboardPopoverHosting) {
-        focusWindowIfAvailable(for: popover)
-        DispatchQueue.main.async {
-            self.focusWindowIfAvailable(for: popover)
+        guard popover.isShown, let window = popover.contentViewController?.view.window else { return }
+        window.makeKeyAndOrderFront(nil)
+        DispatchQueue.main.async { [weak popover, weak window] in
+            guard let popover, let window, popover.isShown,
+                  popover.contentViewController?.view.window === window else { return }
+            window.makeKeyAndOrderFront(nil)
         }
-    }
-
-    private func focusWindowIfAvailable(for popover: DashboardPopoverHosting) {
-        popover.contentViewController?.view.window?.makeKeyAndOrderFront(nil)
     }
 }
 
@@ -377,7 +384,6 @@ struct DashboardPopoverRootView: View {
     var body: some View {
         content
             .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
-            .environment(\.dashboardStyleAppearance, presentationState.resolution.appearance)
             .environment(\.dashboardPresentationIsPresented, presentationState.isPresented)
     }
 }
@@ -386,36 +392,28 @@ struct DashboardPopoverRootView: View {
 final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     private let popover: DashboardPopoverHosting
     private let focusController: DashboardPopoverFocusControlling
-    private let onVisibilityChange: (Bool) -> Void
+    private let onVisibilityChange: @MainActor (Bool) -> Void
     private let contentSizeCoordinator: DashboardPopoverContentSizeCoordinator
     private let dashboardHostingController: DashboardPopoverHostingController
     private let contentMeasurement: DashboardPopoverContentMeasurement
     private let scrollIndicatorState: DashboardPopoverScrollIndicatorState
     private let presentationState: DashboardPresentationState
-    private let accessibilityEnvironmentProvider: () -> DashboardPresentationAccessibilityEnvironment
-    private var cancellables: Set<AnyCancellable> = []
+    private var reportedVisible = false
+    private let cleanupOnDeinit: @MainActor @Sendable (Bool) -> Void
 
     convenience init(
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void
+        onVisibilityChange: @escaping @MainActor (Bool) -> Void
     ) {
-        let presentationState = DashboardPresentationState(
-            style: preferencesController.state.dashboardStyle,
-            environment: DashboardPresentationAccessibilityEnvironment.live()
-        )
-        let host = DashboardAdaptivePopoverHost(
-            resolutionProvider: { presentationState.resolution }
-        )
         self.init(
-            popover: host,
+            popover: DashboardAdaptivePopoverHost(),
             focusController: SharedDashboardPopoverFocusController(),
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
             audioDashboardModel: audioDashboardModel,
-            onVisibilityChange: onVisibilityChange,
-            presentationState: presentationState
+            onVisibilityChange: onVisibilityChange
         )
     }
 
@@ -425,19 +423,13 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        onVisibilityChange: @escaping (Bool) -> Void,
-        presentationState: DashboardPresentationState? = nil,
-        accessibilityEnvironmentProvider: @escaping () -> DashboardPresentationAccessibilityEnvironment = { .live() }
+        onVisibilityChange: @escaping @MainActor (Bool) -> Void,
+        presentationState: DashboardPresentationState = DashboardPresentationState()
     ) {
         self.popover = popover
         self.focusController = focusController
         self.onVisibilityChange = onVisibilityChange
-        let presentationState = presentationState ?? DashboardPresentationState(
-            style: preferencesController.state.dashboardStyle,
-            environment: accessibilityEnvironmentProvider()
-        )
         self.presentationState = presentationState
-        self.accessibilityEnvironmentProvider = accessibilityEnvironmentProvider
 
         let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
         let tabSelectionState = DashboardTabSelectionState()
@@ -475,6 +467,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         popover.behavior = .transient
         popover.animates = true
         popover.contentViewController = dashboardHostingController
+        let rootIdentity = ObjectIdentifier(dashboardHostingController)
+        contentSizeCoordinator.dashboardRootIdentity = rootIdentity
         measurement.invalidatePendingEmissions()
         contentSizeCoordinator.applyImmediately(
             measuredSize: measurement.latestContentSize ?? bootstrapSize
@@ -484,24 +478,38 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         self.dashboardHostingController = dashboardHostingController
         self.contentMeasurement = measurement
         self.scrollIndicatorState = scrollIndicatorState
+        cleanupOnDeinit = { [weak popover] reportedVisible in
+            measurement.invalidatePendingEmissions()
+            contentSizeCoordinator.resetAfterPopoverCloses()
+            scrollIndicatorState.setHeightTransitioning(false)
+            // A live host with a different root belongs to a successor. A released
+            // controller-owned host must not prevent its logical model teardown.
+            if let popover,
+               popover.contentViewController.map(ObjectIdentifier.init) != rootIdentity { return }
+            presentationState.setPresented(false)
+            audioDashboardModel.audioPageDeactivated()
+            if let popover {
+                popover.delegate = nil
+                if let adaptiveHost = popover as? DashboardAdaptivePopoverHost {
+                    adaptiveHost.invalidate()
+                } else if let nativePopover = popover as? NSPopover {
+                    nativePopover.animates = false
+                    nativePopover.close()
+                } else {
+                    popover.animates = false
+                    popover.performClose(nil)
+                }
+            }
+            if reportedVisible { onVisibilityChange(false) }
+        }
         super.init()
         popover.delegate = self
+    }
 
-        preferencesController.$state
-            .map(\.dashboardStyle)
-            .removeDuplicates()
-            .sink { [weak self] dashboardStyle in
-                self?.applyPresentation(dashboardStyle: dashboardStyle)
-            }
-            .store(in: &cancellables)
-
-        NSWorkspace.shared.notificationCenter.publisher(
-            for: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification
-        )
-        .sink { [weak self] _ in
-            self?.applyPresentation(dashboardStyle: nil)
-        }
-        .store(in: &cancellables)
+    deinit {
+        let cleanup = cleanupOnDeinit
+        let reportedVisible = reportedVisible
+        DispatchQueue.main.async { cleanup(reportedVisible) }
     }
 
     func toggle(relativeTo view: NSView?) {
@@ -510,8 +518,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         }
 
         if popover.isShown {
-            presentationState.setPresented(false)
             popover.performClose(nil)
+            if !popover.isShown { closePresentation() }
         } else {
             focusController.activateApplication()
             dashboardHostingController.layoutContent()
@@ -525,28 +533,32 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             }
             presentationState.setPresented(true)
             focusController.focusPresentedPopover(popover)
-            onVisibilityChange(true)
+            if !reportedVisible {
+                reportedVisible = true
+                onVisibilityChange(true)
+            }
         }
-    }
-
-    private func applyPresentation(dashboardStyle: DashboardStyle?) {
-        let previousHostKind = presentationState.resolution.hostKind
-        presentationState.apply(
-            style: dashboardStyle,
-            environment: accessibilityEnvironmentProvider()
-        )
-        guard presentationState.resolution.hostKind != previousHostKind, popover.isShown else {
-            return
-        }
-        presentationState.setPresented(false)
-        popover.performClose(nil)
     }
 
     func popoverDidClose(_ notification: Notification) {
         guard !popover.isShown else { return }
+        closePresentation()
+    }
+
+    func popoverWillClose(_ notification: Notification) {
+        closePresentation()
+    }
+
+    private func closePresentation() {
+        contentMeasurement.invalidatePendingEmissions()
         contentSizeCoordinator.resetAfterPopoverCloses()
+        scrollIndicatorState.setHeightTransitioning(false)
         presentationState.setPresented(false)
-        onVisibilityChange(false)
+        dashboardHostingController.dashboardView.audioDashboardModel.audioPageDeactivated()
+        if reportedVisible {
+            reportedVisible = false
+            onVisibilityChange(false)
+        }
     }
 
     #if DEBUG

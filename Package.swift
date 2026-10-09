@@ -19,24 +19,12 @@ let package = Package(
             targets: ["MacActivityApp"]
         ),
         .executable(
-            name: "DebugMemoryRelease",
-            targets: ["DebugMemoryRelease"]
-        ),
-        .executable(
             name: "DebugActiveProcessMemory",
             targets: ["DebugActiveProcessMemory"]
         ),
         .executable(
-            name: "DebugMemoryReleaseUI",
-            targets: ["DebugMemoryReleaseUI"]
-        ),
-        .executable(
             name: "DebugDiskCleanup",
             targets: ["DebugDiskCleanup"]
-        ),
-        .executable(
-            name: "DebugGlassPrototype",
-            targets: ["DebugGlassPrototype"]
         ),
     ],
     dependencies: [
@@ -59,27 +47,14 @@ let package = Package(
             ]
         ),
         .executableTarget(
-            name: "DebugMemoryRelease",
-            dependencies: ["MacActivityCore"],
-            path: "Tools/DebugMemoryRelease"
-        ),
-        .executableTarget(
             name: "DebugActiveProcessMemory",
             dependencies: ["MacActivityCore"],
             path: "Tools/DebugActiveProcessMemory"
         ),
         .executableTarget(
-            name: "DebugMemoryReleaseUI",
-            path: "Tools/DebugMemoryReleaseUI"
-        ),
-        .executableTarget(
             name: "DebugDiskCleanup",
             dependencies: ["MacActivityCore"],
             path: "Tools/DebugDiskCleanup"
-        ),
-        .executableTarget(
-            name: "DebugGlassPrototype",
-            path: "Tools/DebugGlassPrototype"
         ),
         .testTarget(
             name: "MacActivityCoreTests",
@@ -90,11 +65,6 @@ let package = Package(
             name: "MacActivityAppTests",
             dependencies: ["MacActivityApp"],
             path: "Tests/MacActivityAppTests"
-        ),
-        .testTarget(
-            name: "DebugGlassPrototypeTests",
-            dependencies: ["DebugGlassPrototype"],
-            path: "Tests/DebugGlassPrototypeTests"
         ),
     ]
 )

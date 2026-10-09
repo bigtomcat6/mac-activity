@@ -38,6 +38,8 @@ struct ActiveCleanReleaseView: View {
                 confirmationState: $diskCleanupConfirmationState
             )
                 .accessibilityIdentifier("actives-clean-release-disk-cleanup")
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
                 .contentShape(Rectangle())
                 .onTapGesture {
                     confirmingQuitProcessIdentifier = nil
