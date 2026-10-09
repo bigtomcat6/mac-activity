@@ -15,9 +15,10 @@ final class DashboardPanelHostTests: XCTestCase {
     }
 
     private func makeShownHost(
-        makeMonitorBag: @escaping () -> DashboardEventMonitorBag = { .live() }
+        makeMonitorBag: @escaping () -> DashboardEventMonitorBag = { .live() },
+        shouldReduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     ) -> DashboardPanelHost {
-        let host = DashboardPanelHost(makeMonitorBag: makeMonitorBag)
+        let host = DashboardPanelHost(makeMonitorBag: makeMonitorBag, shouldReduceMotion: shouldReduceMotion)
         host.show(
             contentViewController: NSHostingController(rootView: Text("panel host test")),
             anchorRect: anchorRect,
@@ -410,12 +411,14 @@ final class DashboardPanelHostTests: XCTestCase {
     }
 
     func testNormalCloseKeepsPhysicalWindowVisibleUntilNativeFadeCompletes() throws {
-        let host = makeShownHost()
+        let host = makeShownHost(shouldReduceMotion: { false })
         defer { host.destroy() }
         let panel = try XCTUnwrap(host.panel)
         host.close()
         XCTAssertTrue(panel.isVisible, "whole-window fade must finish before physical hide")
         XCTAssertEqual(host.activeMonitorCount, 0, "monitor cleanup is immediate, not delayed to hide")
+        drainRunLoop()
+        XCTAssertFalse(panel.isVisible, "the completed fade must hide the physical window")
     }
 
     // Missing fade/intent separation would hide immediately and repeat-close on a reopen.
