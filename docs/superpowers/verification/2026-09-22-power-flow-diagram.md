@@ -23,7 +23,7 @@ Environment: macOS 26.4.1 (25E253), Xcode 26.3 (17C529), SDK `MacOSX26.2.sdk`, A
 
 ## Automated command results
 
-Each timed command was wrapped in `/usr/bin/time -p`; stdout/stderr were retained separately in [`.build/task8-verification`](../../../.build/task8-verification). Exit values below are the command results captured immediately with `$?`, not the subsequent reporting `printf` result. Times are seconds; `real` includes build/startup. Final summaries below are copied verbatim from XCTest (the later Swift Testing banner reports zero tests because these tests use XCTest).
+Each timed command was wrapped in `/usr/bin/time -p`; stdout/stderr were retained separately in the local, ignored `.build/task8-verification` directory. These artifacts are not included in the repository or CI checkout. Exit values below are the command results captured immediately with `$?`, not the subsequent reporting `printf` result. Times are seconds; `real` includes build/startup. Final summaries below are copied verbatim from XCTest (the later Swift Testing banner reports zero tests because these tests use XCTest).
 
 | Command | Exit | Result | Tests / skips | Real / user / sys | Exact final substantive summary |
 |---|---:|---|---|---|---|
@@ -76,9 +76,9 @@ The test verifies an internal battery, connected external power, decoded voltage
 
 ## Image evidence and alpha diagnosis
 
-Raw evidence: [`.build/power-flow-visual-matrix`](../../../.build/power-flow-visual-matrix). All 50 expected files were atomically overwritten by the fresh export, with modification timestamps `2026-09-22 07:58:00 +0000`; native enumeration confirmed exactly 50 PNGs, with no stale additional PNGs. No destructive cleanup was needed.
+Local raw evidence: `.build/power-flow-visual-matrix`. All 50 expected files were atomically overwritten by the fresh export, with modification timestamps `2026-09-22 07:58:00 +0000`; native enumeration confirmed exactly 50 PNGs, with no stale additional PNGs. No destructive cleanup was needed.
 
-Diagnostic evidence: [`.build/task8-verification/composites`](../../../.build/task8-verification/composites). Script: [composite.swift](../../../.build/task8-verification/composite.swift); mapping/pixel statistics: [composite-success.log](../../../.build/task8-verification/composite-success.log).
+Local diagnostic evidence: `.build/task8-verification/composites`. Script: `.build/task8-verification/composite.swift`; mapping/pixel statistics: `.build/task8-verification/composite-success.log`.
 
 Method: decode the unchanged raw PNGs via ImageIO, draw with Core Graphics source-over onto opaque neutral backgrounds (gray 0.96 for light, 0.12 for dark), encode separate PNGs, and inspect the resulting five sheets. No view rerender, replacement chrome, foreground recoloring, production modification, or raw-image overwrite was used. All raw files were already opened individually before this diagnostic step.
 
