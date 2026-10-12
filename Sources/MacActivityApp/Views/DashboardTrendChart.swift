@@ -6,7 +6,6 @@ import MacActivityCore
 
 struct DashboardTrendChart: View {
     @Environment(\.appearsActive) private var appearsActive
-    @Environment(\.dashboardStyleAppearance) private var styleAppearance
     let metric: DashboardMetric
     let color: Color
     let isCardHovered: Bool
@@ -414,8 +413,7 @@ struct DashboardTrendChart: View {
     private var primaryLineGradient: LinearGradient {
         DashboardOverviewChrome.chartPrimaryLineGradient(
             baseColor: color,
-            appearsActive: appearsActive,
-            appearance: styleAppearance
+            appearsActive: appearsActive
         )
     }
 
@@ -424,13 +422,12 @@ struct DashboardTrendChart: View {
         return metric.kind == .network
             ? DashboardOverviewChrome.chartSecondaryStrokeColor(
                 baseColor: baseColor,
-                appearsActive: appearsActive,
-                appearance: styleAppearance
+                appearsActive: appearsActive
             )
             : (
                 appearsActive
                 ? baseColor.opacity(0.45)
-                : DashboardOverviewChrome.inactiveChartSecondaryStroke(for: styleAppearance)
+                : DashboardOverviewChrome.inactiveChartSecondaryStroke
             )
     }
 
@@ -438,8 +435,7 @@ struct DashboardTrendChart: View {
         let baseColor: Color = metric.kind == .network ? .red : color
         return DashboardOverviewChrome.chartSelectionPointColor(
             baseColor: baseColor,
-            appearsActive: appearsActive,
-            appearance: styleAppearance
+            appearsActive: appearsActive
         )
     }
 
@@ -466,8 +462,7 @@ struct DashboardTrendChart: View {
                 .stroke(
                     DashboardOverviewChrome.chartEmptyStrokeColor(
                         baseColor: color,
-                        appearsActive: appearsActive,
-                        appearance: styleAppearance
+                        appearsActive: appearsActive
                     ),
                     lineWidth: 1
                 )
@@ -519,8 +514,8 @@ struct DashboardTrendChart: View {
     private func hoverIndicatorColor(for series: DashboardTrendLineSeries) -> Color {
         guard appearsActive else {
             return series == .primary
-                ? DashboardOverviewChrome.inactiveChartPrimaryStroke(for: styleAppearance)
-                : DashboardOverviewChrome.inactiveChartSecondaryStroke(for: styleAppearance)
+                ? DashboardOverviewChrome.inactiveChartPrimaryStroke
+                : DashboardOverviewChrome.inactiveChartSecondaryStroke
         }
 
         guard metric.kind == .network else {
@@ -579,11 +574,7 @@ struct DashboardTrendChart: View {
         }
         .padding(.horizontal, isCompact ? 6 : 8)
         .padding(.vertical, isCompact ? 4 : 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        }
+        .dashboardFloatingSurface()
     }
 
     private func annotationSize(

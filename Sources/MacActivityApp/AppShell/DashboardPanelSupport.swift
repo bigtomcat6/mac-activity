@@ -21,6 +21,9 @@ enum DashboardPanelFactory {
         panel.isOpaque = false
         panel.backgroundColor = .clear
         panel.hasShadow = false
+        // Clear pixels pass events to the window behind unless this is set explicitly;
+        // the whole panel frame, rounded corners included, belongs to the dashboard.
+        panel.ignoresMouseEvents = false
         panel.isReleasedWhenClosed = false
         panel.hidesOnDeactivate = false
         panel.isMovableByWindowBackground = false
@@ -109,10 +112,10 @@ enum DashboardPanelPlacement {
 
         let proposedX = anchorRect.midX - width / 2
         let proposedY = anchorRect.minY - gap - height
-        let x = min(max(proposedX, minX), max(maxX, minX))
-        let y = min(max(proposedY, minY), max(maxY, minY))
+        let originX = min(max(proposedX, minX), max(maxX, minX))
+        let originY = min(max(proposedY, minY), max(maxY, minY))
 
-        return NSRect(x: x, y: y, width: width, height: height)
+        return NSRect(x: originX, y: originY, width: width, height: height)
     }
 
     @MainActor

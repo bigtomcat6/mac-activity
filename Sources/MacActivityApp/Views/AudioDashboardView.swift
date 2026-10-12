@@ -144,39 +144,6 @@ private struct AudioMuteGlyph: View {
     }
 }
 
-private struct AudioMuteButtonStyle: ButtonStyle {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
-            .opacity(configuration.isPressed ? 0.78 : 1)
-            .animation(.easeOut(duration: 0.1), value: configuration.isPressed)
-    }
-}
-
-private struct AudioVolumeTrack: View {
-    let value: Double
-
-    private var clampedValue: CGFloat {
-        CGFloat(min(max(value, 0), 1))
-    }
-
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack(alignment: .leading) {
-                Capsule()
-                    .fill(Color.primary.opacity(0.12))
-                Capsule()
-                    .fill(Color.accentColor)
-                    .frame(width: geometry.size.width * clampedValue)
-            }
-        }
-        .frame(height: 4)
-        .accessibilityHidden(true)
-    }
-}
-
 private struct AudioAnimatedVolumeSlider: View {
     @Binding var value: Double
     let accessibility: AudioAccessibilityContract
@@ -212,31 +179,28 @@ private struct AudioAnimatedVolumeSlider: View {
         )
     }
 
+    // Native slider: Liquid Glass knob on macOS 26; it still interpolates
+    // `displayedValue` under `withAnimation`, so mute transitions stay animated.
     var body: some View {
-        ZStack {
-            AudioVolumeTrack(value: displayedValue)
-                .allowsHitTesting(false)
-
-            Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
-                .opacity(0.01)
-        }
-        .frame(height: 20)
-        .onChange(of: displayedValue) { updatedValue in
-            guard isEditing else { return }
-            value = updatedValue
-        }
-        .onChange(of: value) { updatedValue in
-            synchronizeDisplayedValue(to: updatedValue)
-
-            if let trigger, trigger.id != consumedTriggerID {
-                consumedTriggerID = trigger.id
+        Slider(value: $displayedValue, in: 0...1, onEditingChanged: { isEditing = $0 })
+            .controlSize(.small)
+            .frame(height: 20)
+            .onChange(of: displayedValue) { updatedValue in
+                guard isEditing else { return }
+                value = updatedValue
             }
-        }
-        .onChange(of: hasWriteFailure) { didFail in
-            guard didFail else { return }
-            synchronizeDisplayedValue(to: value)
-        }
-        .audioAccessibility(accessibility)
+            .onChange(of: value) { updatedValue in
+                synchronizeDisplayedValue(to: updatedValue)
+
+                if let trigger, trigger.id != consumedTriggerID {
+                    consumedTriggerID = trigger.id
+                }
+            }
+            .onChange(of: hasWriteFailure) { didFail in
+                guard didFail else { return }
+                synchronizeDisplayedValue(to: value)
+            }
+            .audioAccessibility(accessibility)
     }
 
     private func synchronizeDisplayedValue(to updatedValue: Double) {
@@ -360,7 +324,7 @@ struct AudioDashboardView: View {
             snapshot: model.snapshot,
             supportsProcessControls: model.supportsProcessControls
         )
-        LazyVStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 14) {
             AudioDashboardSection(
                 title: AppLocalization.string(.audioDevicesTitle),
                 accessibility: presentation.devicesAccessibility
@@ -372,6 +336,8 @@ struct AudioDashboardView: View {
 
             if let permissionGate = presentation.permissionGate {
                 AudioSystemAccessPermissionGate(presentation: permissionGate, model: model)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .layoutPriority(1)
             } else if let processSection = presentation.processSection {
                 AudioDashboardSection(
                     title: AppLocalization.string(.audioProcessesTitle),
@@ -416,7 +382,9 @@ private struct AudioDashboardSection<Content: View>: View {
             Text(title)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            content
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+            DashboardMeasuredList(spacing: 8) { content }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
@@ -513,7 +481,7 @@ private struct AudioDeviceControlRow: View {
             } label: {
                 AudioMuteGlyph(isMuted: isMuted, motion: muteVisualMotion)
             }
-            .buttonStyle(AudioMuteButtonStyle())
+            .dashboardIconButtonStyle()
             .audioAccessibility(presentation.muteAccessibility)
 
         case .readOnly(let isMuted):
@@ -588,7 +556,8 @@ struct AudioProcessControlRow: View {
                     trigger: muteMotion,
                     hasWriteFailure: snapshot.error != nil
                 )
-                    .frame(maxWidth: 130)
+                    // Fixed lane keeps every row's slider aligned regardless of name length.
+                    .frame(width: 110)
 
                 Button {
                     recordMuteToggle(from: presentation.showsMutedIcon)
@@ -601,15 +570,20 @@ struct AudioProcessControlRow: View {
                         motion: muteVisualMotion
                     )
                 }
-                .buttonStyle(AudioMuteButtonStyle())
+                .dashboardIconButtonStyle()
                 .audioAccessibility(presentation.muteAccessibility)
 
                 routeMenu
 
-                Button(AppLocalization.string(.audioReset)) {
+                // Icon-only trailing controls leave the row's width to the app name;
+                // the accessibility contracts still carry the full labels.
+                Button {
                     model.reset(processObjectID: snapshot.id)
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
                 }
-                .buttonStyle(.link)
+                .dashboardIconButtonStyle()
+                .help(AppLocalization.string(.audioReset))
                 .audioAccessibility(presentation.resetAccessibility)
             }
 
@@ -687,9 +661,12 @@ struct AudioProcessControlRow: View {
                 .audioAccessibility(contract)
             }
         } label: {
-            Label(AppLocalization.string(.audioRouteTitle), systemImage: "airplayaudio")
+            Image(systemName: "airplayaudio")
         }
-        .help(AppLocalization.string(.audioRouteClearHelp))
+        .dashboardIconMenuStyle()
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help(AppLocalization.string(.audioRouteTitle))
         .audioAccessibility(presentation.routeAccessibility)
     }
 
@@ -889,7 +866,7 @@ private struct AudioSystemAccessPermissionGate: View {
             }
 
             Button(presentation.actionTitle, action: performAction)
-                .buttonStyle(.borderedProminent)
+                .dashboardActionButtonStyle(prominent: true)
                 .disabled(presentation.action == .none)
                 .audioAccessibility(.init(
                     identifier: "audio.permission.gate.action",

@@ -92,7 +92,7 @@ struct DiskCleanupStatusView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, minHeight: ActiveCleanReleaseLayout.diskCleanupStripHeight, alignment: .leading)
-        .activeCleanupCardChrome()
+        .dashboardCardChrome()
         .task(id: confirmationState) {
             guard confirmationState == .confirming else { return }
             try? await Task.sleep(nanoseconds: Self.confirmationTimeoutNanoseconds)
@@ -115,6 +115,7 @@ struct DiskCleanupStatusView: View {
             Button(AppLocalization.string(.diskCleanupActionRetry)) {
                 Task { await model.refreshDiskCleanup() }
             }
+            .dashboardActionButtonStyle()
             .frame(minWidth: Self.actionWidth, alignment: .trailing)
         case .cleanable:
             actionButton
@@ -123,26 +124,16 @@ struct DiskCleanupStatusView: View {
         }
     }
 
-    @ViewBuilder
     private var actionButton: some View {
         let configuration = Self.buttonConfiguration(for: confirmationState)
 
-        if configuration.isDestructive {
-            Button(configuration.title) {
-                applyConfirmationEvent(.cleanButtonClicked)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(model.isCleaningDiskCleanup)
-            .frame(minWidth: Self.actionWidth, alignment: .trailing)
-        } else {
-            Button(configuration.title) {
-                applyConfirmationEvent(.cleanButtonClicked)
-            }
-            .buttonStyle(.bordered)
-            .disabled(model.isCleaningDiskCleanup)
-            .frame(minWidth: Self.actionWidth, alignment: .trailing)
+        return Button(configuration.title) {
+            applyConfirmationEvent(.cleanButtonClicked)
         }
+        .dashboardActionButtonStyle(prominent: configuration.isDestructive)
+        .tint(configuration.isDestructive ? .red : nil)
+        .disabled(model.isCleaningDiskCleanup)
+        .frame(minWidth: Self.actionWidth, alignment: .trailing)
     }
 
     @MainActor

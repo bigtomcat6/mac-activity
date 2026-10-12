@@ -13,7 +13,11 @@ app and opens a compact dashboard from the menu bar.
 ## Opening MacActivity
 
 Launch the app from Finder, Spotlight, a release artifact, or Xcode. When the
-menu bar item is visible, click it to open the dashboard popover.
+menu bar item is visible, click it to open the dashboard. On macOS 26 the
+dashboard floats under the menu bar as a Liquid Glass panel with clear glass
+modules, like Control Center, and follows the system light or dark appearance. With Reduce
+Transparency turned on, on earlier macOS versions, or when the menu bar item is
+not in the menu bar, it opens as a standard popover instead.
 
 MacActivity is an accessory app. If the menu bar item is hidden or unavailable,
 reopen the app and use Preferences to restore the menu bar item.
@@ -22,6 +26,14 @@ reopen the app and use Preferences to restore the menu bar item.
 
 The dashboard summarizes current system activity and shows trend views when
 history is available.
+
+The dashboard stays compact when application lists are long. On Energy, scroll
+the application rows while the power summary and column header stay in place.
+Actives keeps disk cleanup and process-action messages outside the scrolling
+application rows. Audio's output-device and application lists scroll independently;
+short lists use only the space they need. If the available window is too short
+for those fixed sections, the page scrolls as a whole instead. Overview retains
+its whole-page scrolling.
 
 Current metric surfaces:
 
@@ -183,22 +195,8 @@ install can still update to a newer beta or final release.
 
 ## Cleanup Features
 
-MacActivity has cleanup surfaces for memory, Trash, and selected disk cleanup
-categories.
-
-Memory Release:
-
-- Reads current memory before and after cleanup.
-- Attempts the local cleanup strategy first.
-- Falls back to the system `purge` path when local cleanup is unavailable or not
-  significant.
-- Uses a short cooldown to avoid repeated cleanup clicks.
-
-Trash cleanup:
-
-- Scans the current user's `~/.Trash`.
-- Deletes confirmed Trash contents.
-- Reports partial cleanup if some items cannot be removed.
+MacActivity can clean selected disk cleanup categories from the Actives page,
+after a confirmation click.
 
 Disk Cleanup categories:
 

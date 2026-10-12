@@ -4,47 +4,17 @@ import MacActivityCore
 
 @MainActor
 final class ActiveCleanupModelTests: XCTestCase {
-    func testRefreshLoadsTrashMemoryAndTwentyApps() async {
-        let trash = TrashCleanupServiceRecorder(scanResults: [.cleanable(bytes: 4_096, itemCount: 2)])
-        let memory = MemoryReleaseServiceRecorder(currentReadings: [MemoryReading(usedBytes: 6, totalBytes: 10)])
-        let apps = ActiveAppProviderRecorder(entries: Self.entries(count: 25))
-        let model = ActiveCleanupModel(trashService: trash, memoryService: memory, appProvider: apps)
-
-        await model.refresh()
-
-        XCTAssertEqual(model.trashState, .cleanable(bytes: 4_096, itemCount: 2))
-        XCTAssertEqual(model.memoryState, .usage(percent: 60, releasableBytes: 0))
-        XCTAssertEqual(model.apps.count, 20)
-    }
-
-    func testRefreshVisibleCleanReleaseSectionsScansDiskCleanupAndSkipsMemoryEstimate() async {
-        let trash = TrashCleanupServiceRecorder(scanResults: [.cleanable(bytes: 4_096, itemCount: 2)])
+    func testRefreshVisibleCleanReleaseSectionsScansDiskCleanupAndApps() async {
         let disk = DiskCleanupServiceRecorder(scanResults: [
             .cleanable(summary: Self.diskSummary(bytes: 4_096, itemCount: 2, categoryCount: 1))
         ])
-        let memory = MemoryReleaseServiceRecorder(currentReadings: [
-            MemoryReading(
-                usedBytes: 6,
-                totalBytes: 10,
-                breakdown: MemoryBreakdown(cachedBytes: 2)
-            )
-        ], releasableByteResults: [1])
         let apps = ActiveAppProviderRecorder(entries: Self.entries(count: 2))
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: memory,
-            diskCleanupService: disk,
-            appProvider: apps
-        )
+        let model = ActiveCleanupModel(diskCleanupService: disk, appProvider: apps)
 
         await model.refreshVisibleCleanReleaseSections()
 
-        XCTAssertEqual(model.trashState, .idle)
-        XCTAssertEqual(trash.scanCallCount, 0)
         XCTAssertEqual(model.diskCleanupState, .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches]))
         XCTAssertEqual(disk.scanCallCount, 1)
-        XCTAssertEqual(memory.currentReadingCallCount, 0)
-        XCTAssertEqual(memory.releasableBytesCallCount, 0)
         XCTAssertEqual(model.apps.count, 2)
     }
 
@@ -54,8 +24,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -73,8 +41,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -87,117 +53,12 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(disk.cleanedCategories, [[.userCaches, .trash, .userLogs]])
     }
 
-    func testRefreshMemoryUsageShowsReleaseServiceEstimateInsteadOfCachedMemory() async {
-        let memory = MemoryReleaseServiceRecorder(currentReadings: [
-            MemoryReading(
-                usedBytes: 6,
-                totalBytes: 10,
-                breakdown: MemoryBreakdown(cachedBytes: 9)
-            )
-        ], releasableByteResults: [3])
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.refreshMemoryUsage()
-
-        XCTAssertEqual(model.memoryState, .usage(percent: 60, releasableBytes: 3))
-    }
-
-    func testRequestingTrashCleanupOnlyShowsConfirmation() {
-        let trash = TrashCleanupServiceRecorder()
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        model.requestTrashCleanupConfirmation()
-
-        XCTAssertTrue(model.isTrashConfirmationPresented)
-        XCTAssertEqual(trash.cleanCallCount, 0)
-    }
-
-    func testDuplicateTrashCleanupIsIgnoredUntilPostCleanupRescanFinishes() async {
-        let trash = SuspendedTrashCleanupService()
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        async let first: Void = model.confirmTrashCleanup()
-        await trash.waitUntilScanStarted()
-        await model.confirmTrashCleanup()
-        await trash.finishScan(with: .clean)
-        await first
-
-        let cleanCallCount = await trash.cleanCallCount()
-        XCTAssertEqual(cleanCallCount, 1)
-    }
-
-    func testConfirmedTrashCleanupRunsAndReportsCleaned() async {
-        let trash = TrashCleanupServiceRecorder(
-            scanResults: [.clean],
-            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.confirmTrashCleanup()
-
-        XCTAssertEqual(model.trashState, .cleaned(bytes: 300, itemCount: 1))
-        XCTAssertEqual(trash.cleanCallCount, 1)
-    }
-
-    func testSuccessfulTrashCleanupRescansAndShowsFreshRemainingTrashIfNeeded() async {
-        let trash = TrashCleanupServiceRecorder(
-            scanResults: [.cleanable(bytes: 50, itemCount: 1)],
-            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.confirmTrashCleanup()
-
-        XCTAssertEqual(model.trashState, .cleanable(bytes: 50, itemCount: 1))
-    }
-
-    func testPartialTrashCleanupRescansRemainingBytes() async {
-        let trash = TrashCleanupServiceRecorder(
-            scanResults: [.cleanable(bytes: 700, itemCount: 2)],
-            cleanResults: [.partial(bytes: 300, deletedCount: 1, failedCount: 1)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.confirmTrashCleanup()
-
-        XCTAssertEqual(
-            model.trashState,
-            .partial(bytes: 300, deletedCount: 1, failedCount: 1, remainingBytes: 700)
-        )
-    }
-
     func testConfirmedDiskCleanupRunsAndReportsCleaned() async {
         let disk = DiskCleanupServiceRecorder(
             scanResults: [.clean],
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -214,8 +75,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             cleanResults: [.partial(bytes: 300, deletedCount: 1, failedCount: 1, remainingBytes: 200)]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -231,8 +90,6 @@ final class ActiveCleanupModelTests: XCTestCase {
     func testDuplicateDiskCleanupIsIgnoredUntilPostCleanupRescanFinishes() async {
         let disk = SuspendedDiskCleanupService()
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -247,100 +104,6 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(cleanCallCount, 1)
     }
 
-    func testReleaseMemoryReportsReleasedResult() async {
-        let memory = MemoryReleaseServiceRecorder(releaseResults: [.released(bytes: 1_024, percentOfTotal: 5)])
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.releaseMemory()
-
-        XCTAssertEqual(model.memoryState, .released(bytes: 1_024, percentOfTotal: 5))
-    }
-
-    func testZeroObservedMemoryReleaseRefreshesUsageInsteadOfShowingReleasedZero() async {
-        let memory = MemoryReleaseServiceRecorder(
-            currentReadings: [MemoryReading(usedBytes: 5, totalBytes: 10)],
-            releasableByteResults: [256],
-            releaseResults: [.released(bytes: 0, percentOfTotal: 0)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.releaseMemory()
-
-        XCTAssertEqual(model.memoryState, .usage(percent: 50, releasableBytes: 256))
-    }
-
-    func testNoSignificantMemoryReleaseShowsExplicitState() async {
-        let memory = MemoryReleaseServiceRecorder(
-            releaseResults: [.noSignificantRelease(observedBytes: 0)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.releaseMemory()
-
-        XCTAssertEqual(model.memoryState, .noSignificantRelease(observedBytes: 0))
-    }
-
-    func testMemoryReleaseCooldownShowsCooldownState() async {
-        let memory = MemoryReleaseServiceRecorder(
-            releaseResults: [.skippedCooldown(remainingSeconds: 7.5)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.releaseMemory()
-
-        XCTAssertEqual(model.memoryState, .cooldown(remainingSeconds: 7.5))
-    }
-
-    func testMemoryReleaseFailureShowsExitCode() async {
-        let memory = MemoryReleaseServiceRecorder(releaseResults: [.failed(exitCode: 7)])
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.releaseMemory()
-
-        XCTAssertEqual(model.memoryState, .failed(.exitCode(7)))
-    }
-
-    func testTrashScanFailuresPropagateThroughRefreshAndPostCleanupRescan() async {
-        let trash = TrashCleanupServiceRecorder(
-            scanResults: [
-                .failed("scan denied"),
-                .failed("rescan denied")
-            ],
-            cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
-        )
-        let model = ActiveCleanupModel(
-            trashService: trash,
-            memoryService: MemoryReleaseServiceRecorder(),
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        await model.refresh()
-        XCTAssertEqual(model.trashState, .failed(.message("scan denied")))
-
-        await model.confirmTrashCleanup()
-        XCTAssertEqual(model.trashState, .failed(.message("rescan denied")))
-    }
-
     func testDiskCleanupScanFailuresPropagateThroughRefreshAndPostCleanupRescan() async {
         let disk = DiskCleanupServiceRecorder(
             scanResults: [
@@ -350,8 +113,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             cleanResults: [.cleaned(bytes: 300, itemCount: 1)]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             diskCleanupService: disk,
             appProvider: ActiveAppProviderRecorder()
         )
@@ -363,24 +124,6 @@ final class ActiveCleanupModelTests: XCTestCase {
         XCTAssertEqual(model.diskCleanupState, .failed(.message("rescan denied")))
     }
 
-    func testDuplicateMemoryReleaseIsIgnoredWhileFirstCallIsRunning() async {
-        let memory = SuspendedMemoryReleaseService()
-        let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: memory,
-            appProvider: ActiveAppProviderRecorder()
-        )
-
-        async let first: Void = model.releaseMemory()
-        await memory.waitUntilReleaseStarted()
-        await model.releaseMemory()
-        await memory.finish(with: .released(bytes: 10, percentOfTotal: 1))
-        await first
-
-        let releaseCallCount = await memory.releaseCallCount()
-        XCTAssertEqual(releaseCallCount, 1)
-    }
-
     func testQuitMapsRequestedNotFoundAndNotTerminableStates() {
         let app = Self.entries(count: 1)[0]
         let provider = ActiveAppProviderRecorder(
@@ -388,8 +131,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             terminationResults: [.requested, .notFound, .notTerminable]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             appProvider: provider
         )
 
@@ -412,8 +153,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             terminationResults: [.requested]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             appProvider: provider
         )
 
@@ -436,8 +175,6 @@ final class ActiveCleanupModelTests: XCTestCase {
             terminationResults: [.requested]
         )
         let model = ActiveCleanupModel(
-            trashService: TrashCleanupServiceRecorder(),
-            memoryService: MemoryReleaseServiceRecorder(),
             appProvider: provider,
             quitRefreshIntervalNanoseconds: 0,
             quitRefreshAttemptLimit: 3
@@ -502,72 +239,6 @@ final class ActiveCleanupModelTests: XCTestCase {
 }
 
 @MainActor
-private final class TrashCleanupServiceRecorder: TrashCleanupServicing {
-    var scanResults: [TrashScanResult]
-    var cleanResults: [TrashCleanupResult]
-    private(set) var scanCallCount = 0
-    private(set) var cleanCallCount = 0
-
-    init(
-        scanResults: [TrashScanResult] = [],
-        cleanResults: [TrashCleanupResult] = [.cleaned(bytes: 0, itemCount: 0)]
-    ) {
-        self.scanResults = scanResults
-        self.cleanResults = cleanResults
-    }
-
-    func scan() async -> TrashScanResult {
-        scanCallCount += 1
-        guard scanResults.isEmpty == false else { return .clean }
-        return scanResults.removeFirst()
-    }
-
-    func clean() async -> TrashCleanupResult {
-        cleanCallCount += 1
-        guard cleanResults.isEmpty == false else { return .cleaned(bytes: 0, itemCount: 0) }
-        return cleanResults.removeFirst()
-    }
-}
-
-@MainActor
-private final class MemoryReleaseServiceRecorder: MemoryReleaseServicing {
-    var currentReadings: [MemoryReading]
-    var releasableByteResults: [UInt64?]
-    var releaseResults: [MemoryReleaseResult]
-    private(set) var releaseCallCount = 0
-    private(set) var currentReadingCallCount = 0
-    private(set) var releasableBytesCallCount = 0
-
-    init(
-        currentReadings: [MemoryReading] = [],
-        releasableByteResults: [UInt64?] = [],
-        releaseResults: [MemoryReleaseResult] = [.unavailable]
-    ) {
-        self.currentReadings = currentReadings
-        self.releasableByteResults = releasableByteResults
-        self.releaseResults = releaseResults
-    }
-
-    func currentReading() async -> MemoryReading? {
-        currentReadingCallCount += 1
-        guard currentReadings.isEmpty == false else { return nil }
-        return currentReadings.removeFirst()
-    }
-
-    func release() async -> MemoryReleaseResult {
-        releaseCallCount += 1
-        guard releaseResults.isEmpty == false else { return .unavailable }
-        return releaseResults.removeFirst()
-    }
-
-    func currentReleasableBytes() async -> UInt64? {
-        releasableBytesCallCount += 1
-        guard releasableByteResults.isEmpty == false else { return nil }
-        return releasableByteResults.removeFirst()
-    }
-}
-
-@MainActor
 private final class DiskCleanupServiceRecorder: DiskCleanupServicing {
     var scanResults: [DiskCleanupScanResult]
     var cleanResults: [DiskCleanupResult]
@@ -597,66 +268,6 @@ private final class DiskCleanupServiceRecorder: DiskCleanupServicing {
         guard cleanResults.isEmpty == false else { return .cleaned(bytes: 0, itemCount: 0) }
         return cleanResults.removeFirst()
     }
-}
-
-@MainActor
-private final class SuspendedTrashCleanupService: TrashCleanupServicing {
-    private var scanContinuation: CheckedContinuation<TrashScanResult, Never>?
-    private var startedContinuation: CheckedContinuation<Void, Never>?
-    private(set) var cleanCalls = 0
-
-    func clean() async -> TrashCleanupResult {
-        cleanCalls += 1
-        return .cleaned(bytes: 1, itemCount: 1)
-    }
-
-    func scan() async -> TrashScanResult {
-        startedContinuation?.resume()
-        startedContinuation = nil
-        return await withCheckedContinuation { scanContinuation = $0 }
-    }
-
-    func waitUntilScanStarted() async {
-        if scanContinuation != nil { return }
-        await withCheckedContinuation { startedContinuation = $0 }
-    }
-
-    func finishScan(with result: TrashScanResult) async {
-        scanContinuation?.resume(returning: result)
-        scanContinuation = nil
-    }
-
-    func cleanCallCount() async -> Int { cleanCalls }
-}
-
-@MainActor
-private final class SuspendedMemoryReleaseService: MemoryReleaseServicing {
-    private var continuation: CheckedContinuation<MemoryReleaseResult, Never>?
-    private var startedContinuation: CheckedContinuation<Void, Never>?
-    private(set) var calls = 0
-
-    func currentReading() async -> MemoryReading? { nil }
-
-    func currentReleasableBytes() async -> UInt64? { nil }
-
-    func release() async -> MemoryReleaseResult {
-        calls += 1
-        startedContinuation?.resume()
-        startedContinuation = nil
-        return await withCheckedContinuation { continuation = $0 }
-    }
-
-    func waitUntilReleaseStarted() async {
-        if calls > 0 { return }
-        await withCheckedContinuation { startedContinuation = $0 }
-    }
-
-    func finish(with result: MemoryReleaseResult) async {
-        continuation?.resume(returning: result)
-        continuation = nil
-    }
-
-    func releaseCallCount() async -> Int { calls }
 }
 
 @MainActor

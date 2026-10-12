@@ -40,7 +40,6 @@
 "audio.route.followOriginal" = "원래 출력 따르기";
 "audio.route.deviceUnavailable" = "%@ (사용할 수 없음)";
 "audio.route.selectedSummary" = "%d개 출력 선택됨";
-"audio.route.clearHelp" = "명시적 경로를 지우려면 ‘원래 출력 따르기’를 선택하십시오.";
 "audio.accessibility.volume" = "%@ 음량, %d퍼센트";
 "audio.accessibility.mute" = "%@ 음소거";
 "audio.accessibility.unmute" = "%@ 음소거 해제";
@@ -101,11 +100,6 @@
 "preferences.updateChannel" = "업데이트 채널";
 "preferences.language" = "언어";
 "preferences.languageHelp" = "환경설정과 대시보드 표시 언어를 제어합니다.";
-"preferences.dashboardStyle" = "대시보드 스타일";
-"preferences.dashboardStyle.standard" = "표준";
-"preferences.dashboardStyle.transparent" = "투명";
-"preferences.dashboardStyle.help" = "‘투명’은 macOS 26 이상에서 투명한 테두리 없는 패널을 사용합니다. ‘투명도 낮추기’가 켜져 있으면 ‘표준’ 모양을 유지합니다.";
-"preferences.dashboardStyle.unavailable" = "‘투명’은 macOS 26 이상이 필요합니다. 이 Mac에서는 ‘표준’ 모양을 유지합니다.";
 "preferences.temperatureSource" = "온도 소스";
 "preferences.temperatureHelp" = "상태 막대와 대시보드의 온도 지표를 제어합니다.";
 "preferences.hardwareBatteryPercentage" = "하드웨어 배터리 퍼센트 표시";
@@ -126,7 +120,6 @@
 "diskCleanup.category.trash" = "휴지통";
 "diskCleanup.category.userLogs" = "로그";
 
-"energyImpact.title" = "에너지 영향";
 "energyImpact.subtitle.sustained" = "최대 30초 CPU 에너지 추정치 · 낮을수록 좋음";
 "energyImpact.column.app" = "앱";
 "energyImpact.column.sustained" = "30초";
@@ -158,45 +151,7 @@
 "powerFlow.accessibility.row" = "%1$@, %2$@, %3$@";
 
 
-"memoryRelease.action.release" = "해제";
-"memoryRelease.action.releasing" = "해제 중";
-"memoryRelease.title.idle" = "메모리";
-"memoryRelease.title.usage" = "메모리 %d%%";
-"memoryRelease.title.reclaimable" = "%@ 반환 가능";
-"memoryRelease.title.releasing" = "메모리 해제 중";
-"memoryRelease.title.released" = "%@ 해제됨";
-"memoryRelease.title.noSignificantRelease" = "메모리 변경 없음";
-"memoryRelease.title.cooldown" = "해제 쿨다운 중";
-"memoryRelease.title.unavailable" = "메모리 해제를 사용할 수 없음";
-"memoryRelease.title.failed" = "메모리 해제 실패";
-"memoryRelease.title.readFailed" = "메모리 읽기 실패";
-"memoryRelease.subtitle.usage" = "메모리 %d%%";
-"memoryRelease.subtitle.percentOfTotal" = "총 메모리의 %.1f%%";
-"memoryRelease.subtitle.noSignificantRelease" = "즉시 해제 가능한 메모리가 없습니다.";
-"memoryRelease.subtitle.cooldown" = "%.1f초 후 다시 시도하세요.";
-"memoryRelease.subtitle.unavailable" = "이 Mac에서는 지원되는 메모리 해제 방식이 없습니다.";
-"memoryRelease.subtitle.readFailed" = "해제 전후 메모리 읽기 값을 비교할 수 없습니다.";
-"memoryRelease.subtitle.default" = "반환 가능한 시스템 메모리를 해제합니다.";
-"memoryRelease.subtitle.failedWithExitCode" = "메모리 해제가 종료 코드 %d로 실패했습니다.";
 
-"trash.action.retry" = "재시도";
-"trash.action.clean" = "정리";
-"trash.title.scanning" = "휴지통 스캔 중";
-"trash.title.clean" = "휴지통이 비어 있습니다";
-"trash.title.cleanable" = "휴지통의 %@";
-"trash.title.cleaning" = "휴지통 정리 중";
-"trash.title.cleaned" = "%@ 정리 완료";
-"trash.title.failed" = "휴지통 정리 실패";
-"trash.subtitle.scanning" = "현재 사용자의 휴지통을 확인합니다.";
-"trash.subtitle.clean" = "정리 가능한 휴지통 항목이 없습니다.";
-"trash.subtitle.cleanable" = "확인 후 %d %@을(를) 제거할 수 있습니다.";
-"trash.subtitle.cleaning" = "확인된 휴지통 콘텐츠를 삭제합니다.";
-"trash.subtitle.cleaned" = "%d %@을(를) 제거했습니다.";
-"trash.subtitle.partial" = "%d %@을(를) 제거했지만, %d %@은(는) 삭제할 수 없었습니다.";
-"trash.subtitle.partialWithRemaining" = "%d %@을(를) 제거했지만, %d %@은(는) 삭제할 수 없었습니다. %@이(가) 남았습니다.";
-"trash.subtitle.failed.unableToDeleteItems" = "휴지통 항목을 삭제할 수 없습니다.";
-"trash.item.singular" = "개 항목";
-"trash.item.plural" = "개 항목";
 
 "diskCleanup.action.retry" = "재시도";
 "diskCleanup.action.clean" = "정리";
@@ -226,3 +181,29 @@
 "process.action.notTerminable" = "%@을(를) 안전하게 종료할 수 없습니다.";
 "process.action.quit" = "종료";
 "process.action.confirm" = "확인";
+
+"powerFlow.unknownInput" = "알 수 없는 입력";
+"powerFlow.unknownOutput" = "알 수 없는 출력";
+"powerFlow.sources.count" = "입력 %lld개";
+"powerFlow.outputs.count" = "출력 %lld개";
+"powerFlow.more.count" = "외 %lld개";
+"powerFlow.partialData" = "일부 데이터";
+"powerFlow.status.externalPower" = "외부 전원";
+"powerFlow.status.batteryPower" = "배터리 전원";
+"powerFlow.status.charging" = "충전 중";
+"powerFlow.status.multipleSources" = "여러 전원";
+"powerFlow.status.multipleFlows" = "여러 전력 흐름";
+"powerFlow.status.summary" = "전력 흐름 요약";
+"powerFlow.status.waiting" = "전력 데이터 기다리는 중";
+"powerFlow.status.unavailable" = "전력 데이터를 사용할 수 없음";
+"powerFlow.status.idle" = "활성 전력 흐름 없음";
+"powerFlow.totals" = "입력 %1$@ · 출력 %2$@";
+"powerFlow.accessibility.component" = "%1$@. %2$@: %3$@. %4$@: %5$@.%6$@";
+"powerFlow.accessibility.node.measured" = "%1$@, %2$@";
+"powerFlow.accessibility.node.derived" = "%1$@, 약 %2$@";
+"powerFlow.accessibility.node.unavailable" = "%1$@, 전력을 사용할 수 없음";
+"powerFlow.accessibility.sideSummary" = "합계: %1$@. %2$@";
+"powerFlow.accessibility.aggregate.derived" = "약 %1$@";
+"powerFlow.accessibility.aggregate.lowerBound" = "최소 %1$@, 사용할 수 없는 측정값: %2$lld개";
+"powerFlow.accessibility.aggregate.unavailable" = "전력을 사용할 수 없음";
+"powerFlow.accessibility.partialSuffix" = " 일부 데이터만 사용할 수 있습니다.";

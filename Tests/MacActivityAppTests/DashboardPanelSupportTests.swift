@@ -29,6 +29,35 @@ final class DashboardPanelSupportTests: XCTestCase {
         XCTAssertEqual(panel.identifier?.rawValue, DashboardPanelFactory.identifier)
     }
 
+    func testClearGapsBetweenFloatingModulesStillHitThePanel() throws {
+        let screen = try XCTUnwrap(NSScreen.screens.first, "a screen is required for window hit testing")
+        let frame = NSRect(
+            x: screen.visibleFrame.midX - 100,
+            y: screen.visibleFrame.midY - 60,
+            width: 200,
+            height: 120
+        )
+        let backdrop = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        backdrop.isReleasedWhenClosed = false
+        backdrop.level = .floating
+        backdrop.setFrame(frame, display: false)
+        backdrop.orderFront(nil)
+        defer { backdrop.close() }
+        let panel = DashboardPanelFactory.makePanel(contentRect: frame)
+        panel.setFrame(frame, display: true)
+        panel.orderFrontRegardless()
+        defer { panel.close() }
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+
+        // The panel draws nothing at this point; the window server must still route it here.
+        let topWindow = NSWindow.windowNumber(
+            at: NSPoint(x: frame.midX, y: frame.midY),
+            belowWindowWithWindowNumber: 0
+        )
+
+        XCTAssertEqual(topWindow, panel.windowNumber)
+    }
+
     func testAnchorResolverConvertsViewBoundsIntoScreenCoordinates() {
         let window = NSWindow(
             contentRect: NSRect(x: 100, y: 200, width: 300, height: 200),

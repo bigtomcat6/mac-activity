@@ -86,17 +86,6 @@ private struct LossyAudioProcessProfiles: Decodable {
     }
 }
 
-public enum DashboardStyle: String, CaseIterable, Codable, Sendable {
-    case standard
-    case transparent
-
-    public static let minimumTransparentOSMajorVersion = 26
-
-    public static func isTransparentSupported(majorVersion: Int) -> Bool {
-        majorVersion >= minimumTransparentOSMajorVersion
-    }
-}
-
 public struct AppPreferences: Equatable, Codable, Sendable {
     public var launchAtLoginEnabled: Bool
     public var selectedSummaryMetrics: [MetricKind]
@@ -109,7 +98,6 @@ public struct AppPreferences: Equatable, Codable, Sendable {
     public var updateChannel: UpdateChannel
     public var lastSyncedUpdateChannelReleaseTag: String?
     public var audioProcessProfiles: [String: AudioProcessProfile]
-    public var dashboardStyle: DashboardStyle
 
     public init(
         launchAtLoginEnabled: Bool,
@@ -122,8 +110,7 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         energyImpactAppScope: EnergyImpactAppScope = .regularOnly,
         updateChannel: UpdateChannel = .release,
         lastSyncedUpdateChannelReleaseTag: String? = nil,
-        audioProcessProfiles: [String: AudioProcessProfile] = [:],
-        dashboardStyle: DashboardStyle = .standard
+        audioProcessProfiles: [String: AudioProcessProfile] = [:]
     ) {
         self.launchAtLoginEnabled = launchAtLoginEnabled
         self.selectedSummaryMetrics = selectedSummaryMetrics
@@ -136,7 +123,6 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         self.updateChannel = updateChannel
         self.lastSyncedUpdateChannelReleaseTag = lastSyncedUpdateChannelReleaseTag
         self.audioProcessProfiles = audioProcessProfiles
-        self.dashboardStyle = dashboardStyle
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -151,7 +137,6 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         case updateChannel
         case lastSyncedUpdateChannelReleaseTag
         case audioProcessProfiles
-        case dashboardStyle
         case diskCleanupScope
     }
 
@@ -189,10 +174,6 @@ public struct AppPreferences: Equatable, Codable, Sendable {
             LossyAudioProcessProfiles.self,
             forKey: .audioProcessProfiles
         )?.values ?? [:]
-        self.dashboardStyle = (try? container.decodeIfPresent(
-            DashboardStyle.self,
-            forKey: .dashboardStyle
-        )) ?? .standard
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -208,7 +189,6 @@ public struct AppPreferences: Equatable, Codable, Sendable {
         try container.encode(updateChannel, forKey: .updateChannel)
         try container.encodeIfPresent(lastSyncedUpdateChannelReleaseTag, forKey: .lastSyncedUpdateChannelReleaseTag)
         try container.encode(audioProcessProfiles, forKey: .audioProcessProfiles)
-        try container.encode(dashboardStyle, forKey: .dashboardStyle)
     }
 
     public static let diskCleanupCategoryOrder: [DiskCleanupCategoryKind] = [.userCaches, .trash, .userLogs]
