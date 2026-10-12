@@ -150,6 +150,30 @@ final class UpdateCandidateSelectorTests: XCTestCase {
         XCTAssertThrowsError(try ReleaseVersion("26.0.0-release.1"))
     }
 
+    func testEmptyAndMalformedVersionComponentsAreRejectedWithoutTrapping() {
+        let invalidVersions = [
+            "", " ", "\n\t", "v", " v ", "-", "v-", "26..0.0", ".26.0.0", "26.0.0.",
+            "26.0.0.extra", "26.x.0.0", "+26.0.0", "-26.0.0", "26.0.0-",
+            "26.0.0-beta..1", "26.0.0-beta.1.", "26.0.0-beta.-1", "26.0.0-beta.+1",
+            "26.0.0-beta.1-extra", "999999999999999999999999999999.0.0"
+        ]
+        for value in invalidVersions {
+            XCTAssertThrowsError(try ReleaseVersion(value), value) { error in
+                XCTAssertEqual(error as? ReleaseVersionParseError, .invalid(value))
+            }
+        }
+    }
+
+    func testValidVersionsPreserveWhitespacePrefixAndChannelCompatibility() throws {
+        let stable = try ReleaseVersion(" \nv26.0.1\t")
+        XCTAssertEqual(stable.rawValue, "v26.0.1")
+        XCTAssertEqual(stable.channel, .release)
+        XCTAssertEqual(stable.patch, 1)
+        XCTAssertEqual(try ReleaseVersion("26.0.1-alpha.0").prereleaseNumber, 0)
+        XCTAssertEqual(try ReleaseVersion("v26.0.1-beta.12").channel, .beta)
+        XCTAssertEqual(try ReleaseVersion("026.00.01").major, 26)
+    }
+
     func testReleaseVersionOrderingUsesBaseChannelAndPrereleaseNumber() throws {
         XCTAssertLessThan(try ReleaseVersion("v26.0.0-alpha.2"), try ReleaseVersion("v26.0.0-alpha.3"))
         XCTAssertLessThan(try ReleaseVersion("v26.0.0-alpha.3"), try ReleaseVersion("v26.0.0-beta.1"))
