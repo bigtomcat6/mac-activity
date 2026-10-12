@@ -37,50 +37,174 @@ final class PowerFlowTypesTests: XCTestCase {
         )
     }
 
-    func testBatteryDischargeProducesAnInputWithAbsoluteWatts() {
+    func testBatteryDischargeProducesAnInputFromSignedLiveCurrent() {
         let state = PowerFlowRules.batteryState(
             voltageMillivolts: 12_000,
-            amperageMilliamps: -2_000,
-            isCharging: false
+            amperageMilliamps: -2_000
         )
 
         XCTAssertEqual(state.direction, .input)
         XCTAssertEqual(state.measurement, .watts(24))
     }
 
-    func testBatteryChargeProducesAnOutputWithAbsoluteWatts() {
+    func testBatteryChargeProducesAnOutputFromSignedLiveCurrent() {
         let state = PowerFlowRules.batteryState(
             voltageMillivolts: 12_000,
-            amperageMilliamps: 1_500,
-            isCharging: true
+            amperageMilliamps: 1_500
         )
 
         XCTAssertEqual(state.direction, .output)
         XCTAssertEqual(state.measurement, .watts(18))
     }
 
-    func testZeroAndContradictoryBatteryReadingsBecomeIdleUnavailable() {
+    func testKnownZeroBatteryCurrentProducesIdleZeroWatts() {
         XCTAssertEqual(
             PowerFlowRules.batteryState(
-                voltageMillivolts: 12_000,
-                amperageMilliamps: 0,
-                isCharging: false
+                voltageMillivolts: nil,
+                amperageMilliamps: 0
             ),
-            PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
+            PowerFlowBatteryState(direction: .idle, measurement: .watts(0))
         )
+    }
+
+    func testMissingBatteryCurrentProducesIdleUnavailable() {
         XCTAssertEqual(
             PowerFlowRules.batteryState(
                 voltageMillivolts: 12_000,
-                amperageMilliamps: 1_500,
-                isCharging: false
+                amperageMilliamps: nil
             ),
             PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
         )
     }
 
+    func testKnownBatteryDirectionSurvivesUnavailableVoltage() {
+        XCTAssertEqual(
+            PowerFlowRules.batteryState(
+                voltageMillivolts: nil,
+                amperageMilliamps: -2_000
+            ),
+            PowerFlowBatteryState(direction: .input, measurement: .unavailable)
+        )
+        XCTAssertEqual(
+            PowerFlowRules.batteryState(
+                voltageMillivolts: 0,
+                amperageMilliamps: 1_500
+            ),
+            PowerFlowBatteryState(direction: .output, measurement: .unavailable)
+        )
+    }
+
+    func testNonfiniteBatteryCurrentProducesIdleUnavailable() {
+        for current in [Double.nan, Double.infinity] {
+            XCTAssertEqual(
+                PowerFlowRules.batteryState(
+                    voltageMillivolts: 12_000,
+                    amperageMilliamps: current
+                ),
+                PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
+            )
+        }
+    }
+
+    func testExternalInputMeasurementUsesLiveVoltageAndCurrent() {
+        let measurement = PowerFlowRules.externalInputMeasurement(
+            voltageMillivolts: 19_654,
+            currentMilliamps: 1_399
+        )
+
+        guard case .watts(let watts) = measurement else {
+            return XCTFail("Expected a live input measurement")
+        }
+        XCTAssertEqual(watts, 27.496, accuracy: 0.001)
+    }
+
+    func testExternalInputMeasurementReturnsZeroForKnownZeroCurrent() {
+        XCTAssertEqual(
+            PowerFlowRules.externalInputMeasurement(
+                voltageMillivolts: 20_000,
+                currentMilliamps: 0
+            ),
+            .watts(0)
+        )
+        XCTAssertEqual(
+            PowerFlowRules.externalInputMeasurement(
+                voltageMillivolts: 0,
+                currentMilliamps: 0
+            ),
+            .watts(0)
+        )
+    }
+
+    func testExternalInputMeasurementRejectsMissingAndInvalidLiveValues() {
+        let invalidInputs: [(Double?, Double?)] = [
+            (nil, 1_399),
+            (19_654, nil),
+            (0, 1_399),
+            (-19_654, 0),
+            (19_654, -1_399),
+            (Double.nan, 1_399),
+            (19_654, Double.infinity),
+            (Double.greatestFiniteMagnitude, Double.greatestFiniteMagnitude),
+            (Double.leastNonzeroMagnitude, Double.leastNonzeroMagnitude),
+        ]
+
+        for (voltage, current) in invalidInputs {
+            XCTAssertEqual(
+                PowerFlowRules.externalInputMeasurement(
+                    voltageMillivolts: voltage,
+                    currentMilliamps: current
+                ),
+                .unavailable
+            )
+        }
+    }
+
+    func testMacOutputMeasurementAllocatesExternalAndBatteryContributions() {
+        XCTAssertEqual(
+            PowerFlowRules.macOutputMeasurement(
+                externalInput: .watts(40),
+                batteryState: PowerFlowBatteryState(direction: .output, measurement: .watts(18))
+            ),
+            .watts(22)
+        )
+        XCTAssertEqual(
+            PowerFlowRules.macOutputMeasurement(
+                externalInput: .watts(20),
+                batteryState: PowerFlowBatteryState(direction: .input, measurement: .watts(24))
+            ),
+            .watts(44)
+        )
+    }
+
+    func testMacOutputMeasurementRejectsUnavailableInvalidAndNonpositiveAllocations() {
+        let invalidAllocations: [(PowerFlowMeasurement, PowerFlowBatteryState)] = [
+            (.unavailable, PowerFlowBatteryState(direction: .idle, measurement: .watts(0))),
+            (.watts(-1), PowerFlowBatteryState(direction: .idle, measurement: .watts(0))),
+            (.watts(10), PowerFlowBatteryState(direction: .output, measurement: .watts(18))),
+            (.watts(18), PowerFlowBatteryState(direction: .output, measurement: .watts(18))),
+            (
+                .watts(Double.greatestFiniteMagnitude),
+                PowerFlowBatteryState(
+                    direction: .input,
+                    measurement: .watts(Double.greatestFiniteMagnitude)
+                )
+            ),
+        ]
+
+        for (externalInput, batteryState) in invalidAllocations {
+            XCTAssertEqual(
+                PowerFlowRules.macOutputMeasurement(
+                    externalInput: externalInput,
+                    batteryState: batteryState
+                ),
+                .unavailable
+            )
+        }
+    }
+
     func testSnapshotFiltersIdleEndpointsFromBothVisibleColumns() {
         let snapshot = PowerFlowSnapshot(endpoints: [
-            PowerFlowEndpoint(id: "battery", type: .battery, direction: .idle, measurement: .unavailable),
+            PowerFlowEndpoint(id: "battery", type: .battery, direction: .idle, measurement: .watts(0)),
             PowerFlowEndpoint(id: "mac", type: .mac, direction: .output, measurement: .unavailable),
         ])
 
@@ -96,138 +220,8 @@ final class PowerFlowTypesTests: XCTestCase {
         )
     }
 
-    func testInvalidBatteryReadingsBecomeIdleUnavailable() {
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
-                voltageMillivolts: -12_000,
-                amperageMilliamps: 2_000,
-                isCharging: false
-            ),
-            PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
-        )
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
-                voltageMillivolts: 12_000,
-                amperageMilliamps: .infinity,
-                isCharging: true
-            ),
-            PowerFlowBatteryState(direction: .idle, measurement: .unavailable)
-        )
-    }
-
-    func testKnownBatteryDirectionRemainsVisibleWhenWattsAreUnavailable() {
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
-                voltageMillivolts: nil,
-                amperageMilliamps: -2_000,
-                isCharging: false
-            ),
-            PowerFlowBatteryState(direction: .input, measurement: .unavailable)
-        )
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
-                voltageMillivolts: .nan,
-                amperageMilliamps: 1_500,
-                isCharging: true
-            ),
-            PowerFlowBatteryState(direction: .output, measurement: .unavailable)
-        )
-        XCTAssertEqual(
-            PowerFlowRules.batteryState(
-                voltageMillivolts: .greatestFiniteMagnitude,
-                amperageMilliamps: .greatestFiniteMagnitude,
-                isCharging: true
-            ),
-            PowerFlowBatteryState(direction: .output, measurement: .unavailable)
-        )
-    }
-
-    func testExternalInputMeasurementUsesMatchingLiveVoltageCurrentAndPower() {
-        let measurement = PowerFlowRules.externalInputMeasurement(
-            voltageMillivolts: 19_654,
-            currentMilliamps: 1_399,
-            reportedPowerMilliwatts: 27_471
-        )
-
-        guard case .watts(let watts) = measurement else {
-            return XCTFail("Expected a validated live input measurement")
-        }
-        XCTAssertEqual(watts, 27.496, accuracy: 0.001)
-    }
-
-    func testExternalInputMeasurementRejectsInvalidOrInconsistentTelemetry() {
-        let invalidInputs: [(Double?, Double?, Double?)] = [
-            (nil, 1_399, 27_471),
-            (19_654, nil, 27_471),
-            (19_654, 1_399, nil),
-            (0, 1_399, 27_471),
-            (19_654, 0, 27_471),
-            (19_654, 1_399, 0),
-            (.nan, 1_399, 27_471),
-            (19_654, .infinity, 27_471),
-            (-19_654, 1_399, 27_471),
-            (19_654, -1_399, 27_471),
-            (19_654, 1_399, -27_471),
-            (19_654, 1_399, 65_000),
-        ]
-
-        for (voltage, current, reportedPower) in invalidInputs {
-            XCTAssertEqual(
-                PowerFlowRules.externalInputMeasurement(
-                    voltageMillivolts: voltage,
-                    currentMilliamps: current,
-                    reportedPowerMilliwatts: reportedPower
-                ),
-                .unavailable
-            )
-        }
-    }
-
-    func testMacOutputMeasurementUsesOnlyPositiveFiniteSystemLoad() {
-        XCTAssertEqual(
-            PowerFlowRules.macOutputMeasurement(systemLoadMilliwatts: 27_471),
-            .watts(27.471)
-        )
-
-        for invalidLoad: Double? in [nil, 0, -1, .nan, .infinity] {
-            XCTAssertEqual(
-                PowerFlowRules.macOutputMeasurement(systemLoadMilliwatts: invalidLoad),
-                .unavailable
-            )
-        }
-    }
-
     func testMeasurementWattsReturnsOnlyMeasuredPower() {
         XCTAssertEqual(PowerFlowMeasurement.watts(1.5).watts, 1.5)
         XCTAssertNil(PowerFlowMeasurement.unavailable.watts)
-    }
-
-    func testExternalInputMeasurementRejectsOverflowedCalculation() {
-        XCTAssertEqual(
-            PowerFlowRules.externalInputMeasurement(
-                voltageMillivolts: .greatestFiniteMagnitude,
-                currentMilliamps: .greatestFiniteMagnitude,
-                reportedPowerMilliwatts: .greatestFiniteMagnitude
-            ),
-            .unavailable
-        )
-    }
-
-    func testMacOutputMeasurementConvertsLargestFiniteLoad() {
-        XCTAssertEqual(
-            PowerFlowRules.macOutputMeasurement(
-                systemLoadMilliwatts: .greatestFiniteMagnitude
-            ),
-            .watts(.greatestFiniteMagnitude / 1_000)
-        )
-    }
-
-    func testMacOutputMeasurementRejectsUnderflowedConversion() {
-        XCTAssertEqual(
-            PowerFlowRules.macOutputMeasurement(
-                systemLoadMilliwatts: .leastNonzeroMagnitude
-            ),
-            .unavailable
-        )
     }
 }

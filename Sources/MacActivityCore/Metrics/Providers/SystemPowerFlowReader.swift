@@ -4,10 +4,10 @@ import IOKit.ps
 
 enum SystemPowerFlowReader {
     static func read() -> PowerFlowRawReading {
-        let timestamp = Date()
         let source = batteryPowerSourceDescription()
         let registry = batteryRegistryReading()
         let publicAdapter = externalAdapterDetails()
+        let smcReading = PowerFlowSMCReader.read()
         let adapterDetails = registry.adapterDetails ?? publicAdapter
         let sourceState = source?[kIOPSPowerSourceStateKey as String] as? String
         let isBatteryPresent = (source?[kIOPSIsPresentKey as String] as? Bool) ?? registry.exists
@@ -18,9 +18,8 @@ enum SystemPowerFlowReader {
         let battery: PowerFlowRawBattery?
         if isBatteryPresent {
             battery = PowerFlowRawBattery(
-                voltageMillivolts: registry.voltageMillivolts,
-                amperageMilliamps: registry.instantAmperageMilliamps ?? registry.amperageMilliamps,
-                isCharging: source?[kIOPSIsChargingKey as String] as? Bool ?? false
+                voltageMillivolts: smcReading.batteryVoltageMillivolts,
+                amperageMilliamps: smcReading.batteryCurrentMilliamps
             )
         } else {
             battery = nil
@@ -40,12 +39,16 @@ enum SystemPowerFlowReader {
             externalAdapter = nil
         }
 
+        let timestamp = Date()
         return PowerFlowRawReading(
             timestamp: timestamp,
             isExternalPowerConnected: isExternalPowerConnected,
             battery: battery,
             externalAdapter: externalAdapter,
-            telemetry: registry.telemetry
+            telemetry: PowerFlowRawTelemetry(
+                inputVoltageMillivolts: smcReading.inputVoltageMillivolts,
+                inputCurrentMilliamps: smcReading.inputCurrentMilliamps
+            )
         )
     }
 
@@ -58,30 +61,13 @@ enum SystemPowerFlowReader {
         let descriptions = sources.compactMap { descriptionForSource(snapshot, $0) }
         return descriptions.first {
             ($0[kIOPSTypeKey as String] as? String) == kIOPSInternalBatteryType
-        } ?? descriptions.first
-    }
-
-    static func powerTelemetryReading(_ details: [String: Any]?) -> PowerFlowRawTelemetry {
-        PowerFlowRawTelemetry(
-            inputVoltageMillivolts: number(in: details, key: "SystemVoltageIn"),
-            inputCurrentMilliamps: number(in: details, key: "SystemCurrentIn"),
-            inputPowerMilliwatts: number(in: details, key: "SystemPowerIn"),
-            systemLoadMilliwatts: number(in: details, key: "SystemLoad")
-        )
-    }
-
-    static func signedAmperage(from number: NSNumber) -> Double {
-        Double(number.int32Value)
+        }
     }
 
     private struct BatteryRegistryReading {
         let exists: Bool
-        let voltageMillivolts: Double?
-        let instantAmperageMilliamps: Double?
-        let amperageMilliamps: Double?
         let externalConnected: Bool
         let adapterDetails: [String: Any]?
-        let telemetry: PowerFlowRawTelemetry
     }
 
     private static func batteryPowerSourceDescription() -> [String: Any]? {
@@ -114,27 +100,17 @@ enum SystemPowerFlowReader {
 
         return BatteryRegistryReading(
             exists: true,
-            voltageMillivolts: doubleProperty("Voltage", service: service),
-            instantAmperageMilliamps: signedAmperageProperty("InstantAmperage", service: service),
-            amperageMilliamps: signedAmperageProperty("Amperage", service: service),
             externalConnected: boolProperty("ExternalConnected", service: service),
             adapterDetails: dictionaryProperty("AppleRawAdapterDetails", service: service)
-                ?? dictionaryProperty("AdapterDetails", service: service),
-            telemetry: powerTelemetryReading(
-                dictionaryProperty("PowerTelemetryData", service: service)
-            )
+                ?? dictionaryProperty("AdapterDetails", service: service)
         )
     }
 
     private static var unavailableBatteryRegistryReading: BatteryRegistryReading {
         BatteryRegistryReading(
             exists: false,
-            voltageMillivolts: nil,
-            instantAmperageMilliamps: nil,
-            amperageMilliamps: nil,
             externalConnected: false,
-            adapterDetails: nil,
-            telemetry: .unavailable
+            adapterDetails: nil
         )
     }
 
@@ -153,17 +129,6 @@ enum SystemPowerFlowReader {
             kCFAllocatorDefault,
             0
         )?.takeRetainedValue() as? NSNumber
-    }
-
-    private static func doubleProperty(_ key: String, service: io_registry_entry_t) -> Double? {
-        numberProperty(key, service: service)?.doubleValue
-    }
-
-    private static func signedAmperageProperty(
-        _ key: String,
-        service: io_registry_entry_t
-    ) -> Double? {
-        numberProperty(key, service: service).map { signedAmperage(from: $0) }
     }
 
     private static func boolProperty(_ key: String, service: io_registry_entry_t) -> Bool {

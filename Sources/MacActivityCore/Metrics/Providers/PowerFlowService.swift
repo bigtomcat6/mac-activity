@@ -3,7 +3,6 @@ import Foundation
 struct PowerFlowRawBattery: Equatable, Sendable {
     let voltageMillivolts: Double?
     let amperageMilliamps: Double?
-    let isCharging: Bool
 }
 
 struct PowerFlowRawExternalAdapter: Equatable, Sendable {
@@ -17,14 +16,10 @@ struct PowerFlowRawExternalAdapter: Equatable, Sendable {
 struct PowerFlowRawTelemetry: Equatable, Sendable {
     let inputVoltageMillivolts: Double?
     let inputCurrentMilliamps: Double?
-    let inputPowerMilliwatts: Double?
-    let systemLoadMilliwatts: Double?
 
     static let unavailable = PowerFlowRawTelemetry(
         inputVoltageMillivolts: nil,
-        inputCurrentMilliamps: nil,
-        inputPowerMilliwatts: nil,
-        systemLoadMilliwatts: nil
+        inputCurrentMilliamps: nil
     )
 }
 
@@ -53,13 +48,23 @@ public final class PowerFlowService {
         let raw = await Task.detached(priority: .utility) { read() }.value
         var endpoints = [PowerFlowEndpoint]()
 
-        let externalMeasurement = PowerFlowRules.externalInputMeasurement(
-            voltageMillivolts: raw.telemetry.inputVoltageMillivolts,
-            currentMilliamps: raw.telemetry.inputCurrentMilliamps,
-            reportedPowerMilliwatts: raw.telemetry.inputPowerMilliwatts
-        )
+        let batteryState = if let battery = raw.battery {
+            PowerFlowRules.batteryState(
+                voltageMillivolts: battery.voltageMillivolts,
+                amperageMilliamps: battery.amperageMilliamps
+            )
+        } else {
+            PowerFlowBatteryState(direction: .idle, measurement: .watts(0))
+        }
+        let externalMeasurement = raw.isExternalPowerConnected
+            ? PowerFlowRules.externalInputMeasurement(
+                voltageMillivolts: raw.telemetry.inputVoltageMillivolts,
+                currentMilliamps: raw.telemetry.inputCurrentMilliamps
+            )
+            : .watts(0)
         let macMeasurement = PowerFlowRules.macOutputMeasurement(
-            systemLoadMilliwatts: raw.telemetry.systemLoadMilliwatts
+            externalInput: externalMeasurement,
+            batteryState: batteryState
         )
 
         if raw.isExternalPowerConnected {
@@ -70,22 +75,17 @@ public final class PowerFlowService {
                     hasUSBPowerDeliveryMetadata: adapter?.hasUSBPowerDeliveryMetadata ?? false,
                     adapterDescription: adapter?.adapterDescription
                 ),
-                direction: .input,
+                direction: externalMeasurement.watts == 0 ? .idle : .input,
                 measurement: externalMeasurement
             ))
         }
 
-        if let battery = raw.battery {
-            let state = PowerFlowRules.batteryState(
-                voltageMillivolts: battery.voltageMillivolts,
-                amperageMilliamps: battery.amperageMilliamps,
-                isCharging: battery.isCharging
-            )
+        if raw.battery != nil {
             endpoints.append(PowerFlowEndpoint(
                 id: "battery",
                 type: .battery,
-                direction: state.direction,
-                measurement: state.measurement
+                direction: batteryState.direction,
+                measurement: batteryState.measurement
             ))
         }
 

@@ -17,7 +17,7 @@ enum PowerFlowPresentation {
         case .unavailable:
             return AppLocalization.string(.powerFlowUnavailable, bundle: bundle)
         case .watts(let watts) where watts >= 1:
-            return "\(watts.formatted(.number.locale(locale).precision(.fractionLength(0...1)))) W"
+            return "\(watts.formatted(.number.locale(locale).precision(.fractionLength(0...2)))) W"
         case .watts(let watts):
             return "\((watts * 1_000).formatted(.number.locale(locale).precision(.fractionLength(0...1)))) mW"
         }

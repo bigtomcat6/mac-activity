@@ -25,7 +25,6 @@ private struct DebugActiveProcessRow: Encodable {
     let childCount: Int
 }
 
-@main
 struct DebugActiveProcessMemory {
     static func main() {
         do {
@@ -190,3 +189,5 @@ private enum DebugActiveProcessError: LocalizedError {
         }
     }
 }
+
+DebugActiveProcessMemory.main()

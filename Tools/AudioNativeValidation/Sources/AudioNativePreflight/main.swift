@@ -2,7 +2,6 @@ import AudioNativePreflightKit
 import Darwin
 import Foundation
 
-@main
 @MainActor
 struct AudioNativePreflight {
     static func main() {
@@ -21,3 +20,5 @@ struct AudioNativePreflight {
         }
     }
 }
+
+AudioNativePreflight.main()

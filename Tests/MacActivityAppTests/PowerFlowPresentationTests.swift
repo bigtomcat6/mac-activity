@@ -9,11 +9,22 @@ final class PowerFlowPresentationTests: XCTestCase {
         AppLocalization.bundle(forLanguageIdentifier: "en")!
     }
 
-    func testMeasuredWattsUseWattsOrMilliwattsWithoutRoundingToZero() {
+    func testMeasuredWattsUseUpToTwoFractionDigits() {
         XCTAssertEqual(
             PowerFlowPresentation.powerText(.watts(22.14), locale: Locale(identifier: "en")),
-            "22.1 W"
+            "22.14 W"
         )
+        XCTAssertEqual(
+            PowerFlowPresentation.powerText(.watts(29.36), locale: Locale(identifier: "en")),
+            "29.36 W"
+        )
+        XCTAssertEqual(
+            PowerFlowPresentation.powerText(.watts(29.366), locale: Locale(identifier: "en")),
+            "29.37 W"
+        )
+    }
+
+    func testMeasuredMilliwattsRetainExistingFormatting() {
         XCTAssertEqual(
             PowerFlowPresentation.powerText(.watts(0.65), locale: Locale(identifier: "en")),
             "650 mW"

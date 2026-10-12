@@ -96,6 +96,11 @@ The project includes focused executables and command wrappers for local checks:
 
 Use these for narrow cleanup or Actives checks before broad app validation.
 
+Tool files named `main.swift` use top-level entry calls, not `@main`, so they
+do not depend on SwiftPM's inferred `-parse-as-library` flag in Xcode.
+Async entry calls use `await` and preserve `@MainActor` on the entry method.
+`ToolEntrypointTests` checks this convention across `Tools`, including nested packages.
+
 ## Architecture Notes
 
 `MacActivityCore` owns behavior that should be testable without the app shell:
