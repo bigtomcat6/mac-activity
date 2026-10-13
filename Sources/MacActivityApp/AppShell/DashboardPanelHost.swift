@@ -1,7 +1,11 @@
 import AppKit
 
+typealias DashboardPanelAlphaAnimator = @MainActor (
+    NSWindow, CGFloat, TimeInterval, @escaping @MainActor () -> Void
+) -> Void
+
 @MainActor
-final class DashboardPanelHost {
+final class DashboardPanelHost: NSObject, NSWindowDelegate {
     private(set) var panel: DashboardPresentationPanel?
     private var monitors: DashboardEventMonitorBag?
     private var anchorRect: NSRect = .zero
@@ -10,13 +14,45 @@ final class DashboardPanelHost {
     private var isCleaningUp = false
     private var menuTrackingDepth = 0
     private let makeMonitorBag: () -> DashboardEventMonitorBag
+    private let shouldReduceMotion: () -> Bool
+    private let animateAlpha: DashboardPanelAlphaAnimator
+    private(set) var isShown = false
+    private var isClosing = false
+    var animates = true
     var onClose: (() -> Void)?
-    // No window-alpha fade: Liquid Glass shown while the window is transparent stays
-    // stuck in an over-bright state, so the panel appears at once like a menu.
+    var onDidClose: (() -> Void)?
+    // Window alpha previously caused persistent glass bloom. Short native fades are
+    // compositor-gated against cold full-opacity glass; always normalize after hide.
     var presentPanel: (DashboardPresentationPanel) -> Void = { $0.makeKeyAndOrderFront(nil) }
 
-    init(makeMonitorBag: @escaping () -> DashboardEventMonitorBag = { .live() }) {
+    init(
+        makeMonitorBag: @escaping () -> DashboardEventMonitorBag = { .live() },
+        shouldReduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion },
+        animateAlpha: @escaping DashboardPanelAlphaAnimator = { window, alpha, duration, completion in
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = duration
+                window.animator().alphaValue = alpha
+            } completionHandler: {
+                DispatchQueue.main.async { completion() }
+            }
+        }
+    ) {
         self.makeMonitorBag = makeMonitorBag
+        self.shouldReduceMotion = shouldReduceMotion
+        self.animateAlpha = animateAlpha
+        super.init()
+    }
+
+    deinit {
+        let monitors = monitors
+        let panel = panel
+        DispatchQueue.main.async {
+            monitors?.removeAll()
+            panel?.delegate = nil
+            panel?.orderOut(nil)
+            panel?.contentViewController = nil
+            panel?.close()
+        }
     }
 
     var isVisible: Bool { panel?.isVisible == true }
@@ -59,12 +95,28 @@ final class DashboardPanelHost {
             contentSize: contentSize
         )
         panel.setFrame(frame, display: false)
+        panel.delegate = self
+        panel.ignoresMouseEvents = false
+        panel.acceptsKeyboardInput = true
+        let shouldFade = animates && !shouldReduceMotion()
+        stopAlphaAnimation(in: panel, at: shouldFade && !isShown ? 0 : 1)
         presentPanel(panel)
+        guard panel.isVisible else { return }
+        let wasShown = isShown
+        isShown = true
+        isClosing = false
         installMonitors(session: currentSession, panel: panel)
+        if shouldFade && !wasShown {
+            animateAlpha(panel, 1, 0.14) { [weak self, weak panel] in
+                guard let self, let panel, self.session == currentSession,
+                      self.panel === panel, self.isShown else { return }
+                self.stopAlphaAnimation(in: panel, at: 1)
+            }
+        }
     }
 
     func resizeContent(to contentSize: NSSize) {
-        guard let panel, panel.isVisible else { return }
+        guard let panel, isShown else { return }
         let frame = DashboardPanelPlacement.panelFrame(
             anchorRect: anchorRect,
             visibleFrame: visibleFrame,
@@ -89,18 +141,45 @@ final class DashboardPanelHost {
     }
 
     func close() {
-        guard isCleaningUp == false else { return }
+        guard isCleaningUp == false, isShown else { return }
         isCleaningUp = true
-        defer { isCleaningUp = false }
 
         session += 1
         menuTrackingDepth = 0
         monitors?.removeAll()
         monitors = nil
-
-        guard let panel, panel.isVisible else { return }
-        panel.orderOut(nil)
+        isShown = false
+        isClosing = true
+        let currentSession = session
+        let closingPanel = panel
+        closingPanel?.ignoresMouseEvents = true
+        closingPanel?.acceptsKeyboardInput = false
+        closingPanel?.resignKey()
+        isCleaningUp = false
         onClose?()
+        // Close callbacks may synchronously reopen or replace this host.
+        guard session == currentSession, let panel = closingPanel, self.panel === panel, !isShown else { return }
+        let finish: @MainActor () -> Void = { [weak self, weak panel] in
+            guard let self, let panel, self.session == currentSession,
+                  self.panel === panel, !self.isShown else { return }
+            panel.orderOut(nil)
+            self.stopAlphaAnimation(in: panel, at: 1)
+            self.isClosing = false
+            self.onDidClose?()
+        }
+        if animates && !shouldReduceMotion() && panel.isVisible {
+            stopAlphaAnimation(in: panel, at: panel.alphaValue)
+            animateAlpha(panel, 0, 0.11, finish)
+        } else {
+            finish()
+        }
+    }
+
+    private func stopAlphaAnimation(in panel: NSWindow, at alpha: CGFloat) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            panel.animator().alphaValue = alpha
+        }
     }
 
     func destroy() {
@@ -112,12 +191,25 @@ final class DashboardPanelHost {
         menuTrackingDepth = 0
         monitors?.removeAll()
         monitors = nil
+        let wasShown = isShown
+        let wasClosing = isClosing
+        isShown = false
+        isClosing = false
 
         guard let panel else { return }
         self.panel = nil
+        panel.delegate = nil
         panel.orderOut(nil)
+        stopAlphaAnimation(in: panel, at: 1)
         panel.contentViewController = nil
         panel.close()
+        isCleaningUp = false
+        if wasShown {
+            onClose?()
+        }
+        if wasShown || wasClosing {
+            onDidClose?()
+        }
     }
 
     private func screenLocation(for event: NSEvent) -> NSPoint {
@@ -127,11 +219,12 @@ final class DashboardPanelHost {
 
     private func handlePanelWillClose(session: Int) {
         guard session == self.session else { return }
-        let wasVisible = panel?.isVisible == true
         destroy()
-        if wasVisible {
-            onClose?()
-        }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === panel else { return }
+        handlePanelWillClose(session: session)
     }
 
     private func installMonitors(session: Int, panel: DashboardPresentationPanel) {

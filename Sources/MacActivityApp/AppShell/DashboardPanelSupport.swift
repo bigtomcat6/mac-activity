@@ -2,8 +2,20 @@ import AppKit
 
 @MainActor
 final class DashboardPresentationPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    var acceptsKeyboardInput = true
+    override var canBecomeKey: Bool { acceptsKeyboardInput }
     override var canBecomeMain: Bool { false }
+
+    override func sendEvent(_ event: NSEvent) {
+        if !acceptsKeyboardInput,
+           [.keyDown, .keyUp, .flagsChanged].contains(event.type) { return }
+        super.sendEvent(event)
+    }
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard acceptsKeyboardInput else { return false }
+        return super.performKeyEquivalent(with: event)
+    }
 }
 
 @MainActor

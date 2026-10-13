@@ -6,6 +6,24 @@ import XCTest
 
 @MainActor
 final class EnergyImpactViewTests: XCTestCase {
+    // Catches the measured-list re-enable modifier defeating inherited .never.
+    func testLongEnergyIndicatorsHideAfterFlashAndRestoreWithoutLosingScrolling() async throws {
+        let model = EnergyImpactModel(provider: EnergyImpactViewProviderStub(responses: [
+            publication(entries: (1...120).map { entry(processIdentifier: pid_t($0)) })
+        ]), observationIntervalNanoseconds: 1, nowNanoseconds: { 0 },
+            sleep: { _ in throw CancellationError() })
+        await model.refreshWhileVisible()
+        for height: CGFloat in [480, 80] {
+            let state = DashboardPopoverScrollIndicatorState()
+            let host = DashboardListTestHost(DashboardIndicatorTestPage(state: state) {
+                EnergyImpactView(model: model, powerFlowModel: self.testPowerFlowModel(), refreshTrigger: 0,
+                                 showsApplicationIdentifier: true).padding(18)
+            }.environment(\.dashboardPresentationIsPresented, false), height: height)
+            defer { host.close() }
+            try host.assertIndicatorTransition(state)
+        }
+    }
+
     func testHostedListOverflowPreservesPageAndDocumentSessionsAndInteractionState() throws {
         let page = DashboardListLifecycleRecorder()
         let document = DashboardListLifecycleRecorder()
@@ -862,6 +880,77 @@ final class DashboardListTestHost {
 
     func close() { panel.orderOut(nil) }
 
+    static func indicatorIsVisible(_ scroller: NSScroller?) -> Bool {
+        guard let scroller, scroller.frame.width > 0, scroller.frame.height > 0 else { return false }
+        var view: NSView? = scroller
+        while let current = view {
+            if current.isHidden || current.alphaValue <= 0.01 { return false }
+            view = current.superview
+        }
+        return true
+    }
+
+    // Positive oracle: overflowing real documents, not hasScroller capability or AX existence.
+    func assertIndicatorTransition(_ state: DashboardPopoverScrollIndicatorState,
+                                   file: StaticString = #filePath, line: UInt = #line) throws {
+        settle()
+        let scrolls = allScrollViews
+        let identities = Set(scrolls.map(ObjectIdentifier.init))
+        let overflowing = scrolls.filter {
+            ($0.documentView?.frame.height ?? 0) > $0.contentView.bounds.height + 1 && $0.hasVerticalScroller
+        }
+        XCTAssertFalse(overflowing.isEmpty, "requires a long, enabled document", file: file, line: line)
+        for style in [NSScroller.Style.legacy, .overlay] {
+            func flash() {
+                for scroll in scrolls { scroll.scrollerStyle = style; scroll.flashScrollers() }
+                RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            }
+            flash()
+            for scroll in overflowing {
+                XCTAssertTrue(Self.indicatorIsVisible(scroll.verticalScroller), "automatic positive baseline", file: file, line: line)
+                scroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+            let offsets = scrolls.map { $0.contentView.bounds.origin }
+            state.setHeightTransitioning(true)
+            settle()
+            flash()
+            for delay in [0.02, 0.08, 0.25] {
+                RunLoop.main.run(until: Date().addingTimeInterval(delay))
+                XCTAssertEqual(Set(allScrollViews.map(ObjectIdentifier.init)), identities, file: file, line: line)
+                for (index, scroll) in scrolls.enumerated() {
+                    XCTAssertFalse(Self.indicatorIsVisible(scroll.verticalScroller), "never must survive flash", file: file, line: line)
+                    XCTAssertFalse(Self.indicatorIsVisible(scroll.horizontalScroller), file: file, line: line)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.x, offsets[index].x, accuracy: 1, file: file, line: line)
+                    XCTAssertEqual(scroll.contentView.bounds.origin.y, offsets[index].y, accuracy: 1, file: file, line: line)
+                }
+            }
+            for scroll in overflowing {
+                let beforeWheel = scroll.contentView.bounds.origin.y
+                let cg = try XCTUnwrap(CGEvent(scrollWheelEvent2Source: nil, units: .pixel,
+                    wheelCount: 1, wheel1: -80, wheel2: 0, wheel3: 0), file: file, line: line)
+                let event = try XCTUnwrap(NSEvent(cgEvent: cg), file: file, line: line)
+                scroll.scrollWheel(with: event) // Owned view only; never post global input.
+                RunLoop.main.run(until: Date().addingTimeInterval(0.04))
+                XCTAssertGreaterThan(scroll.contentView.bounds.origin.y, beforeWheel, file: file, line: line)
+                try assertBottomReachable(scroll, file: file, line: line)
+                XCTAssertFalse(Self.indicatorIsVisible(scroll.verticalScroller), file: file, line: line)
+            }
+            let bottoms = scrolls.map { $0.contentView.bounds.origin }
+            state.setHeightTransitioning(false)
+            settle()
+            flash()
+            for (index, scroll) in scrolls.enumerated() {
+                XCTAssertEqual(scroll.contentView.bounds.origin.y, bottoms[index].y, accuracy: 1, file: file, line: line)
+            }
+            for scroll in overflowing {
+                XCTAssertTrue(Self.indicatorIsVisible(scroll.verticalScroller), "automatic must restore", file: file, line: line)
+                try assertBottomReachable(scroll, file: file, line: line)
+            }
+            XCTAssertEqual(Set(allScrollViews.map(ObjectIdentifier.init)), identities, file: file, line: line)
+        }
+    }
+
     // SwiftUI's disabled scroll scopes remove their native vertical scroller.
     // Count enabled scopes, not the stable but inactive wrapper containers.
     var scrollViews: [NSScrollView] { allScrollViews.filter(\.hasVerticalScroller) }
@@ -886,5 +975,17 @@ final class DashboardListTestHost {
         settle()
         XCTAssertEqual(rect(scroll), viewport, file: file, line: line)
         XCTAssertEqual(scroll.contentView.bounds.maxY, document.bounds.maxY, accuracy: 1, file: file, line: line)
+    }
+}
+
+// Uses the real shared constructors and real page fields; no copied row/list implementation.
+struct DashboardIndicatorTestPage<Content: View>: View {
+    @ObservedObject var state: DashboardPopoverScrollIndicatorState
+    @ViewBuilder let content: () -> Content
+    var body: some View {
+        DashboardListPage(onNaturalHeightChange: { _ in }) {
+            content().scrollIndicators(state.isHeightTransitioning ? .never : .automatic)
+        }
+        .scrollIndicators(state.isHeightTransitioning ? .never : .automatic)
     }
 }

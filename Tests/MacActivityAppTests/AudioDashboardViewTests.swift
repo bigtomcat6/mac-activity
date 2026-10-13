@@ -8,6 +8,33 @@ import XCTest
 
 @MainActor
 final class AudioDashboardViewTests: XCTestCase {
+    // Real Dashboard root + both Audio nested consumers, without live authorization/services.
+    func testIntegratedLongAudioIndicatorsHideAndRestoreInBothOverflowModes() throws {
+        var snapshot = AudioControlSnapshot(devices: (0..<20).map { .fixture(uid: "Output \($0)") },
+            processes: (0..<20).map { index in
+                let process = AudioProcessEntry(processObjectID: UInt32(index + 11),
+                    processIdentifier: pid_t(index + 101), name: "App \(index)", bundleIdentifier: nil, bundleURL: nil)
+                return AudioProcessControlSnapshot(process: process, volume: 0.7, isMuted: false,
+                    route: .followOriginal, pendingValues: nil, routeOptions: [],
+                    session: ProcessTapSessionSnapshot(processObjectID: UInt32(index + 11), generation: 1,
+                        state: .idle, error: nil, commandSequence: 1, emissionOrdinal: 0), error: nil)
+            }, processControlsAreVisible: true)
+        snapshot.systemAudioAccess = .authorized
+        let coordinator = AudioViewCoordinatorSpy(snapshot: snapshot)
+        for height: CGFloat in [480, 140] {
+            let state = DashboardPopoverScrollIndicatorState()
+            let host = DashboardListTestHost(DashboardView(
+                dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+                preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
+                audioDashboardModel: AudioDashboardModel(coordinator: coordinator),
+                scrollIndicatorState: state, initialSelectedTab: .audio
+            ).environment(\.dashboardPresentationIsPresented, false), height: height)
+            defer { host.close() }
+            try host.assertIndicatorTransition(state)
+        }
+        XCTAssertEqual(coordinator.intentCount, 0)
+    }
+
     func testHostedAudioSectionsHaveIndependentMeasuredViewports() throws {
         for (deviceCount, processCount) in [(1, 20), (20, 1), (20, 20)] {
             let deviceRows: [AudioDeviceControlSnapshot] = (0..<deviceCount).map { .fixture(uid: "Output \($0)") }

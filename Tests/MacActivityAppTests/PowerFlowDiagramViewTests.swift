@@ -7,6 +7,88 @@ import XCTest
 final class PowerFlowDiagramViewTests: XCTestCase {
     private typealias Fixtures = PowerFlowDiagramFixtures
 
+    // Deleting the independent native glass branch must fail this check. Walk
+    // actual surface values, expanding ForEach through its public data/content,
+    // not a second test-only implementation of the surface's routing policy.
+    func testNativeSplitAndMergeEmitIndependentRibbonGlass() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Native glass requires macOS 26") }
+        for presentation in [Fixtures.oneToMany, Fixtures.manyToOne] {
+            for width: CGFloat in [320, 384] {
+                let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
+                let effects = nativeSurfaceEffects(layout: plan.layout, isFlowing: true)
+                XCTAssertEqual(effects.count, 2, "No extra compound glass may overlap the independent ribbons")
+                XCTAssertEqual(effects.filter { $0.contains("PowerFlowRibbonShape") }.count, 2,
+                               "Each visible ribbon needs its own clear glass: \(effects)")
+            }
+        }
+    }
+
+    func testNativeOtherTopologiesAndNonflowingKeepCompoundChannel() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Native glass requires macOS 26") }
+        for (presentation, width, flowing) in [
+            (Fixtures.oneToOne, CGFloat(384), true),
+            (Fixtures.manyToMany, CGFloat(384), true),
+            (Fixtures.oneToMany, CGFloat(319), true),
+            (Fixtures.manyToOne, CGFloat(319), true),
+            (Fixtures.oneToMany, CGFloat(384), false),
+        ] {
+            let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
+            let effects = nativeSurfaceEffects(layout: plan.layout, isFlowing: flowing)
+            XCTAssertEqual(effects.filter { $0.contains("PowerFlowRibbonShape") }.count, 0)
+            if flowing {
+                XCTAssertEqual(effects.filter { $0.contains("PowerFlowDiagramSurfaceShape") }.count, 1)
+            }
+        }
+    }
+
+    func testNativeIndependentBranchesRetainTotalsFooterGlass() throws {
+        guard #available(macOS 26.0, *) else { throw XCTSkip("Native glass requires macOS 26") }
+        let presentation = Fixtures.presentation(endpoints: [
+            Fixtures.endpoint("source", type: .usbC, direction: .input, measurement: .watts(70)),
+            Fixtures.endpoint("battery", type: .battery, direction: .output, measurement: .watts(31.5)),
+            Fixtures.endpoint("mac", type: .mac, direction: .output, measurement: .watts(10.55)),
+        ])
+        let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: 320)
+        XCTAssertEqual(plan.layout.effectiveMode, .expanded(.oneToMany))
+        XCTAssertNotNil(plan.layout.totalsFooterFrame)
+        let effects = nativeSurfaceEffects(layout: plan.layout, isFlowing: true)
+        XCTAssertEqual(effects.count, 3, "Two ribbons plus the original rounded footer need clear glass")
+        XCTAssertEqual(effects.filter { $0.contains("PowerFlowRibbonShape") }.count, 2)
+    }
+
+    private func nativeSurfaceEffects(layout: PowerFlowDiagramLayoutResult, isFlowing: Bool) -> [String] {
+        let surface = PowerFlowDiagramGlassSurface(layout: layout, isFlowing: isFlowing) {
+            EmptyView()
+        } content: {
+            EmptyView()
+        }
+        var effects: [String] = []
+        func walk(_ value: Any, depth: Int = 0) {
+            guard depth < 40 else { return }
+            let name = String(describing: type(of: value))
+            // Diagnostic metadata only: no private renderer methods/selectors.
+            // Stop at the modifier itself to count one effect, not its ancestors.
+            if name == "GlassEffectModifier" {
+                func metadata(_ value: Any, remaining: Int = 12) -> String {
+                    guard remaining > 0 else { return "" }
+                    return String(describing: type(of: value)) + " "
+                        + Mirror(reflecting: value).children.map { metadata($0.value, remaining: remaining - 1) }.joined(separator: " ")
+                }
+                effects.append(metadata(value))
+                return
+            }
+            if let loop = value as? SurfaceTestForEach {
+                loop.surfaceTestChildren.forEach { walk($0, depth: depth + 1) }
+            } else {
+                for child in Mirror(reflecting: value).children {
+                    walk(child.value, depth: depth + 1)
+                }
+            }
+        }
+        walk(surface.body)
+        return effects
+    }
+
     func testRenderPlanMapsLaneLabelsWithoutInventingEdges() {
         let cases: [(PowerFlowDiagramPresentation, [String])] = [
             (Fixtures.oneToOne, ["sink:mac"]),
@@ -150,6 +232,36 @@ final class PowerFlowDiagramViewTests: XCTestCase {
                     .font: NSFont.monospacedSystemFont(ofSize: 14, weight: .semibold),
                 ]).width
                 XCTAssertLessThanOrEqual(width * 0.72, frame.width, label.text)
+            }
+        }
+    }
+
+    func testThinRoundedBranchesKeepVisibleNumberBoundsAndZeroHundredTopology() {
+        for pair in [[50.0, 50], [95, 5], [32.65, 9.70], [99.999, 0.001], [0, 100], [100, 0], [0, 0]] {
+            let presentation = Fixtures.presentation(endpoints: [
+                Fixtures.endpoint("source", type: .usbC, direction: .input, measurement: .watts(pair.reduce(0, +))),
+                Fixtures.endpoint("battery", type: .battery, direction: .output, measurement: .watts(pair[0])),
+                Fixtures.endpoint("mac", type: .mac, direction: .output, measurement: .watts(pair[1])),
+            ])
+            let expectedMode: PowerFlowDiagramMode = pair == [0, 0] ? .idle
+                : pair.contains(0) ? .expanded(.oneToOne) : .expanded(.oneToMany)
+            XCTAssertEqual(presentation.preferredMode, expectedMode)
+            for width: CGFloat in [320, 384] {
+                let plan = PowerFlowDiagramRenderPlan(presentation: presentation, width: width)
+                XCTAssertEqual(plan.layout.effectiveMode, expectedMode)
+                XCTAssertEqual(plan.flowLabels.count, pair == [0, 0] ? 0 : pair.contains(0) ? 1 : 2)
+                let channel = PowerFlowDiagramSurfaceShape(layout: plan.layout, part: .channel).path(in: .zero).cgPath
+                for (label, frame) in zip(plan.flowLabels, plan.layout.flowLabelFrames) {
+                    let size = (label.text as NSString).size(withAttributes: [.font: NSFont.systemFont(ofSize: 14, weight: .semibold)])
+                    XCTAssertLessThanOrEqual(size.width * 0.72, frame.width, label.text)
+                    XCTAssertLessThanOrEqual(size.height, frame.height, label.text)
+                    let halfWidth = min(size.width, frame.width) / 2
+                    for x in [frame.midX - halfWidth, frame.midX + halfWidth] {
+                        for y in [frame.midY - size.height / 2, frame.midY + size.height / 2] {
+                            XCTAssertTrue(channel.contains(CGPoint(x: x, y: y)), "number ink escapes rounded branch: \(pair) \(label.text)")
+                        }
+                    }
+                }
             }
         }
     }
@@ -950,4 +1062,12 @@ final class PowerFlowDiagramViewTests: XCTestCase {
         let y = min(representation.pixelsHigh - 1, max(0, Int(point.y * scale)))
         return representation.colorAt(x: x, y: y)?.usingColorSpace(.sRGB) ?? .clear
     }
+}
+
+private protocol SurfaceTestForEach {
+    var surfaceTestChildren: [Any] { get }
+}
+
+extension ForEach: SurfaceTestForEach {
+    fileprivate var surfaceTestChildren: [Any] { data.map { content($0) } }
 }
