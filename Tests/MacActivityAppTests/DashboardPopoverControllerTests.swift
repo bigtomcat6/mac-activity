@@ -6,17 +6,414 @@ import MacActivityCore
 
 @MainActor
 final class DashboardPopoverControllerTests: XCTestCase {
+    private func makeFadeAnchor() throws -> (NSWindow, NSView) {
+        let screen = try XCTUnwrap(NSScreen.main)
+        let frame = NSRect(x: screen.frame.midX, y: screen.visibleFrame.maxY - 32, width: 80, height: 32)
+        let window = NSWindow(contentRect: frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let anchor = NSView(frame: NSRect(x: 8, y: 4, width: 24, height: 24))
+        window.contentView?.addSubview(anchor)
+        window.orderFront(nil)
+        return (window, anchor)
+    }
+
+    func testAudioActivationDuringPanelFadeOutDoesNotRefreshOrShutdownEngine() async throws {
+        var completions: [@MainActor () -> Void] = []
+        let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { _, _, _, completion in
+            completions.append(completion)
+        })
+        defer { panelHost.destroy() }
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { .panel }, panelHost: panelHost)
+        let audioCoordinator = TestAudioControlCoordinator()
+        let audio = AudioDashboardModel(coordinator: audioCoordinator)
+        let state = DashboardPresentationState()
+        var visibility: [Bool] = []
+        let controller = DashboardPopoverController(popover: host,
+            focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(), audioDashboardModel: audio,
+            onVisibilityChange: { visibility.append($0) }, presentationState: state)
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close() }
+        controller.toggle(relativeTo: anchor)
+        await audio.audioPageActivated()
+        let calls = audioCoordinator.refreshSystemAudioAuthorizationCallCount
+        controller.toggle(relativeTo: anchor)
+        XCTAssertTrue(panelHost.isVisible)
+        XCTAssertFalse(host.isShown)
+        XCTAssertFalse(state.isPresented)
+        XCTAssertEqual(visibility, [true, false])
+        await audio.applicationDidBecomeActive()
+        XCTAssertEqual(audioCoordinator.refreshSystemAudioAuthorizationCallCount, calls)
+        XCTAssertEqual(audioCoordinator.shutdownCallCount, 0)
+        completions.last?()
+        XCTAssertFalse(panelHost.isVisible)
+    }
+
+    func testVisibilityCloseCallbackReopenDoesNotClearNewPresentation() throws {
+        var completions: [@MainActor () -> Void] = []
+        let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { _, _, _, completion in
+            completions.append(completion)
+        })
+        defer { panelHost.destroy() }
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { .panel }, panelHost: panelHost)
+        let state = DashboardPresentationState()
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close() }
+        var visibility: [Bool] = []
+        weak var callbackController: DashboardPopoverController?
+        let controller = DashboardPopoverController(popover: host,
+            focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { visible in
+                visibility.append(visible)
+                if !visible && visibility.count == 2 { callbackController?.toggle(relativeTo: anchor) }
+            }, presentationState: state)
+        callbackController = controller
+        controller.toggle(relativeTo: anchor)
+        controller.toggle(relativeTo: anchor)
+        XCTAssertTrue(host.isShown)
+        XCTAssertTrue(state.isPresented)
+        XCTAssertEqual(visibility, [true, false, true])
+        completions.first?()
+        XCTAssertTrue(host.isShown)
+        XCTAssertTrue(state.isPresented)
+        callbackController = nil
+        host.performClose(nil)
+    }
+
+    func testControllerDeallocationInvalidatesShownAdaptiveHostAndPresentation() throws {
+        var completions: [@MainActor () -> Void] = []
+        let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { _, _, _, completion in
+            completions.append(completion)
+        })
+        defer { panelHost.destroy() }
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { .panel }, panelHost: panelHost)
+        let state = DashboardPresentationState()
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close() }
+        weak var released: DashboardPopoverController?
+        autoreleasepool {
+            let controller = DashboardPopoverController(popover: host,
+                focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+                dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+                preferencesController: Self.preferencesController(),
+                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+                onVisibilityChange: { _ in }, presentationState: state)
+            controller.toggle(relativeTo: anchor)
+            XCTAssertTrue(host.isShown)
+            released = controller
+        }
+        XCTAssertNil(released)
+        released = nil
+        XCTAssertTrue(Self.waitUntil { !host.isShown }, "main-actor deallocation cleanup must run")
+        completions.forEach { $0() }
+        XCTAssertFalse(host.isShown)
+        XCTAssertNil(panelHost.panel)
+        XCTAssertFalse(state.isPresented)
+    }
+
+    func testDefaultOwnedHostReleaseStillClosesRetainedLogicalModels() async throws {
+        let state = DashboardPresentationState()
+        let coordinator = TestAudioControlCoordinator()
+        let audio = AudioDashboardModel(coordinator: coordinator)
+        let model = DashboardModel(store: MetricsStore(), isActive: false)
+        var visibility: [Bool] = []
+        var samplingVisible = false
+        weak var releasedHost: DashboardAdaptivePopoverHost?
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close() }
+        var controller: DashboardPopoverController? = autoreleasepool {
+            let host = DashboardAdaptivePopoverHost()
+            releasedHost = host
+            return DashboardPopoverController(popover: host,
+                focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+                dashboardModel: model, preferencesController: Self.preferencesController(),
+                audioDashboardModel: audio, onVisibilityChange: {
+                    visibility.append($0)
+                    model.setActive($0)
+                    samplingVisible = $0
+                }, presentationState: state)
+        }
+        controller?.toggle(relativeTo: anchor)
+        XCTAssertTrue(state.isPresented)
+        await audio.audioPageActivated()
+        let refreshes = coordinator.refreshSystemAudioAuthorizationCallCount
+        weak var releasedController = controller
+        autoreleasepool { controller = nil }
+        XCTAssertNil(releasedController)
+        releasedController = nil
+        XCTAssertNil(releasedHost, "queued logical cleanup must not retain the controller-owned host")
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline && (state.isPresented || visibility != [true, false]) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertFalse(state.isPresented)
+        XCTAssertEqual(visibility, [true, false])
+        XCTAssertFalse(samplingVisible)
+        XCTAssertTrue(model.metrics.isEmpty)
+        await audio.applicationDidBecomeActive()
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, refreshes)
+        XCTAssertEqual(coordinator.shutdownCallCount, 0)
+    }
+
+    func testSameHostSuccessorRejectsOldCleanupAndQueuedHeightWork() async throws {
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { .panel })
+        defer { host.invalidate() }
+        let state = DashboardPresentationState()
+        let audioCoordinator = TestAudioControlCoordinator()
+        let audio = AudioDashboardModel(coordinator: audioCoordinator)
+        let model = DashboardModel(store: MetricsStore(), isActive: false)
+        var visibility: [Bool] = []
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close() }
+        func makeController() -> DashboardPopoverController {
+            DashboardPopoverController(popover: host,
+                focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+                dashboardModel: model, preferencesController: Self.preferencesController(), audioDashboardModel: audio,
+                onVisibilityChange: { visibility.append($0) }, presentationState: state)
+        }
+        var old: DashboardPopoverController? = makeController()
+        old?.toggle(relativeTo: anchor)
+        let oldCoordinator = try XCTUnwrap(old?.testingContentSizeCoordinator)
+        let successor = makeController()
+        // The new root replaced the old one on the SAME physical host.
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        successor.toggle(relativeTo: anchor)
+        successor.toggle(relativeTo: anchor)
+        let panel = try XCTUnwrap(host.panelForTesting)
+        let size = host.contentSize
+        successor.testingScrollIndicatorState.setHeightTransitioning(true)
+        await audio.audioPageActivated()
+        let refreshes = audioCoordinator.refreshSystemAudioAuthorizationCallCount
+        oldCoordinator.schedule(measuredSize: NSSize(width: 420, height: 111))
+        autoreleasepool { old = nil }
+        await withCheckedContinuation { continuation in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { continuation.resume() }
+        }
+        XCTAssertTrue(host.isShown)
+        XCTAssertTrue(host.panelForTesting === panel)
+        XCTAssertTrue(state.isPresented)
+        XCTAssertEqual(visibility, [true, true], "old false must not close the successor's model/sampling gate")
+        XCTAssertEqual(host.contentSize, size, "queued old-root height work must not resize the new root")
+        XCTAssertTrue(successor.testingScrollIndicatorState.isHeightTransitioning)
+        await audio.applicationDidBecomeActive()
+        XCTAssertEqual(audioCoordinator.refreshSystemAudioAuthorizationCallCount, refreshes + 1)
+        XCTAssertEqual(audioCoordinator.shutdownCallCount, 0)
+        withExtendedLifetime(successor) {}
+    }
+
+    func testHeightCompletionFromReplacedRootDoesNotApplyOldSize() throws {
+        let host = RecordingPopoverHost(recorder: DashboardPopoverEventRecorder())
+        let root = NSViewController()
+        let window = NSWindow(contentViewController: root)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        host.contentViewController = root
+        host.isShown = true
+        host.contentSize = NSSize(width: 420, height: 200)
+        var completion: (@MainActor () -> Void)?
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: host, shouldReduceMotion: { false },
+            visibleFrameForWindow: { _ in nil }, animateFrame: { _, _, finish in completion = finish })
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 400))
+        let finish = try XCTUnwrap(completion)
+        host.contentViewController = NSViewController()
+        host.contentSize = NSSize(width: 420, height: 300)
+        finish()
+        XCTAssertEqual(host.contentSize, NSSize(width: 420, height: 300))
+    }
+
+    func testControllerReleaseForcesDirectNativePopoverAndNestedInfoClosed() throws {
+        let popover = NSPopover()
+        let state = DashboardPresentationState()
+        var visibility: [Bool] = []
+        let (window, anchor) = try makeFadeAnchor()
+        defer { window.close(); popover.close() }
+        var controller: DashboardPopoverController? = DashboardPopoverController(popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: DashboardPopoverEventRecorder()),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { visibility.append($0) }, presentationState: state)
+        popover.animates = false
+        controller?.toggle(relativeTo: anchor)
+        let root = try XCTUnwrap(popover.contentViewController)
+        let parentWindow = try XCTUnwrap(root.view.window)
+        let infoAnchor = NSView(frame: NSRect(x: 20, y: 20, width: 24, height: 24))
+        root.view.addSubview(infoAnchor)
+        let info = NSPopover()
+        info.behavior = .applicationDefined
+        info.animates = false
+        info.contentViewController = NSHostingController(rootView: Text("nested info"))
+        info.contentSize = NSSize(width: 180, height: 80)
+        defer { info.close() }
+        info.show(relativeTo: infoAnchor.bounds, of: infoAnchor, preferredEdge: .maxX)
+        let childWindow = try XCTUnwrap(info.contentViewController?.view.window)
+        XCTAssertTrue(info.isShown)
+        XCTAssertTrue(childWindow.parent === parentWindow)
+        autoreleasepool { controller = nil }
+        XCTAssertTrue(Self.waitUntil { visibility == [true, false] })
+        XCTAssertFalse(state.isPresented)
+        XCTAssertFalse(popover.isShown)
+        XCTAssertFalse(parentWindow.isVisible)
+        XCTAssertFalse(info.isShown)
+        XCTAssertFalse(childWindow.isVisible)
+    }
+
+    func testCloseIntentStopsPresentationAndVisibilityBeforeDelayedDidClose() {
+        let recorder = DashboardPopoverEventRecorder()
+        let host = RecordingPopoverHost(recorder: recorder)
+        host.delaysDidClose = true
+        let state = DashboardPresentationState()
+        var visibility: [Bool] = []
+        let controller = DashboardPopoverController(popover: host,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { visibility.append($0) }, presentationState: state)
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 24))
+        controller.toggle(relativeTo: anchor)
+        controller.testingScrollIndicatorState.setHeightTransitioning(true)
+        controller.toggle(relativeTo: anchor)
+        XCTAssertFalse(state.isPresented)
+        XCTAssertFalse(controller.testingScrollIndicatorState.isHeightTransitioning)
+        XCTAssertEqual(visibility, [true, false])
+        controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
+        controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
+        XCTAssertEqual(visibility, [true, false])
+    }
+
+    func testExternalWillCloseStopsPresentationWithoutWaitingForDidClose() {
+        let recorder = DashboardPopoverEventRecorder()
+        let host = RecordingPopoverHost(recorder: recorder)
+        let state = DashboardPresentationState()
+        var visibility: [Bool] = []
+        let controller = DashboardPopoverController(popover: host,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { visibility.append($0) }, presentationState: state)
+        controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 24, height: 24)))
+        host.delegate?.popoverWillClose?(Notification(name: NSPopover.willCloseNotification, object: host))
+        XCTAssertFalse(state.isPresented)
+        XCTAssertEqual(visibility, [true, false])
+    }
+
+    func testQueuedFocusDoesNotReopenClosedWindowOrFocusReplacement() {
+        let host = RecordingPopoverHost(recorder: DashboardPopoverEventRecorder())
+        let content = NSViewController()
+        host.contentViewController = content
+        let window = NSWindow(contentViewController: content)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        host.isShown = true
+        let focus = SharedDashboardPopoverFocusController()
+        focus.focusPresentedPopover(host)
+        host.isShown = false
+        window.orderOut(nil)
+        Self.drainMainRunLoop()
+        XCTAssertFalse(window.isVisible, "queued focus must not order a closed host back in")
+        host.isShown = true
+        window.orderFront(nil)
+        focus.focusPresentedPopover(host)
+        let replacement = NSWindow(contentViewController: NSViewController())
+        replacement.isReleasedWhenClosed = false
+        defer { replacement.close() }
+        host.contentViewController = replacement.contentViewController
+        Self.drainMainRunLoop()
+        XCTAssertFalse(replacement.isVisible, "the old focus request must not order a replacement window in")
+    }
+    // Existing coordinator signals must reach the real Dashboard native consumers.
+    func testIntegratedLongDashboardRestoresIndicatorsAcrossRetargetCancelCloseAndSnap() throws {
+        let state = DashboardPopoverScrollIndicatorState()
+        let devices = (0..<20).map { index in
+            AudioDeviceControlSnapshot(device: AudioOutputDeviceSnapshot(id: "Output \(index)",
+                objectID: UInt32(index + 10), name: "Output \(index)",
+                volume: .value(0.5, isWritable: true), mute: .value(false, isWritable: true)), error: nil)
+        }
+        let host = DashboardListTestHost(DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator(
+                snapshot: AudioControlSnapshot(devices: devices, processes: []))),
+            scrollIndicatorState: state, initialSelectedTab: .audio
+        ).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        host.settle()
+        let scrolls = host.allScrollViews
+        let identities = Set(scrolls.map(ObjectIdentifier.init))
+        let rowScroll = try XCTUnwrap(scrolls.first { ($0.documentView?.frame.height ?? 0) > 600 })
+        rowScroll.contentView.scroll(to: NSPoint(x: 0, y: 100))
+        rowScroll.reflectScrolledClipView(rowScroll.contentView)
+        let popover = RecordingPopoverHost(recorder: DashboardPopoverEventRecorder())
+        popover.contentViewController = host.controller
+        var reduceMotion = false
+        var completions: [@MainActor () -> Void] = []
+        let coordinator = DashboardPopoverContentSizeCoordinator(popover: popover,
+            shouldReduceMotion: { reduceMotion }, onHeightTransitionChange: state.setHeightTransitioning,
+            visibleFrameForWindow: { _ in nil }, animateFrame: { window, frame, completion in
+                window.setFrame(frame, display: true)
+                completions.append(completion)
+            })
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 480))
+        popover.isShown = true
+        func check(hidden: Bool) {
+            host.settle()
+            for scroll in scrolls { scroll.scrollerStyle = .legacy; scroll.flashScrollers() }
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+            XCTAssertEqual(state.isHeightTransitioning, hidden)
+            XCTAssertEqual(Set(host.allScrollViews.map(ObjectIdentifier.init)), identities)
+            XCTAssertEqual(rowScroll.contentView.bounds.origin.y, 100, accuracy: 1)
+            if hidden {
+                for scroll in scrolls {
+                    XCTAssertFalse(DashboardListTestHost.indicatorIsVisible(scroll.verticalScroller))
+                    XCTAssertFalse(DashboardListTestHost.indicatorIsVisible(scroll.horizontalScroller))
+                }
+            } else {
+                XCTAssertTrue(DashboardListTestHost.indicatorIsVisible(rowScroll.verticalScroller))
+            }
+        }
+        check(hidden: false)
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 440))
+        check(hidden: true)
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 460))
+        XCTAssertEqual(completions.count, 2)
+        completions[0]()
+        check(hidden: true)
+        completions[1]()
+        check(hidden: false)
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 420))
+        check(hidden: true)
+        coordinator.invalidateInFlightAnimation()
+        completions[2]()
+        check(hidden: false)
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 400))
+        check(hidden: true)
+        coordinator.resetAfterPopoverCloses()
+        completions[3]()
+        check(hidden: false)
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 450))
+        check(hidden: true)
+        reduceMotion = true
+        coordinator.applyImmediately(measuredSize: NSSize(width: 420, height: 480))
+        completions[4]()
+        check(hidden: false)
+        try host.assertBottomReachable(rowScroll)
+    }
+
     func testContentMeasurementEmitsFixedWidthAfterEveryLiveSegmentReports() {
         let measurement = DashboardPopoverContentMeasurement()
-        let expectedSize = NSSize(width: 420, height: 372)
+        let expectedSize = NSSize(width: 420, height: 323)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
         measurement.report(42, for: .header)
         measurement.report(1, for: .headerDivider)
         measurement.report(280, for: .scrollContent)
-        measurement.report(1, for: .footerDivider)
-        measurement.report(48, for: .footer)
 
         XCTAssertTrue(Self.waitUntil { sizes == [expectedSize] })
         XCTAssertEqual(measurement.latestContentSize, expectedSize)
@@ -41,26 +438,22 @@ final class DashboardPopoverControllerTests: XCTestCase {
         measurement.report(42, for: .header)
         measurement.report(1, for: .headerDivider)
         measurement.report(280, for: .scrollContent)
-        measurement.report(1, for: .footerDivider)
-        measurement.report(48, for: .footer)
         measurement.invalidatePendingEmissions()
         Self.drainMainRunLoop()
 
         XCTAssertTrue(sizes.isEmpty)
-        XCTAssertEqual(measurement.latestContentSize, NSSize(width: 420, height: 372))
+        XCTAssertEqual(measurement.latestContentSize, NSSize(width: 420, height: 323))
     }
 
     func testContentMeasurementDropsSupersededQueuedEmission() {
         let measurement = DashboardPopoverContentMeasurement()
-        let expectedSize = NSSize(width: 420, height: 392)
+        let expectedSize = NSSize(width: 420, height: 343)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
         measurement.report(42, for: .header)
         measurement.report(1, for: .headerDivider)
         measurement.report(280, for: .scrollContent)
-        measurement.report(1, for: .footerDivider)
-        measurement.report(48, for: .footer)
         measurement.report(300, for: .scrollContent)
 
         XCTAssertTrue(Self.waitUntil { sizes == [expectedSize] })
@@ -69,15 +462,13 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
     func testContentMeasurementEmitsNewMeasurementAfterInvalidation() {
         let measurement = DashboardPopoverContentMeasurement()
-        let expectedSize = NSSize(width: 420, height: 392)
+        let expectedSize = NSSize(width: 420, height: 343)
         var sizes: [NSSize] = []
         measurement.onContentSizeChange = { sizes.append($0) }
 
         measurement.report(42, for: .header)
         measurement.report(1, for: .headerDivider)
         measurement.report(280, for: .scrollContent)
-        measurement.report(1, for: .footerDivider)
-        measurement.report(48, for: .footer)
         measurement.invalidatePendingEmissions()
         measurement.report(300, for: .scrollContent)
 
@@ -959,8 +1350,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
         defer { withExtendedLifetime(controller) {} }
         popover.contentViewController = contentViewController
@@ -1003,8 +1392,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
-            openPreferences: {},
-            quitApplication: {}
         )
 
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
@@ -1028,8 +1415,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
 
         controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
@@ -1048,8 +1433,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
 
         controller.toggle(relativeTo: nil)
@@ -1057,7 +1440,7 @@ final class DashboardPopoverControllerTests: XCTestCase {
         XCTAssertEqual(recorder.events, [])
     }
 
-    func testPopoverDidCloseReportsVisibilityChange() {
+    func testUnshownPopoverDidCloseDoesNotInventVisibilityChange() {
         let recorder = DashboardPopoverEventRecorder()
         let controller = DashboardPopoverController(
             popover: RecordingPopoverHost(recorder: recorder),
@@ -1068,15 +1451,130 @@ final class DashboardPopoverControllerTests: XCTestCase {
             onVisibilityChange: { isVisible in
                 recorder.record(isVisible ? "visible:true" : "visible:false")
             },
-            openPreferences: {},
-            quitApplication: {}
         )
 
         controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
 
+        XCTAssertEqual(recorder.events, [])
+    }
+
+    func testFailedShowDoesNotReportVisibilityOrFocus() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = FailingShowPopoverHost()
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { isVisible in
+                recorder.record(isVisible ? "visible:true" : "visible:false")
+            },
+        )
+
+        controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
+
+        XCTAssertEqual(recorder.events, ["activate-app"])
+        XCTAssertFalse(popover.isShown)
+    }
+
+    func testPresentationGateTracksSuccessfulShowAndCloseOnly() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let presentationState = DashboardPresentationState()
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            presentationState: presentationState
+        )
+
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        XCTAssertFalse(presentationState.isPresented)
+
+        controller.toggle(relativeTo: anchor)
+        XCTAssertTrue(presentationState.isPresented)
+
+        controller.toggle(relativeTo: anchor)
+        XCTAssertFalse(presentationState.isPresented)
+    }
+
+    func testFailedShowKeepsPresentationGateClosed() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = FailingShowPopoverHost()
+        let presentationState = DashboardPresentationState()
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { _ in },
+            presentationState: presentationState
+        )
+
+        controller.toggle(relativeTo: NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20)))
+
+        XCTAssertFalse(presentationState.isPresented)
+    }
+
+    func testOpeningThenClosingReportsPairedVisibilityOnce() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { isVisible in
+                recorder.record(isVisible ? "visible:true" : "visible:false")
+            },
+        )
+
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+        controller.toggle(relativeTo: anchor)
+        controller.toggle(relativeTo: anchor)
+
         XCTAssertEqual(recorder.events, [
+            "activate-app",
+            "show-popover",
+            "focus-popover",
+            "visible:true",
+            "close-popover",
             "visible:false"
         ])
+    }
+
+    func testLateDidCloseFromReplacedHostDoesNotClearActiveSession() {
+        let recorder = DashboardPopoverEventRecorder()
+        let popover = RecordingPopoverHost(recorder: recorder)
+        let presentationState = DashboardPresentationState()
+        var visibility: [Bool] = []
+        let controller = DashboardPopoverController(
+            popover: popover,
+            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            onVisibilityChange: { visibility.append($0) },
+            presentationState: presentationState
+        )
+        let anchor = NSView(frame: NSRect(x: 0, y: 0, width: 20, height: 20))
+
+        controller.toggle(relativeTo: anchor)
+        controller.toggle(relativeTo: anchor)
+        controller.toggle(relativeTo: anchor)
+        XCTAssertTrue(presentationState.isPresented)
+        XCTAssertEqual(visibility, [true, false, true])
+
+        controller.popoverDidClose(Notification(name: NSPopover.didCloseNotification))
+
+        XCTAssertTrue(presentationState.isPresented)
+        XCTAssertEqual(visibility, [true, false, true])
     }
 
     func testDashboardPopoverConfiguresNativeAnimationAndAppliesInitialMeasuredSize() {
@@ -1090,8 +1588,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
 
         XCTAssertTrue(popover.animates)
@@ -1111,8 +1607,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
         defer { withExtendedLifetime(controller) {} }
 
@@ -1142,8 +1636,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
         defer { withExtendedLifetime(controller) {} }
         popover.contentViewController = contentViewController
@@ -1174,8 +1666,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             dashboardModel: DashboardModel(store: MetricsStore()),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             onMeasuredSegmentHeight: { segment, height in
                 reports.record(segment: segment, height: height)
             },
@@ -1250,14 +1740,15 @@ final class DashboardPopoverControllerTests: XCTestCase {
             dashboardModel: DashboardModel(store: MetricsStore()),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             onMeasuredSegmentHeight: { segment, height in
                 reports.record(segment: segment, height: height)
             }
         )
         let host = DashboardPopoverHostingController(
-            rootView: DashboardPopoverRootView(content: content)
+            rootView: DashboardPopoverRootView(
+                content: content,
+                presentationState: DashboardPresentationState()
+            )
         )
         host.sizingOptions = [.preferredContentSize]
 
@@ -1285,8 +1776,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             dashboardModel: DashboardModel(store: MetricsStore()),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            openPreferences: {},
-            quitApplication: {},
             onMeasuredSegmentHeight: { segment, height in
                 reports.record(segment: segment, height: height)
             }
@@ -1300,6 +1789,54 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
         XCTAssertEqual(Set(reports.segments), Set(DashboardContentMeasurementSegment.allCases))
         XCTAssertTrue(reports.heights.allSatisfy { $0.isFinite && $0 > 0 })
+    }
+
+    func testHostedListDashboardFeedsNaturalMeasurementWithoutResizeOrTabReopenFeedback() throws {
+        let devices = (0..<20).map { index in
+            AudioDeviceControlSnapshot(device: AudioOutputDeviceSnapshot(id: "output-\(index)",
+                objectID: UInt32(index + 1), name: "Output \(index)",
+                volume: .value(0.5, isWritable: true), mute: .value(false, isWritable: true)), error: nil)
+        }
+        let audio = AudioDashboardModel(coordinator: TestAudioControlCoordinator(
+            snapshot: AudioControlSnapshot(devices: devices, processes: [])))
+        let selection = DashboardTabSelectionState(initialTab: .audio)
+        let measurement = DashboardPopoverContentMeasurement()
+        let host = DashboardListTestHost(DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(), audioDashboardModel: audio,
+            onMeasuredSegmentHeight: { measurement.report($1, for: $0) },
+            tabSelectionState: selection
+        ).environment(\.dashboardPresentationIsPresented, false))
+        defer { host.close() }
+        var appliedSizes: [NSSize] = []
+        defer { measurement.onContentSizeChange = nil }
+        measurement.onContentSizeChange = { size in
+            guard let capped = DashboardPopoverLayout.contentSize(for: size) else { return }
+            appliedSizes.append(capped)
+            host.panel.setContentSize(capped)
+        }
+        host.settle()
+        host.settle()
+        let natural = try XCTUnwrap(measurement.latestContentSize)
+        XCTAssertGreaterThan(natural.height, 560)
+        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, 560, accuracy: 1)
+        XCTAssertEqual(host.scrollViews.count, 1)
+        try host.assertBottomReachable(try XCTUnwrap(host.scrollViews.first))
+        let stableCount = appliedSizes.count
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, stableCount)
+        selection.selectedTab = .overview
+        host.settle()
+        XCTAssertLessThan(try XCTUnwrap(measurement.latestContentSize).height, natural.height)
+        selection.selectedTab = .audio
+        host.settle()
+        host.settle()
+        XCTAssertEqual(try XCTUnwrap(measurement.latestContentSize).height, natural.height, accuracy: 1)
+        let reopenCount = appliedSizes.count
+        host.panel.orderOut(nil)
+        host.panel.orderFront(nil)
+        host.settle()
+        XCTAssertEqual(appliedSizes.count, reopenCount)
     }
 
     func testMeasuredSegmentReportsNaturalScrollContentHeightAboveConstrainedViewport() throws {
@@ -1356,8 +1893,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
         defer { withExtendedLifetime(controller) {} }
 
@@ -1399,38 +1934,10 @@ final class DashboardPopoverControllerTests: XCTestCase {
 
         let overviewHeight = popover.contentSize.height
 
-        let segmentedControl = try XCTUnwrap(Self.segmentedControl(in: window.contentView))
-        segmentedControl.setSelected(true, forSegment: 1)
-        _ = segmentedControl.target?.perform(segmentedControl.action, with: segmentedControl)
+        hostingController.dashboardTabSelection.selectedTab = .actives
 
         XCTAssertTrue(Self.waitUntil { popover.contentSize.height != overviewHeight })
         XCTAssertLessThanOrEqual(popover.contentSize.height, DashboardPopoverLayout.maximumHeight)
-    }
-
-    func testHostedDashboardActionsClosePopoverBeforeForwarding() throws {
-        let recorder = DashboardPopoverEventRecorder()
-        let popover = RecordingPopoverHost(recorder: recorder)
-        var forwardedActions: [String] = []
-
-        _ = DashboardPopoverController(
-            popover: popover,
-            focusController: RecordingDashboardPopoverFocusController(recorder: recorder),
-            dashboardModel: DashboardModel(store: MetricsStore()),
-            preferencesController: Self.preferencesController(),
-            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
-            onVisibilityChange: { _ in },
-            openPreferences: { forwardedActions.append("preferences") },
-            quitApplication: { forwardedActions.append("quit") }
-        )
-
-        let dashboardView = try XCTUnwrap(
-            (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView
-        )
-        dashboardView.openPreferences()
-        dashboardView.quitApplication()
-
-        XCTAssertEqual(recorder.events, ["close-popover", "close-popover"])
-        XCTAssertEqual(forwardedActions, ["preferences", "quit"])
     }
 
     func testPopoverHostCanDeallocateAfterControllerIsReleased() {
@@ -1446,8 +1953,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
                 preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
                 onVisibilityChange: { _ in },
-                openPreferences: {},
-                quitApplication: {}
             )
             releasedPopover = popover
 
@@ -1455,6 +1960,79 @@ final class DashboardPopoverControllerTests: XCTestCase {
         }
 
         XCTAssertNil(releasedPopover)
+    }
+
+    func testHiddenPresentationCancelsPowerFlowPollingLoop() throws {
+        let provider = PowerFlowProviderSpy()
+        let model = PowerFlowModel(
+            provider: provider,
+            observationIntervalNanoseconds: 5_000_000,
+            sleep: { try await Task.sleep(nanoseconds: $0) }
+        )
+        let presentationState = DashboardPresentationState()
+        let hosting = NSHostingController(
+            rootView: DashboardPresentationHarness(presentationState: presentationState) {
+                PowerFlowView(model: model, refreshTrigger: 0)
+            }
+        )
+        let window = NSWindow(contentViewController: hosting)
+        defer { window.close() }
+        window.setContentSize(NSSize(width: 420, height: 200))
+        window.orderFront(nil)
+
+        presentationState.setPresented(true)
+        XCTAssertTrue(Self.waitUntil { provider.snapshotCallCount >= 2 })
+
+        presentationState.setPresented(false)
+        window.orderOut(nil)
+        Self.drainMainRunLoop()
+        let countAtHide = provider.snapshotCallCount
+        let deadline = Date().addingTimeInterval(0.4)
+        while Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
+
+        XCTAssertFalse(presentationState.isPresented)
+        XCTAssertEqual(
+            provider.snapshotCallCount,
+            countAtHide,
+            "a hidden dashboard must not keep polling; visibility gating must cancel the loop"
+        )
+    }
+
+    func testHiddenPresentationDeactivatesAudioPage() throws {
+        let coordinator = TestAudioControlCoordinator()
+        let audioModel = AudioDashboardModel(coordinator: coordinator)
+        let presentationState = DashboardPresentationState()
+        let content = DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: Self.preferencesController(),
+            audioDashboardModel: audioModel,
+            initialSelectedTab: .audio
+        )
+        let hosting = NSHostingController(
+            rootView: DashboardPresentationHarness(presentationState: presentationState) {
+                content
+            }
+        )
+        let window = NSWindow(contentViewController: hosting)
+        defer { window.close() }
+        window.setContentSize(NSSize(width: 420, height: 560))
+        window.orderFront(nil)
+
+        presentationState.setPresented(true)
+        XCTAssertTrue(Self.waitUntil { coordinator.refreshSystemAudioAuthorizationCallCount == 1 })
+
+        presentationState.setPresented(false)
+        Self.drainMainRunLoop()
+        NotificationCenter.default.post(name: NSApplication.didBecomeActiveNotification, object: nil)
+        Self.drainMainRunLoop()
+
+        XCTAssertEqual(
+            coordinator.refreshSystemAudioAuthorizationCallCount,
+            1,
+            "a hidden dashboard's audio page must be deactivated and ignore activation notifications"
+        )
     }
 
     private static func makeDashboardPopoverController(
@@ -1468,8 +2046,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
             onVisibilityChange: { _ in },
-            openPreferences: {},
-            quitApplication: {}
         )
     }
 
@@ -1492,15 +2068,6 @@ final class DashboardPopoverControllerTests: XCTestCase {
             store: DashboardPopoverPreferencesStore(initial: .default),
             launchService: NoopLaunchAtLoginService()
         )
-    }
-
-    private static func segmentedControl(in view: NSView?) -> NSSegmentedControl? {
-        allSubviews(of: view).first { $0 is NSSegmentedControl } as? NSSegmentedControl
-    }
-
-    private static func allSubviews(of view: NSView?) -> [NSView] {
-        guard let view else { return [] }
-        return view.subviews + view.subviews.flatMap(allSubviews)
     }
 
     private static func firstScrollView(in view: NSView) -> NSScrollView? {
@@ -1594,6 +2161,10 @@ private final class DashboardPopoverEventRecorder {
     func record(_ event: String) {
         events.append(event)
     }
+
+    func clear() {
+        events.removeAll()
+    }
 }
 
 @MainActor
@@ -1623,6 +2194,7 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     var contentViewController: NSViewController?
     weak var delegate: NSPopoverDelegate?
     var isShown = false
+    var delaysDidClose = false
 
     private let recorder: DashboardPopoverEventRecorder
 
@@ -1640,7 +2212,27 @@ private final class RecordingPopoverHost: DashboardPopoverHosting {
     func performClose(_ sender: Any?) {
         isShown = false
         recorder.record("close-popover")
-        delegate?.popoverDidClose?(Notification(name: NSPopover.didCloseNotification, object: self))
+        if !delaysDidClose {
+            delegate?.popoverDidClose?(Notification(name: NSPopover.didCloseNotification, object: self))
+        }
+    }
+}
+
+@MainActor
+private final class FailingShowPopoverHost: DashboardPopoverHosting {
+    var behavior: NSPopover.Behavior = .transient
+    var animates = false
+    var contentSize: NSSize = .zero
+    var contentViewController: NSViewController? = NSHostingController(rootView: EmptyView())
+    weak var delegate: NSPopoverDelegate?
+    var isShown = false
+
+    func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
+        isShown = false
+    }
+
+    func performClose(_ sender: Any?) {
+        isShown = false
     }
 }
 
@@ -1674,5 +2266,26 @@ private final class DashboardPopoverPreferencesStore: PreferencesStoring, @unche
 
     func save(_ preferences: AppPreferences) throws {
         value = preferences
+    }
+}
+
+@MainActor
+private struct DashboardPresentationHarness<Content: View>: View {
+    @ObservedObject var presentationState: DashboardPresentationState
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .environment(\.dashboardPresentationIsPresented, presentationState.isPresented)
+    }
+}
+
+@MainActor
+private final class PowerFlowProviderSpy: PowerFlowProviding {
+    private(set) var snapshotCallCount = 0
+
+    func snapshot() async -> PowerFlowSnapshot {
+        snapshotCallCount += 1
+        return .empty
     }
 }

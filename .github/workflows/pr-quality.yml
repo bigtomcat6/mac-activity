@@ -3,7 +3,7 @@ name: PR Quality
 on:
   pull_request:
     types: [opened, edited, reopened, synchronize, ready_for_review]
-    branches: ["main"]
+    branches: ["main", "next-version"]
 
 permissions:
   contents: read

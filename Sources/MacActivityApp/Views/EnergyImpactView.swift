@@ -5,11 +5,13 @@ import MacActivityCore
 struct EnergyImpactRefreshTaskID: Equatable {
     let trigger: Int
     let scope: EnergyImpactAppScope
+    var presented: Bool = true
 }
 
 struct EnergyImpactView: View {
     @ObservedObject var model: EnergyImpactModel
     @ObservedObject var powerFlowModel: PowerFlowModel
+    @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     let refreshTrigger: Int
     var scope: EnergyImpactAppScope = .regularOnly
     let showsApplicationIdentifier: Bool
@@ -17,86 +19,84 @@ struct EnergyImpactView: View {
     @State private var showsInfoPopover = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
-            VStack(alignment: .leading, spacing: 4) {
-                HStack {
-                    Text(AppLocalization.string(.energyImpactTitle))
-                        .font(.headline)
+        VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.sectionSpacing) {
+            PowerFlowView(
+                model: powerFlowModel,
+                refreshTrigger: refreshTrigger
+            )
+            .fixedSize(horizontal: false, vertical: true)
+            .layoutPriority(1)
+
+            VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                HStack(spacing: 4) {
+                    Text(AppLocalization.string(.energyImpactAppColumn))
                     Spacer()
-                    Button {
-                        showsInfoPopover.toggle()
-                    } label: {
-                        Image(systemName: "info.circle")
-                    }
-                    .buttonStyle(.plain)
-                    .font(.body)
-                    .foregroundStyle(.secondary)
-                    .accessibilityLabel(AppLocalization.string(.energyImpactInfo))
-                    .popover(isPresented: $showsInfoPopover) {
-                        Text(AppLocalization.string(.energyImpactExplanation))
+                    Text(AppLocalization.string(.energyImpactSustainedColumn))
+                    infoButton
+                }
+                .font(.caption2.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.top, 6)
+                .fixedSize(horizontal: false, vertical: true)
+                .layoutPriority(1)
+
+                DashboardMeasuredList(spacing: ActiveCleanReleaseLayout.processListSpacing) {
+                    if model.entries.isEmpty {
+                        Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
                             .font(.caption)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(width: 260, alignment: .leading)
-                            .padding(12)
+                            .foregroundStyle(.secondary)
+                            .frame(
+                                maxWidth: .infinity,
+                                minHeight: ActiveProcessMemoryLayout.rowHeight,
+                                alignment: .leading
+                            )
+                            .padding(.horizontal, 12)
+                    } else {
+                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
+                            EnergyImpactRow(
+                                entry: entry,
+                                rank: index + 1,
+                                showsApplicationIdentifier: showsApplicationIdentifier
+                            )
+                        }
                     }
                 }
+            }
+            .dashboardCardChrome()
+        }
+        .frame(maxWidth: .infinity, alignment: .topLeading)
+        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope, presented: dashboardIsPresented)) {
+            guard dashboardIsPresented else { return }
+            await model.refreshWhileVisible(scope: scope)
+        }
+    }
+
+    // The page title lives in the dashboard header; the estimate notes stay one click away.
+    private var infoButton: some View {
+        Button {
+            showsInfoPopover.toggle()
+        } label: {
+            Image(systemName: "info")
+        }
+        .dashboardIconButtonStyle()
+        .help(AppLocalization.string(.energyImpactInfo))
+        .accessibilityLabel(AppLocalization.string(.energyImpactInfo))
+        .popover(isPresented: $showsInfoPopover) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(AppLocalization.string(.energyImpactSubtitleSustained))
+                    .font(.caption.weight(.semibold))
+                Text(AppLocalization.string(.energyImpactExplanation))
                     .font(.caption)
-                    .foregroundStyle(.secondary)
                 if let coverageText = Self.coverageText(model: model) {
                     Text(coverageText)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
-            .padding(.horizontal, 12)
-
-            PowerFlowView(
-                model: powerFlowModel,
-                refreshTrigger: refreshTrigger
-            )
-            .padding(.horizontal, 12)
-
-            HStack {
-                Text(AppLocalization.string(.energyImpactAppColumn))
-                Spacer()
-                Text(AppLocalization.string(.energyImpactSustainedColumn))
-            }
-            .font(.caption2.weight(.semibold))
-            .foregroundStyle(.secondary)
-            .padding(.horizontal, 12)
-
-            if model.entries.isEmpty {
-                Text(Self.emptyMessage(isRefreshing: model.isRefreshing, scope: scope))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .frame(
-                        maxWidth: .infinity,
-                        minHeight: ActiveProcessMemoryLayout.rowHeight,
-                        alignment: .leading
-                    )
-                    .padding(.horizontal, 12)
-            } else {
-                VStack(alignment: .leading, spacing: ActiveCleanReleaseLayout.processListSpacing) {
-                    ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                        EnergyImpactRow(
-                            entry: entry,
-                            rank: index + 1,
-                            showsApplicationIdentifier: showsApplicationIdentifier
-                        )
-                    }
-                }
-                .clipShape(
-                    RoundedRectangle(
-                        cornerRadius: ActiveProcessMemoryLayout.outerCornerRadius,
-                        style: .continuous
-                    )
-                )
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .topLeading)
-        .task(id: EnergyImpactRefreshTaskID(trigger: refreshTrigger, scope: scope)) {
-            await model.refreshWhileVisible(scope: scope)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: 260, alignment: .leading)
+            .padding(12)
         }
     }
 

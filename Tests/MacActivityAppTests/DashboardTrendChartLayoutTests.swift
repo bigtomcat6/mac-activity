@@ -468,6 +468,59 @@ final class DashboardTrendChartLayoutTests: XCTestCase {
         XCTAssertNotNil(renderer.nsImage)
     }
 
+    func testRenderedInactiveTrendChartUsesInactiveSecondaryAndHoverStrokes() {
+        let base = Date(timeIntervalSinceReferenceDate: 2_000)
+        let cpuChart = DashboardTrendChart(
+            metric: DashboardMetric(
+                kind: .cpu,
+                title: MetricKind.cpu.title,
+                value: "40%",
+                style: .chart,
+                trend: DashboardTrend(
+                    samples: [
+                        DashboardTrendSample(timestamp: base, primaryValue: 20, secondaryValue: 12),
+                        DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 60, secondaryValue: 30),
+                        DashboardTrendSample(timestamp: base.addingTimeInterval(2), primaryValue: 40, secondaryValue: 18),
+                    ],
+                    scale: .fixed(lowerBound: 0, upperBound: 100)
+                )
+            ),
+            color: .blue,
+            isCardHovered: true,
+            showsYAxisLabels: true
+        )
+        .environment(\.appearsActive, false)
+        .frame(width: 280, height: 90)
+        let networkChart = DashboardTrendChart(
+            metric: DashboardMetric(
+                kind: .network,
+                title: MetricKind.network.title,
+                value: "↑ 750 B/s ↓ 2 KB/s",
+                style: .chart,
+                trend: DashboardTrend(
+                    samples: [
+                        DashboardTrendSample(timestamp: base, primaryValue: 2_000, secondaryValue: 500),
+                        DashboardTrendSample(timestamp: base.addingTimeInterval(1), primaryValue: 4_000, secondaryValue: 750),
+                    ],
+                    scale: .automatic
+                )
+            ),
+            color: .green,
+            isCardHovered: true,
+            showsYAxisLabels: false
+        )
+        .environment(\.appearsActive, false)
+        .frame(width: 280, height: 90)
+
+        let cpuRenderer = ImageRenderer(content: cpuChart)
+        cpuRenderer.scale = 1
+        let networkRenderer = ImageRenderer(content: networkChart)
+        networkRenderer.scale = 1
+
+        XCTAssertNotNil(cpuRenderer.nsImage)
+        XCTAssertNotNil(networkRenderer.nsImage)
+    }
+
     func testRenderedBatteryPowerConnectedIndicatorShowsWhileTrendIsCollecting() throws {
         let base = Date(timeIntervalSinceReferenceDate: 1_000)
         let connectedChart = batteryChart(

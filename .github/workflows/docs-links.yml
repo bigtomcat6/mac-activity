@@ -2,14 +2,14 @@ name: Docs Links
 
 on:
   pull_request:
-    branches: ["main"]
+    branches: ["main", "next-version"]
     paths:
       - README.md
       - docs/**/*.md
       - .github/*.md
       - .github/workflows/docs-links.yml
   push:
-    branches: ["main"]
+    branches: ["main", "next-version"]
     paths:
       - README.md
       - docs/**/*.md

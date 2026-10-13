@@ -553,7 +553,7 @@ final class AudioControlComponentTests: XCTestCase {
         XCTAssertEqual(fixture.monitor.observedProcessObjectIDs, [11])
     }
 
-    func testPopoverCloseKeepsApplicationCoordinatorAndActiveRule() async throws {
+    func testPopoverCloseKeepsOneDashboardIdentityAndActiveRule() async throws {
         let fixture = AudioControlComponentFixture()
         await fixture.start()
         fixture.coordinator.setProcessVolume(0.5, for: fixture.player.processObjectID)
@@ -570,8 +570,8 @@ final class AudioControlComponentTests: XCTestCase {
         let secondPopover = delegate.testingResolveDashboardPopoverController()
         let secondModel = try XCTUnwrap(secondPopover.testingAudioDashboardModel)
 
-        XCTAssertFalse(firstPopover === secondPopover)
-        XCTAssertFalse(firstModel === secondModel)
+        XCTAssertTrue(firstPopover === secondPopover)
+        XCTAssertTrue(firstModel === secondModel)
         XCTAssertTrue(firstModel.testingCoordinator === secondModel.testingCoordinator)
         XCTAssertTrue(secondModel.testingCoordinator === fixture.coordinator)
         XCTAssertEqual(fixture.engine.stopAllCount, 0)

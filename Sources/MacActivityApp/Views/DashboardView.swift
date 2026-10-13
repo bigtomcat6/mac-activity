@@ -2,6 +2,15 @@ import AppKit
 import SwiftUI
 import MacActivityCore
 
+@MainActor
+final class DashboardTabSelectionState: ObservableObject {
+    @Published var selectedTab: DashboardTab
+
+    init(initialTab: DashboardTab = .overview) {
+        self.selectedTab = initialTab
+    }
+}
+
 enum DashboardMotion {
     static let hoverDuration: Double = 0.14
     static let sampleDuration: Double = 0.32
@@ -45,11 +54,6 @@ enum DashboardOverviewSlot: Equatable {
     case usage
     case storage
     case metric(MetricKind)
-}
-
-enum DashboardStorageCardContent: Hashable {
-    case details
-    case bar
 }
 
 struct DashboardStorageUsageSegment: Equatable, Identifiable, Sendable {
@@ -102,7 +106,6 @@ enum DashboardOverviewLayout {
     static let storageDetailSpacing: CGFloat = 4
     static let metricTitleIconSpacing: CGFloat = 4
     static let storageDetailAreaHeight = storageDetailRowHeight * CGFloat(storageDetailRowCount) + storageDetailRowSpacing + storageDetailBarSpacing
-    static let storageCardContentOrder: [DashboardStorageCardContent] = [.details, .bar]
     static let compactTrendChartHeight: CGFloat = 44
     static let compactFanTrendChartHeight: CGFloat = 32
     static let compactTrendRestTextChartSpacing: CGFloat = 12
@@ -409,8 +412,6 @@ enum DashboardOverviewLayout {
         min(max(progress, 0), 1)
     }
 
-    static let usageHeaderTitle: String? = nil
-
     static func trendReadoutUsesIntrinsicWidth(for kind: MetricKind) -> Bool {
         switch kind {
         case .temperature, .fan, .battery:
@@ -506,12 +507,6 @@ enum DashboardOverviewLayout {
     }
 }
 
-enum DashboardFooterChrome {
-    static let backgroundOpacity = ActiveCleanupChrome.backgroundOpacity
-    static let preferencesSystemImage = "gearshape"
-    static let quitSystemImage = "power"
-}
-
 enum DashboardOverviewChrome {
     static let usageFillOpacity = 0.82
     static let valueStripOpacity = 0.14
@@ -523,71 +518,37 @@ enum DashboardOverviewChrome {
     static let inactiveChartEmptyStroke = Color.black.opacity(0.34)
     static let inactiveMemorySegmentFill = Color.black.opacity(0.38)
 
-    static func emphasisFillColor(
-        baseColor: Color,
-        opacity: Double,
-        appearsActive: Bool
-    ) -> Color {
+    static func emphasisFillColor(baseColor: Color, opacity: Double, appearsActive: Bool) -> Color {
         appearsActive ? baseColor.opacity(opacity) : inactiveEmphasisFill
     }
 
-    static func chartSecondaryStrokeColor(
-        baseColor: Color,
-        appearsActive: Bool
-    ) -> Color {
+    static func chartSecondaryStrokeColor(baseColor: Color, appearsActive: Bool) -> Color {
         appearsActive ? baseColor.opacity(0.9) : inactiveChartSecondaryStroke
     }
 
-    static func chartAreaGradient(
-        baseColor: Color,
-        appearsActive: Bool
-    ) -> LinearGradient {
+    static func chartAreaGradient(baseColor: Color, appearsActive: Bool) -> LinearGradient {
         let colors = appearsActive
-            ? [
-                baseColor.opacity(0.16),
-                baseColor.opacity(0.02)
-            ]
-            : [
-                inactiveChartAreaTop,
-                inactiveChartAreaBottom
-            ]
+            ? [baseColor.opacity(0.16), baseColor.opacity(0.02)]
+            : [inactiveChartAreaTop, inactiveChartAreaBottom]
         return LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom)
     }
 
-    static func chartPrimaryLineGradient(
-        baseColor: Color,
-        appearsActive: Bool
-    ) -> LinearGradient {
+    static func chartPrimaryLineGradient(baseColor: Color, appearsActive: Bool) -> LinearGradient {
         let colors = appearsActive
-            ? [
-                baseColor.opacity(0.92),
-                baseColor.opacity(0.62)
-            ]
-            : [
-                inactiveChartPrimaryStroke,
-                inactiveChartSecondaryStroke
-            ]
+            ? [baseColor.opacity(0.92), baseColor.opacity(0.62)]
+            : [inactiveChartPrimaryStroke, inactiveChartSecondaryStroke]
         return LinearGradient(colors: colors, startPoint: .leading, endPoint: .trailing)
     }
 
-    static func chartSelectionPointColor(
-        baseColor: Color,
-        appearsActive: Bool
-    ) -> Color {
+    static func chartSelectionPointColor(baseColor: Color, appearsActive: Bool) -> Color {
         appearsActive ? baseColor : inactiveChartPrimaryStroke
     }
 
-    static func chartEmptyStrokeColor(
-        baseColor: Color,
-        appearsActive: Bool
-    ) -> Color {
+    static func chartEmptyStrokeColor(baseColor: Color, appearsActive: Bool) -> Color {
         appearsActive ? baseColor.opacity(0.35) : inactiveChartEmptyStroke
     }
 
-    static func memorySegmentColor(
-        for kind: RAMSegmentBarComponent.Kind,
-        appearsActive: Bool
-    ) -> Color {
+    static func memorySegmentColor(for kind: RAMSegmentBarComponent.Kind, appearsActive: Bool) -> Color {
         guard appearsActive else {
             switch kind {
             case .active:
@@ -634,6 +595,25 @@ enum DashboardTab: CaseIterable, Identifiable {
             return AppLocalization.string(.dashboardTabAudio)
         }
     }
+
+    var systemImage: String {
+        switch self {
+        case .overview:
+            return "square.grid.2x2"
+        case .actives:
+            return "list.bullet.rectangle"
+        case .energyImpact:
+            return "bolt"
+        case .audio:
+            return "speaker.wave.2"
+        }
+    }
+
+    // NSImage keeps the localized title as the segment's VoiceOver description and
+    // tooltip target; a plain symbol Image would announce the symbol's own name.
+    var segmentImage: Image {
+        Image(nsImage: NSImage(systemSymbolName: systemImage, accessibilityDescription: title) ?? NSImage())
+    }
 }
 
 struct DashboardView: View {
@@ -644,11 +624,10 @@ struct DashboardView: View {
     @StateObject private var energyImpactModel = EnergyImpactModel()
     @StateObject private var powerFlowModel = PowerFlowModel()
     @ObservedObject var audioDashboardModel: AudioDashboardModel
-    @State private var selectedTab: DashboardTab = .overview
+    @ObservedObject var tabSelectionState: DashboardTabSelectionState
+    @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
-    let openPreferences: () -> Void
-    let quitApplication: () -> Void
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
     @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
@@ -656,52 +635,53 @@ struct DashboardView: View {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
-        openPreferences: @escaping () -> Void,
-        quitApplication: @escaping () -> Void,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
-        initialSelectedTab: DashboardTab = .overview
+        initialSelectedTab: DashboardTab = .overview,
+        tabSelectionState: DashboardTabSelectionState? = nil
     ) {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
-        self.openPreferences = openPreferences
-        self.quitApplication = quitApplication
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self.scrollIndicatorState = scrollIndicatorState
-        self._selectedTab = State(initialValue: initialSelectedTab)
+        self.tabSelectionState = tabSelectionState ?? DashboardTabSelectionState(initialTab: initialSelectedTab)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             DashboardMeasuredSegment(segment: .header, onHeightChange: onMeasuredSegmentHeight) {
                 header
-                    .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
-                    .padding(.top, DashboardHeaderChrome.topPadding)
-                    .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+                    .modifier(DashboardHeaderSurface())
             }
 
             DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: onMeasuredSegmentHeight) {
                 Divider()
+                    .hidden()
             }
 
-            ScrollView(.vertical, showsIndicators: !scrollIndicatorState.isHeightTransitioning) {
-                DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+            if selectedTab == .overview {
+                ScrollView(.vertical) {
+                    DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+                        dashboardContent
+                            .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .mask(DashboardScrollEdgeFade())
+            } else {
+                DashboardListPage(onNaturalHeightChange: {
+                    onMeasuredSegmentHeight(.scrollContent, $0)
+                }) {
                     dashboardContent
                         .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
-            }
-
-            DashboardMeasuredSegment(segment: .footerDivider, onHeightChange: onMeasuredSegmentHeight) {
-                Divider()
-            }
-
-            DashboardMeasuredSegment(segment: .footer, onHeightChange: onMeasuredSegmentHeight) {
-                footer
+                .id(selectedTab)
             }
         }
+        .scrollIndicators(scrollIndicatorVisibility)
         .frame(maxWidth: .infinity, alignment: .topLeading)
+        .dashboardPanelBackdrop()
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
         }
@@ -716,39 +696,42 @@ struct DashboardView: View {
 
     private var header: some View {
         HStack(alignment: .center, spacing: DashboardHeaderChrome.titlePickerSpacing) {
-            Text(AppLocalization.string(.appName))
+            // The menu bar item already identifies the app; name the current page instead.
+            Text(selectedTab.title)
                 .font(.headline)
                 .lineLimit(1)
 
             Spacer(minLength: DashboardHeaderChrome.titlePickerSpacing)
 
             tabPicker
-                .frame(minWidth: DashboardHeaderChrome.tabPickerMinWidth, alignment: .trailing)
         }
     }
 
+    // Native selection and input, with independent symbol replacement on macOS 26.
     private var tabPicker: some View {
-        Picker(AppLocalization.string(.dashboardSection), selection: selectedTabBinding) {
-            ForEach(DashboardTab.allCases) { tab in
-                Text(tab.title).tag(tab)
+        DashboardTabPicker(selection: selectedTabBinding)
+            .fixedSize()
+    }
+
+    private var scrollIndicatorVisibility: ScrollIndicatorVisibility {
+        scrollIndicatorState.isHeightTransitioning ? .never : .automatic
+    }
+
+    private var dashboardContent: some View {
+        Group {
+            switch selectedTab {
+            case .overview:
+                overviewContent
+            case .actives:
+                activesContent
+            case .energyImpact:
+                energyImpactContent
+            case .audio:
+                audioContent
             }
         }
-        .pickerStyle(.segmented)
-        .labelsHidden()
-    }
-
-    @ViewBuilder
-    private var dashboardContent: some View {
-        switch selectedTab {
-        case .overview:
-            overviewContent
-        case .actives:
-            activesContent
-        case .energyImpact:
-            energyImpactContent
-        case .audio:
-            audioContent
-        }
+        // Outer ScrollView consumes the policy; deliver it again to nested row scopes.
+        .scrollIndicators(scrollIndicatorVisibility)
     }
 
     private var overviewContent: some View {
@@ -780,40 +763,27 @@ struct DashboardView: View {
     private var audioContent: some View {
         AudioDashboardView(model: audioDashboardModel)
             .padding(18)
-            .task {
-                await audioDashboardModel.audioPageActivated()
+            .task(id: dashboardIsPresented) {
+                if dashboardIsPresented {
+                    await audioDashboardModel.audioPageActivated()
+                } else {
+                    audioDashboardModel.audioPageDeactivated()
+                }
             }
             .onDisappear {
                 audioDashboardModel.audioPageDeactivated()
             }
     }
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Button(action: openPreferences) {
-                Label(
-                    AppLocalization.string(.preferences),
-                    systemImage: DashboardFooterChrome.preferencesSystemImage
-                )
-            }
-            Spacer(minLength: 12)
-            Button(action: quitApplication) {
-                Label(
-                    AppLocalization.string(.quit),
-                    systemImage: DashboardFooterChrome.quitSystemImage
-                )
-            }
-        }
-        .frame(maxWidth: .infinity)
-        .padding(14)
-        .background(.quaternary.opacity(DashboardFooterChrome.backgroundOpacity))
-    }
+    private var selectedTab: DashboardTab { tabSelectionState.selectedTab }
 
     private var selectedTabBinding: Binding<DashboardTab> {
         Binding(
-            get: { selectedTab },
+            get: { tabSelectionState.selectedTab },
             set: { newValue in
-                selectedTab = newValue
+                // Re-clicking the selected segment must not re-run page refreshes.
+                guard newValue != tabSelectionState.selectedTab else { return }
+                tabSelectionState.selectedTab = newValue
                 activesRefreshTrigger = Self.activesRefreshTrigger(
                     afterSelecting: newValue,
                     currentTrigger: activesRefreshTrigger
@@ -846,6 +816,55 @@ struct DashboardView: View {
     }
 }
 
+// In the floating panel the title and tabs sit in their own glass capsule, like the
+// pill above Control Center's modules; the popover keeps the plain header row.
+private struct DashboardHeaderSurface: ViewModifier {
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
+
+    func body(content: Content) -> some View {
+        if DashboardCardChrome.usesFloatingModules(reduceTransparency: reduceTransparency) {
+            content
+                .padding(.leading, DashboardHeaderChrome.capsuleLeadingPadding)
+                .padding(.trailing, DashboardHeaderChrome.capsuleTrailingPadding)
+                .padding(.vertical, DashboardHeaderChrome.capsuleVerticalPadding)
+                .dashboardModuleGlass(in: Capsule())
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+        } else {
+            content
+                .padding(.horizontal, DashboardHeaderChrome.horizontalPadding)
+                .padding(.top, DashboardHeaderChrome.topPadding)
+                .padding(.bottom, DashboardHeaderChrome.bottomPadding)
+        }
+    }
+}
+
+struct DashboardScrollEdgeFade: View {
+    static let fadeHeight: CGFloat = 12
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                colors: [.clear, .black],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: Self.fadeHeight)
+
+            Rectangle()
+                .fill(.black)
+
+            LinearGradient(
+                colors: [.black, .clear],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: Self.fadeHeight)
+        }
+    }
+}
+
 struct DashboardMeasuredSegment<Content: View>: View {
     let segment: DashboardContentMeasurementSegment
     let onHeightChange: (DashboardContentMeasurementSegment, CGFloat) -> Void
@@ -865,6 +884,123 @@ struct DashboardMeasuredSegment<Content: View>: View {
     private func report(_ height: CGFloat) {
         guard height.isFinite, height > 0 else { return }
         onHeightChange(segment, height)
+    }
+}
+
+private struct DashboardNaturalListsKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+private extension EnvironmentValues {
+    var dashboardNaturalLists: Bool {
+        get { self[DashboardNaturalListsKey.self] }
+        set { self[DashboardNaturalListsKey.self] = newValue }
+    }
+}
+
+private struct DashboardListHeight: Equatable {
+    var document: CGFloat
+    var viewport: CGFloat
+}
+
+private struct DashboardListMeasurements: Equatable {
+    var pageHeight: CGFloat = 0
+    var lists: [UUID: DashboardListHeight] = [:]
+}
+
+private struct DashboardListMeasurementsKey: PreferenceKey {
+    static let defaultValue = DashboardListMeasurements()
+    static func reduce(value: inout DashboardListMeasurements, nextValue: () -> DashboardListMeasurements) {
+        let next = nextValue()
+        value.pageHeight = max(value.pageHeight, next.pageHeight)
+        value.lists.merge(next.lists) { _, new in new }
+    }
+}
+
+// Measure the real document, not the compressed viewport. Native ScrollView supplies
+// scrolling; its measured maximum lets a short list give space to its longer sibling.
+struct DashboardMeasuredList<Content: View>: View {
+    var spacing: CGFloat
+    @ViewBuilder let content: () -> Content
+    @Environment(\.dashboardNaturalLists) private var naturalLists
+    @Environment(\.verticalScrollIndicatorVisibility) private var indicatorVisibility
+    @State private var documentHeight: CGFloat = 0
+    @State private var measurementID = UUID()
+
+    private var document: some View {
+        VStack(alignment: .leading, spacing: spacing, content: content)
+            .padding(.bottom, 6)
+            .fixedSize(horizontal: false, vertical: true)
+            .background {
+                GeometryReader { proxy in
+                    Color.clear
+                        .onAppear { documentHeight = proxy.size.height }
+                        .onChange(of: proxy.size.height) { documentHeight = $0 }
+                }
+            }
+    }
+
+    var body: some View {
+        ScrollView(.vertical) { document }
+        .scrollIndicators(indicatorVisibility)
+        // Override the disabled outer scope for row-only scrolling. Keep the
+        // document in the same structural position even in page-overflow mode.
+        .environment(\.isScrollEnabled, !naturalLists)
+        .frame(height: naturalLists && documentHeight > 0 ? documentHeight : nil)
+        .frame(minHeight: 0, maxHeight: documentHeight > 0 ? documentHeight : nil)
+        .background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: DashboardListMeasurementsKey.self, value:
+                    DashboardListMeasurements(lists: [measurementID: DashboardListHeight(
+                        document: documentHeight, viewport: proxy.size.height
+                    )]))
+            }
+        }
+    }
+}
+
+struct DashboardListPage<Content: View>: View {
+    let onNaturalHeightChange: (CGFloat) -> Void
+    @ViewBuilder let content: () -> Content
+    @State private var needsPageOverflow = false
+    @State private var measurements = DashboardListMeasurements()
+
+    private var measuredContent: some View {
+        content().background {
+            GeometryReader { proxy in
+                Color.clear.preference(key: DashboardListMeasurementsKey.self,
+                    value: DashboardListMeasurements(pageHeight: proxy.size.height))
+            }
+        }
+    }
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView(.vertical) {
+                measuredContent
+                    .environment(\.dashboardNaturalLists, needsPageOverflow)
+                    .fixedSize(horizontal: false, vertical: needsPageOverflow)
+                    .frame(height: needsPageOverflow ? nil : proxy.size.height, alignment: .top)
+            }
+            .scrollDisabled(!needsPageOverflow)
+            .onPreferenceChange(DashboardListMeasurementsKey.self) { measurement in
+                measurements = measurement
+                update(measurement, availableHeight: proxy.size.height)
+            }
+            .onChange(of: proxy.size.height) { height in
+                update(measurements, availableHeight: height)
+            }
+        }
+    }
+
+    private func update(_ measurement: DashboardListMeasurements, availableHeight: CGFloat) {
+        guard measurement.pageHeight > 0,
+              measurement.lists.values.allSatisfy({ $0.document > 0 }) else { return }
+        let lists = measurement.lists.values
+        let chrome = measurement.pageHeight - lists.reduce(0) { $0 + $1.viewport }
+        onNaturalHeightChange(chrome + lists.reduce(0) { $0 + $1.document })
+        guard availableHeight > 0 else { return }
+        needsPageOverflow = availableHeight + 1 < chrome + lists.reduce(0) { $0 + min(32, $1.document) }
     }
 }
 
@@ -1266,19 +1402,6 @@ struct RAMSegmentBarComponent: Equatable, Sendable, Identifiable {
         case compressed
         case wired
         case other
-
-        var title: String {
-            switch self {
-            case .active:
-                return "Active"
-            case .compressed:
-                return "Compressed"
-            case .wired:
-                return "Wired"
-            case .other:
-                return "Other"
-            }
-        }
     }
 
     var kind: Kind
@@ -1469,12 +1592,7 @@ private struct RAMSegmentTooltip: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-        }
-        .shadow(radius: 4, y: 2)
+        .dashboardFloatingSurface()
     }
 }
 
@@ -1511,11 +1629,6 @@ private struct ResourceUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            if let title = DashboardOverviewLayout.usageHeaderTitle {
-                Text(title)
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.secondary)
-            }
             ForEach(metrics) { metric in
                 UsageBarRow(metric: metric, color: DashboardMetricColor.color(for: metric.kind))
             }
@@ -1544,9 +1657,8 @@ private struct StorageUsageCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: DashboardOverviewLayout.storageContentSpacing) {
-            ForEach(DashboardOverviewLayout.storageCardContentOrder, id: \.self) { content in
-                storageContent(content)
-            }
+            storageDetails
+            storageBar
         }
         .frame(maxWidth: DashboardOverviewLayout.storageContentMaxWidth, alignment: .leading)
         .frame(maxWidth: .infinity, alignment: .center)
@@ -1558,16 +1670,6 @@ private struct StorageUsageCard: View {
             alignment: .center
         )
         .dashboardCardChrome()
-    }
-
-    @ViewBuilder
-    private func storageContent(_ content: DashboardStorageCardContent) -> some View {
-        switch content {
-        case .details:
-            storageDetails
-        case .bar:
-            storageBar
-        }
     }
 
     private var storageDetails: some View {

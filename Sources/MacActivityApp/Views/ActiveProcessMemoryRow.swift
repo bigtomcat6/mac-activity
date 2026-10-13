@@ -9,17 +9,6 @@ enum ActiveProcessMemoryRowTrailingContent: Equatable {
     case quitting
 }
 
-enum ActiveProcessTrailingAlignment: Equatable {
-    case trailing
-
-    var swiftUIAlignment: Alignment {
-        switch self {
-        case .trailing:
-            return .trailing
-        }
-    }
-}
-
 enum ActiveProcessIconSource: Equatable {
     case bundle(URL)
     case fallbackSystemSymbol
@@ -97,7 +86,11 @@ struct ActiveProcessMemoryRow: View {
 
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(ActiveCleanupChrome.progressFillColor(appearsActive: appearsActive))
+                    .fill(
+                        ActiveCleanupChrome.progressFillColor(
+                            appearsActive: appearsActive
+                        )
+                    )
                     .frame(width: progressWidth)
 
                 HStack(spacing: 10) {
@@ -189,35 +182,23 @@ struct ActiveProcessMemoryRow: View {
         case .quitting:
             ProgressView()
                 .controlSize(.small)
-                .frame(
-                    maxWidth: .infinity,
-                    alignment: Self.trailingContentAlignment(for: .quitting).swiftUIAlignment
-                )
+                .frame(maxWidth: .infinity, alignment: .trailing)
         }
     }
 
-    @ViewBuilder
     private var quitButton: some View {
         let configuration = Self.quitButtonConfiguration(for: quitConfirmationState)
-        let visualStyle = ActiveProcessQuitButtonStyling.visualStyle(
+        let isProminent = ActiveProcessQuitButtonStyling.visualStyle(
             for: quitConfirmationState,
             appearsActive: appearsActive
-        )
+        ) == .destructiveProminent
 
-        if visualStyle == .destructiveProminent {
-            Button(configuration.title) {
-                applyQuitConfirmationEvent(.quitButtonClicked)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.red)
-            .disabled(!app.isTerminable)
-        } else {
-            Button(configuration.title) {
-                applyQuitConfirmationEvent(.quitButtonClicked)
-            }
-            .buttonStyle(.bordered)
-            .disabled(!app.isTerminable)
+        return Button(configuration.title) {
+            applyQuitConfirmationEvent(.quitButtonClicked)
         }
+        .dashboardActionButtonStyle(prominent: isProminent)
+        .tint(isProminent ? .red : nil)
+        .disabled(!app.isTerminable)
     }
 
     @MainActor
@@ -272,15 +253,6 @@ struct ActiveProcessMemoryRow: View {
             return isHovered ? .quit : .memory
         case .confirming:
             return .confirmQuit
-        }
-    }
-
-    static func trailingContentAlignment(
-        for content: ActiveProcessMemoryRowTrailingContent
-    ) -> ActiveProcessTrailingAlignment {
-        switch content {
-        case .memory, .quit, .confirmQuit, .quitting:
-            return .trailing
         }
     }
 

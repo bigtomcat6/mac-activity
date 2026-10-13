@@ -179,4 +179,24 @@ final class PreferencesStoreTests: XCTestCase {
         XCTAssertEqual(loaded.diskCleanupCategories, [.userCaches, .trash, .userLogs])
     }
 
+    func testLoadIgnoresLegacyDashboardStyleWithoutResettingOtherPreferences() throws {
+        let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
+        let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        userDefaults.removePersistentDomain(forName: suiteName)
+        userDefaults.set(
+            Data(
+                #"{"selectedSummaryMetrics":["cpu","battery"],"launchAtLoginEnabled":true,"temperatureSource":"battery","dashboardStyle":"transparent","updateChannel":"beta"}"#
+                    .utf8
+            ),
+            forKey: "mac-activity.preferences"
+        )
+        let store = UserDefaultsPreferencesStore(userDefaults: userDefaults)
+        let loaded = store.load()
+
+        XCTAssertEqual(loaded.temperatureSource, .battery)
+        XCTAssertEqual(loaded.selectedSummaryMetrics, [.cpu, .battery])
+        XCTAssertTrue(loaded.launchAtLoginEnabled)
+        XCTAssertEqual(loaded.updateChannel, .beta)
+    }
+
 }

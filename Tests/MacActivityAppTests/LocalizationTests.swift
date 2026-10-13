@@ -83,6 +83,59 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    func testPowerFlowDiagramStringsExistForAllSupportedLanguages() throws {
+        let keys: [AppLocalization.Key] = [
+            .powerFlowUnknownInput,
+            .powerFlowUnknownOutput,
+            .powerFlowSourcesCount,
+            .powerFlowOutputsCount,
+            .powerFlowMoreCount,
+            .powerFlowPartialData,
+            .powerFlowStatusExternalPower,
+            .powerFlowStatusBatteryPower,
+            .powerFlowStatusCharging,
+            .powerFlowStatusMultipleSources,
+            .powerFlowStatusMultipleFlows,
+            .powerFlowStatusSummary,
+            .powerFlowStatusWaiting,
+            .powerFlowStatusUnavailable,
+            .powerFlowStatusIdle,
+            .powerFlowTotals,
+            .powerFlowAccessibilityComponent,
+            .powerFlowAccessibilityNodeMeasured,
+            .powerFlowAccessibilityNodeDerived,
+            .powerFlowAccessibilityNodeUnavailable,
+            .powerFlowAccessibilitySideSummary,
+            .powerFlowAccessibilityAggregateDerived,
+            .powerFlowAccessibilityAggregateLowerBound,
+            .powerFlowAccessibilityAggregateUnavailable,
+            .powerFlowAccessibilityPartialSuffix,
+        ]
+
+        for languageIdentifier in AppLocalization.availableLanguageIdentifiers() {
+            let bundle = try XCTUnwrap(
+                AppLocalization.bundle(forLanguageIdentifier: languageIdentifier)
+            )
+
+            for key in keys {
+                let value = bundle.localizedString(
+                    forKey: key.rawValue,
+                    value: nil,
+                    table: nil
+                )
+                XCTAssertNotEqual(
+                    value,
+                    key.rawValue,
+                    "Missing \(key.rawValue) in \(languageIdentifier)"
+                )
+                XCTAssertFalse(
+                    value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                    "\(key.rawValue) in \(languageIdentifier) must not be empty"
+                )
+            }
+        }
+    }
+
     func testLanguagePickerUsesAutonymsForConcreteLanguages() throws {
         let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
@@ -133,6 +186,23 @@ final class LocalizationTests: XCTestCase {
                 )
             }
         }
+    }
+
+    func testFormatPlaceholderParityDetectsMissingAndMisindexedCounts() {
+        let count = Self.formatPlaceholders(in: "%lld sources")
+        XCTAssertEqual(count, ["%lld"])
+        XCTAssertNotEqual(count, Self.formatPlaceholders(in: "sources"))
+
+        let lowerBound = Self.formatPlaceholders(in: "at least %1$@; unavailable readings: %2$lld")
+        XCTAssertEqual(lowerBound, ["%1$@", "%2$lld"])
+        XCTAssertNotEqual(lowerBound, Self.formatPlaceholders(in: "at least %1$@; unavailable readings"))
+        XCTAssertNotEqual(lowerBound, Self.formatPlaceholders(in: "at least %1$@; unavailable readings: %3$lld"))
+    }
+
+    func testFormatPlaceholderParityAllowsOnlyPositionalReordering() {
+        XCTAssertEqual(Self.formatPlaceholders(in: "%2$lld件中%1$lld件"), ["%1$lld", "%2$lld"])
+        XCTAssertEqual(Self.formatPlaceholders(in: "%lld %@"), ["%lld", "%@"])
+        XCTAssertNotEqual(Self.formatPlaceholders(in: "%lld %@"), Self.formatPlaceholders(in: "%@ %lld"))
     }
 
     func testGermanAudioCapturePermissionUsesCaptureTerminology() throws {
@@ -312,7 +382,6 @@ final class LocalizationTests: XCTestCase {
     func testEnergyImpactPageStringsAreLocalized() throws {
         let expectations: [String: [AppLocalization.Key: String]] = [
             "en": [
-                .energyImpactTitle: "Energy Impact",
                 .energyImpactSubtitleSustained: "Up to 30 sec CPU energy estimate · Lower is better",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 sec",
@@ -340,7 +409,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "Show application ID in process lists"
             ],
             "de": [
-                .energyImpactTitle: "Energieeinfluss",
                 .energyImpactSubtitleSustained: "CPU-Energieschätzung für bis zu 30 Sek. · Niedriger ist besser",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 Sek.",
@@ -368,7 +436,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "App-ID in Prozesslisten anzeigen"
             ],
             "fr": [
-                .energyImpactTitle: "Impact énergétique",
                 .energyImpactSubtitleSustained: "Estimation d’énergie CPU sur 30 s max. · Plus bas est préférable",
                 .energyImpactAppColumn: "App",
                 .energyImpactSustainedColumn: "30 s",
@@ -396,7 +463,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "Afficher l’identifiant d’app dans les listes de processus"
             ],
             "ja": [
-                .energyImpactTitle: "エネルギー影響",
                 .energyImpactSubtitleSustained: "最大30秒のCPUエネルギー推定 · 低いほど良好",
                 .energyImpactAppColumn: "アプリ",
                 .energyImpactSustainedColumn: "30秒",
@@ -424,7 +490,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "プロセスリストにアプリIDを表示"
             ],
             "ko": [
-                .energyImpactTitle: "에너지 영향",
                 .energyImpactSubtitleSustained: "최대 30초 CPU 에너지 추정치 · 낮을수록 좋음",
                 .energyImpactAppColumn: "앱",
                 .energyImpactSustainedColumn: "30초",
@@ -452,7 +517,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "프로세스 목록에 앱 ID 표시"
             ],
             "zh-Hans": [
-                .energyImpactTitle: "耗电影响",
                 .energyImpactSubtitleSustained: "最近最多 30 秒 CPU 能耗估算 · 越低越好",
                 .energyImpactAppColumn: "应用",
                 .energyImpactSustainedColumn: "30 秒",
@@ -480,7 +544,6 @@ final class LocalizationTests: XCTestCase {
                 .preferencesProcessApplicationIdentifier: "在进程列表中显示应用 ID"
             ],
             "zh-Hant": [
-                .energyImpactTitle: "耗電影響",
                 .energyImpactSubtitleSustained: "最近最多 30 秒 CPU 能耗估算 · 越低越好",
                 .energyImpactAppColumn: "應用程式",
                 .energyImpactSustainedColumn: "30 秒",
@@ -685,10 +748,6 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.string(.preferencesCurrentVersion, bundle: simplifiedChinese), "当前版本")
         XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: english), "Check for Updates")
         XCTAssertEqual(AppLocalization.string(.preferencesCheckForUpdates, bundle: simplifiedChinese), "检查更新")
-        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: english), "Show update channel")
-        XCTAssertEqual(AppLocalization.string(.preferencesShowUpdateChannel, bundle: simplifiedChinese), "显示更新频道")
-        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: english), "Hide update channel")
-        XCTAssertEqual(AppLocalization.string(.preferencesHideUpdateChannel, bundle: simplifiedChinese), "隐藏更新频道")
 
         XCTAssertEqual(AppLocalization.string(.live, bundle: english), "Live")
         XCTAssertEqual(AppLocalization.string(.live, bundle: simplifiedChinese), "实时")
@@ -742,57 +801,28 @@ final class LocalizationTests: XCTestCase {
         XCTAssertEqual(AppLocalization.diskCleanupCategoryTitle(for: .userLogs, bundle: simplifiedChinese), "日志")
     }
 
+    func testSettingsCategoryTitlesHaveEnglishAndSimplifiedChineseTranslations() throws {
+        let english = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "en"))
+        let chinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
+        let expected: [(AppLocalization.Key, String, String)] = [
+            (.preferencesCategoryGeneral, "General", "通用"),
+            (.preferencesCategoryMenuBar, "Menu Bar", "菜单栏"),
+            (.preferencesCategoryMonitoring, "Monitoring & Display", "监控与显示"),
+            (.preferencesCategoryCleanup, "Disk Cleanup", "磁盘清理"),
+            (.preferencesCategoryAboutUpdates, "About & Updates", "关于与更新")
+        ]
+
+        for (key, englishTitle, chineseTitle) in expected {
+            XCTAssertEqual(AppLocalization.string(key, bundle: english), englishTitle)
+            XCTAssertEqual(AppLocalization.string(key, bundle: chinese), chineseTitle)
+        }
+    }
+
     func testCleanReleaseStringsResolveWithArguments() throws {
         let simplifiedChinese = try XCTUnwrap(AppLocalization.bundle(forLanguageIdentifier: "zh-Hans"))
-        let remainingBytes = TrashCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
-        let releasableBytes = MemoryReleaseStatusView.byteFormatter.string(fromByteCount: 2_097_152)
+        let remainingBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 2_048)
         let cleanableBytes = DiskCleanupStatusView.byteFormatter.string(fromByteCount: 4_096)
 
-        XCTAssertEqual(
-            MemoryReleaseStatusView.title(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: simplifiedChinese
-            ),
-            "可释放 \(releasableBytes)"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(
-                for: .usage(percent: 44.4, releasableBytes: 2_097_152),
-                bundle: simplifiedChinese
-            ),
-            "内存 44%"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .released(bytes: 65_536, percentOfTotal: 2.5), bundle: simplifiedChinese),
-            "占总内存的 2.5%"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .noSignificantRelease(observedBytes: 0), bundle: simplifiedChinese),
-            "没有发现可立即释放的内存。"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .cooldown(remainingSeconds: 7.5), bundle: simplifiedChinese),
-            "7.5 秒后再试。"
-        )
-        XCTAssertEqual(
-            MemoryReleaseStatusView.subtitle(for: .failed(.exitCode(7)), bundle: simplifiedChinese),
-            "内存释放失败，退出代码 7。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .cleanable(bytes: 4_096, itemCount: 2), bundle: simplifiedChinese),
-            "确认后可移除 2 个项目。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(for: .failed(.unableToDeleteItems), bundle: simplifiedChinese),
-            "无法删除废纸篓项目。"
-        )
-        XCTAssertEqual(
-            TrashCleanupStatusView.subtitle(
-                for: .partial(bytes: 12_288, deletedCount: 3, failedCount: 1, remainingBytes: 2_048),
-                bundle: simplifiedChinese
-            ),
-            "已移除 3 个项目；1 个项目无法删除。仍剩余 \(remainingBytes)。"
-        )
         XCTAssertEqual(
             DiskCleanupStatusView.title(
                 for: .cleanable(bytes: 4_096, itemCount: 2, categories: [.userCaches, .trash, .userLogs]),
@@ -942,12 +972,14 @@ final class LocalizationTests: XCTestCase {
     }
 
     private static func formatPlaceholders(in string: String) -> [String] {
-        let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?[d@f]"
+        let pattern = "%(?:\\d+\\$)?(?:\\.\\d+)?(?:lld|[d@f])"
         let regex = regex(pattern)
         let range = NSRange(string.startIndex..<string.endIndex, in: string)
-        return regex.matches(in: string, range: range).map { match in
+        let placeholders = regex.matches(in: string, range: range).map { match in
             String(string[Range(match.range, in: string)!])
         }
+        // Explicit argument positions allow translations to reorder placeholders safely.
+        return placeholders.allSatisfy { $0.contains("$") } ? placeholders.sorted() : placeholders
     }
 
     private static func shouldScanProductionStringLine(_ line: String) -> Bool {

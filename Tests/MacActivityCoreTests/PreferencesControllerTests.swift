@@ -226,6 +226,7 @@ final class PreferencesControllerTests: XCTestCase {
         XCTAssertEqual(store.saveAttempts, 1)
         XCTAssertEqual(store.savedValues, [])
     }
+
 }
 
 private final class RecordingPreferencesStore: PreferencesStoring, @unchecked Sendable {
