@@ -1,4 +1,5 @@
 import Foundation
+import Darwin
 
 public enum DiskCleanupCategoryKind: String, CaseIterable, Codable, Sendable {
     case trash
@@ -15,6 +16,7 @@ public struct DiskCleanupRoots: Equatable, Sendable {
     public let trashDirectory: URL
     public let userCachesDirectory: URL
     public let userLogsDirectory: URL
+    public let containmentDirectory: URL?
 
     public init(homeDirectory: URL = FileManager.default.homeDirectoryForCurrentUser) {
         self.init(
@@ -24,18 +26,21 @@ public struct DiskCleanupRoots: Equatable, Sendable {
                 .appendingPathComponent("Caches", isDirectory: true),
             userLogsDirectory: homeDirectory
                 .appendingPathComponent("Library", isDirectory: true)
-                .appendingPathComponent("Logs", isDirectory: true)
+                .appendingPathComponent("Logs", isDirectory: true),
+            containmentDirectory: homeDirectory
         )
     }
 
     public init(
         trashDirectory: URL,
         userCachesDirectory: URL,
-        userLogsDirectory: URL
+        userLogsDirectory: URL,
+        containmentDirectory: URL? = nil
     ) {
         self.trashDirectory = trashDirectory
         self.userCachesDirectory = userCachesDirectory
         self.userLogsDirectory = userLogsDirectory
+        self.containmentDirectory = containmentDirectory
     }
 
     public func url(for kind: DiskCleanupCategoryKind) -> URL {
@@ -70,49 +75,318 @@ public struct DiskCleanupItemMetadata: Equatable, Sendable {
 }
 
 public protocol DiskCleanupFilesystem: Sendable {
+    func scoped(to roots: DiskCleanupRoots) -> any DiskCleanupFilesystem
     func contentsOfDirectory(at url: URL) throws -> [URL]
     func itemMetadata(at url: URL) throws -> DiskCleanupItemMetadata
     func removeItem(at url: URL) throws
+    func removeItem(at url: URL, allowDirectory: Bool) throws
     func trashItem(at url: URL) throws
+    func trashItem(at url: URL, allowDirectory: Bool) throws
+}
+
+public extension DiskCleanupFilesystem {
+    // Injected filesystems retain their own namespace and mutation semantics.
+    func scoped(to roots: DiskCleanupRoots) -> any DiskCleanupFilesystem { self }
+    func removeItem(at url: URL, allowDirectory: Bool) throws { try removeItem(at: url) }
+    func trashItem(at url: URL, allowDirectory: Bool) throws { try trashItem(at: url) }
 }
 
 public struct LiveDiskCleanupFilesystem: DiskCleanupFilesystem {
+    private var session: DiskCleanupFilesystemSession?
+    private var mutationHook: (@Sendable (URL, DiskCleanupMutationPhase) throws -> Void)?
+    private var trashOperation: @Sendable (URL) throws -> Void = { url in
+        var resultingURL: NSURL?
+        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+    }
+    private var replacementDirectory: @Sendable (URL) throws -> URL = { url in
+        try FileManager.default.url(for: .itemReplacementDirectory, in: .userDomainMask, appropriateFor: url, create: true)
+    }
+
     public init() {}
 
+    init(
+        mutationHook: (@Sendable (URL, DiskCleanupMutationPhase) throws -> Void)? = nil,
+        trashOperation: (@Sendable (URL) throws -> Void)? = nil,
+        replacementDirectory: (@Sendable (URL) throws -> URL)? = nil
+    ) {
+        self.mutationHook = mutationHook
+        if let trashOperation { self.trashOperation = trashOperation }
+        if let replacementDirectory { self.replacementDirectory = replacementDirectory }
+    }
+
+    public func scoped(to roots: DiskCleanupRoots) -> any DiskCleanupFilesystem {
+        var filesystem = self
+        filesystem.session = DiskCleanupFilesystemSession(roots: roots)
+        return filesystem
+    }
+
     public func contentsOfDirectory(at url: URL) throws -> [URL] {
-        try FileManager.default.contentsOfDirectory(
-            at: url,
-            includingPropertiesForKeys: Self.resourceKeys,
-            options: []
-        )
+        let directory = try session?.directory(at: url) ?? DiskCleanupDirectory.openAbsolute(url)
+        return try directory.names().map { url.appendingPathComponent($0) }
     }
 
     public func itemMetadata(at url: URL) throws -> DiskCleanupItemMetadata {
-        let values = try url.resourceValues(forKeys: Set(Self.resourceKeys))
+        let (parent, name) = try parent(of: url)
+        let values = try parent.metadata(name)
         return DiskCleanupItemMetadata(
-            allocatedBytes: UInt64(max(0, values.totalFileAllocatedSize ?? values.fileAllocatedSize ?? 0)),
-            isDirectory: values.isDirectory == true,
-            isSymbolicLink: values.isSymbolicLink == true,
-            contentModificationDate: values.contentModificationDate
+            allocatedBytes: UInt64(max(0, values.st_blocks)) * 512,
+            isDirectory: values.st_mode & mode_t(S_IFMT) == mode_t(S_IFDIR),
+            isSymbolicLink: values.st_mode & mode_t(S_IFMT) == mode_t(S_IFLNK),
+            contentModificationDate: Date(timeIntervalSince1970: Double(values.st_mtimespec.tv_sec))
         )
     }
 
     public func removeItem(at url: URL) throws {
-        try FileManager.default.removeItem(at: url)
+        try removeItem(at: url, allowDirectory: true)
+    }
+
+    public func removeItem(at url: URL, allowDirectory: Bool) throws {
+        let (parent, name) = try parent(of: url)
+        try removeEntry(
+            name,
+            in: parent,
+            url: url,
+            allowDirectory: allowDirectory,
+            allowSymbolicLink: false
+        )
     }
 
     public func trashItem(at url: URL) throws {
-        var resultingURL: NSURL?
-        try FileManager.default.trashItem(at: url, resultingItemURL: &resultingURL)
+        try trashItem(at: url, allowDirectory: true)
     }
 
-    private static let resourceKeys: [URLResourceKey] = [
-        .isDirectoryKey,
-        .isSymbolicLinkKey,
-        .contentModificationDateKey,
-        .fileAllocatedSizeKey,
-        .totalFileAllocatedSizeKey
-    ]
+    public func trashItem(at url: URL, allowDirectory: Bool) throws {
+        let (parent, name) = try parent(of: url)
+        try mutationHook?(url, .parentOpened)
+        let original = try parent.metadata(name)
+        let originalKind = original.st_mode & mode_t(S_IFMT)
+        guard originalKind != mode_t(S_IFLNK), allowDirectory || originalKind != mode_t(S_IFDIR) else {
+            throw DiskCleanupDirectory.error(ELOOP)
+        }
+
+        // Foundation's Trash API requires a pathname. First acquire the source
+        // with renameat into a private, same-volume replacement directory whose
+        // ancestors cannot be renamed by the different-user fixture attacker.
+        let stagingURL = try replacementDirectory(url)
+        let staging = try DiskCleanupDirectory.openAbsolute(stagingURL, requireTrustedAncestors: true)
+        let stagingInfo = try staging.metadata(".")
+        guard stagingInfo.st_uid == geteuid() else { throw DiskCleanupDirectory.error(EPERM) }
+        guard fchmod(staging.descriptor, 0o700) == 0 else { throw DiskCleanupDirectory.error() }
+        let stagingParent = try DiskCleanupDirectory.openAbsolute(stagingURL.deletingLastPathComponent(), requireTrustedAncestors: true)
+        defer { _ = unlinkat(stagingParent.descriptor, stagingURL.lastPathComponent, AT_REMOVEDIR) }
+        guard renameatx_np(parent.descriptor, name, staging.descriptor, name, UInt32(RENAME_EXCL)) == 0 else {
+            throw DiskCleanupDirectory.error()
+        }
+        do {
+            let acquired = try staging.metadata(name)
+            guard acquired.st_dev == original.st_dev, acquired.st_ino == original.st_ino else {
+                throw DiskCleanupDirectory.error(ESTALE)
+            }
+            try trashOperation(stagingURL.appendingPathComponent(name))
+        } catch {
+            // Never overwrite a replacement at the original name or delete a
+            // staged item when Trash fails. Leave recoverable data on conflict.
+            if renameatx_np(staging.descriptor, name, parent.descriptor, name, UInt32(RENAME_EXCL)) != 0 {
+                throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [
+                    NSLocalizedDescriptionKey: "Trash failed; item preserved at \(stagingURL.appendingPathComponent(name).path): \(error.localizedDescription)"
+                ])
+            }
+            throw error
+        }
+    }
+
+    private func parent(of url: URL) throws -> (DiskCleanupDirectory, String) {
+        if let session { return try session.parent(of: url) }
+        guard url.isFileURL, url.pathComponents.count > 1 else { throw DiskCleanupDirectory.error(EINVAL) }
+        return (try DiskCleanupDirectory.openAbsolute(url.deletingLastPathComponent()), url.lastPathComponent)
+    }
+
+    private func removeEntry(
+        _ name: String,
+        in parent: DiskCleanupDirectory,
+        url: URL,
+        allowDirectory: Bool,
+        allowSymbolicLink: Bool
+    ) throws {
+        try mutationHook?(url, .parentOpened)
+        let info = try parent.metadata(name)
+        let kind = info.st_mode & mode_t(S_IFMT)
+        if kind == mode_t(S_IFLNK), !allowSymbolicLink { throw DiskCleanupDirectory.error(ELOOP) }
+        if kind == mode_t(S_IFDIR) {
+            guard allowDirectory else { throw DiskCleanupDirectory.error(EISDIR) }
+            let directory = try parent.open([name])
+            let opened = try directory.metadata(".")
+            guard opened.st_dev == info.st_dev, opened.st_ino == info.st_ino else {
+                throw DiskCleanupDirectory.error(ESTALE)
+            }
+            try mutationHook?(url, .directoryOpened)
+            for child in try directory.names() {
+                try removeEntry(
+                    child,
+                    in: directory,
+                    url: url.appendingPathComponent(child),
+                    allowDirectory: true,
+                    allowSymbolicLink: true
+                )
+            }
+            guard unlinkat(parent.descriptor, name, AT_REMOVEDIR) == 0 else { throw DiskCleanupDirectory.error() }
+        } else {
+            // unlinkat removes a substituted symlink itself, never its target.
+            guard unlinkat(parent.descriptor, name, 0) == 0 else { throw DiskCleanupDirectory.error() }
+        }
+    }
+}
+
+enum DiskCleanupMutationPhase: Sendable {
+    case parentOpened
+    case directoryOpened
+}
+
+private struct DiskCleanupFilesystemSession: Sendable {
+    private struct Root: Sendable {
+        let url: URL
+        let directory: Result<DiskCleanupDirectory, Error>
+    }
+    private let roots: [Root]
+
+    init(roots: DiskCleanupRoots) {
+        let anchor = roots.containmentDirectory.map { url in Result { try DiskCleanupDirectory.openAbsolute(url) } }
+        self.roots = DiskCleanupCategoryKind.allCases.map { kind in
+            let url = roots.url(for: kind)
+            return Root(url: url, directory: Result {
+                if let anchor, let anchorURL = roots.containmentDirectory {
+                    let components = try Self.relativeComponents(url, beneath: anchorURL, allowRoot: false)
+                    return try anchor.get().open(components)
+                }
+                return try DiskCleanupDirectory.openAbsolute(url)
+            })
+        }
+    }
+
+    func directory(at url: URL) throws -> DiskCleanupDirectory {
+        let (root, components) = try location(of: url, allowRoot: true)
+        return try root.directory.get().open(components)
+    }
+
+    func parent(of url: URL) throws -> (DiskCleanupDirectory, String) {
+        let (root, components) = try location(of: url, allowRoot: false)
+        guard let name = components.last else { throw DiskCleanupDirectory.error(EINVAL) }
+        return (try root.directory.get().open(Array(components.dropLast())), name)
+    }
+
+    private func location(of url: URL, allowRoot: Bool) throws -> (Root, [String]) {
+        if !allowRoot,
+           roots.contains(where: { Self.hasSameLexicalPath(url, $0.url) }) {
+            throw DiskCleanupDirectory.error(EPERM)
+        }
+        for root in roots.sorted(by: { $0.url.path.count > $1.url.path.count }) {
+            if let components = try? Self.relativeComponents(url, beneath: root.url, allowRoot: allowRoot) {
+                return (root, components)
+            }
+        }
+        throw DiskCleanupDirectory.error(EPERM)
+    }
+
+    private static func hasSameLexicalPath(_ lhs: URL, _ rhs: URL) -> Bool {
+        lhs.isFileURL && rhs.isFileURL
+            && canonicalPathComponents(lhs) == canonicalPathComponents(rhs)
+    }
+
+    private static func relativeComponents(_ url: URL, beneath root: URL, allowRoot: Bool) throws -> [String] {
+        guard url.isFileURL, root.isFileURL else { throw DiskCleanupDirectory.error(EINVAL) }
+        let path = canonicalPathComponents(url)
+        let prefix = canonicalPathComponents(root)
+        guard path.starts(with: prefix), path.count > prefix.count || allowRoot else {
+            throw DiskCleanupDirectory.error(EPERM)
+        }
+        return Array(path.dropFirst(prefix.count))
+    }
+
+    private static func canonicalPathComponents(_ url: URL) -> [String] {
+        var components = url.standardizedFileURL.pathComponents
+        if components.count > 1,
+           components[1] == "tmp" || components[1] == "var" {
+            components.insert("private", at: 1)
+        }
+        return components
+    }
+}
+
+private final class DiskCleanupDirectory: @unchecked Sendable {
+    let descriptor: Int32
+    private static let flags = O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC
+
+    private init(_ descriptor: Int32) { self.descriptor = descriptor }
+    deinit { close(descriptor) }
+
+    static func error(_ code: Int32 = errno) -> NSError {
+        NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+    }
+
+    static func openAbsolute(_ url: URL, requireTrustedAncestors: Bool = false) throws -> DiskCleanupDirectory {
+        guard url.isFileURL, url.path.hasPrefix("/") else { throw error(EINVAL) }
+        var components = Array(url.standardizedFileURL.pathComponents.dropFirst())
+        // These are macOS system aliases, not fixture-controlled symlinks.
+        if components.first == "tmp" || components.first == "var" { components.insert("private", at: 0) }
+        let descriptor = Darwin.open("/", flags)
+        guard descriptor >= 0 else { throw error() }
+        var directory = DiskCleanupDirectory(descriptor)
+        for component in components {
+            directory = try directory.open([component])
+            if requireTrustedAncestors {
+                let info = try directory.metadata(".")
+                let trustedOwner = info.st_uid == 0 || info.st_uid == geteuid()
+                let protectedFromRename = info.st_mode & 0o022 == 0 || info.st_mode & mode_t(S_ISVTX) != 0
+                guard trustedOwner, protectedFromRename else { throw error(EPERM) }
+            }
+        }
+        return directory
+    }
+
+    func open(_ components: [String]) throws -> DiskCleanupDirectory {
+        let copy = openat(descriptor, ".", Self.flags)
+        guard copy >= 0 else { throw Self.error() }
+        var directory = DiskCleanupDirectory(copy)
+        for component in components {
+            guard !component.isEmpty, component != ".", component != "..", !component.contains("/") else {
+                throw Self.error(EINVAL)
+            }
+            let next = openat(directory.descriptor, component, Self.flags)
+            guard next >= 0 else { throw Self.error() }
+            directory = DiskCleanupDirectory(next)
+        }
+        return directory
+    }
+
+    func metadata(_ name: String) throws -> stat {
+        var info = stat()
+        guard fstatat(descriptor, name, &info, AT_SYMLINK_NOFOLLOW) == 0 else { throw Self.error() }
+        return info
+    }
+
+    func names() throws -> [String] {
+        let copy = openat(descriptor, ".", Self.flags)
+        guard copy >= 0 else { throw Self.error() }
+        guard let stream = fdopendir(copy) else {
+            let failure = Self.error()
+            close(copy)
+            throw failure
+        }
+        defer { closedir(stream) }
+        var names: [String] = []
+        while true {
+            errno = 0
+            guard let entry = readdir(stream) else {
+                if errno != 0 { throw Self.error() }
+                return names
+            }
+            let capacity = MemoryLayout.size(ofValue: entry.pointee.d_name)
+            let name = withUnsafePointer(to: &entry.pointee.d_name) { pointer in
+                pointer.withMemoryRebound(to: CChar.self, capacity: capacity) { String(cString: $0) }
+            }
+            if name != ".", name != ".." { names.append(name) }
+        }
+    }
 }
 
 public struct DiskCleanupCandidate: Identifiable, Equatable, Sendable {
@@ -254,7 +528,7 @@ public struct DiskCleanupService: Sendable {
         let filesystem = self.filesystem
 
         return await Task.detached(priority: .utility) {
-            Self.scan(categories: categories, now: now, roots: roots, filesystem: filesystem)
+            Self.scan(categories: categories, now: now, roots: roots, filesystem: filesystem.scoped(to: roots))
         }.value
     }
 
@@ -266,7 +540,7 @@ public struct DiskCleanupService: Sendable {
         let filesystem = self.filesystem
 
         return await Task.detached(priority: .utility) {
-            Self.clean(categories: categories, now: now, roots: roots, filesystem: filesystem)
+            Self.clean(categories: categories, now: now, roots: roots, filesystem: filesystem.scoped(to: roots))
         }.value
     }
 
@@ -345,9 +619,9 @@ public struct DiskCleanupService: Sendable {
             do {
                 switch candidate.deletionMode {
                 case .deleteImmediately:
-                    try filesystem.removeItem(at: candidate.url)
+                    try filesystem.removeItem(at: candidate.url, allowDirectory: candidate.kind == .trash)
                 case .moveToTrash:
-                    try filesystem.trashItem(at: candidate.url)
+                    try filesystem.trashItem(at: candidate.url, allowDirectory: candidate.kind == .trash)
                 }
                 deletedBytes += candidate.allocatedBytes
                 deletedCount += 1
