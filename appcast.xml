@@ -2,6 +2,16 @@
 <rss xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" version="2.0">
     <channel>
         <title>Mac Activity</title>
+        <item xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+            <title>27.0.0-beta.1</title>
+            <pubDate>Thu, 15 Oct 2026 05:47:46 +0000</pubDate>
+            <sparkle:channel>beta</sparkle:channel>
+            <sparkle:version>13</sparkle:version>
+            <sparkle:shortVersionString>27.0.0-beta.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <sparkle:releaseNotesLink>https://bigtomcat6.github.io/mac-activity/MacActivity-v27.0.0-beta.1.md</sparkle:releaseNotesLink>
+            <enclosure url="https://github.com/bigtomcat6/mac-activity/releases/download/v27.0.0-beta.1/MacActivity-v27.0.0-beta.1.zip" length="6742612" type="application/octet-stream" sparkle:edSignature="UJsyW8cAmm24qYyKmfk9/I/Ii/bjpAzb8u4mHfwn3t5y893ha2rjm1QX1iSwHb3tbU/BP0Dp97XrFXb2feumDw==" />
+        </item>
         <item>
             <title>26.1.0</title>
             <pubDate>Mon, 14 Sep 2026 06:14:02 +0000</pubDate>
