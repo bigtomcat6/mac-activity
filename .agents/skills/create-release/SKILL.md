@@ -1,6 +1,6 @@
 ---
 name: create-release
-description: Use when preparing or triggering a MacActivity alpha, beta, rc, or production release
+description: Use when preparing, triggering, or verifying a MacActivity alpha, beta, rc, or production release and its appcast/Pages distribution
 ---
 
 # Create Release
@@ -127,3 +127,76 @@ gh workflow run release.yml \
 `signing=local` creates an ad-hoc signed app suitable for workflow artifacts and
 internal smoke checks only. GitHub Release assets must use `signing=developer-id`
 so the app is Developer ID signed, notarized, stapled, and Gatekeeper-assessed.
+
+## Post-publish distribution
+
+Creating the draft Release is not the end of the release. Publishing is always a
+human action, and distribution may need a second human approval. At the draft
+handoff, proactively give the human this checklist instead of stopping silently:
+
+1. Publish the draft GitHub Release in the web UI.
+2. Watch the exact-tag `Publish Sparkle appcast` run triggered by that publish.
+3. If the run is gated, open the run URL, click **Review deployments**, select
+   the pending environment (from `pending_deployments`), then click
+   **Approve and deploy**.
+4. Verify GitHub Pages and the live feed.
+
+If the session ends before the human publishes, leave distribution explicitly
+pending with this checklist. Do not claim the release is end-to-end complete.
+
+### Appcast run correlation
+
+Publishing fires `Publish Sparkle appcast` on the `release: published` event.
+Find the run for the exact tag; never assume the newest run is this tag:
+
+```bash
+gh run list --workflow appcast.yml --event release \
+  --json databaseId,headBranch,displayTitle,status,conclusion,url
+gh run view <run-id> --json status,conclusion,jobs,url
+gh api "repos/<owner>/<repo>/actions/runs/<run-id>/pending_deployments"
+```
+
+Match `headBranch`/`displayTitle` to the exact tag (a release event ref is the
+tag). `rc` tags are skipped by the appcast workflow, so label their updater
+status `N/A` instead of waiting.
+
+### Waiting for approval
+
+If a job is waiting, do not assume a runner is available and do not blindly
+`gh run watch` a gated run. Query `pending_deployments`, then use the actual
+`environment.name` it returns (do not assume it is always `release-signing`),
+report the reviewer(s), and give the human the direct run URL with these steps:
+open the run URL, click **Review deployments**, select the pending environment,
+then click **Approve and deploy**. Never self-approve, bypass environment
+protection, move secrets, or edit `environment`/workflow configuration.
+
+### After approval
+
+Confirm the appcast run jobs and any applicable `Deploy GitHub Pages` job
+succeed, then check the public feed:
+
+```bash
+gh run view <run-id> --json status,conclusion,jobs,url
+curl --fail --silent https://bigtomcat6.github.io/mac-activity/appcast.xml
+```
+
+The feed must contain the exact expected `shortVersionString`, the release ZIP
+enclosure URL for the tag
+(`.../releases/download/<tag>/MacActivity-<tag>.zip`), and the right channel:
+`alpha`/`beta` entries carry `<sparkle:channel>`, while a final `release` has no
+prerelease channel. Clients must select the `alpha` or `beta` update channel to
+receive beta updates.
+
+If the appcast run, Pages deployment, or live feed is missing, failed, or not
+yet complete, report that exact state as pending or failed. Do not rebuild,
+re-publish, or rerun anything without an explicit request.
+
+## Handoff summary
+
+End with these fields so the approval reminder is not buried:
+
+- tag
+- GitHub Release: draft or published
+- appcast run: ID/link and status
+- approval: required? environment/reviewer and the action needed
+- Pages/live feed verification: verified, pending, failed, or `N/A` (`rc`)
