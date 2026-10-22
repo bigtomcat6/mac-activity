@@ -202,7 +202,7 @@ sign_developer_id_path() {
 }
 
 resign_developer_id_app() {
-  [[ "${SIGNING_MODE}" == "developer-id" ]] || return
+  [[ "${SIGNING_MODE}" == "developer-id" ]] || return 0
 
   local sparkle="${BUILT_APP}/Contents/Frameworks/Sparkle.framework/Versions/Current"
 

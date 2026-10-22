@@ -620,6 +620,13 @@ class ReleasePolicyTests(unittest.TestCase):
         self.assertIn("`main` or `next-version`", doc)
         self.assertIn("`main` or `next-version`", release_doc)
 
+    def test_local_release_script_guard_clauses_succeed_under_errexit(self):
+        script = (REPO_ROOT / "scripts" / "install-local-release.command").read_text()
+
+        self.assertIn("set -euo pipefail", script)
+        self.assertNotRegex(script, r"(?m)(\|\||&&)\s*return\s*$")
+        self.assertIn('[[ "${SIGNING_MODE}" == "developer-id" ]] || return 0\n', script)
+
 
 if __name__ == "__main__":
     unittest.main()
