@@ -13,7 +13,6 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 DERIVED_DATA="${MAC_ACTIVITY_DERIVED_DATA:-${REPO_ROOT}/.build/LocalRelease}"
 INSTALL_DIR="${MAC_ACTIVITY_INSTALL_DIR:-/Applications}"
 SIGNING_MODE="${MAC_ACTIVITY_SIGNING:-local}"
-ARCH="${MAC_ACTIVITY_ARCH:-$(uname -m)}"
 
 BUILD_ONLY=false
 SKIP_LAUNCH=false
@@ -40,7 +39,6 @@ Environment:
   MAC_ACTIVITY_INSTALL_DIR   Install directory. Defaults to /Applications.
   MAC_ACTIVITY_DERIVED_DATA  DerivedData path. Defaults to .build/LocalRelease.
   MAC_ACTIVITY_SIGNING       local or project. Defaults to local.
-  MAC_ACTIVITY_ARCH          Build architecture. Defaults to current machine arch.
 USAGE
 }
 
@@ -158,7 +156,7 @@ build_release_app() {
     -project "${PROJECT}"
     -scheme "${SCHEME}"
     -configuration "${CONFIGURATION}"
-    -destination "platform=macOS,arch=${ARCH}"
+    -destination "platform=macOS,arch=arm64"
     -derivedDataPath "${DERIVED_DATA}"
   )
 
@@ -181,7 +179,7 @@ build_release_app() {
 
   build_args+=(build)
 
-  log "Building ${SCHEME} (${CONFIGURATION}, ${ARCH}, signing=${SIGNING_MODE})"
+  log "Building ${SCHEME} (${CONFIGURATION}, arm64, signing=${SIGNING_MODE})"
   "${build_args[@]}"
 }
 

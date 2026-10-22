@@ -7,7 +7,7 @@ let package = Package(
     name: "MacActivity",
     defaultLocalization: "en",
     platforms: [
-        .macOS(.v13),
+        .macOS(.v26),
     ],
     products: [
         .library(

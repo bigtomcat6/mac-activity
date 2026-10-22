@@ -3,7 +3,7 @@ options:
   minimumXcodeGenVersion: 2.45.0
   createIntermediateGroups: true
   deploymentTarget:
-    macOS: "13.0"
+    macOS: "26.0"
   developmentLanguage: en
 configs:
   Debug: debug
@@ -18,7 +18,8 @@ settings:
     CODE_SIGN_STYLE: Automatic
     DEVELOPMENT_TEAM: ""
     SWIFT_VERSION: 6.0
-    MACOSX_DEPLOYMENT_TARGET: "13.0"
+    MACOSX_DEPLOYMENT_TARGET: "26.0"
+    ARCHS: arm64
     CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
     ENABLE_USER_SCRIPT_SANDBOXING: YES
   configs:
@@ -37,7 +38,7 @@ targets:
   MacActivityCore:
     type: framework
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "26.0"
     configFiles:
       Debug: Configuration/Shared.xcconfig
       Release: Configuration/Shared.xcconfig
@@ -51,7 +52,7 @@ targets:
   "Mac Activity":
     type: application
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "26.0"
     configFiles:
       Debug: Configuration/Shared.xcconfig
       Release: Configuration/Shared.xcconfig
@@ -74,7 +75,7 @@ targets:
   MacActivityCoreTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "26.0"
     configFiles:
       Debug: Configuration/Shared.xcconfig
       Release: Configuration/Shared.xcconfig
@@ -91,7 +92,7 @@ targets:
   MacActivityAppTests:
     type: bundle.unit-test
     platform: macOS
-    deploymentTarget: "13.0"
+    deploymentTarget: "26.0"
     configFiles:
       Debug: Configuration/Shared.xcconfig
       Release: Configuration/Shared.xcconfig

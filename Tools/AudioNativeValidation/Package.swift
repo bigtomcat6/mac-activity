@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "AudioNativeValidation",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v26)],
     dependencies: [.package(name: "MacActivity", path: "../..")],
     targets: [
         .target(
