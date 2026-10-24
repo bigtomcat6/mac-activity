@@ -16,6 +16,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                     dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
                     preferencesController: Self.preferencesController(),
                     audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+                    batteryCareModel: makeTestBatteryCareModel(),
                     scrollIndicatorState: state, initialSelectedTab: tab
                 ).environment(\.dashboardPresentationIsPresented, false)
                     .environment(\._accessibilityReduceMotion, false))
@@ -1007,6 +1008,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
             initialSelectedTab: .energyImpact
         ).environment(\._accessibilityReduceTransparency, false)
             .environment(\._accessibilityReduceMotion, true))
@@ -1489,14 +1491,17 @@ final class DashboardCardLayoutTests: XCTestCase {
             let content = DashboardView(
                 dashboardModel: model,
                 preferencesController: Self.preferencesController(),
-                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator())
+                audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+                batteryCareModel: makeTestBatteryCareModel()
             )
             .frame(width: contentWidth, height: contentHeight)
             .environment(\.colorScheme, scheme)
             .environment(\._accessibilityReduceTransparency, true)
 
             for point in [CGPoint(x: 2, y: 2), CGPoint(x: 2, y: 130), CGPoint(x: 2, y: 254)] {
-                let color = try XCTUnwrap(Self.renderedColor(of: content, atTopLeft: point))
+                // ImageRenderer substitutes a warning image for native NSViewRepresentable controls.
+                let color = try XCTUnwrap(Self.hostedRenderedColor(of: content,
+                    size: NSSize(width: contentWidth, height: contentHeight), atTopLeft: point))
                 XCTAssertLessThan(
                     color.alphaComponent,
                     0.02,
@@ -1523,6 +1528,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
         )
         .frame(width: 360, height: 320)
 
@@ -1545,6 +1551,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: storageOnlyModel,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
         )
         .frame(width: 360, height: 320)
 
@@ -1572,6 +1579,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
         )
         .frame(width: 360, height: 320)
 
@@ -1593,6 +1601,7 @@ final class DashboardCardLayoutTests: XCTestCase {
             dashboardModel: model,
             preferencesController: Self.preferencesController(),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
         )
         .frame(width: 360, height: 320)
 
@@ -1620,6 +1629,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
             initialSelectedTab: .actives
         )
         .frame(width: 360, height: 320)
@@ -1639,6 +1649,7 @@ final class DashboardCardLayoutTests: XCTestCase {
                 )
             ),
             audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(),
             initialSelectedTab: .energyImpact
         )
         .frame(width: 360, height: 560)

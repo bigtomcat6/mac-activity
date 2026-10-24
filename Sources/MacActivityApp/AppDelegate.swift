@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import MacActivityBatteryControl
 import MacActivityCore
 
 @MainActor
@@ -18,6 +19,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let releasePageOpener: (URL) -> Void
     #if DEBUG
     private let injectedAudioShutdown: (@MainActor () async -> Void)?
+    private let injectedBatteryShutdown: (@MainActor () async -> BatteryCareShutdownResult)?
     private let injectedSchedulerStop: (@MainActor () async -> Void)?
     private let terminationReply: (@MainActor (Bool) -> Void)?
     #endif
@@ -33,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var sparkleUpdateController: UpdateChecking?
     private var scheduler: MetricsScheduler?
     private var audioControlCoordinator: AudioControlCoordinator?
+    private var batteryCareModel: BatteryCareModel?
+    private var batteryCareLifecycleBridge: BatteryCareLifecycleBridge?
     private var schedulerStartupTask: Task<Void, Never>?
     private var audioStartupTask: Task<Void, Never>?
     #if DEBUG
@@ -41,6 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
     private var isPreparingForTermination = false
     private var didPrepareForTermination = false
+    private(set) var batteryCareShutdownResult: BatteryCareShutdownResult?
     private var cancellables: Set<AnyCancellable> = []
 
     override init() {
@@ -49,6 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         #if DEBUG
         self.injectedAudioShutdown = nil
+        self.injectedBatteryShutdown = nil
         self.injectedSchedulerStop = nil
         self.terminationReply = nil
         #endif
@@ -63,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.releasePageOpener = releasePageOpener
         #if DEBUG
         self.injectedAudioShutdown = nil
+        self.injectedBatteryShutdown = nil
         self.injectedSchedulerStop = nil
         self.terminationReply = nil
         #endif
@@ -73,6 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     init(
         sparkleUpdateController: UpdateChecking? = nil,
         releasePageOpener: @escaping (URL) -> Void,
+        batteryShutdown: (@MainActor () async -> BatteryCareShutdownResult)? = nil,
         audioShutdown: (@MainActor () async -> Void)? = nil,
         schedulerStop: (@MainActor () async -> Void)? = nil,
         terminationReply: (@MainActor (Bool) -> Void)? = nil
@@ -80,6 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         self.sparkleUpdateController = sparkleUpdateController
         self.releasePageOpener = releasePageOpener
         self.injectedAudioShutdown = audioShutdown
+        self.injectedBatteryShutdown = batteryShutdown
         self.injectedSchedulerStop = schedulerStop
         self.terminationReply = terminationReply
         super.init()
@@ -87,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     #endif
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        guard !isPreparingForTermination, !didPrepareForTermination else { return }
         let preferencesController = PreferencesController(
             store: UserDefaultsPreferencesStore(),
             launchService: launchService
@@ -147,6 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
 
         self.preferencesController = preferencesController
+        startBatteryCare(preferences: preferencesController, workspaceCenter: NSWorkspace.shared.notificationCenter)
         self.samplingController = samplingController
         self.summaryModel = summaryModel
         self.preferencesWindowController = preferencesWindowController
@@ -207,6 +218,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        batteryCareLifecycleBridge?.stop()
         cancellables.removeAll()
     }
 
@@ -214,12 +226,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if didPrepareForTermination { return .terminateNow }
         guard isPreparingForTermination == false else { return .terminateLater }
         isPreparingForTermination = true
+        batteryCareModel?.requestShutdown()
+        batteryCareLifecycleBridge?.stop()
 
         let audioControlCoordinator = self.audioControlCoordinator
         let scheduler = self.scheduler
         let audioStartupTask = self.audioStartupTask
         let schedulerStartupTask = self.schedulerStartupTask
+        let batteryCareModel = self.batteryCareModel
         #if DEBUG
+        let batteryShutdown = injectedBatteryShutdown
         let audioShutdown = injectedAudioShutdown
         let schedulerStop = injectedSchedulerStop
         let terminationReply = self.terminationReply
@@ -228,6 +244,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             audioControlCoordinator?.requestShutdown()
             audioStartupTask?.cancel()
             schedulerStartupTask?.cancel()
+            #if DEBUG
+            if let batteryShutdown {
+                self?.batteryCareShutdownResult = await batteryShutdown()
+            } else {
+                self?.batteryCareShutdownResult = await batteryCareModel?.shutdown() ?? .noControlAcquired
+            }
+            #else
+            self?.batteryCareShutdownResult = await batteryCareModel?.shutdown() ?? .noControlAcquired
+            #endif
             await audioStartupTask?.value
             await schedulerStartupTask?.value
             self?.audioStartupTask = nil
@@ -303,7 +328,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func makeDashboardPopoverController() -> DashboardPopoverController {
-        guard let preferencesController else {
+        guard let preferencesController, let batteryCareModel else {
             fatalError("Dashboard requested before preferences were configured")
         }
 
@@ -318,6 +343,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
             audioDashboardModel: makeAudioDashboardModel(),
+            batteryCareModel: batteryCareModel,
             onVisibilityChange: { [weak self] isVisible in
                 self?.handleDashboardVisibilityChange(isVisible)
             }
@@ -340,6 +366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         audioControlCoordinator: AudioControlCoordinator,
         scheduler: MetricsScheduler
     ) {
+        guard !isPreparingForTermination, !didPrepareForTermination else { return }
         schedulerStartupTask = Task {
             await scheduler.start()
         }
@@ -348,7 +375,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func startBatteryCare(preferences: PreferencesController, workspaceCenter: NotificationCenter) {
+        guard batteryCareModel == nil, !isPreparingForTermination, !didPrepareForTermination else { return }
+        let model = BatteryCareModel(preferences: preferences, service: UnavailableBatteryCareService())
+        let bridge = BatteryCareLifecycleBridge(model: model, workspaceCenter: workspaceCenter)
+        batteryCareModel = model
+        batteryCareLifecycleBridge = bridge
+        bridge.start()
+    }
+
     #if DEBUG
+    var testingBatteryCareModel: BatteryCareModel? { batteryCareModel }
+
+    func testingStartBatteryCare(preferences: PreferencesController, workspaceCenter: NotificationCenter) {
+        startBatteryCare(preferences: preferences, workspaceCenter: workspaceCenter)
+    }
+
     func testingStartOwnedLifecycles(
         audioControlCoordinator: AudioControlCoordinator,
         scheduler: MetricsScheduler
@@ -363,10 +405,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func testingConfigureDashboardPopoverFactory(
         preferencesController: PreferencesController,
-        audioControlCoordinator: any AudioControlCoordinating
+        audioControlCoordinator: any AudioControlCoordinating,
+        batteryCareModel: BatteryCareModel
     ) {
         self.preferencesController = preferencesController
         self.testingAudioControlCoordinator = audioControlCoordinator
+        self.batteryCareModel = batteryCareModel
         self.dashboardPopoverController = LazyDashboardPopoverController { [weak self] in
             guard let self else {
                 fatalError("Dashboard popover requested after AppDelegate deallocation")

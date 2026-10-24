@@ -83,6 +83,14 @@ enum DashboardPanelPlacement {
     static let defaultGap: CGFloat = 6
     static let defaultEdgeMargin: CGFloat = 8
 
+    static func availableContentHeight(
+        anchorRect: NSRect, visibleFrame: NSRect,
+        gap: CGFloat = defaultGap, edgeMargin: CGFloat = defaultEdgeMargin
+    ) -> CGFloat {
+        let top = min(anchorRect.minY - gap, visibleFrame.maxY - edgeMargin)
+        return max(0, top - (visibleFrame.minY + edgeMargin))
+    }
+
     static func screenIndex(containing anchorRect: NSRect, screenFrames: [NSRect]) -> Int? {
         guard screenFrames.isEmpty == false else { return nil }
 
@@ -113,7 +121,8 @@ enum DashboardPanelPlacement {
         edgeMargin: CGFloat = defaultEdgeMargin
     ) -> NSRect {
         let maxWidth = max(0, visibleFrame.width - edgeMargin * 2)
-        let maxHeight = max(0, visibleFrame.height - edgeMargin * 2)
+        let maxHeight = availableContentHeight(anchorRect: anchorRect, visibleFrame: visibleFrame,
+            gap: gap, edgeMargin: edgeMargin)
         let width = min(contentSize.width, maxWidth)
         let height = min(contentSize.height, maxHeight)
 

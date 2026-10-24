@@ -212,6 +212,7 @@ resign_developer_id_app() {
   sign_developer_id_path "${sparkle}/XPCServices/Downloader.xpc" --preserve-metadata=identifier,entitlements
   sign_developer_id_path "${sparkle}/XPCServices/Installer.xpc" --preserve-metadata=identifier,entitlements
   sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/Sparkle.framework" --preserve-metadata=identifier,entitlements
+  sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/MacActivityBatteryControl.framework" --preserve-metadata=identifier,entitlements
   sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/MacActivityCore.framework" --preserve-metadata=identifier,entitlements
   sign_developer_id_path "${BUILT_APP}" --entitlements "${REPO_ROOT}/Configuration/MacActivity.entitlements"
 }

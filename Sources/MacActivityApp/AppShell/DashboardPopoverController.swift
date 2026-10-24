@@ -11,8 +11,18 @@ protocol DashboardPopoverHosting: AnyObject {
     var contentViewController: NSViewController? { get set }
     var delegate: NSPopoverDelegate? { get set }
     var isShown: Bool { get }
+    var availableContentHeight: CGFloat { get }
+    var onAvailableContentHeightChange: (() -> Void)? { get set }
     func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge)
     func performClose(_ sender: Any?)
+}
+
+extension DashboardPopoverHosting {
+    var availableContentHeight: CGFloat { .greatestFiniteMagnitude }
+    var onAvailableContentHeightChange: (() -> Void)? {
+        get { nil }
+        set { }
+    }
 }
 
 extension NSPopover: DashboardPopoverHosting {}
@@ -21,22 +31,29 @@ enum DashboardPopoverLayout {
     static let contentWidth: CGFloat = 420
     static let maximumHeight: CGFloat = 560
 
-    static func contentSize(for measuredSize: NSSize) -> NSSize? {
+    static func contentSize(
+        for measuredSize: NSSize,
+        batteryCareHeight: CGFloat = 0,
+        availableHeight: CGFloat = .greatestFiniteMagnitude
+    ) -> NSSize? {
         guard measuredSize.width.isFinite,
               measuredSize.width > 0,
               measuredSize.height.isFinite,
-              measuredSize.height > 0 else {
+              measuredSize.height > 0,
+              batteryCareHeight.isFinite, batteryCareHeight >= 0,
+              availableHeight.isFinite, availableHeight > 0 else {
             return nil
         }
 
         return NSSize(
             width: contentWidth,
-            height: min(measuredSize.height, maximumHeight)
+            height: min(measuredSize.height, maximumHeight + batteryCareHeight, availableHeight)
         )
     }
 }
 
 enum DashboardContentMeasurementSegment: CaseIterable, Hashable {
+    case batteryCare
     case header
     case headerDivider
     case scrollContent
@@ -48,6 +65,9 @@ final class DashboardPopoverContentMeasurement {
     private(set) var latestContentSize: NSSize?
     private var heights: [DashboardContentMeasurementSegment: CGFloat] = [:]
     private var emissionGeneration = 0
+    private var hasCompleteMeasurement = false
+
+    var batteryCareHeight: CGFloat { heights[.batteryCare] ?? 0 }
 
     func seedIfNeeded(_ size: NSSize) {
         guard latestContentSize == nil,
@@ -62,9 +82,11 @@ final class DashboardPopoverContentMeasurement {
             return
         }
         heights[segment] = height
-        guard let size = resolvedContentSize(), latestContentSize != size else {
+        guard let size = resolvedContentSize(),
+              !hasCompleteMeasurement || latestContentSize != size || segment == .batteryCare else {
             return
         }
+        hasCompleteMeasurement = true
         latestContentSize = size
         emissionGeneration += 1
         let generation = emissionGeneration
@@ -88,12 +110,11 @@ final class DashboardPopoverContentMeasurement {
         guard DashboardContentMeasurementSegment.allCases.allSatisfy({ heights[$0] != nil }) else {
             return nil
         }
-        return NSSize(
-            width: DashboardPopoverLayout.contentWidth,
-            height: DashboardContentMeasurementSegment.allCases.reduce(0) { total, segment in
-                total + (heights[segment] ?? 0)
-            }
-        )
+        let height = DashboardContentMeasurementSegment.allCases.reduce(0) { total, segment in
+            total + (heights[segment] ?? 0)
+        }
+        guard height.isFinite else { return nil }
+        return NSSize(width: DashboardPopoverLayout.contentWidth, height: height)
     }
 }
 
@@ -117,15 +138,29 @@ final class DashboardPopoverContentSizeCoordinator {
     private let onHeightTransitionChange: (Bool) -> Void
     private let visibleFrameForWindow: (NSWindow) -> NSRect?
     private let animateFrame: DashboardPopoverFrameAnimator
+    private let batteryCareHeight: () -> CGFloat
+    private let availableContentHeight: () -> CGFloat
 
     init(
         popover: DashboardPopoverHosting,
+        batteryCareHeight: @escaping () -> CGFloat = { 0 },
+        availableContentHeight: (() -> CGFloat)? = nil,
         shouldReduceMotion: @escaping () -> Bool = {
             NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         },
         onHeightTransitionChange: @escaping (Bool) -> Void = { _ in },
         visibleFrameForWindow: @escaping (NSWindow) -> NSRect? = { $0.screen?.visibleFrame },
-        animateFrame: @escaping DashboardPopoverFrameAnimator = { window, frame, completion in
+        animateFrame: DashboardPopoverFrameAnimator? = nil
+    ) {
+        self.popover = popover
+        self.batteryCareHeight = batteryCareHeight
+        self.availableContentHeight = availableContentHeight ?? { [weak popover] in
+            popover?.availableContentHeight ?? .greatestFiniteMagnitude
+        }
+        self.shouldReduceMotion = shouldReduceMotion
+        self.onHeightTransitionChange = onHeightTransitionChange
+        self.visibleFrameForWindow = visibleFrameForWindow
+        self.animateFrame = animateFrame ?? { window, frame, completion in
             NSAnimationContext.runAnimationGroup { _ in
                 window.animator().setFrame(frame, display: true)
             } completionHandler: {
@@ -134,12 +169,6 @@ final class DashboardPopoverContentSizeCoordinator {
                 }
             }
         }
-    ) {
-        self.popover = popover
-        self.shouldReduceMotion = shouldReduceMotion
-        self.onHeightTransitionChange = onHeightTransitionChange
-        self.visibleFrameForWindow = visibleFrameForWindow
-        self.animateFrame = animateFrame
     }
 
     private func setHeightTransitioning(_ isHeightTransitioning: Bool) {
@@ -159,20 +188,22 @@ final class DashboardPopoverContentSizeCoordinator {
         invalidateInFlightAnimation()
     }
 
-    func applyImmediately(measuredSize: NSSize) {
-        guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
+    func applyImmediately(measuredSize: NSSize, allowsAnimation: Bool = true) {
+        guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize,
+            batteryCareHeight: batteryCareHeight(), availableHeight: availableContentHeight()) else {
             return
         }
         pendingContentSize = nil
-        apply(contentSize)
+        apply(contentSize, allowsAnimation: allowsAnimation)
     }
 
     func schedule(measuredSize: NSSize) {
-        guard let contentSize = DashboardPopoverLayout.contentSize(for: measuredSize) else {
+        guard DashboardPopoverLayout.contentSize(for: measuredSize,
+            batteryCareHeight: batteryCareHeight(), availableHeight: availableContentHeight()) != nil else {
             return
         }
 
-        pendingContentSize = contentSize
+        pendingContentSize = measuredSize
         guard !isUpdateScheduled else {
             return
         }
@@ -189,15 +220,14 @@ final class DashboardPopoverContentSizeCoordinator {
                 self.pendingContentSize = nil
                 return
             }
-            guard let contentSize = self.pendingContentSize else {
+            guard let measuredSize = self.pendingContentSize else {
                 return
             }
-            self.pendingContentSize = nil
-            self.apply(contentSize)
+            self.applyImmediately(measuredSize: measuredSize)
         }
     }
 
-    private func apply(_ contentSize: NSSize) {
+    private func apply(_ contentSize: NSSize, allowsAnimation: Bool = true) {
         guard let popover else {
             return
         }
@@ -225,7 +255,7 @@ final class DashboardPopoverContentSizeCoordinator {
             return
         }
 
-        guard !shouldReduceMotion() else {
+        guard allowsAnimation, !shouldReduceMotion() else {
             invalidateInFlightAnimation()
             snapFrame(to: contentSize, in: window)
             popover.contentSize = contentSize
@@ -405,6 +435,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
+        batteryCareModel: BatteryCareModel,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void
     ) {
         self.init(
@@ -413,6 +444,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             dashboardModel: dashboardModel,
             preferencesController: preferencesController,
             audioDashboardModel: audioDashboardModel,
+            batteryCareModel: batteryCareModel,
             onVisibilityChange: onVisibilityChange
         )
     }
@@ -423,8 +455,10 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
+        batteryCareModel: BatteryCareModel,
         onVisibilityChange: @escaping @MainActor (Bool) -> Void,
-        presentationState: DashboardPresentationState = DashboardPresentationState()
+        presentationState: DashboardPresentationState = DashboardPresentationState(),
+        frameAnimator: DashboardPopoverFrameAnimator? = nil
     ) {
         self.popover = popover
         self.focusController = focusController
@@ -433,19 +467,22 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
 
         let scrollIndicatorState = DashboardPopoverScrollIndicatorState()
         let tabSelectionState = DashboardTabSelectionState()
+        let measurement = DashboardPopoverContentMeasurement()
         let contentSizeCoordinator = DashboardPopoverContentSizeCoordinator(
             popover: popover,
+            batteryCareHeight: { [weak measurement] in measurement?.batteryCareHeight ?? 0 },
             onHeightTransitionChange: { [weak scrollIndicatorState] isHeightTransitioning in
                 scrollIndicatorState?.setHeightTransitioning(isHeightTransitioning)
-            }
+            },
+            animateFrame: frameAnimator
         )
-        let measurement = DashboardPopoverContentMeasurement()
         let dashboardHostingController = DashboardPopoverHostingController(
             rootView: DashboardPopoverRootView(
                 content: DashboardView(
                     dashboardModel: dashboardModel,
                     preferencesController: preferencesController,
                     audioDashboardModel: audioDashboardModel,
+                    batteryCareModel: batteryCareModel,
                     onMeasuredSegmentHeight: { [weak measurement] segment, height in
                         measurement?.report(height, for: segment)
                     },
@@ -457,6 +494,12 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         )
         measurement.onContentSizeChange = { [weak contentSizeCoordinator] size in
             contentSizeCoordinator?.schedule(measuredSize: size)
+        }
+        popover.onAvailableContentHeightChange = { [weak contentSizeCoordinator, weak measurement,
+                                                    weak dashboardHostingController, weak popover] in
+            guard let root = dashboardHostingController, popover?.contentViewController === root,
+                  let size = measurement?.latestContentSize else { return }
+            contentSizeCoordinator?.applyImmediately(measuredSize: size, allowsAnimation: false)
         }
 
         dashboardHostingController.sizingOptions = [.preferredContentSize]
@@ -486,7 +529,9 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
             // controller-owned host must not prevent its logical model teardown.
             if let popover,
                popover.contentViewController.map(ObjectIdentifier.init) != rootIdentity { return }
+            popover?.onAvailableContentHeightChange = nil
             presentationState.setPresented(false)
+            batteryCareModel.cancelPreview()
             audioDashboardModel.audioPageDeactivated()
             if let popover {
                 popover.delegate = nil
@@ -518,6 +563,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         }
 
         if popover.isShown {
+            dashboardHostingController.dashboardView.batteryCareModel.cancelPreview()
             popover.performClose(nil)
             if !popover.isShown { closePresentation() }
         } else {
@@ -554,6 +600,7 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
         contentSizeCoordinator.resetAfterPopoverCloses()
         scrollIndicatorState.setHeightTransitioning(false)
         presentationState.setPresented(false)
+        dashboardHostingController.dashboardView.batteryCareModel.cancelPreview()
         dashboardHostingController.dashboardView.audioDashboardModel.audioPageDeactivated()
         if reportedVisible {
             reportedVisible = false
@@ -562,6 +609,10 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     }
 
     #if DEBUG
+    var testingBatteryCareModel: BatteryCareModel? {
+        (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView.batteryCareModel
+    }
+
     var testingAudioDashboardModel: AudioDashboardModel? {
         (popover.contentViewController as? DashboardPopoverHostingController)?.dashboardView.audioDashboardModel
     }
@@ -569,6 +620,8 @@ final class DashboardPopoverController: NSObject, NSPopoverDelegate {
     var testingContentSizeCoordinator: DashboardPopoverContentSizeCoordinator {
         contentSizeCoordinator
     }
+
+    var testingContentMeasurement: DashboardPopoverContentMeasurement { contentMeasurement }
 
     var testingScrollIndicatorState: DashboardPopoverScrollIndicatorState {
         scrollIndicatorState

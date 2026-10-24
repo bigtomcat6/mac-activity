@@ -32,15 +32,27 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
     private var popoverIsShown = false
     private var storedAnimates = true
     private let shouldReduceMotion: () -> Bool
+    private let visibleFrameForAnchor: (NSRect) -> NSRect
+    private weak var positioningView: NSView?
+    private var positioningRect: NSRect = .zero
+    private var placementKind: DashboardPresentationHostKind?
+    // Conservative first-show reserve; replace with the native window's measured chrome immediately after show.
+    private var popoverChromeHeight: CGFloat = 32
+    private(set) var availableContentHeight: CGFloat = .greatestFiniteMagnitude
+    var onAvailableContentHeightChange: (() -> Void)?
 
     init(
         hostKindProvider: @escaping () -> DashboardPresentationHostKind = { .live() },
+        visibleFrameForAnchor: @escaping (NSRect) -> NSRect = {
+            DashboardPanelPlacement.visibleFrame(for: $0, screens: NSScreen.screens)
+        },
         panelHost: DashboardPanelHost = DashboardPanelHost(),
         shouldReduceMotion: @escaping () -> Bool = { NSWorkspace.shared.accessibilityDisplayShouldReduceMotion }
     ) {
         self.hostKindProvider = hostKindProvider
         self.panelHost = panelHost
         self.shouldReduceMotion = shouldReduceMotion
+        self.visibleFrameForAnchor = visibleFrameForAnchor
         super.init()
         popover.behavior = .transient
         popover.animates = true
@@ -51,6 +63,12 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
         panelHost.onDidClose = { [weak self] in
             self?.notifyPopoverDidClose()
         }
+        NotificationCenter.default.addObserver(self, selector: #selector(screenParametersChanged),
+            name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(anchorWindowChanged(_:)),
+            name: NSWindow.didMoveNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(anchorWindowChanged(_:)),
+            name: NSWindow.didChangeScreenNotification, object: nil)
     }
 
     var behavior: NSPopover.Behavior {
@@ -72,14 +90,14 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
             if panelHost.isShown, let size = panelHost.contentSize {
                 return size
             }
-            return storedContentSize == .zero ? popover.contentSize : storedContentSize
+            return popoverIsShown ? popover.contentSize : constrainedSize(storedContentSize)
         }
         set {
             storedContentSize = newValue
             if panelHost.isShown {
-                panelHost.resizeContent(to: newValue)
+                panelHost.resizeContent(to: constrainedSize(newValue))
             } else {
-                popover.contentSize = newValue
+                popover.contentSize = constrainedSize(newValue)
             }
         }
     }
@@ -105,6 +123,8 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
     }
 
     func show(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
+        self.positioningView = positioningView
+        self.positioningRect = positioningRect
         switch hostKindProvider() {
         case .popover:
             showPopover(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
@@ -121,10 +141,22 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
 
     private func showPopover(relativeTo positioningRect: NSRect, of positioningView: NSView, preferredEdge: NSRectEdge) {
         detachPanel()
+        placementKind = .popover
+        updateAvailableHeight()
+        guard availableContentHeight > 0 else { return }
         popover.contentViewController = storedContentViewController
+        popover.contentSize = constrainedSize(storedContentSize)
         popover.animates = storedAnimates && !shouldReduceMotion()
         popover.show(relativeTo: positioningRect, of: positioningView, preferredEdge: preferredEdge)
         popoverIsShown = popover.isShown
+        if popoverIsShown, let window = storedContentViewController?.view.window {
+            let chrome = window.frame.height - popover.contentSize.height
+            if chrome.isFinite, chrome > 0 {
+                popoverChromeHeight = chrome
+                updateAvailableHeight()
+                popover.contentSize = constrainedSize(storedContentSize)
+            }
+        }
     }
 
     func performClose(_ sender: Any?) {
@@ -152,10 +184,13 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
             popover.performClose(nil)
         }
         popover.contentViewController = nil
-        let visibleFrame = DashboardPanelPlacement.visibleFrame(for: anchorRect, screens: NSScreen.screens)
+        placementKind = .panel
+        updateAvailableHeight()
+        guard availableContentHeight > 0 else { return false }
+        let visibleFrame = visibleFrameForAnchor(anchorRect)
         let contentSize = storedContentSize == .zero
-            ? NSSize(width: DashboardPopoverLayout.contentWidth, height: DashboardPopoverLayout.maximumHeight)
-            : storedContentSize
+            ? contentViewController.view.fittingSize
+            : constrainedSize(storedContentSize)
         panelHost.show(
             contentViewController: contentViewController,
             anchorRect: anchorRect,
@@ -163,6 +198,48 @@ final class DashboardAdaptivePopoverHost: NSObject, DashboardPopoverHosting, NSP
             contentSize: contentSize
         )
         return panelHost.isShown
+    }
+
+    private func constrainedSize(_ size: NSSize) -> NSSize {
+        NSSize(width: size.width, height: min(size.height, availableContentHeight))
+    }
+
+    private func updateAvailableHeight() {
+        guard let view = positioningView, let window = view.window, let placementKind else { return }
+        let anchor = window.convertToScreen(view.convert(positioningRect, to: nil))
+        let visible = visibleFrameForAnchor(anchor)
+        let height: CGFloat
+        if placementKind == .panel {
+            height = DashboardPanelPlacement.availableContentHeight(anchorRect: anchor, visibleFrame: visible)
+        } else {
+            // The arrow and native backing belong to NSPopover, not the borderless panel.
+            let below = min(anchor.minY, visible.maxY - 8) - (visible.minY + 8)
+            let above = visible.maxY - 8 - max(anchor.maxY, visible.minY + 8)
+            height = max(0, max(below, above) - popoverChromeHeight)
+        }
+        guard height.isFinite, height != availableContentHeight else { return }
+        availableContentHeight = height
+        onAvailableContentHeightChange?()
+    }
+
+    @objc private func anchorWindowChanged(_ notification: Notification) {
+        guard let window = notification.object as? NSWindow, window === positioningView?.window else { return }
+        screenParametersChanged()
+    }
+
+    @objc private func screenParametersChanged() {
+        guard isShown else { return }
+        updateAvailableHeight()
+        guard availableContentHeight > 0 else {
+            performClose(nil)
+            return
+        }
+        if panelHost.isShown, let anchor = DashboardPanelAnchor.screenRect(for: positioningView) {
+            panelHost.updatePlacement(anchorRect: anchor, visibleFrame: visibleFrameForAnchor(anchor),
+                contentSize: constrainedSize(storedContentSize))
+        } else if popoverIsShown {
+            popover.contentSize = constrainedSize(storedContentSize)
+        }
     }
 
     private func detachPanel() {

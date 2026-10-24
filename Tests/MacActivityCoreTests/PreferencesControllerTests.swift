@@ -1,8 +1,43 @@
 import XCTest
+import Combine
+import MacActivityBatteryControl
 @testable import MacActivityCore
 
 @MainActor
 final class PreferencesControllerTests: XCTestCase {
+    func testSaveFailureDoesNotPublishSettings() throws {
+        let store = RecordingPreferencesStore(initial: .default, saveError: .saveFailed("Disk full"))
+        let controller = PreferencesController(store: store, launchService: NoopLaunchAtLoginService())
+        var published: [AppPreferences] = []
+        let subscription = controller.$state.dropFirst().sink { published.append($0) }
+        defer { subscription.cancel() }
+
+        XCTAssertThrowsError(try controller.setBatteryCareSettings(BatteryCareSettings(isEnabled: true, limit: 70)))
+
+        XCTAssertEqual(controller.state, .default)
+        XCTAssertTrue(published.isEmpty)
+        XCTAssertEqual(store.saveAttempts, 1)
+    }
+
+    func testBatteryCareSettingsAreSavedBeforePublishing() throws {
+        var initial = AppPreferences.default
+        initial.showsHardwareBatteryPercentage = true
+        let store = RecordingPreferencesStore(initial: initial)
+        let controller = PreferencesController(store: store, launchService: NoopLaunchAtLoginService())
+        var published: [AppPreferences] = []
+        let subscription = controller.$state.dropFirst().sink {
+            XCTAssertEqual(store.savedValues.last, $0)
+            published.append($0)
+        }
+        defer { subscription.cancel() }
+        let settings = try BatteryCareSettings(limit: 69)
+        try controller.setBatteryCareSettings(settings)
+        XCTAssertEqual(controller.state.batteryCare, settings)
+        XCTAssertFalse(controller.state.batteryCare.isEnabled)
+        XCTAssertTrue(controller.state.showsHardwareBatteryPercentage)
+        XCTAssertEqual(published, [controller.state])
+    }
+
     func testSummarySelectionPersistsInFixedOrder() {
         let store = RecordingPreferencesStore(initial: .default)
         let controller = PreferencesController(

@@ -561,7 +561,8 @@ final class AudioControlComponentTests: XCTestCase {
         let delegate = AppDelegate(releasePageOpener: { _ in })
         delegate.testingConfigureDashboardPopoverFactory(
             preferencesController: fixture.preferences,
-            audioControlCoordinator: fixture.coordinator
+            audioControlCoordinator: fixture.coordinator,
+            batteryCareModel: makeTestBatteryCareModel(preferences: fixture.preferences)
         )
 
         let firstPopover = delegate.testingResolveDashboardPopoverController()

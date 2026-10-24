@@ -35,6 +35,37 @@ packages:
     url: https://github.com/sparkle-project/Sparkle
     from: 2.9.3
 targets:
+  MacActivityBatteryControl:
+    type: framework
+    platform: macOS
+    deploymentTarget: "26.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Sources/MacActivityBatteryControl
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.batterycontrol
+        GENERATE_INFOPLIST_FILE: YES
+        SKIP_INSTALL: YES
+  MacActivityBatteryControlTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "26.0"
+    configFiles:
+      Debug: Configuration/Shared.xcconfig
+      Release: Configuration/Shared.xcconfig
+    sources:
+      - path: Tests/MacActivityBatteryControlTests
+    dependencies:
+      - target: MacActivityBatteryControl
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.batterycontrol.tests
+        TEST_HOST: ""
+        BUNDLE_LOADER: ""
   MacActivityCore:
     type: framework
     platform: macOS
@@ -44,6 +75,8 @@ targets:
       Release: Configuration/Shared.xcconfig
     sources:
       - path: Sources/MacActivityCore
+    dependencies:
+      - target: MacActivityBatteryControl
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.how.macactivity.core
@@ -60,6 +93,8 @@ targets:
       - path: Sources/MacActivityApp
     dependencies:
       - target: MacActivityCore
+      - target: MacActivityBatteryControl
+        embed: true
       - package: Sparkle
     settings:
       base:
@@ -83,6 +118,7 @@ targets:
       - path: Tests/MacActivityCoreTests
     dependencies:
       - target: MacActivityCore
+      - target: MacActivityBatteryControl
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -100,6 +136,7 @@ targets:
       - path: Tests/MacActivityAppTests
     dependencies:
       - target: "Mac Activity"
+      - target: MacActivityBatteryControl
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
@@ -112,6 +149,7 @@ schemes:
       targets:
         "Mac Activity": all
         MacActivityCore: all
+        MacActivityBatteryControl: all
     run:
       config: Debug
       executable: "Mac Activity"
@@ -120,6 +158,7 @@ schemes:
       config: Debug
       gatherCoverageData: true
       targets:
+        - MacActivityBatteryControlTests
         - MacActivityCoreTests
         - MacActivityAppTests
     profile:

@@ -10,6 +10,7 @@ let package = Package(
         .macOS(.v26),
     ],
     products: [
+        .library(name: "MacActivityBatteryControl", targets: ["MacActivityBatteryControl"]),
         .library(
             name: "MacActivityCore",
             targets: ["MacActivityCore"]
@@ -31,14 +32,22 @@ let package = Package(
         .package(url: "https://github.com/sparkle-project/Sparkle", from: "2.9.3"),
     ],
     targets: [
+        .target(name: "MacActivityBatteryControl", path: "Sources/MacActivityBatteryControl"),
+        .testTarget(
+            name: "MacActivityBatteryControlTests",
+            dependencies: ["MacActivityBatteryControl"],
+            path: "Tests/MacActivityBatteryControlTests"
+        ),
         .target(
             name: "MacActivityCore",
+            dependencies: ["MacActivityBatteryControl"],
             path: "Sources/MacActivityCore"
         ),
         .executableTarget(
             name: "MacActivityApp",
             dependencies: [
                 "MacActivityCore",
+                "MacActivityBatteryControl",
                 .product(name: "Sparkle", package: "Sparkle"),
             ],
             path: "Sources/MacActivityApp",
@@ -58,12 +67,12 @@ let package = Package(
         ),
         .testTarget(
             name: "MacActivityCoreTests",
-            dependencies: ["MacActivityCore"],
+            dependencies: ["MacActivityCore", "MacActivityBatteryControl"],
             path: "Tests/MacActivityCoreTests"
         ),
         .testTarget(
             name: "MacActivityAppTests",
-            dependencies: ["MacActivityApp"],
+            dependencies: ["MacActivityApp", "MacActivityBatteryControl"],
             path: "Tests/MacActivityAppTests"
         ),
     ]

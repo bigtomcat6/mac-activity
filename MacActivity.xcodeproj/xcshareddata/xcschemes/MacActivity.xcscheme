@@ -29,6 +29,20 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
+               BlueprintIdentifier = "4026CFE3382FB607DE8F1A64"
+               BuildableName = "MacActivityBatteryControl.framework"
+               BlueprintName = "MacActivityBatteryControl"
+               ReferencedContainer = "container:MacActivity.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "YES"
+            buildForProfiling = "YES"
+            buildForArchiving = "YES"
+            buildForAnalyzing = "YES">
+            <BuildableReference
+               BuildableIdentifier = "primary"
                BlueprintIdentifier = "1A1E314FBDA8A359F0BF70F4"
                BuildableName = "MacActivityCore.framework"
                BlueprintName = "MacActivityCore"
@@ -54,6 +68,17 @@
          </BuildableReference>
       </MacroExpansion>
       <Testables>
+         <TestableReference
+            skipped = "NO"
+            parallelizable = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "6AC1DB6109A240E4DA289A32"
+               BuildableName = "MacActivityBatteryControlTests.xctest"
+               BlueprintName = "MacActivityBatteryControlTests"
+               ReferencedContainer = "container:MacActivity.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
          <TestableReference
             skipped = "NO"
             parallelizable = "NO">

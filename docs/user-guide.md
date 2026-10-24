@@ -65,6 +65,59 @@ The Energy Impact page shows a physical power-flow panel above the app ranking:
 - App energy-impact CPU estimates are separate process estimates and are not inputs to physical power flow.
 - These readings do not claim exact AlDente parity for charging states that have not been validated.
 
+## Battery Care — foundation only, not hardware control
+
+The current implementation provides a two-row Battery Care surface shared by
+Overview, Actives, Energy Impact, and Audio, plus a lightweight **More Battery
+Settings** panel. **Actual charge limiting, manual discharge, and temporary full
+charge are not enabled.** Production uses an unavailable control service: there
+is no executable battery-control backend, verified device support list, or
+user-accessible test-success switch. macOS 26 and Apple silicon are app
+requirements, not evidence that a Mac supports battery control.
+
+Management defaults to **off**, with an **80%** prefilled limit. The limit can
+be saved from **50% to 100%**, in one-percentage-point steps; editing it does not
+enable management or change the battery. Dragging previews locally, releasing
+commits the final value; arrow keys preview, Return commits, and Escape cancels
+an uncommitted preview. Closing the dashboard or changing pages also cancels
+only the uncommitted preview, not a submission already captured. An unavailable
+or unverified operation stays disabled; unknown battery state is not 0% or
+proof that there is no internal battery.
+
+The following are **approved future behavior, not currently available hardware
+features**. They require separate device/system/operation admission:
+
+- Regular limits of 50%–99% use a five-percentage-point recharge gap. Regular
+  100% hands final charging back to macOS; it does not create a 95%–100% cycle,
+  disable optimized charging, or mean the battery is already full.
+- Lowering a limit never starts discharge. Discharge would require an explicit
+  one-time manual action and stop at the accepted limit. The **20%** fallback
+  is an abnormal-exit product rule, **not a certified safety standard**. No real
+  discharge-to-20% experiment or physical stopping guarantee is established.
+- Temporary full charge keeps the regular limit separate. Accepting a different
+  limit cancels the override; only after its release is confirmed can regular
+  policy resume at the latest limit. Neither cancellation nor completion starts
+  discharge. Displaying 100% alone cannot establish completion.
+- Unplugging, sleep, disabling management, and quitting request release of owned
+  controls. A request, cancellation, or an app exit does **not** guarantee physical
+  release; recovery can remain unknown. Wake/reconnection would require fresh
+  verification for regular management, and faults require explicit retry; neither
+  temporary mode automatically resumes. Quitting does not guarantee continued
+  limiting.
+
+Saved intent, service acceptance, control readback, and physical observation are
+separate facts. An effective **policy target** is not proof of a physical effect;
+accepted requests may still have unconfirmed effects, and uncertain release must
+not be presented as restored control. Current production recovery is unknown,
+not a verified release. These foundations make no safety or battery-lifetime
+claims.
+
+Battery Care's current-value label uses only a verified **system percentage**;
+without such control evidence it stays unknown. The existing battery chart and
+menu-bar readings keep their own display path, including the optional hardware
+percentage preference. Changing that preference does not change control
+thresholds; a readable chart is not battery-control admission.
+
 ## Audio
 
 Output-device sliders apply volume changes while you drag, rather than waiting

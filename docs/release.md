@@ -58,6 +58,35 @@ variables used by `.github/workflows/release.yml`, including the Developer ID
 certificate, certificate password, Apple ID notarization credentials, team ID,
 and signing identity.
 
+### Battery Care foundation is not hardware enablement
+
+The app now links and embeds `MacActivityBatteryControl.framework` alongside
+`MacActivityCore.framework`. `project.yml` is the source of this dependency;
+regenerate the project with XcodeGen. The local release script's nested-framework
+signing list includes BatteryControl. Static policy checks verify that mapping,
+but do not prove Developer ID signing, notarization, helper installation, or device
+admission. Do not run the installer merely to validate this foundation.
+
+Production still uses `UnavailableBatteryCareService`, with management defaulting
+off/80%, no executable backend, no verified support list, and no test-success
+switch. macOS 26/arm64 remains the app baseline, not battery-control certification.
+Do not advertise working charge limiting, discharge, temporary full charge,
+safety, or battery-life benefits in README/release notes on the strength of UI or
+synthetic tests. The approved future behavior is not a shipping capability; the
+20% fallback is not a certified safety threshold and has not been tested by real
+discharge. Unknown release/recovery must not be described as successful cleanup.
+
+The original A7 native/wheel and live-animation checks now passed in an active,
+unlocked display session. Latest scoped UI/battery validation had no failures and
+one existing OS Reduce Motion skip; it does not replace full-suite validation.
+No-host BatteryControl Xcode tests and unsigned Release compile/link passed, not
+app-hosted execution or distribution validation. A safe test-host entry point is
+still missing; the known EnergyImpact live-catalog empty-name defect, non-green
+SwiftLint, and unverified manual VoiceOver checks remain open. A-stage completion
+and release readiness are not established. G/B hardware enablement remains
+deferred: G hardware/trust admission and the approved B0 implementation plan are
+still prerequisites for real enablement, helper signing/registration, or distribution.
+
 ## CI Selection
 
 The release workflow can run one selected CI suite before packaging:

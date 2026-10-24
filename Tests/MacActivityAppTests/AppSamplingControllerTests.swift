@@ -2,10 +2,102 @@ import Combine
 import CoreAudio
 import XCTest
 import MacActivityCore
+import MacActivityBatteryControl
 @testable import MacActivityApp
 
 @MainActor
 final class AppSamplingControllerTests: XCTestCase {
+    func testLateBatteryAssemblyAfterTerminationNeverCreatesModelOrObserver() async {
+        let reply = expectation(description: "quit before startup")
+        let delegate = AppDelegate(releasePageOpener: { _ in }, audioShutdown: {}, schedulerStop: {},
+            terminationReply: { _ in reply.fulfill() })
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        delegate.testingStartBatteryCare(preferences: lifecyclePreferences(), workspaceCenter: NotificationCenter())
+        XCTAssertNil(delegate.testingBatteryCareModel)
+        await fulfillment(of: [reply], timeout: 2)
+        delegate.testingStartBatteryCare(preferences: lifecyclePreferences(), workspaceCenter: NotificationCenter())
+        XCTAssertNil(delegate.testingBatteryCareModel)
+    }
+
+    func testProductionBatteryAssemblyStartsBeforeDashboardAndCannotRestartAfterQuit() async throws {
+        let store = LifecycleBatteryPreferences(settings: try .init(isEnabled: true, limit: 64))
+        let preferences = PreferencesController(store: store, launchService: NoopLaunchAtLoginService())
+        let center = NotificationCenter()
+        let replied = expectation(description: "termination replied")
+        let delegate = AppDelegate(releasePageOpener: { _ in },
+            audioShutdown: {}, schedulerStop: {}, terminationReply: { _ in replied.fulfill() })
+        delegate.testingStartBatteryCare(preferences: preferences, workspaceCenter: center)
+        let model = try XCTUnwrap(delegate.testingBatteryCareModel)
+        delegate.testingStartBatteryCare(preferences: preferences, workspaceCenter: center)
+        XCTAssertTrue(model === delegate.testingBatteryCareModel)
+        let sleep = expectation(description: "startup bridge active without dashboard")
+        let observer = model.$presentation.first(where: { $0.generation > 0 })
+            .sink { _ in MainActor.assertIsolated(); sleep.fulfill() }
+        center.post(name: NSWorkspace.willSleepNotification, object: nil)
+        await fulfillment(of: [sleep], timeout: 2)
+        observer.cancel()
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        await fulfillment(of: [replied], timeout: 2)
+        XCTAssertEqual(delegate.batteryCareShutdownResult, .noControlAcquired)
+        let generation = model.presentation.generation
+        delegate.testingStartBatteryCare(preferences: preferences, workspaceCenter: center)
+        center.post(name: NSWorkspace.didWakeNotification, object: nil)
+        for _ in 0..<20 { await Task.yield() }
+        XCTAssertTrue(model === delegate.testingBatteryCareModel)
+        XCTAssertEqual(model.presentation.generation, generation)
+        XCTAssertTrue(model.presentation.savedEnabled)
+        XCTAssertEqual(model.presentation.savedLimit, 64)
+        XCTAssertTrue(store.saved.isEmpty)
+        XCTAssertNotEqual(model.presentation.recoveryStatus, .released)
+    }
+
+    func testTerminationWaitsForBatteryResultBeforeAudioSchedulerAndReply() async {
+        let entered = expectation(description: "battery entered")
+        let replied = expectation(description: "reply")
+        var finish: CheckedContinuation<BatteryCareShutdownResult, Never>?
+        var events: [String] = []
+        let delegate = AppDelegate(releasePageOpener: { _ in }, batteryShutdown: {
+            events.append("battery")
+            return await withCheckedContinuation { finish = $0; entered.fulfill() }
+        }, audioShutdown: { events.append("audio") }, schedulerStop: { events.append("scheduler") },
+           terminationReply: { _ in events.append("reply"); replied.fulfill() })
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        await fulfillment(of: [entered], timeout: 2)
+        XCTAssertEqual(events, ["battery"])
+        XCTAssertNil(delegate.batteryCareShutdownResult)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        finish?.resume(returning: .unconfirmed)
+        await fulfillment(of: [replied], timeout: 2)
+        XCTAssertEqual(events, ["battery", "audio", "scheduler", "reply"])
+        XCTAssertEqual(delegate.batteryCareShutdownResult, .unconfirmed)
+    }
+
+    func testBatteryShutdownPrecedesBlockedAudioAndRetainsUnconfirmedResultExactlyOnce() async {
+        var batteryCalls = 0
+        let batteryEntered = expectation(description: "battery shutdown starts")
+        let lifecycle = AppTerminationLifecycleSpy(blockAudioShutdown: true)
+        let delegate = AppDelegate(releasePageOpener: { _ in },
+            batteryShutdown: {
+                batteryCalls += 1
+                batteryEntered.fulfill()
+                return .unconfirmed
+            },
+            audioShutdown: { await lifecycle.shutdownAudio() },
+            schedulerStop: { await lifecycle.stopScheduler() },
+            terminationReply: { lifecycle.reply($0) })
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
+        await fulfillment(of: [batteryEntered], timeout: 2)
+        XCTAssertEqual(batteryCalls, 1)
+        XCTAssertEqual(delegate.batteryCareShutdownResult, .unconfirmed)
+        XCTAssertTrue(lifecycle.events.isEmpty)
+        lifecycle.releaseAudioShutdown()
+        await lifecycle.waitForReply()
+        XCTAssertEqual(lifecycle.events, [.audioShutdown, .schedulerStop, .reply(true)])
+        XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateNow)
+        XCTAssertEqual(batteryCalls, 1)
+    }
+
     func testProductionAudioCompositionInjectsOneSharedAvailability() throws {
         let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
@@ -135,9 +227,11 @@ final class AppSamplingControllerTests: XCTestCase {
             store: MetricsStore()
         )
         let replies = AppTerminationReplyRecorder()
+        let batteryRevoked = expectation(description: "battery revoked before suspended audio startup exits")
         let delegate = AppDelegate(
             sparkleUpdateController: nil,
             releasePageOpener: { _ in },
+            batteryShutdown: { batteryRevoked.fulfill(); return .noControlAcquired },
             terminationReply: { accepted in replies.record(accepted) }
         )
         await audioEngine.blockPrepareRuntime()
@@ -151,6 +245,7 @@ final class AppSamplingControllerTests: XCTestCase {
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
         XCTAssertEqual(delegate.applicationShouldTerminate(NSApplication.shared), .terminateLater)
         await audioEngine.waitUntilPrepareRuntimeCanceled()
+        await fulfillment(of: [batteryRevoked], timeout: 2)
         XCTAssertEqual(replies.values, [])
         let shutdownCountBeforePrepareRelease = await audioEngine.shutdownCount()
         let stopAllCountBeforePrepareRelease = await audioEngine.stopAllCount()
@@ -171,13 +266,15 @@ final class AppSamplingControllerTests: XCTestCase {
 
     func testClosingAndReopeningPopoverKeepsOneDashboardIdentityAndAudioCoordinator() throws {
         let coordinator = TestAudioControlCoordinator()
+        let batteryCareModel = makeTestBatteryCareModel()
         let delegate = AppDelegate(releasePageOpener: { _ in })
         delegate.testingConfigureDashboardPopoverFactory(
             preferencesController: PreferencesController(
                 store: AppDelegatePreferencesStore(),
                 launchService: NoopLaunchAtLoginService()
             ),
-            audioControlCoordinator: coordinator
+            audioControlCoordinator: coordinator,
+            batteryCareModel: batteryCareModel
         )
 
         let firstPopover = delegate.testingResolveDashboardPopoverController()
@@ -188,6 +285,8 @@ final class AppSamplingControllerTests: XCTestCase {
 
         XCTAssertTrue(firstPopover === secondPopover)
         XCTAssertTrue(firstModel === secondModel)
+        XCTAssertTrue(firstPopover.testingBatteryCareModel === secondPopover.testingBatteryCareModel)
+        XCTAssertTrue(firstPopover.testingBatteryCareModel === batteryCareModel)
         XCTAssertTrue(firstModel.testingCoordinator === secondModel.testingCoordinator)
         XCTAssertEqual(coordinator.shutdownCallCount, 0)
     }
@@ -263,6 +362,7 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
     }
     private(set) var shutdownCallCount = 0
     private(set) var refreshSystemAudioAuthorizationCallCount = 0
+    var onRefreshSystemAudioAuthorization: (() async -> Void)?
 
     init(supportsProcessControls: Bool = false, snapshot: AudioControlSnapshot = .empty) {
         self.supportsProcessControls = supportsProcessControls
@@ -273,6 +373,7 @@ final class TestAudioControlCoordinator: AudioControlCoordinating {
     func start() async {}
     func refreshSystemAudioAuthorization() async {
         refreshSystemAudioAuthorizationCallCount += 1
+        await onRefreshSystemAudioAuthorization?()
     }
     func requestSystemAudioAccess() async {}
     func retryDevice(_ deviceUID: String) {}

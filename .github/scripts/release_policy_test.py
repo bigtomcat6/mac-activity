@@ -12,6 +12,16 @@ WORKFLOW_USES_LINE = re.compile(r"^\s*uses:\s*([^#\s]+)")
 
 
 class ReleasePolicyTests(unittest.TestCase):
+    def test_local_release_signs_battery_framework_before_core_and_app(self):
+        script = (REPO_ROOT / "scripts" / "install-local-release.command").read_text()
+        signing = script.split("resign_developer_id_app() {", 1)[1].split("\nquit_running_app()", 1)[0]
+        battery = 'sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/MacActivityBatteryControl.framework" --preserve-metadata=identifier,entitlements'
+        core = 'sign_developer_id_path "${BUILT_APP}/Contents/Frameworks/MacActivityCore.framework"'
+        app = 'sign_developer_id_path "${BUILT_APP}" --entitlements'
+        self.assertIn(battery, signing)
+        self.assertLess(signing.index(battery), signing.index(core))
+        self.assertLess(signing.index(core), signing.index(app))
+
     def test_external_workflow_actions_are_pinned_to_full_commit_sha(self):
         workflow_dir = REPO_ROOT / ".github" / "workflows"
 

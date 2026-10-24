@@ -126,6 +126,12 @@ final class DashboardPanelHost: NSObject, NSWindowDelegate {
         panel.setFrame(frame, display: true)
     }
 
+    func updatePlacement(anchorRect: NSRect, visibleFrame: NSRect, contentSize: NSSize) {
+        self.anchorRect = anchorRect
+        self.visibleFrame = visibleFrame
+        resizeContent(to: contentSize)
+    }
+
     func shouldDismiss(forEventWindow eventWindow: NSWindow?, mouseLocation: NSPoint) -> Bool {
         if isMenuTracking { return false }
 

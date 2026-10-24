@@ -230,8 +230,21 @@ final class DashboardPanelHostTests: XCTestCase {
 
         host.resizeContent(to: NSSize(width: 420, height: visibleFrame.height))
 
-        XCTAssertEqual(panel.frame.height, visibleFrame.height - DashboardPanelPlacement.defaultEdgeMargin * 2, accuracy: 0.5)
+        XCTAssertEqual(panel.frame.height, 1036, accuracy: 0.5)
+        XCTAssertLessThanOrEqual(panel.frame.maxY, anchorRect.minY - 6)
         XCTAssertTrue(visibleFrame.contains(panel.frame))
+    }
+
+    func testMovingAnchorRebudgetsActualViewportWithoutOverlappingAnchor() throws {
+        let host = makeShownHost(shouldReduceMotion: { true })
+        defer { host.destroy() }
+        let panel = try XCTUnwrap(host.panel)
+        host.updatePlacement(anchorRect: NSRect(x: 500, y: 310, width: 24, height: 24),
+            visibleFrame: NSRect(x: 0, y: 0, width: 1200, height: 400),
+            contentSize: NSSize(width: 420, height: 700))
+        XCTAssertEqual(panel.frame.height, 296, accuracy: 1)
+        XCTAssertEqual(panel.contentViewController?.view.bounds.height, 296)
+        XCTAssertEqual(panel.frame.maxY, 304, accuracy: 1)
     }
 
     func testMenuTrackingSuppressesDismissalUntilTrackingEnds() throws {

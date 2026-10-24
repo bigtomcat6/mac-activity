@@ -125,6 +125,7 @@ private final class DashboardNavigationButton: NSButton {
     var actionHandler: () -> Void = {}
     var moveFocus: (Int) -> Void = { _ in }
     override var acceptsFirstResponder: Bool { true }
+    override var canBecomeKeyView: Bool { isEnabled && !isHiddenOrHasHiddenAncestor }
     override var intrinsicContentSize: NSSize { NSSize(width: 31.5, height: 28) }
 
     init() {

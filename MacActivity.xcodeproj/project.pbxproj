@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		03E904FAB09F01048D1484DE /* StatusSummaryModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A22AEFACB820B39E6512D05F /* StatusSummaryModelTests.swift */; };
 		051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */; };
+		077BFA9722FAFEA8E5FA5F5A /* UnavailableBatteryCareServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0935CEA773CD33AA7D7BA89D /* UnavailableBatteryCareServiceTests.swift */; };
 		078F652EDE21CCEB0AC6E491 /* ActiveProcessMemoryLayout.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */; };
 		0A15C93F27A3E4AD8D6B710D /* FakeProcessTapRetryScheduler.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */; };
 		0ADC9557218EDD2F7F6667F9 /* AudioIOProcStreamUsage.swift in Sources */ = {isa = PBXBuildFile; fileRef = D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */; };
@@ -21,20 +22,25 @@
 		0F997EFB2933D1DF01944138 /* EnergyImpactProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6C57F502EC1B86CD070FE38 /* EnergyImpactProvider.swift */; };
 		10A7E533EB2CE7F1631C7D95 /* AudioDeviceVolumeService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4A95453EF1760F93579037B1 /* AudioDeviceVolumeService.swift */; };
 		15F7BD4C4625677230D370A6 /* EnergyImpactModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = A853062000D99B74117E656B /* EnergyImpactModel.swift */; };
+		16DB10B11A0241D124501E29 /* MacActivityBatteryControl.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; };
 		16ECB6A0AD84B607F511085E /* SummaryFormatterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F38E147AABF6C15F42ABA13 /* SummaryFormatterTests.swift */; };
 		16F46C34538525E3E05606BF /* SummaryFormatter.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC71A1F1843F39EF709F970B /* SummaryFormatter.swift */; };
 		17C8C8D688BB94F85DBDE1DC /* CPUProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F80A7CF6CB9E39D7858C692 /* CPUProvider.swift */; };
 		18558BCD3B392A73BD9D7511 /* AudioSystemAccessServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BBC5683822CA2C4BECC68309 /* AudioSystemAccessServiceTests.swift */; };
 		1980CBF18D396837A7F5647C /* AudioControlComponentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8B0908BC77FCB252557723D /* AudioControlComponentTests.swift */; };
+		19E162B020738DDAB630D8FB /* BatteryCareSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84B90C9FB62436A4BF9DC5AB /* BatteryCareSessionTests.swift */; };
 		1AA15D8699BC3962C6A808DE /* AudioFeatureAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E4B084B5C8220E7D26CBC42 /* AudioFeatureAvailability.swift */; };
 		1B0012B1804C865A55F713DA /* EnergyImpactTraceReplayTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B66490C62BF6EE5944B75C67 /* EnergyImpactTraceReplayTests.swift */; };
 		1B3A5C1A4385179E39C90CDF /* DashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41333E534CBDB52CD351763E /* DashboardModel.swift */; };
 		1D6913AB70176C1AAC8B4A17 /* PowerFlowService.swift in Sources */ = {isa = PBXBuildFile; fileRef = F48823B7851BF0248B5AC177 /* PowerFlowService.swift */; };
 		1D8AC5B7D68C7124F9D55B7D /* PowerFlowNativeValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF2B35E7C0FCF6A5A646CC0A /* PowerFlowNativeValidationTests.swift */; };
 		1DD175A5FE9EF36992C90E59 /* PowerFlowModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6F052E4022D22C8A4859EA3D /* PowerFlowModel.swift */; };
+		1E1858FAC21A45E1006A5490 /* BatteryCareTemporaryModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 439DD7B5FE3AEE8651F6CB8F /* BatteryCareTemporaryModeTests.swift */; };
 		1E841E980F91E6BD85A42803 /* AudioSystemMonitorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACFADB8DB7FD273E04239957 /* AudioSystemMonitorTests.swift */; };
+		1F9AEB2115F5A8C8BF0F903E /* MacActivityBatteryControl.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		1FAC48C685FF31A7F0E3EDD6 /* EnergyImpactNativeValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF3F9A52E14150913C149C69 /* EnergyImpactNativeValidationTests.swift */; };
 		203728ECA31C7E130830CBD3 /* AudioDashboardModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E5EB0BFFA6A7936E4EAD230 /* AudioDashboardModelTests.swift */; };
+		228E5F4DF323286CCCA53CF7 /* MacActivityBatteryControl.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; };
 		233FD931524150238F6754C5 /* EnergyImpactPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 291B3BAC9EC9B7DBFADACE15 /* EnergyImpactPresentationTests.swift */; };
 		23B09897F18FF13342F30D63 /* SystemPowerFlowReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0AC7F59424BBE6D89AF0082E /* SystemPowerFlowReader.swift */; };
 		24E2A04F45694E2244E16C74 /* UpdateCandidateSelector.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC750397189E5163AFA2AE33 /* UpdateCandidateSelector.swift */; };
@@ -53,6 +59,7 @@
 		308A6F8826A4F846A780EEF7 /* AudioDeviceVolumeServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 214C8E41A139972527F0B2AC /* AudioDeviceVolumeServiceTests.swift */; };
 		31542F075E8801EA33B52763 /* MetricsStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 36396300E73F3D423CCDC77C /* MetricsStore.swift */; };
 		33D87FB760621658DFD4DC22 /* AudioRouteMetadataTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2BA440DCE79490C0E6C08F4 /* AudioRouteMetadataTests.swift */; };
+		35E056F73D9BF435B38D1AF6 /* BatteryCareLifecycleBridgeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F03ACDF62AC83E64BAF6D298 /* BatteryCareLifecycleBridgeTests.swift */; };
 		39C7DEFCA04248110B5A5B9D /* main.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B87283E6D09D63E041FCDE7 /* main.swift */; };
 		3A4477BDC23605E2899597CD /* MetricsSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7215BA634217D46E3C2AFD25 /* MetricsSnapshotTests.swift */; };
 		3F60AD2BBC32608CE8F87545 /* PreferencesController.swift in Sources */ = {isa = PBXBuildFile; fileRef = ECAE9B17ED4BB6141029863B /* PreferencesController.swift */; };
@@ -60,6 +67,7 @@
 		411310E9DEAD0C140B40FC89 /* PowerFlowDiagramFixtures.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFEFB082A55C13C111773128 /* PowerFlowDiagramFixtures.swift */; };
 		442969EB596E699488524CFD /* UpdateCandidateSelectorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 90B7A168A4B1458DEE0615A8 /* UpdateCandidateSelectorTests.swift */; };
 		44A8EA3A8D04C637634D8037 /* BatteryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 32BA3F0E90FEDB093D4676DC /* BatteryProviderTests.swift */; };
+		44FD0959D9DB10EE9E3201F1 /* BatteryCareModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B5829C334DE57A947EF9E54 /* BatteryCareModelsTests.swift */; };
 		457D9DCD12136541E854413A /* DashboardTrendAverager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */; };
 		45A7297E010B7FBDC275DADA /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 524520F5A3160DC0ECB2A0A3 /* Assets.xcassets */; };
 		481D37333B0C15E0EE471191 /* LazyShellControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */; };
@@ -80,6 +88,7 @@
 		5A1E4E5BB55A15711E5F6750 /* DashboardPanelHostTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B086DAA51C893B2C5983DFB /* DashboardPanelHostTests.swift */; };
 		5C508CEA7BAD8358A16637D4 /* ActiveCleanReleaseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 145DEBD6281C8023F8F67724 /* ActiveCleanReleaseView.swift */; };
 		5D40CBFA3B3D0D9F90B8F138 /* ProcessTapDSP.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B4CC9E01B6EB74B7E39DFF8 /* ProcessTapDSP.swift */; };
+		62E98B8BAE6D9F3BDEBB2035 /* BatteryCareModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F681B52CA04EDE8822E3829 /* BatteryCareModelTests.swift */; };
 		676861ECFEC606BD9E52F416 /* AudioBufferListTestStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7AAFA8AD36E5C20E3BAE74EF /* AudioBufferListTestStorage.swift */; };
 		67CEB519AF1FE1267B638753 /* PowerFlowDiagramViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 624FBB5E67E53667C38E4F6E /* PowerFlowDiagramViewTests.swift */; };
 		6BB2FA94DA8CA1CDF11730C9 /* PowerFlowDiagramVisualValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 975DAA2BF3DACD44D69F35E9 /* PowerFlowDiagramVisualValidationTests.swift */; };
@@ -87,16 +96,20 @@
 		6C74E7E1116DC1208956190B /* MacActivityCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		6CB01C94198BC2092E503846 /* AudioControlComponentFixture.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2FB61A6354DAF07CBE148AF0 /* AudioControlComponentFixture.swift */; };
 		6D54144EB0A0E5918A23CFEF /* StatusSummaryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7280E98435B3B94E406813A /* StatusSummaryModel.swift */; };
+		6D76AF363D798501B15D34DF /* MacActivityBatteryControl.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		6E845B2E62F82E4291E88E11 /* ActiveCleanupModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F7B4887EAAB65C8DBBE0314A /* ActiveCleanupModelTests.swift */; };
 		6F092D8E516DFC216207A5D7 /* ActiveCleanReleaseViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 10490BB072DAB977325EFD85 /* ActiveCleanReleaseViewTests.swift */; };
 		6FE9479DD0E4F0DD7F88D79C /* PreferencesControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C815ADC2D07A903BFAD4C90B /* PreferencesControllerTests.swift */; };
 		707B66E18414DF130242B029 /* AudioTapHardwareDescriptionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D2DF3EE3856C86AACEB3978 /* AudioTapHardwareDescriptionTests.swift */; };
 		711A78E86F69C2AF5048F07B /* SparkleUpdateControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A3FB3175D5B77C9D81C6B1 /* SparkleUpdateControllerTests.swift */; };
+		713E5BD684B68AD2343344A4 /* MacActivityBatteryControl.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		72C95F64FF27195CA6B8A547 /* PowerFlowSMCReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D5816AA506AAB1C9A4301982 /* PowerFlowSMCReaderTests.swift */; };
 		733043081DFD6C327BFE40C5 /* AudioRoutePlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 350FA4C7A34BCD4BAF854807 /* AudioRoutePlannerTests.swift */; };
+		74896A01EC6D2228EEA84CBD /* BatteryCareModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71B3F31DBFB7E07946A02FA8 /* BatteryCareModels.swift */; };
 		74DCCA48AC3A91932C22556A /* FakeAudioHALBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */; };
 		754E6D11CBB044D143AE0022 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 46B63F02833B7A142E6D3C19 /* AppLanguage.swift */; };
 		75D742F910AE1AC2B65D75A8 /* MetricKind.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CF6C7817370CFE146811438 /* MetricKind.swift */; };
+		78FB86ABB90690B985F74F49 /* BatteryCareTestBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 77DA64B9820B2550822FB6D9 /* BatteryCareTestBackend.swift */; };
 		7A14AE60E94454E455406530 /* EnergyImpactProcessReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E756788A431A050E50FDAA /* EnergyImpactProcessReaderTests.swift */; };
 		7B1D24512C0A80195755C3BF /* ActiveProcessMemoryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 98B74985CC421B77A15255C4 /* ActiveProcessMemoryLayoutTests.swift */; };
 		7CA75E9DA5AE16CBF75521EB /* EnergyImpactStatisticsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7F7B5639CB348DA6FDAE9279 /* EnergyImpactStatisticsTests.swift */; };
@@ -104,6 +117,7 @@
 		7D107F3CBF7D0F208AE9CDE6 /* AudioSystemAccessCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 581CD316F6F5E02DFF4BEA52 /* AudioSystemAccessCoordinatorTests.swift */; };
 		7D184325401391E30FCB55B5 /* ActiveAppMemoryProvidingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 782F556D94AA82856902F0AD /* ActiveAppMemoryProvidingTests.swift */; };
 		81525E2FD6BFFE11475B033B /* AppSamplingControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16DC22E8B8CB44094748DE32 /* AppSamplingControllerTests.swift */; };
+		82355647CFCBBBA1A795CB2D /* BatteryCareSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7B5568B616D39AD2B76A9370 /* BatteryCareSession.swift */; };
 		83D17CCB57BACDD3F3BBFF9E /* EnergyImpactSamplerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 76C6A386B2AFC5BB533B7BD4 /* EnergyImpactSamplerTests.swift */; };
 		845758400AD48C161ACC3D6F /* AudioControlModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 12F0B26F5641E9B7B5BD7B88 /* AudioControlModelsTests.swift */; };
 		84FEABA49B449C0C18678B46 /* AudioTapHardware.swift in Sources */ = {isa = PBXBuildFile; fileRef = E623687BEBC14372C97ABDDF /* AudioTapHardware.swift */; };
@@ -111,9 +125,11 @@
 		8677186DFD2E23787BCA45DC /* PowerFlowTypes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 114186488F622ACBE78995BC /* PowerFlowTypes.swift */; };
 		867FAEE8D9ACD8D9BB154049 /* ReleaseVersion.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFB6298EE54FFEF176A7403A /* ReleaseVersion.swift */; };
 		86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */; };
+		86FF86C878342F75BEFAC7DE /* UnavailableBatteryCareService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 146F74B49E552498CF832391 /* UnavailableBatteryCareService.swift */; };
 		8D254CD3AD58B0DC4724B599 /* AudioSystemAuthorizationReaderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */; };
 		8EFC7A6A40CDB70ADADBDE95 /* DashboardPanelSupportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E0E4041EDCCD545E8366EF6C /* DashboardPanelSupportTests.swift */; };
 		8F1DC13379FCD95356F84172 /* PowerFlowPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B452A7B4CBE18AF20A5DF093 /* PowerFlowPresentation.swift */; };
+		902F7D64D79F2F51D87681E8 /* MacActivityBatteryControl.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; };
 		9096C7171E329C3036621E33 /* ActiveProcessMemoryList.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */; };
 		942C0019C9F31F025BD8F880 /* AudioDashboardModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EE3F62C8712E5DD553C15FA /* AudioDashboardModel.swift */; };
 		9502A3C85956E04B6942C9BD /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */; };
@@ -126,50 +142,65 @@
 		9AA5402E9D5A714CBB34311A /* MemoryProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B94D2FEA382B619F7773A1B4 /* MemoryProviderTests.swift */; };
 		A1C4B920CF9DA8C8F81F347F /* EnergyImpactPublicationState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 443015F2FA5999B5DE29199C /* EnergyImpactPublicationState.swift */; };
 		A1DC0091AFAA3500C5AAA85F /* ActiveAppMemoryProviding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */; };
+		A50E9EB2A4B9340A6D5CE600 /* MacActivityBatteryControl.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; };
 		A5384482A580D8AC8014D60B /* DashboardPresentationEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3C8776FEAAEAA1CA9CE5018 /* DashboardPresentationEnvironment.swift */; };
 		A68EB502185986836D16E0A9 /* AudioSystemAuthorizationRequesterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE476B2CB0F36CA3A88C1230 /* AudioSystemAuthorizationRequesterTests.swift */; };
 		A9BECB3CD32A259E10292422 /* DashboardPopoverControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */; };
+		AA99813662F2A758552CAF8D /* BatteryCareProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD4D8A6D9D1213421D12DA2B /* BatteryCareProtocol.swift */; };
+		AAF915F2C9A0702B90C7904E /* BatteryCareLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6EBD9864F35CF9B9C671721C /* BatteryCareLayoutTests.swift */; };
 		AD712FC4EBAA68F9349BACD3 /* AppPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */; };
 		AEEEDA0E878CB2F89BEC78DD /* AudioSystemAuthorizationRequester.swift in Sources */ = {isa = PBXBuildFile; fileRef = BFB4190A870855302E743ABB /* AudioSystemAuthorizationRequester.swift */; };
 		AF9C56A213AC3AEA44FACAE5 /* AudioSystemAuthorizationReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F3AC2A6A27985AB56564929 /* AudioSystemAuthorizationReader.swift */; };
+		AFAD309B4BEDF64A14ECE07E /* BatteryCareControlsViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EC2F1C2BE7D3C8DB0C99B0B /* BatteryCareControlsViewTests.swift */; };
 		AFE2E04264F72F43BB2187BA /* DashboardPanelSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29D3B130CB7A7024B9677000 /* DashboardPanelSupport.swift */; };
 		B008413B7CBE75EA36C9FA65 /* ProcessTapVolumeEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 751602B497EFBC73C88631CA /* ProcessTapVolumeEngine.swift */; };
+		B0947522752A83F8BAC9D13C /* BatteryCarePolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB87B548A6AD7F4C9775508F /* BatteryCarePolicy.swift */; };
 		B1D58B1C23E57C4B2EFA43B2 /* FanProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 622432CA2E5A5BDE1D01C6D9 /* FanProvider.swift */; };
 		B2FCD7583F98E66D0FB507E4 /* DashboardPopoverController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D95C239D721596A4768CE46 /* DashboardPopoverController.swift */; };
 		B318222CE0D85B319EA3573F /* EnergyImpactOwnershipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5BF7D4EC5F491FFCA175F513 /* EnergyImpactOwnershipTests.swift */; };
 		B3C6A01640BB5B354B59AF73 /* LaunchAtLoginService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3DFFA707E889556C69367275 /* LaunchAtLoginService.swift */; };
 		B4056ECF58614FBE94D6B1F1 /* EnergyImpactProcessReader.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89A4859CDCAE97D91FDA5990 /* EnergyImpactProcessReader.swift */; };
+		B46953E4192592E905E090D4 /* BatteryCareSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EC8449671FF575A0E9B8C38 /* BatteryCareSettingsView.swift */; };
 		B517658B9F459DABA4512734 /* ActiveProcessMemoryRow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */; };
 		B5B1142091C4E8D575C3F253 /* BatteryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */; };
 		B5EF90985452340276CD86DB /* AudioFeatureAvailabilityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F35053D8A15E42D79FE09D8F /* AudioFeatureAvailabilityTests.swift */; };
 		B6059BE6D5CE1387694F8BBD /* EnergyImpactSampler.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A1F7A521F369C3B108ACABF /* EnergyImpactSampler.swift */; };
 		B62368B572182AE9A25D2187 /* DashboardTrendLocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5773E6B2EBA7BBAABE1570DF /* DashboardTrendLocalizationTests.swift */; };
+		B64E89AAA9ABF07EA9ACAA7F /* BatteryCareModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2B778756365D2319EB27E1C /* BatteryCareModel.swift */; };
 		B70072555CA37599262ACDF0 /* DashboardTrendAveragerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9E7865A23C6BF0DA2F9A359 /* DashboardTrendAveragerTests.swift */; };
 		B993782CB47CAC5AB917052A /* MacActivityCore.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
+		BBC8C7E53579FA1E55708250 /* BatteryCareControlsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A98B76F4ACA6F32B0EC0ADB4 /* BatteryCareControlsView.swift */; };
 		BD3C6B2AEFF6E988ED8E6694 /* MetricProviderSampleTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 018FE6516B13F8FCE943C7CB /* MetricProviderSampleTests.swift */; };
 		BDF8CCE31C580FDBF7ED7FA1 /* EnergyImpactViewTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DFFF072E13B7DBEA690C77C /* EnergyImpactViewTests.swift */; };
 		BE09C8742A006C5C98F3B023 /* DashboardAdaptivePopoverHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = 731A96AE256F55244FC15529 /* DashboardAdaptivePopoverHost.swift */; };
+		BFAAC7F1998C5DF27FB5F03F /* BatteryCareLimitSlider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A70F87BCB2215105A73509D /* BatteryCareLimitSlider.swift */; };
+		C1082856301D261231076E4C /* BatteryCareLifecyclePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C2ECC650EE69942AF896343 /* BatteryCareLifecyclePolicyTests.swift */; };
 		C1F4AA751EAA33731416C3E5 /* AudioProcessServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 004ECCFE3B2C36753F3F26B9 /* AudioProcessServiceTests.swift */; };
 		C34CFD6BA2083C5B981BFE7F /* DashboardTrendChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = C31F3BF10E1FC8BC0CBE82A4 /* DashboardTrendChart.swift */; };
 		C356257FDCCCF0EA9207439D /* SmoothPathProbe.swift in Sources */ = {isa = PBXBuildFile; fileRef = BD0A66158F9232D3D8735DCF /* SmoothPathProbe.swift */; };
 		C625A1AEA9B766D792A29FD6 /* AudioRoutingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = DAC3D5561158D1EC418C2BC9 /* AudioRoutingModels.swift */; };
+		C6BF645DE499D6F74097F2E6 /* BatteryCareIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5706847DB828D9F38B9389C8 /* BatteryCareIntegrationTests.swift */; };
 		C758FD3134C4FC4F259D6C12 /* MetricsStoreHistoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8428982312A6028D3AC20D1F /* MetricsStoreHistoryTests.swift */; };
 		C881AFF3738010EDBEC7AA4E /* ProcessTapVolumeEngineTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E4322AB6B59C2521EDE0BB /* ProcessTapVolumeEngineTests.swift */; };
 		C94D70721B9A9210B31F328D /* AudioProcessService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 783BAC8E92D1DF859D51D06B /* AudioProcessService.swift */; };
 		CA966D34C7D256937901291F /* EnergyImpactPublicationStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3CBD9E2D4FE41FA3CD30931 /* EnergyImpactPublicationStateTests.swift */; };
 		CC4C0545E209D780F12C21BE /* AudioSystemMonitor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8A4643019F12953DA4A2FBD2 /* AudioSystemMonitor.swift */; };
 		CC96AD1A721BD82A5462EF6A /* MemoryProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = EDC3E242AE71B79619755C0D /* MemoryProvider.swift */; };
+		CD349A96376F5DE24A9AB749 /* MacActivityBatteryControl.framework in Embed Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CD615D0A7A12AB82049484F5 /* PreferencesStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4797F590CDBAA38A16A0E76D /* PreferencesStore.swift */; };
 		CDC72A61ACD48F8FFF5D3616 /* AudioRouteTopology.swift in Sources */ = {isa = PBXBuildFile; fileRef = 035BE605FC14FC367F605725 /* AudioRouteTopology.swift */; };
+		CEB2594E507B8EFB439B8920 /* BatteryCareLifecycleBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97E1CE54AA2B25813D8F4B8D /* BatteryCareLifecycleBridge.swift */; };
 		CF45AF27EDBD4FB898FC14D4 /* DiskCleanupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */; };
 		CFCE940970D4E01B263187AE /* DashboardPanelHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A8480495257E54BEFA5505CB /* DashboardPanelHost.swift */; };
 		D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */; };
 		D2EED3D79D2450518952BAE5 /* DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 80D21F3C01CE00EFD700E003 /* DashboardView.swift */; };
 		D490D4024E6274B6F559D0A3 /* DashboardTrendChartLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */; };
+		D587C0838DAAA5E07552441E /* BatteryCarePolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D9A03095733061182F7713FD /* BatteryCarePolicyTests.swift */; };
 		D6CDA4FF8D1DF918C4C7D42E /* PreferencesStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */; };
 		D7A61186072D694962A32AEC /* CoreAudioHALBackend.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B047FCBC5C7F972AA959067 /* CoreAudioHALBackend.swift */; };
 		D8142466738CAAAF7E09698E /* TemperatureProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = E49ECEEFF448A10DF483AD89 /* TemperatureProvider.swift */; };
 		D831AE2FAF5D40E0DB1A0A5E /* AppPresentationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */; };
+		D9554179E547CAA2747DC532 /* MacActivityBatteryControl.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */; };
 		DA4161AA7426E46102112DA9 /* ProcessTapDSPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CD64811702A042AB76985D4 /* ProcessTapDSPTests.swift */; };
 		DDE03109BB32E7B770459990 /* MetricProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4CC85A29241CC6F902A0531F /* MetricProvider.swift */; };
 		DE87E8B9F0BBFA1E45FF2961 /* EnergyImpactOwnership.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7244116397B5BA1B99ACDEBD /* EnergyImpactOwnership.swift */; };
@@ -206,6 +237,13 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
+		4B689E1879933391A87D74E3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4026CFE3382FB607DE8F1A64;
+			remoteInfo = MacActivityBatteryControl;
+		};
 		51A33EC5F2B9AF211838E344 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
@@ -220,6 +258,27 @@
 			remoteGlobalIDString = 1A1E314FBDA8A359F0BF70F4;
 			remoteInfo = MacActivityCore;
 		};
+		BF891FEDCDB592EEC8B941DB /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4026CFE3382FB607DE8F1A64;
+			remoteInfo = MacActivityBatteryControl;
+		};
+		E0158631156504B332D8DF16 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4026CFE3382FB607DE8F1A64;
+			remoteInfo = MacActivityBatteryControl;
+		};
+		E4C79E910B991F3644AD7FE3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4026CFE3382FB607DE8F1A64;
+			remoteInfo = MacActivityBatteryControl;
+		};
 		EF63BA3F7F86204CE9FC0DD7 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
@@ -227,9 +286,27 @@
 			remoteGlobalIDString = 742D2D18AB5819DAE937E70C;
 			remoteInfo = "Mac Activity";
 		};
+		F9386F36615D563E1D392DAD /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 872108165E1F8FC4AA4E9012 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 4026CFE3382FB607DE8F1A64;
+			remoteInfo = MacActivityBatteryControl;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		3EF6C6F2D5DCFF76C24A0E12 /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				1F9AEB2115F5A8C8BF0F903E /* MacActivityBatteryControl.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		86E52D0E973ED262FB902980 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -237,6 +314,7 @@
 			dstSubfolderSpec = 10;
 			files = (
 				B993782CB47CAC5AB917052A /* MacActivityCore.framework in Embed Frameworks */,
+				713E5BD684B68AD2343344A4 /* MacActivityBatteryControl.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -248,6 +326,18 @@
 			dstSubfolderSpec = 10;
 			files = (
 				6C74E7E1116DC1208956190B /* MacActivityCore.framework in Embed Frameworks */,
+				CD349A96376F5DE24A9AB749 /* MacActivityBatteryControl.framework in Embed Frameworks */,
+			);
+			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		EC9F73888822B1F02B3E6BCD /* Embed Frameworks */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 10;
+			files = (
+				6D76AF363D798501B15D34DF /* MacActivityBatteryControl.framework in Embed Frameworks */,
 			);
 			name = "Embed Frameworks";
 			runOnlyForDeploymentPostprocessing = 0;
@@ -265,12 +355,14 @@
 		0742EBD55AA887021B006D58 /* DashboardPopoverControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPopoverControllerTests.swift; sourceTree = "<group>"; };
 		0817114F7B7E0BE63FF3F5A0 /* PreferencesWindowController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesWindowController.swift; sourceTree = "<group>"; };
 		091371EEC06035449AAFB391 /* MetricsSchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSchedulerTests.swift; sourceTree = "<group>"; };
+		0935CEA773CD33AA7D7BA89D /* UnavailableBatteryCareServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnavailableBatteryCareServiceTests.swift; sourceTree = "<group>"; };
 		0AC7F59424BBE6D89AF0082E /* SystemPowerFlowReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemPowerFlowReader.swift; sourceTree = "<group>"; };
 		0B086DAA51C893B2C5983DFB /* DashboardPanelHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPanelHostTests.swift; sourceTree = "<group>"; };
 		0BC0F4083BB7EB538AB276D4 /* de */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = de; path = de.lproj/Localizable.strings; sourceTree = "<group>"; };
 		0CDC8315834D75CE8BAD6716 /* DashboardTabPicker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTabPicker.swift; sourceTree = "<group>"; };
 		0D2DF3EE3856C86AACEB3978 /* AudioTapHardwareDescriptionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioTapHardwareDescriptionTests.swift; sourceTree = "<group>"; };
 		0E5EB0BFFA6A7936E4EAD230 /* AudioDashboardModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardModelTests.swift; sourceTree = "<group>"; };
+		0EC2F1C2BE7D3C8DB0C99B0B /* BatteryCareControlsViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareControlsViewTests.swift; sourceTree = "<group>"; };
 		10490BB072DAB977325EFD85 /* ActiveCleanReleaseViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanReleaseViewTests.swift; sourceTree = "<group>"; };
 		114186488F622ACBE78995BC /* PowerFlowTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowTypes.swift; sourceTree = "<group>"; };
 		1155FAC02C418CB2326DE196 /* PowerFlowDiagramLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramLayoutTests.swift; sourceTree = "<group>"; };
@@ -278,6 +370,7 @@
 		12F0B26F5641E9B7B5BD7B88 /* AudioControlModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlModelsTests.swift; sourceTree = "<group>"; };
 		1312C2453A14DC4E4201975A /* LazyShellControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LazyShellControllerTests.swift; sourceTree = "<group>"; };
 		145DEBD6281C8023F8F67724 /* ActiveCleanReleaseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanReleaseView.swift; sourceTree = "<group>"; };
+		146F74B49E552498CF832391 /* UnavailableBatteryCareService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UnavailableBatteryCareService.swift; sourceTree = "<group>"; };
 		153AAE3970DB7FC89AF0F7CD /* UpdateChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateChannel.swift; sourceTree = "<group>"; };
 		15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentationCoordinator.swift; sourceTree = "<group>"; };
 		16DC22E8B8CB44094748DE32 /* AppSamplingControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSamplingControllerTests.swift; sourceTree = "<group>"; };
@@ -294,6 +387,7 @@
 		28B16690F3A93F5DF6A08150 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 		291B3BAC9EC9B7DBFADACE15 /* EnergyImpactPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactPresentationTests.swift; sourceTree = "<group>"; };
 		29D3B130CB7A7024B9677000 /* DashboardPanelSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPanelSupport.swift; sourceTree = "<group>"; };
+		2A70F87BCB2215105A73509D /* BatteryCareLimitSlider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareLimitSlider.swift; sourceTree = "<group>"; };
 		2B7F712CB5FD323E4BDCD1B9 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		2BC2395BD346EE615CD7787A /* SparkleUpdateController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SparkleUpdateController.swift; sourceTree = "<group>"; };
 		2E667EB81235A9CF840D61AB /* EnergyImpactModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactModelTests.swift; sourceTree = "<group>"; };
@@ -305,6 +399,7 @@
 		35C82068288F70203DE52633 /* AudioProcessProfileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessProfileTests.swift; sourceTree = "<group>"; };
 		36396300E73F3D423CCDC77C /* MetricsStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStore.swift; sourceTree = "<group>"; };
 		399F9E57090E6EAEA2C0D0EB /* BatteryProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryProvider.swift; sourceTree = "<group>"; };
+		3B5829C334DE57A947EF9E54 /* BatteryCareModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareModelsTests.swift; sourceTree = "<group>"; };
 		3CF6C7817370CFE146811438 /* MetricKind.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricKind.swift; sourceTree = "<group>"; };
 		3D0B3BDDD156D72062607540 /* FakeAudioTapHardware.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioTapHardware.swift; sourceTree = "<group>"; };
 		3D95C239D721596A4768CE46 /* DashboardPopoverController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPopoverController.swift; sourceTree = "<group>"; };
@@ -314,6 +409,7 @@
 		41333E534CBDB52CD351763E /* DashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardModel.swift; sourceTree = "<group>"; };
 		420BEFFE5B99B07B33CAF5DE /* BatterySystemPowerSourceReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatterySystemPowerSourceReader.swift; sourceTree = "<group>"; };
 		422B3F924F7EC6DA0DF6493F /* NetworkProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NetworkProviderTests.swift; sourceTree = "<group>"; };
+		439DD7B5FE3AEE8651F6CB8F /* BatteryCareTemporaryModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareTemporaryModeTests.swift; sourceTree = "<group>"; };
 		443015F2FA5999B5DE29199C /* EnergyImpactPublicationState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactPublicationState.swift; sourceTree = "<group>"; };
 		443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryRow.swift; sourceTree = "<group>"; };
 		45D1DD726FA7C8DA7C5624CE /* AudioSystemAccessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAccessService.swift; sourceTree = "<group>"; };
@@ -330,6 +426,7 @@
 		544D433B4AB9592683ADF90F /* ProcessTapRetrySchedulerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTapRetrySchedulerTests.swift; sourceTree = "<group>"; };
 		54B8E83E562971C06DF5266B /* StatusBarSummaryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StatusBarSummaryLayoutTests.swift; sourceTree = "<group>"; };
 		55B02C737DA82873951C86D0 /* AppLocalizationController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLocalizationController.swift; sourceTree = "<group>"; };
+		5706847DB828D9F38B9389C8 /* BatteryCareIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareIntegrationTests.swift; sourceTree = "<group>"; };
 		5773E6B2EBA7BBAABE1570DF /* DashboardTrendLocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendLocalizationTests.swift; sourceTree = "<group>"; };
 		581CD316F6F5E02DFF4BEA52 /* AudioSystemAccessCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAccessCoordinatorTests.swift; sourceTree = "<group>"; };
 		5A485B93CFFE51CC3584E09D /* ja */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ja; path = ja.lproj/Localizable.strings; sourceTree = "<group>"; };
@@ -343,12 +440,15 @@
 		64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardCardLayoutTests.swift; sourceTree = "<group>"; };
 		67191FA29FAD0078810BA81D /* AudioDashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardView.swift; sourceTree = "<group>"; };
 		67B119AE4B3F7731994DB6E6 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		6C2ECC650EE69942AF896343 /* BatteryCareLifecyclePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareLifecyclePolicyTests.swift; sourceTree = "<group>"; };
 		6C32D236DC00F0002A632280 /* AudioSystemAuthorizationReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationReaderTests.swift; sourceTree = "<group>"; };
 		6E4B084B5C8220E7D26CBC42 /* AudioFeatureAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeatureAvailability.swift; sourceTree = "<group>"; };
+		6EBD9864F35CF9B9C671721C /* BatteryCareLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareLayoutTests.swift; sourceTree = "<group>"; };
 		6EE3F62C8712E5DD553C15FA /* AudioDashboardModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioDashboardModel.swift; sourceTree = "<group>"; };
 		6F052E4022D22C8A4859EA3D /* PowerFlowModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowModel.swift; sourceTree = "<group>"; };
 		70E1BBE46FD4D32BD54A627F /* AppPresentationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPresentationCoordinatorTests.swift; sourceTree = "<group>"; };
 		716895D62F7DE80DDB7F6D63 /* ActiveAppMemoryProviding.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAppMemoryProviding.swift; sourceTree = "<group>"; };
+		71B3F31DBFB7E07946A02FA8 /* BatteryCareModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareModels.swift; sourceTree = "<group>"; };
 		7215BA634217D46E3C2AFD25 /* MetricsSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsSnapshotTests.swift; sourceTree = "<group>"; };
 		722D7AC69D9FCBD920BA78EF /* Mac Activity.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Mac Activity.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		7244116397B5BA1B99ACDEBD /* EnergyImpactOwnership.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactOwnership.swift; sourceTree = "<group>"; };
@@ -358,28 +458,34 @@
 		751602B497EFBC73C88631CA /* ProcessTapVolumeEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProcessTapVolumeEngine.swift; sourceTree = "<group>"; };
 		76A0523ECC4403F91DB89229 /* ActiveProcessMemoryLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryLayout.swift; sourceTree = "<group>"; };
 		76C6A386B2AFC5BB533B7BD4 /* EnergyImpactSamplerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactSamplerTests.swift; sourceTree = "<group>"; };
+		77DA64B9820B2550822FB6D9 /* BatteryCareTestBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareTestBackend.swift; sourceTree = "<group>"; };
 		782F556D94AA82856902F0AD /* ActiveAppMemoryProvidingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveAppMemoryProvidingTests.swift; sourceTree = "<group>"; };
 		783BAC8E92D1DF859D51D06B /* AudioProcessService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessService.swift; sourceTree = "<group>"; };
 		7935E5143511FB753D77DD5F /* PreferencesViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesViewTests.swift; sourceTree = "<group>"; };
 		797C5C451A320B16D6A15BE9 /* PreferencesStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreferencesStoreTests.swift; sourceTree = "<group>"; };
 		7AAFA8AD36E5C20E3BAE74EF /* AudioBufferListTestStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioBufferListTestStorage.swift; sourceTree = "<group>"; };
+		7B5568B616D39AD2B76A9370 /* BatteryCareSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareSession.swift; sourceTree = "<group>"; };
 		7B87283E6D09D63E041FCDE7 /* main.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = main.swift; sourceTree = "<group>"; };
+		7EC8449671FF575A0E9B8C38 /* BatteryCareSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareSettingsView.swift; sourceTree = "<group>"; };
 		7F7B5639CB348DA6FDAE9279 /* EnergyImpactStatisticsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactStatisticsTests.swift; sourceTree = "<group>"; };
 		80D21F3C01CE00EFD700E003 /* DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardView.swift; sourceTree = "<group>"; };
 		816FA588F170D262AE6910E1 /* PowerFlowPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowPresentationTests.swift; sourceTree = "<group>"; };
 		828478C7D6573CE146721823 /* PowerFlowDiagramPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramPresentation.swift; sourceTree = "<group>"; };
 		839C30208126CCC3005C10C3 /* PowerFlowModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowModelTests.swift; sourceTree = "<group>"; };
 		8428982312A6028D3AC20D1F /* MetricsStoreHistoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MetricsStoreHistoryTests.swift; sourceTree = "<group>"; };
+		84B90C9FB62436A4BF9DC5AB /* BatteryCareSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareSessionTests.swift; sourceTree = "<group>"; };
 		859DCE0AB7347F5858ABF4B7 /* PowerFlowViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowViewTests.swift; sourceTree = "<group>"; };
 		88BD91E9197805330CB6529E /* PowerFlowDiagramLayout.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramLayout.swift; sourceTree = "<group>"; };
 		89A4859CDCAE97D91FDA5990 /* EnergyImpactProcessReader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactProcessReader.swift; sourceTree = "<group>"; };
 		8A4643019F12953DA4A2FBD2 /* AudioSystemMonitor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemMonitor.swift; sourceTree = "<group>"; };
 		8DFFF072E13B7DBEA690C77C /* EnergyImpactViewTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactViewTests.swift; sourceTree = "<group>"; };
+		8F681B52CA04EDE8822E3829 /* BatteryCareModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareModelTests.swift; sourceTree = "<group>"; };
 		90B7A168A4B1458DEE0615A8 /* UpdateCandidateSelectorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCandidateSelectorTests.swift; sourceTree = "<group>"; };
 		90E95B0B56AA23B56343FB1C /* EnergyImpactTypes.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactTypes.swift; sourceTree = "<group>"; };
 		9149AE30AD6FF272340491E9 /* DashboardAdaptiveHostTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardAdaptiveHostTests.swift; sourceTree = "<group>"; };
 		96F211773A1D33DF65F59C8D /* FakeAudioProcessOwnershipLeaseBroker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioProcessOwnershipLeaseBroker.swift; sourceTree = "<group>"; };
 		975DAA2BF3DACD44D69F35E9 /* PowerFlowDiagramVisualValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramVisualValidationTests.swift; sourceTree = "<group>"; };
+		97E1CE54AA2B25813D8F4B8D /* BatteryCareLifecycleBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareLifecycleBridge.swift; sourceTree = "<group>"; };
 		98B74985CC421B77A15255C4 /* ActiveProcessMemoryLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryLayoutTests.swift; sourceTree = "<group>"; };
 		9A1F7A521F369C3B108ACABF /* EnergyImpactSampler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactSampler.swift; sourceTree = "<group>"; };
 		9B047FCBC5C7F972AA959067 /* CoreAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CoreAudioHALBackend.swift; sourceTree = "<group>"; };
@@ -395,12 +501,15 @@
 		A8480495257E54BEFA5505CB /* DashboardPanelHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPanelHost.swift; sourceTree = "<group>"; };
 		A853062000D99B74117E656B /* EnergyImpactModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactModel.swift; sourceTree = "<group>"; };
 		A8B0908BC77FCB252557723D /* AudioControlComponentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlComponentTests.swift; sourceTree = "<group>"; };
+		A98B76F4ACA6F32B0EC0ADB4 /* BatteryCareControlsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareControlsView.swift; sourceTree = "<group>"; };
+		AB87B548A6AD7F4C9775508F /* BatteryCarePolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCarePolicy.swift; sourceTree = "<group>"; };
 		AC0CEBE8C815796DC9899475 /* en */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = en; path = en.lproj/InfoPlist.strings; sourceTree = "<group>"; };
 		ACFADB8DB7FD273E04239957 /* AudioSystemMonitorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemMonitorTests.swift; sourceTree = "<group>"; };
 		AF3F9A52E14150913C149C69 /* EnergyImpactNativeValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactNativeValidationTests.swift; sourceTree = "<group>"; };
 		AFEFB082A55C13C111773128 /* PowerFlowDiagramFixtures.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowDiagramFixtures.swift; sourceTree = "<group>"; };
 		B452A7B4CBE18AF20A5DF093 /* PowerFlowPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowPresentation.swift; sourceTree = "<group>"; };
 		B66490C62BF6EE5944B75C67 /* EnergyImpactTraceReplayTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactTraceReplayTests.swift; sourceTree = "<group>"; };
+		B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MacActivityBatteryControl.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		B6E756788A431A050E50FDAA /* EnergyImpactProcessReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactProcessReaderTests.swift; sourceTree = "<group>"; };
 		B8233121C0FA90DBBF96DFE8 /* DashboardTrendChartLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardTrendChartLayoutTests.swift; sourceTree = "<group>"; };
 		B8D56AF8E736A0BDA52CD00E /* FakeProcessTapRetryScheduler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeProcessTapRetryScheduler.swift; sourceTree = "<group>"; };
@@ -409,6 +518,7 @@
 		BBC5683822CA2C4BECC68309 /* AudioSystemAccessServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAccessServiceTests.swift; sourceTree = "<group>"; };
 		BC74E94C6EA89C81461BEAE6 /* FakeAudioHALBackend.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FakeAudioHALBackend.swift; sourceTree = "<group>"; };
 		BD0A66158F9232D3D8735DCF /* SmoothPathProbe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmoothPathProbe.swift; sourceTree = "<group>"; };
+		BD4D8A6D9D1213421D12DA2B /* BatteryCareProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareProtocol.swift; sourceTree = "<group>"; };
 		BFB4190A870855302E743ABB /* AudioSystemAuthorizationRequester.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioSystemAuthorizationRequester.swift; sourceTree = "<group>"; };
 		C0CAFD2C7DC4193280EEDE07 /* fr */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = fr; path = fr.lproj/Localizable.strings; sourceTree = "<group>"; };
 		C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveCleanupModel.swift; sourceTree = "<group>"; };
@@ -421,15 +531,18 @@
 		CC750397189E5163AFA2AE33 /* UpdateCandidateSelector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UpdateCandidateSelector.swift; sourceTree = "<group>"; };
 		CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */ = {isa = PBXFileReference; explicitFileType = wrapper.framework; includeInIndex = 0; path = MacActivityCore.framework; sourceTree = BUILT_PRODUCTS_DIR; };
 		CD7CC359AC081C81CFE0D705 /* TemperatureProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TemperatureProviderTests.swift; sourceTree = "<group>"; };
+		CDA4EF9DF395BC5BC1CC675F /* MacActivityBatteryControlTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityBatteryControlTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CE450D24F5288BB9804AC543 /* MacActivityAppTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityAppTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		CF9A4149A89C1A5F8C4CB520 /* AppPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppPreferences.swift; sourceTree = "<group>"; };
 		D22665B317ABFF0111743871 /* MacActivityCoreTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacActivityCoreTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D2B778756365D2319EB27E1C /* BatteryCareModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareModel.swift; sourceTree = "<group>"; };
 		D2BA440DCE79490C0E6C08F4 /* AudioRouteMetadataTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRouteMetadataTests.swift; sourceTree = "<group>"; };
 		D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveProcessMemoryList.swift; sourceTree = "<group>"; };
 		D5816AA506AAB1C9A4301982 /* PowerFlowSMCReaderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowSMCReaderTests.swift; sourceTree = "<group>"; };
 		D59DE9EE696D5DFD3CFD7C99 /* AudioIOProcStreamUsage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioIOProcStreamUsage.swift; sourceTree = "<group>"; };
 		D6A085010AE18BDEC0E3BB55 /* AudioControlModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioControlModels.swift; sourceTree = "<group>"; };
 		D86CFDDB2D5CE86CDA46A87F /* ko */ = {isa = PBXFileReference; lastKnownFileType = text.plist.strings; name = ko; path = ko.lproj/Localizable.strings; sourceTree = "<group>"; };
+		D9A03095733061182F7713FD /* BatteryCarePolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCarePolicyTests.swift; sourceTree = "<group>"; };
 		DAC3D5561158D1EC418C2BC9 /* AudioRoutingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioRoutingModels.swift; sourceTree = "<group>"; };
 		E03A2C158D947FE65167CEA8 /* EnergyImpactPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EnergyImpactPresentation.swift; sourceTree = "<group>"; };
 		E0E4041EDCCD545E8366EF6C /* DashboardPanelSupportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DashboardPanelSupportTests.swift; sourceTree = "<group>"; };
@@ -449,6 +562,7 @@
 		EF8E0BAFDB04562CF81807E7 /* PowerFlowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowView.swift; sourceTree = "<group>"; };
 		EFB6298EE54FFEF176A7403A /* ReleaseVersion.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReleaseVersion.swift; sourceTree = "<group>"; };
 		EFEEF4C7E80C06419C554611 /* DiskCleanupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DiskCleanupService.swift; sourceTree = "<group>"; };
+		F03ACDF62AC83E64BAF6D298 /* BatteryCareLifecycleBridgeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BatteryCareLifecycleBridgeTests.swift; sourceTree = "<group>"; };
 		F1EA3D8F423FD8B639509358 /* AudioProcessOwnershipLeaseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioProcessOwnershipLeaseTests.swift; sourceTree = "<group>"; };
 		F35053D8A15E42D79FE09D8F /* AudioFeatureAvailabilityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AudioFeatureAvailabilityTests.swift; sourceTree = "<group>"; };
 		F48823B7851BF0248B5AC177 /* PowerFlowService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PowerFlowService.swift; sourceTree = "<group>"; };
@@ -466,12 +580,37 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		2593F57EBD1D3DA69F937C63 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				228E5F4DF323286CCCA53CF7 /* MacActivityBatteryControl.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		59EDAFB951AD645579D7B1E4 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
 				4A3E337DABE4743A0C235838 /* MacActivityCore.framework in Frameworks */,
+				16DB10B11A0241D124501E29 /* MacActivityBatteryControl.framework in Frameworks */,
 				29DB96D98957D566191E0A6C /* Sparkle in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		768D781A7020DEB86CD9A298 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A50E9EB2A4B9340A6D5CE600 /* MacActivityBatteryControl.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		B5B38509C31D0D271F2715B4 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				D9554179E547CAA2747DC532 /* MacActivityBatteryControl.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -480,6 +619,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				4FFC3DDFBB0B515A0097F021 /* MacActivityCore.framework in Frameworks */,
+				902F7D64D79F2F51D87681E8 /* MacActivityBatteryControl.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -501,6 +641,8 @@
 			children = (
 				722D7AC69D9FCBD920BA78EF /* Mac Activity.app */,
 				CE450D24F5288BB9804AC543 /* MacActivityAppTests.xctest */,
+				B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */,
+				CDA4EF9DF395BC5BC1CC675F /* MacActivityBatteryControlTests.xctest */,
 				CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */,
 				D22665B317ABFF0111743871 /* MacActivityCoreTests.xctest */,
 			);
@@ -535,6 +677,7 @@
 				C2E7A42055FEA7CDD8EED194 /* ActiveCleanupModel.swift */,
 				FA74494A949B2E36D7F81079 /* AudioControlCoordinator.swift */,
 				6EE3F62C8712E5DD553C15FA /* AudioDashboardModel.swift */,
+				D2B778756365D2319EB27E1C /* BatteryCareModel.swift */,
 				A853062000D99B74117E656B /* EnergyImpactModel.swift */,
 				E03A2C158D947FE65167CEA8 /* EnergyImpactPresentation.swift */,
 				828478C7D6573CE146721823 /* PowerFlowDiagramPresentation.swift */,
@@ -548,6 +691,7 @@
 			isa = PBXGroup;
 			children = (
 				E9907D9C9C51F8324BB57A70 /* MacActivityAppTests */,
+				AE3C037C70E79846471861B8 /* MacActivityBatteryControlTests */,
 				DE81BF0C8278E06D4E7226B9 /* MacActivityCoreTests */,
 			);
 			path = Tests;
@@ -567,6 +711,7 @@
 			isa = PBXGroup;
 			children = (
 				D8707B1304C3F2873167EEDE /* MacActivityApp */,
+				A758539ABF0837C36313131A /* MacActivityBatteryControl */,
 				814D4901083247EB82260337 /* MacActivityCore */,
 			);
 			path = Sources;
@@ -672,6 +817,32 @@
 			path = Cleanup;
 			sourceTree = "<group>";
 		};
+		A758539ABF0837C36313131A /* MacActivityBatteryControl */ = {
+			isa = PBXGroup;
+			children = (
+				71B3F31DBFB7E07946A02FA8 /* BatteryCareModels.swift */,
+				AB87B548A6AD7F4C9775508F /* BatteryCarePolicy.swift */,
+				BD4D8A6D9D1213421D12DA2B /* BatteryCareProtocol.swift */,
+				7B5568B616D39AD2B76A9370 /* BatteryCareSession.swift */,
+				146F74B49E552498CF832391 /* UnavailableBatteryCareService.swift */,
+			);
+			path = MacActivityBatteryControl;
+			sourceTree = "<group>";
+		};
+		AE3C037C70E79846471861B8 /* MacActivityBatteryControlTests */ = {
+			isa = PBXGroup;
+			children = (
+				6C2ECC650EE69942AF896343 /* BatteryCareLifecyclePolicyTests.swift */,
+				3B5829C334DE57A947EF9E54 /* BatteryCareModelsTests.swift */,
+				D9A03095733061182F7713FD /* BatteryCarePolicyTests.swift */,
+				84B90C9FB62436A4BF9DC5AB /* BatteryCareSessionTests.swift */,
+				439DD7B5FE3AEE8651F6CB8F /* BatteryCareTemporaryModeTests.swift */,
+				77DA64B9820B2550822FB6D9 /* BatteryCareTestBackend.swift */,
+				0935CEA773CD33AA7D7BA89D /* UnavailableBatteryCareServiceTests.swift */,
+			);
+			path = MacActivityBatteryControlTests;
+			sourceTree = "<group>";
+		};
 		BE14601DE252139D2FCB0115 /* Configuration */ = {
 			isa = PBXGroup;
 			children = (
@@ -684,6 +855,7 @@
 			isa = PBXGroup;
 			children = (
 				15EE5D1ED08CA135E656FD09 /* AppPresentationCoordinator.swift */,
+				97E1CE54AA2B25813D8F4B8D /* BatteryCareLifecycleBridge.swift */,
 				731A96AE256F55244FC15529 /* DashboardAdaptivePopoverHost.swift */,
 				A8480495257E54BEFA5505CB /* DashboardPanelHost.swift */,
 				29D3B130CB7A7024B9677000 /* DashboardPanelSupport.swift */,
@@ -727,6 +899,9 @@
 				D2D397D90663A1A0D877648A /* ActiveProcessMemoryList.swift */,
 				443C3EE222DFFEB15FA514D2 /* ActiveProcessMemoryRow.swift */,
 				67191FA29FAD0078810BA81D /* AudioDashboardView.swift */,
+				A98B76F4ACA6F32B0EC0ADB4 /* BatteryCareControlsView.swift */,
+				2A70F87BCB2215105A73509D /* BatteryCareLimitSlider.swift */,
+				7EC8449671FF575A0E9B8C38 /* BatteryCareSettingsView.swift */,
 				E3C8776FEAAEAA1CA9CE5018 /* DashboardPresentationEnvironment.swift */,
 				0CDC8315834D75CE8BAD6716 /* DashboardTabPicker.swift */,
 				A58207249A7CEE35879032DD /* DashboardTrendAverager.swift */,
@@ -822,6 +997,11 @@
 				0E5EB0BFFA6A7936E4EAD230 /* AudioDashboardModelTests.swift */,
 				5FC8340436E36F7FCE415A82 /* AudioDashboardViewTests.swift */,
 				581CD316F6F5E02DFF4BEA52 /* AudioSystemAccessCoordinatorTests.swift */,
+				0EC2F1C2BE7D3C8DB0C99B0B /* BatteryCareControlsViewTests.swift */,
+				5706847DB828D9F38B9389C8 /* BatteryCareIntegrationTests.swift */,
+				6EBD9864F35CF9B9C671721C /* BatteryCareLayoutTests.swift */,
+				F03ACDF62AC83E64BAF6D298 /* BatteryCareLifecycleBridgeTests.swift */,
+				8F681B52CA04EDE8822E3829 /* BatteryCareModelTests.swift */,
 				9149AE30AD6FF272340491E9 /* DashboardAdaptiveHostTests.swift */,
 				64DE9B5BC652B1FCA8A03474 /* DashboardCardLayoutTests.swift */,
 				C977F48BC1CE9FAF377E5A52 /* DashboardGlassNavigationTests.swift */,
@@ -888,10 +1068,12 @@
 			buildConfigurationList = CEBB77B5C5CE542E0061D551 /* Build configuration list for PBXNativeTarget "MacActivityCore" */;
 			buildPhases = (
 				8C8C08E4237128A9A6FD08B8 /* Sources */,
+				2593F57EBD1D3DA69F937C63 /* Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				97053B98939FE8574069B834 /* PBXTargetDependency */,
 			);
 			name = MacActivityCore;
 			packageProductDependencies = (
@@ -899,6 +1081,43 @@
 			productName = MacActivityCore;
 			productReference = CCC0344CCD781933A16D98D7 /* MacActivityCore.framework */;
 			productType = "com.apple.product-type.framework";
+		};
+		4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EF974D432343A4E83A439E27 /* Build configuration list for PBXNativeTarget "MacActivityBatteryControl" */;
+			buildPhases = (
+				655DC38C4B33E0F860866909 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = MacActivityBatteryControl;
+			packageProductDependencies = (
+			);
+			productName = MacActivityBatteryControl;
+			productReference = B6E7331D20B7BAB9B1C8FDA6 /* MacActivityBatteryControl.framework */;
+			productType = "com.apple.product-type.framework";
+		};
+		6AC1DB6109A240E4DA289A32 /* MacActivityBatteryControlTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 6EE49F23359BBBF34F0258F5 /* Build configuration list for PBXNativeTarget "MacActivityBatteryControlTests" */;
+			buildPhases = (
+				31D26371B43A0771D8B71AFA /* Sources */,
+				768D781A7020DEB86CD9A298 /* Frameworks */,
+				3EF6C6F2D5DCFF76C24A0E12 /* Embed Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				F0F1A7A3E2A49C8670910E34 /* PBXTargetDependency */,
+			);
+			name = MacActivityBatteryControlTests;
+			packageProductDependencies = (
+			);
+			productName = MacActivityBatteryControlTests;
+			productReference = CDA4EF9DF395BC5BC1CC675F /* MacActivityBatteryControlTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
 		};
 		742D2D18AB5819DAE937E70C /* Mac Activity */ = {
 			isa = PBXNativeTarget;
@@ -913,6 +1132,7 @@
 			);
 			dependencies = (
 				7EEA71CF419068414B6C373B /* PBXTargetDependency */,
+				74AABDF02713B5F915A96E88 /* PBXTargetDependency */,
 			);
 			name = "Mac Activity";
 			packageProductDependencies = (
@@ -934,6 +1154,7 @@
 			);
 			dependencies = (
 				77CCCC0B936C6BBA75E42B75 /* PBXTargetDependency */,
+				5B162A286AE37C2B47E79F00 /* PBXTargetDependency */,
 			);
 			name = MacActivityCoreTests;
 			packageProductDependencies = (
@@ -947,11 +1168,14 @@
 			buildConfigurationList = A9F96A8F20DBCFFF084D5AA6 /* Build configuration list for PBXNativeTarget "MacActivityAppTests" */;
 			buildPhases = (
 				01AA9BBADCDFDC43959B00C2 /* Sources */,
+				B5B38509C31D0D271F2715B4 /* Frameworks */,
+				EC9F73888822B1F02B3E6BCD /* Embed Frameworks */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				40777AC29AE014A543638E75 /* PBXTargetDependency */,
+				2648C1D8E1B5CA0B1528B6DE /* PBXTargetDependency */,
 			);
 			name = MacActivityAppTests;
 			packageProductDependencies = (
@@ -971,6 +1195,14 @@
 				LastUpgradeVersion = 2630;
 				TargetAttributes = {
 					1A1E314FBDA8A359F0BF70F4 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					4026CFE3382FB607DE8F1A64 = {
+						DevelopmentTeam = "";
+						ProvisioningStyle = Automatic;
+					};
+					6AC1DB6109A240E4DA289A32 = {
 						DevelopmentTeam = "";
 						ProvisioningStyle = Automatic;
 					};
@@ -1013,6 +1245,8 @@
 			targets = (
 				742D2D18AB5819DAE937E70C /* Mac Activity */,
 				D16492655D248D902E81AC22 /* MacActivityAppTests */,
+				4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */,
+				6AC1DB6109A240E4DA289A32 /* MacActivityBatteryControlTests */,
 				1A1E314FBDA8A359F0BF70F4 /* MacActivityCore */,
 				AF1052E35E7AFE4BE0A5CFE3 /* MacActivityCoreTests */,
 			);
@@ -1048,6 +1282,11 @@
 				203728ECA31C7E130830CBD3 /* AudioDashboardModelTests.swift in Sources */,
 				F417E88391363283C92E2B86 /* AudioDashboardViewTests.swift in Sources */,
 				7D107F3CBF7D0F208AE9CDE6 /* AudioSystemAccessCoordinatorTests.swift in Sources */,
+				AFAD309B4BEDF64A14ECE07E /* BatteryCareControlsViewTests.swift in Sources */,
+				C6BF645DE499D6F74097F2E6 /* BatteryCareIntegrationTests.swift in Sources */,
+				AAF915F2C9A0702B90C7904E /* BatteryCareLayoutTests.swift in Sources */,
+				35E056F73D9BF435B38D1AF6 /* BatteryCareLifecycleBridgeTests.swift in Sources */,
+				62E98B8BAE6D9F3BDEBB2035 /* BatteryCareModelTests.swift in Sources */,
 				DEA923B3877A8A24387093F3 /* DashboardAdaptiveHostTests.swift in Sources */,
 				86A2CE6C6E42C86798FB9855 /* DashboardCardLayoutTests.swift in Sources */,
 				E84948656DAF14B855CD0701 /* DashboardGlassNavigationTests.swift in Sources */,
@@ -1075,6 +1314,20 @@
 				C356257FDCCCF0EA9207439D /* SmoothPathProbe.swift in Sources */,
 				711A78E86F69C2AF5048F07B /* SparkleUpdateControllerTests.swift in Sources */,
 				D1921ECAF1FB240261113069 /* StatusBarSummaryLayoutTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		31D26371B43A0771D8B71AFA /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C1082856301D261231076E4C /* BatteryCareLifecyclePolicyTests.swift in Sources */,
+				44FD0959D9DB10EE9E3201F1 /* BatteryCareModelsTests.swift in Sources */,
+				D587C0838DAAA5E07552441E /* BatteryCarePolicyTests.swift in Sources */,
+				19E162B020738DDAB630D8FB /* BatteryCareSessionTests.swift in Sources */,
+				1E1858FAC21A45E1006A5490 /* BatteryCareTemporaryModeTests.swift in Sources */,
+				78FB86ABB90690B985F74F49 /* BatteryCareTestBackend.swift in Sources */,
+				077BFA9722FAFEA8E5FA5F5A /* UnavailableBatteryCareServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1135,6 +1388,18 @@
 				051A32FFC0368380D49E6962 /* TemperatureProviderTests.swift in Sources */,
 				EB64920076FD876BE4826019 /* ToolEntrypointTests.swift in Sources */,
 				442969EB596E699488524CFD /* UpdateCandidateSelectorTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		655DC38C4B33E0F860866909 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				74896A01EC6D2228EEA84CBD /* BatteryCareModels.swift in Sources */,
+				B0947522752A83F8BAC9D13C /* BatteryCarePolicy.swift in Sources */,
+				AA99813662F2A758552CAF8D /* BatteryCareProtocol.swift in Sources */,
+				82355647CFCBBBA1A795CB2D /* BatteryCareSession.swift in Sources */,
+				86FF86C878342F75BEFAC7DE /* UnavailableBatteryCareService.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1221,6 +1486,11 @@
 				DFC2BBA5FD8590A1EE115FC8 /* AudioControlCoordinator.swift in Sources */,
 				942C0019C9F31F025BD8F880 /* AudioDashboardModel.swift in Sources */,
 				8507593B5300A3D1651FF296 /* AudioDashboardView.swift in Sources */,
+				BBC8C7E53579FA1E55708250 /* BatteryCareControlsView.swift in Sources */,
+				CEB2594E507B8EFB439B8920 /* BatteryCareLifecycleBridge.swift in Sources */,
+				BFAAC7F1998C5DF27FB5F03F /* BatteryCareLimitSlider.swift in Sources */,
+				B64E89AAA9ABF07EA9ACAA7F /* BatteryCareModel.swift in Sources */,
+				B46953E4192592E905E090D4 /* BatteryCareSettingsView.swift in Sources */,
 				BE09C8742A006C5C98F3B023 /* DashboardAdaptivePopoverHost.swift in Sources */,
 				CFCE940970D4E01B263187AE /* DashboardPanelHost.swift in Sources */,
 				AFE2E04264F72F43BB2187BA /* DashboardPanelSupport.swift in Sources */,
@@ -1252,10 +1522,25 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		2648C1D8E1B5CA0B1528B6DE /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */;
+			targetProxy = E4C79E910B991F3644AD7FE3 /* PBXContainerItemProxy */;
+		};
 		40777AC29AE014A543638E75 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = 742D2D18AB5819DAE937E70C /* Mac Activity */;
 			targetProxy = EF63BA3F7F86204CE9FC0DD7 /* PBXContainerItemProxy */;
+		};
+		5B162A286AE37C2B47E79F00 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */;
+			targetProxy = 4B689E1879933391A87D74E3 /* PBXContainerItemProxy */;
+		};
+		74AABDF02713B5F915A96E88 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */;
+			targetProxy = F9386F36615D563E1D392DAD /* PBXContainerItemProxy */;
 		};
 		77CCCC0B936C6BBA75E42B75 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
@@ -1266,6 +1551,16 @@
 			isa = PBXTargetDependency;
 			target = 1A1E314FBDA8A359F0BF70F4 /* MacActivityCore */;
 			targetProxy = 7DDC30A7B1BBEDF368ECFB0D /* PBXContainerItemProxy */;
+		};
+		97053B98939FE8574069B834 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */;
+			targetProxy = BF891FEDCDB592EEC8B941DB /* PBXContainerItemProxy */;
+		};
+		F0F1A7A3E2A49C8670910E34 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 4026CFE3382FB607DE8F1A64 /* MacActivityBatteryControl */;
+			targetProxy = E0158631156504B332D8DF16 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -1301,6 +1596,42 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		0C1C034CD02F8D0127B49319 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F6393E8D414DD5B454117647 /* Shared.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity.batterycontrol.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "";
+			};
+			name = Release;
+		};
+		1FAD44359727E06C5EEE4534 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F6393E8D414DD5B454117647 /* Shared.xcconfig */;
+			buildSettings = {
+				BUNDLE_LOADER = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+					"@loader_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity.batterycontrol.tests;
+				SDKROOT = macosx;
+				TEST_HOST = "";
+			};
+			name = Debug;
+		};
 		261F5AFFB0F36C18E28B3E8C /* Release */ = {
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = F6393E8D414DD5B454117647 /* Shared.xcconfig */;
@@ -1357,6 +1688,29 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity.core.tests;
 				SDKROOT = macosx;
 				TEST_HOST = "";
+			};
+			name = Debug;
+		};
+		70FCBF782D35BE2600F2491D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F6393E8D414DD5B454117647 /* Shared.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity.batterycontrol;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = Debug;
 		};
@@ -1507,6 +1861,29 @@
 			};
 			name = Release;
 		};
+		BCA355C47F3C1526F6BC0C72 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = F6393E8D414DD5B454117647 /* Shared.xcconfig */;
+			buildSettings = {
+				CODE_SIGN_IDENTITY = "";
+				COMBINE_HIDPI_IMAGES = YES;
+				DEFINES_MODULE = YES;
+				DYLIB_COMPATIBILITY_VERSION = 1;
+				DYLIB_CURRENT_VERSION = 1;
+				DYLIB_INSTALL_NAME_BASE = "@rpath";
+				GENERATE_INFOPLIST_FILE = YES;
+				INSTALL_PATH = "$(LOCAL_LIBRARY_DIR)/Frameworks";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.how.macactivity.batterycontrol;
+				SDKROOT = macosx;
+				SKIP_INSTALL = YES;
+				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Release;
+		};
 		D75F7DC62E7540DECB33D39E /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1619,6 +1996,15 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
 		};
+		6EE49F23359BBBF34F0258F5 /* Build configuration list for PBXNativeTarget "MacActivityBatteryControlTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				1FAD44359727E06C5EEE4534 /* Debug */,
+				0C1C034CD02F8D0127B49319 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
 		A9F96A8F20DBCFFF084D5AA6 /* Build configuration list for PBXNativeTarget "MacActivityAppTests" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -1633,6 +2019,15 @@
 			buildConfigurations = (
 				AB32574F3201C993995B0560 /* Debug */,
 				261F5AFFB0F36C18E28B3E8C /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		EF974D432343A4E83A439E27 /* Build configuration list for PBXNativeTarget "MacActivityBatteryControl" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				70FCBF782D35BE2600F2491D /* Debug */,
+				BCA355C47F3C1526F6BC0C72 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

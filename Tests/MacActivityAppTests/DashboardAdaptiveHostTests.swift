@@ -93,6 +93,111 @@ final class DashboardAdaptiveHostTests: XCTestCase {
         XCTAssertEqual(DashboardPresentationHostKind.resolve(majorVersion: 15, reduceTransparency: false), .popover)
     }
 
+    func testHostSwitchKeepsModelAndMeasuredHeight() throws {
+        let state = makeState(.panel)
+        let host = makeHost(state: state)
+        host.animates = false
+        let preferences = PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService())
+        let model = makeTestBatteryCareModel(preferences: preferences)
+        let devices = (0..<20).map { index in
+            AudioDeviceControlSnapshot(device: AudioOutputDeviceSnapshot(id: "output-\(index)",
+                objectID: UInt32(index + 1), name: "Output \(index)",
+                volume: .value(0.5, isWritable: true), mute: .value(false, isWritable: true)), error: nil)
+        }
+        let controller = DashboardPopoverController(popover: host,
+            focusController: SharedDashboardPopoverFocusController(),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: preferences,
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator(
+                snapshot: AudioControlSnapshot(devices: devices, processes: []))),
+            batteryCareModel: model, onVisibilityChange: { _ in })
+        let content = try XCTUnwrap(host.contentViewController as? DashboardPopoverHostingController)
+        content.dashboardTabSelection.selectedTab = .audio
+        let anchor = try makeAnchorView()
+        controller.toggle(relativeTo: anchor)
+        drainRunLoop()
+        let height = host.contentSize.height
+        XCTAssertGreaterThan(height, 560, "host switches must retain the expanded measured battery budget")
+        let batteryHeight = controller.testingContentMeasurement.batteryCareHeight
+        XCTAssertGreaterThan(batteryHeight, 0)
+        XCTAssertEqual(height, 560 + batteryHeight, accuracy: 1)
+        controller.toggle(relativeTo: anchor)
+        state.kind = .popover
+        controller.toggle(relativeTo: anchor)
+        drainRunLoop()
+        XCTAssertEqual(host.activeHostKind, .popover)
+        XCTAssertTrue(host.contentViewController === content)
+        XCTAssertTrue(content.dashboardView.batteryCareModel === model)
+        XCTAssertEqual(controller.testingContentMeasurement.batteryCareHeight, batteryHeight)
+        XCTAssertEqual(host.contentSize.height, height, accuracy: 1)
+        controller.toggle(relativeTo: anchor)
+        state.kind = .panel
+        controller.toggle(relativeTo: anchor)
+        drainRunLoop()
+        XCTAssertEqual(host.contentSize.height, height, accuracy: 1)
+        XCTAssertTrue(content.dashboardView.batteryCareModel === model)
+        host.invalidate()
+    }
+
+    func testBudgetCallbackFromOldControllerCannotResizeReplacementRoot() throws {
+        let host = makeHost(state: makeState(.panel))
+        host.animates = false
+        let controller = DashboardPopoverController(popover: host,
+            focusController: SharedDashboardPopoverFocusController(),
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
+            audioDashboardModel: AudioDashboardModel(coordinator: TestAudioControlCoordinator()),
+            batteryCareModel: makeTestBatteryCareModel(), onVisibilityChange: { _ in })
+        defer { withExtendedLifetime(controller) {}; host.invalidate() }
+        let replacement = NSHostingController(rootView: Color.clear)
+        host.contentViewController = replacement
+        host.contentSize = NSSize(width: 420, height: 700)
+        let anchor = try makeAnchorView()
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        drainRunLoop()
+        XCTAssertTrue(host.contentViewController === replacement)
+        XCTAssertEqual(host.contentSize.height, 700, accuracy: 1)
+    }
+
+    func testEachHostSuppliesItsOwnScreenAndChromeBudgetAndRecomputesOnShow() throws {
+        let state = makeState(.panel)
+        var room: CGFloat = 500
+        let host = DashboardAdaptivePopoverHost(hostKindProvider: { state.kind },
+            visibleFrameForAnchor: { anchor in
+                NSRect(x: anchor.midX - 600, y: anchor.minY - room, width: 1200, height: room)
+            })
+        host.animates = false
+        let content = NSHostingController(rootView: Color.clear.frame(minHeight: 0))
+        host.contentViewController = content
+        host.contentSize = NSSize(width: 420, height: 900)
+        let anchor = try makeAnchorView()
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        XCTAssertEqual(host.contentSize.height, 484, accuracy: 1)
+        XCTAssertEqual(content.view.bounds.height, 484, accuracy: 1)
+        room = 400
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertEqual(host.contentSize.height, 384, accuracy: 1)
+        XCTAssertEqual(content.view.bounds.height, 384, accuracy: 1)
+        room = 0
+        NotificationCenter.default.post(name: NSApplication.didChangeScreenParametersNotification, object: nil)
+        XCTAssertFalse(host.isShown, "zero usable space cannot be reported as a successfully adapted dashboard")
+        room = 450
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        XCTAssertEqual(host.contentSize.height, 434, accuracy: 1)
+        host.performClose(nil)
+        room = 400
+        state.kind = .popover
+        host.show(relativeTo: anchor.bounds, of: anchor, preferredEdge: .minY)
+        drainRunLoop()
+        let window = try XCTUnwrap(content.view.window)
+        let chrome = window.frame.height - content.view.bounds.height
+        XCTAssertGreaterThan(chrome, 0, "native arrow/chrome must have a measured budget")
+        print("A7 host budget: room=\(room) panel=384 popover=\(host.contentSize.height) measuredChrome=\(chrome)")
+        XCTAssertEqual(host.contentSize.height, 384 - chrome, accuracy: 1)
+        XCTAssertLessThanOrEqual(window.frame.height, 384 + 1)
+        host.invalidate()
+    }
+
     func testPanelFadeCloseIntentAllowsReopenBeforeOldPhysicalCompletion() throws {
         var completions: [@MainActor () -> Void] = []
         let panelHost = DashboardPanelHost(shouldReduceMotion: { false }, animateAlpha: { panel, alpha, _, completion in

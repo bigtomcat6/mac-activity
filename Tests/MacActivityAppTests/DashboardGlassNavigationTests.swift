@@ -6,6 +6,51 @@ import MacActivityCore
 
 @MainActor
 final class DashboardGlassNavigationTests: XCTestCase {
+    func testAudioRefreshSurvivesFallbackResizeButCancelsOnCloseAndRefreshesOnReopen() async throws {
+        let coordinator = TestAudioControlCoordinator()
+        var cancellations = 0
+        coordinator.onRefreshSystemAudioAuthorization = {
+            do { try await Task.sleep(for: .seconds(60)) } // Cancellable stand-in for a suspended authorization read.
+            catch { cancellations += 1 }
+        }
+        let audio = AudioDashboardModel(coordinator: coordinator)
+        let presentation = DashboardPresentationState()
+        let selection = DashboardTabSelectionState(initialTab: .audio)
+        let host = NSHostingView(rootView: DashboardPopoverRootView(content: DashboardView(
+            dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
+            preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
+            audioDashboardModel: audio, batteryCareModel: makeTestBatteryCareModel(), tabSelectionState: selection),
+            presentationState: presentation))
+        let window = fixture(host)
+        defer { presentation.setPresented(false); window.close() }
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 0, "Controller bootstrap is not presentation")
+        presentation.setPresented(true)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 1)
+        for height in [600.0, 80.0, 600.0, 80.0] {
+            window.setContentSize(NSSize(width: 420, height: height))
+            host.layoutSubtreeIfNeeded()
+            try await Task.sleep(for: .milliseconds(40))
+            XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 1, "Layout is not page activation")
+            XCTAssertEqual(cancellations, 0, "Fallback must not cancel the visible page's task")
+        }
+        presentation.setPresented(false)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(cancellations, 1)
+        await audio.applicationDidBecomeActive()
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 1)
+        presentation.setPresented(true)
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 2, "A genuine reopen refreshes exactly once")
+        selection.selectedTab = .overview
+        try await Task.sleep(for: .milliseconds(40))
+        XCTAssertEqual(cancellations, 2)
+        await audio.applicationDidBecomeActive()
+        XCTAssertEqual(coordinator.refreshSystemAudioAuthorizationCallCount, 2)
+        XCTAssertEqual(coordinator.shutdownCallCount, 0)
+    }
+
     // Actual Dashboard buttons must tear down Audio before a rapid re-entry; repeat presses are inert.
     func testDashboardButtonsPreserveRapidAudioLifecycle() async throws {
         guard #available(macOS 26.0, *) else { throw XCTSkip("Glass requires macOS 26") }
@@ -15,7 +60,7 @@ final class DashboardGlassNavigationTests: XCTestCase {
         let host = NSHostingView(rootView: DashboardView(
             dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
             preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
-            audioDashboardModel: audio, tabSelectionState: selection)
+            audioDashboardModel: audio, batteryCareModel: makeTestBatteryCareModel(), tabSelectionState: selection)
             .environment(\._accessibilityReduceTransparency, false)
             .environment(\._accessibilityReduceMotion, false)
             .environment(\.dashboardPresentationIsPresented, true))

@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import MacActivityBatteryControl
 
 @MainActor
 public final class PreferencesController: ObservableObject {
@@ -39,6 +40,13 @@ public final class PreferencesController: ObservableObject {
     public func setTemperatureSource(_ source: TemperatureSource) {
         state.temperatureSource = source
         try? store.save(state)
+    }
+
+    public func setBatteryCareSettings(_ settings: BatteryCareSettings) throws {
+        var updated = state
+        updated.batteryCare = settings
+        try store.save(updated)
+        state = updated
     }
 
     public func setShowsHardwareBatteryPercentage(_ showsHardwareBatteryPercentage: Bool) {

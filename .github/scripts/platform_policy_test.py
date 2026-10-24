@@ -5,6 +5,10 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 REQUIREMENT_DOCS = ("README.md", "docs/user-guide.md", "docs/development.md")
+XCODE_TARGETS = {
+    "Mac Activity", "MacActivityCore", "MacActivityCoreTests", "MacActivityAppTests",
+    "MacActivityBatteryControl", "MacActivityBatteryControlTests",
+}
 
 
 def read(relative_path):
@@ -20,7 +24,10 @@ class PlatformPolicyTests(unittest.TestCase):
     def test_xcodegen_spec_targets_macos_26_arm64_only(self):
         spec = read("project.yml")
         self.assertIn('deploymentTarget:\n    macOS: "26.0"', spec)
-        self.assertEqual(re.findall(r'deploymentTarget: "([\d.]+)"', spec), ["26.0"] * 4)
+        targets = spec.split("\ntargets:\n", 1)[1].split("\nschemes:", 1)[0]
+        names = re.findall(r'^  (?:"([^"]+)"|([^ :]+)):$', targets, re.M)
+        self.assertEqual({quoted or plain for quoted, plain in names}, XCODE_TARGETS)
+        self.assertEqual(re.findall(r'deploymentTarget: "([\d.]+)"', targets), ["26.0"] * len(XCODE_TARGETS))
         self.assertEqual(re.findall(r'MACOSX_DEPLOYMENT_TARGET: "([\d.]+)"', spec), ["26.0"])
         self.assertEqual(re.findall(r"(?m)^\s+ARCHS: (\S+)$", spec), ["arm64"])
 
@@ -28,6 +35,9 @@ class PlatformPolicyTests(unittest.TestCase):
         project = read("MacActivity.xcodeproj/project.pbxproj")
         self.assertEqual(set(re.findall(r"MACOSX_DEPLOYMENT_TARGET = ([\d.]+);", project)), {"26.0"})
         self.assertEqual(set(re.findall(r"\bARCHS = ([^;]+);", project)), {"arm64"})
+        native_targets = project.split("/* Begin PBXNativeTarget section */", 1)[1].split("/* End PBXNativeTarget section */", 1)[0]
+        names = re.findall(r'^\s*name = (?:"([^"]+)"|([^;]+));$', native_targets, re.M)
+        self.assertEqual({quoted or plain for quoted, plain in names}, XCODE_TARGETS)
 
     def test_shared_xcconfig_targets_macos_26(self):
         self.assertRegex(read("Configuration/Shared.xcconfig"), r"(?m)^MACOSX_DEPLOYMENT_TARGET = 26\.0$")

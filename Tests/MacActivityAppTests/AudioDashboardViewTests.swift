@@ -27,6 +27,7 @@ final class AudioDashboardViewTests: XCTestCase {
                 dashboardModel: DashboardModel(store: MetricsStore(), isActive: false),
                 preferencesController: PreferencesController(store: PreferencesStoreFake(), launchService: NoopLaunchAtLoginService()),
                 audioDashboardModel: AudioDashboardModel(coordinator: coordinator),
+                batteryCareModel: makeTestBatteryCareModel(),
                 scrollIndicatorState: state, initialSelectedTab: .audio
             ).environment(\.dashboardPresentationIsPresented, false), height: height)
             defer { host.close() }
@@ -115,19 +116,22 @@ final class AudioDashboardViewTests: XCTestCase {
             preferencesController: PreferencesController(store: PreferencesStoreFake(),
                                                          launchService: NoopLaunchAtLoginService()),
             audioDashboardModel: model,
+            batteryCareModel: makeTestBatteryCareModel(),
             onMeasuredSegmentHeight: { measurement.report($1, for: $0) },
             tabSelectionState: selection
         ).environment(\.dashboardPresentationIsPresented, false))
         defer { host.close(); measurement.onContentSizeChange = nil }
         var appliedSizes: [NSSize] = []
         measurement.onContentSizeChange = { size in
-            guard let capped = DashboardPopoverLayout.contentSize(for: size) else { return }
+            guard let capped = DashboardPopoverLayout.contentSize(for: size,
+                batteryCareHeight: measurement.batteryCareHeight) else { return }
             appliedSizes.append(capped)
             host.panel.setContentSize(capped)
         }
         host.settle()
         host.settle()
-        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height, 560, accuracy: 1)
+        XCTAssertEqual(host.panel.contentRect(forFrameRect: host.panel.frame).height,
+                       560 + measurement.batteryCareHeight, accuracy: 1)
         for access: AudioSystemAccessState in [.authorized, .denied] {
             coordinator.update {
                 $0.devices = access == .authorized ? [.fixture()] : []

@@ -137,7 +137,21 @@ final class DashboardPanelSupportTests: XCTestCase {
             contentSize: NSSize(width: 900, height: 2000)
         )
         XCTAssertEqual(oversized.width, 500 - DashboardPanelPlacement.defaultEdgeMargin * 2)
-        XCTAssertEqual(oversized.height, 800 - DashboardPanelPlacement.defaultEdgeMargin * 2)
+        XCTAssertEqual(oversized.height, 766)
+        XCTAssertEqual(oversized.maxY, 774)
+    }
+
+    func testAvailableHeightUsesAnchorGapAndBothScreenEdges() {
+        let visible = NSRect(x: -1000, y: -200, width: 1000, height: 700)
+        XCTAssertEqual(DashboardPanelPlacement.availableContentHeight(
+            anchorRect: NSRect(x: -500, y: 480, width: 24, height: 24), visibleFrame: visible,
+            gap: 6, edgeMargin: 8), 666)
+        XCTAssertEqual(DashboardPanelPlacement.availableContentHeight(
+            anchorRect: NSRect(x: -500, y: 700, width: 24, height: 24), visibleFrame: visible,
+            gap: 6, edgeMargin: 8), 684)
+        XCTAssertEqual(DashboardPanelPlacement.availableContentHeight(
+            anchorRect: NSRect(x: -500, y: -190, width: 24, height: 24), visibleFrame: visible,
+            gap: 6, edgeMargin: 8), 0)
     }
 
     func testScreenIndexPrefersScreenContainingAnchorCenterAndFallsBackToIntersection() {

@@ -12,10 +12,12 @@ automation, and documentation.
 ├── Configuration/             # xcconfig, Info.plist, entitlements
 ├── Sources/
 │   ├── MacActivityApp/        # SwiftUI/AppKit app, popover, preferences, views
-│   └── MacActivityCore/       # metrics, cleanup, scheduling, preferences
+│   ├── MacActivityCore/       # metrics, cleanup, scheduling, preferences
+│   └── MacActivityBatteryControl/ # Foundation-only battery semantics/policy/session
 ├── Tests/
 │   ├── MacActivityAppTests/
-│   └── MacActivityCoreTests/
+│   ├── MacActivityCoreTests/
+│   └── MacActivityBatteryControlTests/
 ├── Tools/                     # debug executables for focused local checks
 ├── scripts/                   # local install/build helpers
 ├── .github/                   # workflows, PR template, release scripts
@@ -26,7 +28,8 @@ automation, and documentation.
 
 - macOS 26.0 or newer on a Mac with Apple silicon.
 - Xcode 26 or newer with the Swift 6.2 toolchain.
-- XcodeGen, when regenerating `MacActivity.xcodeproj` from `project.yml`.
+- XcodeGen 2.45.0 or newer; CI pins 2.45.4. Local 2.45.3 repeat-generation
+  determinism does not establish byte equality with that CI version.
 
 `Package.swift` declares Swift tools version 6.2 and depends on Sparkle from
 version 2.9.3.
@@ -40,7 +43,7 @@ cd mac-activity
 
 ## Xcode Workflow
 
-Regenerate the project after changing `project.yml`:
+Regenerate the project after changing `project.yml` or adding source/test files:
 
 ```bash
 xcodegen generate
@@ -52,7 +55,8 @@ Open and run the `MacActivity` scheme:
 open MacActivity.xcodeproj
 ```
 
-Run app and core tests from Xcode with the `MacActivity` scheme.
+Run app, core, and battery-control tests from Xcode with the `MacActivity`
+scheme. Generated project/scheme files must come from XcodeGen, never hand edits.
 
 ## SwiftPM Workflow
 
@@ -111,6 +115,73 @@ updater integration, and SwiftUI views.
 Prefer putting logic in `MacActivityCore` when it can be expressed without
 AppKit or SwiftUI. Keep app-shell code focused on lifecycle, presentation, and
 macOS integration.
+
+## Battery Care implementation boundary
+
+Battery Care is currently an **A-stage, no-hardware foundation**, not an enabled
+charging feature. `AppDelegate.startBatteryCare` composes one `BatteryCareModel`
+with `UnavailableBatteryCareService`, shared by the dashboard and sleep/wake/quit
+bridge. No executable backend is assembled in production. Default settings are
+disabled/80%; no UI flag, saved enabled preference, readable SMC key, or Apple
+silicon model name grants hardware capability. Minimum platform remains macOS 26,
+arm64, not a promise of all-device support.
+
+`MacActivityBatteryControl` is a small Foundation-only shared module containing
+validated settings/value types, the pure `BatteryCarePolicy`, and the serialized
+in-process `BatteryCareSession`. It must not import AppKit, IOKit, Security,
+ServiceManagement, or Sparkle. Preferences persist only regular enabled/limit
+intent, not previews, temporary modes, admission, or recovery evidence. The App
+model owns save/accept ordering and stale snapshot isolation; Session owns write
+serialization, independent input ticks, and unresolved-apply responsibility.
+Reading snapshots or refreshing display metrics does not drive the watchdog.
+There is no production control sampler/timer or certified timing default.
+
+The small `Tests/MacActivityAppTests/BatteryCareIntegrationTests.swift` smoke
+suite goes through **real Model → real Session → real Policy → test-local backend**,
+using a real `PreferencesController` with memory-only storage. The backend supplies
+synthetic observations/receipts and continuation gates, never policy. It covers
+one committed limit, full-charge exit before a new regular target, and the actual
+App's unavailable composition. Release confirmation is awaited separately from
+`send` completion; after release the test explicitly supplies the existing internal
+tick to re-evaluate regular policy. The synthetic timing values are not device
+budgets. No real battery discharge, including to 20%, is performed.
+
+For a focused logic check (using already available dependencies):
+
+```bash
+swift test --filter BatteryCareIntegrationTests
+```
+
+Keep A4 write-isolation/deadline tests and A5 late-snapshot/persistence tests at
+their existing layers; do not duplicate their matrices here. A scoped pass is not
+a full SwiftPM or Xcode result. App-hosted Xcode tests launch a host; audit and
+authorize that execution separately. For restricted no-hardware validation, use
+locked cached dependencies and memory stores; do not run old UserDefaults-writing
+tests against user settings. Native/visual tests need their documented environment
+and opt-ins, not weaker assertions or new skips.
+
+**Validation status and remaining gates:** A7's original native/wheel failures and
+live-animation skips were rerun and passed in an active, unlocked display session.
+The latest scoped UI/battery validation had no failures and one existing OS Reduce
+Motion skip; it is not a full-suite result. No-host BatteryControl Xcode tests and
+unsigned Release compile/link also passed, but app-hosted tests remain unrun
+because a safe test-host entry point is still missing. The known EnergyImpact
+live-catalog empty-name defect remains unresolved, SwiftLint is not green, and
+manual VoiceOver validation remains outstanding. A-stage completion and release
+readiness are not established; G/B hardware enablement remains deferred.
+
+Hardware/system capability, full-charge evidence, physical stopping bounds, and
+helper trust/distribution require G admission and approved B0 follow-up. Wire
+codec, client authentication, control ownership/baseline/journal, persistent
+recovery, and a real backend are deferred **with their corresponding safety tests**;
+they are not implemented or validated by A-stage tests. No SMC key/value or helper
+installation recipe is supplied here. The approved future rules (five-point
+hysteresis, regular 100% handing back to macOS, one-shot discharge, changed-limit
+full-charge cancellation, lifecycle release requests) are not production support.
+The 20% fallback is not a safety certification or a substitute for bounded stop
+evidence. Intent/acceptance/readback/physical effect and unknown recovery remain
+distinct. Control uses verified system percentage; chart hardware-percentage
+preferences and display sampling never change that control basis.
 
 ## Metrics
 

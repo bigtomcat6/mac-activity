@@ -1,8 +1,47 @@
 import Foundation
 import XCTest
+import MacActivityBatteryControl
 @testable import MacActivityCore
 
 final class PreferencesStoreTests: XCTestCase {
+    func testMissingOrMalformedBatteryCareKeepsOtherPreferences() throws {
+        var expected = AppPreferences(
+            launchAtLoginEnabled: true, selectedSummaryMetrics: [.cpu, .battery],
+            temperatureSource: .battery, preferredLanguageIdentifier: "zh-Hans",
+            diskCleanupCategories: [.trash, .userLogs], showsHardwareBatteryPercentage: true,
+            showsProcessApplicationIdentifier: true, energyImpactAppScope: .regularAndAccessory,
+            updateChannel: .beta, lastSyncedUpdateChannelReleaseTag: "v26.0.0-beta.2",
+            audioProcessProfiles: ["com.example.Player": AudioProcessProfile(bundleIdentifier: "com.example.Player", volume: 0.4)]
+        )
+        expected.batteryCare = .default
+        let encoded = try JSONEncoder().encode(expected)
+        let original = try XCTUnwrap(JSONSerialization.jsonObject(with: encoded) as? [String: Any])
+        let malformed: [Any?] = [nil, NSNull(), "bad", [:], ["isEnabled": true, "limit": 49],
+                                 ["isEnabled": true, "limit": 101], ["isEnabled": true, "limit": 80.5],
+                                 ["isEnabled": "true", "limit": 80], ["isEnabled": true]]
+        for batteryCare in malformed {
+            var payload = original
+            payload["batteryCare"] = batteryCare
+            let data = try JSONSerialization.data(withJSONObject: payload)
+            XCTAssertEqual(try JSONDecoder().decode(AppPreferences.self, from: data), expected)
+        }
+        let legacy = Data(#"{"launchAtLoginEnabled":true,"selectedSummaryMetrics":["cpu","battery"]}"#.utf8)
+        let loaded = try JSONDecoder().decode(AppPreferences.self, from: legacy)
+        XCTAssertEqual(loaded.batteryCare, .default)
+        XCTAssertTrue(loaded.launchAtLoginEnabled)
+    }
+
+    func testBatteryCarePreferencesRoundTripContainsOnlyRegularIntent() throws {
+        var expected = AppPreferences.default
+        expected.batteryCare = try BatteryCareSettings(isEnabled: true, limit: 67)
+        expected.showsHardwareBatteryPercentage = true
+        let data = try JSONEncoder().encode(expected)
+        XCTAssertEqual(try JSONDecoder().decode(AppPreferences.self, from: data), expected)
+        let json = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let batteryCare = try XCTUnwrap(json["batteryCare"] as? [String: Any])
+        XCTAssertEqual(Set(batteryCare.keys), ["isEnabled", "limit"])
+    }
+
     func testSavePersistsPreferencesForFutureLoads() throws {
         let suiteName = "MacActivityCoreTests.\(UUID().uuidString)"
         let userDefaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))

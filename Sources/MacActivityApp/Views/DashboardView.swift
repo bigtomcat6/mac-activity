@@ -624,10 +624,13 @@ struct DashboardView: View {
     @StateObject private var energyImpactModel = EnergyImpactModel()
     @StateObject private var powerFlowModel = PowerFlowModel()
     @ObservedObject var audioDashboardModel: AudioDashboardModel
+    @ObservedObject var batteryCareModel: BatteryCareModel
     @ObservedObject var tabSelectionState: DashboardTabSelectionState
     @Environment(\.dashboardPresentationIsPresented) private var dashboardIsPresented
     @State private var activesRefreshTrigger = 0
     @State private var energyImpactRefreshTrigger = 0
+    @State private var fixedSegmentHeights: [DashboardContentMeasurementSegment: CGFloat] = [:]
+    @State private var viewportHeight: CGFloat = 0
     let onMeasuredSegmentHeight: (DashboardContentMeasurementSegment, CGFloat) -> Void
     @ObservedObject var scrollIndicatorState: DashboardPopoverScrollIndicatorState
 
@@ -635,6 +638,7 @@ struct DashboardView: View {
         dashboardModel: DashboardModel,
         preferencesController: PreferencesController,
         audioDashboardModel: AudioDashboardModel,
+        batteryCareModel: BatteryCareModel,
         onMeasuredSegmentHeight: @escaping (DashboardContentMeasurementSegment, CGFloat) -> Void = { _, _ in },
         scrollIndicatorState: DashboardPopoverScrollIndicatorState = DashboardPopoverScrollIndicatorState(),
         initialSelectedTab: DashboardTab = .overview,
@@ -643,6 +647,7 @@ struct DashboardView: View {
         self.dashboardModel = dashboardModel
         self.preferencesController = preferencesController
         self.audioDashboardModel = audioDashboardModel
+        self.batteryCareModel = batteryCareModel
         self.onMeasuredSegmentHeight = onMeasuredSegmentHeight
         self.scrollIndicatorState = scrollIndicatorState
         self.tabSelectionState = tabSelectionState ?? DashboardTabSelectionState(initialTab: initialSelectedTab)
@@ -650,25 +655,22 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            DashboardMeasuredSegment(segment: .header, onHeightChange: onMeasuredSegmentHeight) {
-                header
-                    .modifier(DashboardHeaderSurface())
-            }
+            if !scrollsFixedContent { fixedContent }
 
-            DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: onMeasuredSegmentHeight) {
-                Divider()
-                    .hidden()
-            }
-
-            if selectedTab == .overview {
+            if selectedTab == .overview || scrollsFixedContent {
                 ScrollView(.vertical) {
-                    DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
-                        dashboardContent
-                            .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
-                            .fixedSize(horizontal: false, vertical: true)
+                    VStack(spacing: 0) {
+                        if scrollsFixedContent { fixedContent }
+                        DashboardMeasuredSegment(segment: .scrollContent, onHeightChange: onMeasuredSegmentHeight) {
+                            dashboardContent
+                                .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
+                                .environment(\.dashboardNaturalLists, scrollsFixedContent)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                     }
                 }
                 .mask(DashboardScrollEdgeFade())
+                .frame(minHeight: 0)
             } else {
                 DashboardListPage(onNaturalHeightChange: {
                     onMeasuredSegmentHeight(.scrollContent, $0)
@@ -677,13 +679,40 @@ struct DashboardView: View {
                         .frame(width: DashboardPopoverLayout.contentWidth, alignment: .topLeading)
                 }
                 .id(selectedTab)
+                .frame(minHeight: 0)
+            }
+        }
+        .frame(minHeight: 0, alignment: .top)
+        .background {
+            GeometryReader { proxy in
+                Color.clear
+                    .onAppear { viewportHeight = proxy.size.height }
+                    .onChange(of: proxy.size.height) { viewportHeight = $0 }
             }
         }
         .scrollIndicators(scrollIndicatorVisibility)
         .frame(maxWidth: .infinity, alignment: .topLeading)
         .dashboardPanelBackdrop()
+        .onChange(of: scrollsFixedContent) {
+            // Rebuilding the native slider ends its unsubmitted edit, not a captured pending commit.
+            batteryCareModel.cancelPreview()
+        }
         .onAppear {
             applyDiskCleanupCategories(preferencesController.state.diskCleanupCategories, refreshActives: false)
+        }
+        // Logical page lifetime must outlive layout/fallback subtree replacement.
+        .task(id: dashboardIsPresented && selectedTab == .audio) {
+            if dashboardIsPresented && selectedTab == .audio {
+                await audioDashboardModel.audioPageActivated()
+            }
+        }
+        .onChange(of: dashboardIsPresented && selectedTab == .audio) { wasActive, isActive in
+            if wasActive && !isActive {
+                audioDashboardModel.audioPageDeactivated()
+            }
+        }
+        .onDisappear {
+            if selectedTab == .audio { audioDashboardModel.audioPageDeactivated() }
         }
         .onChange(of: preferencesController.state.diskCleanupCategories) { newCategories in
             applyDiskCleanupCategories(newCategories, refreshActives: true)
@@ -692,6 +721,35 @@ struct DashboardView: View {
             guard selectedTab == .audio else { return }
             Task { await audioDashboardModel.applicationDidBecomeActive() }
         }
+    }
+
+    private var fixedContentHeight: CGFloat { fixedSegmentHeights.values.reduce(0, +) }
+
+    // Only an extreme viewport scrolls the controls too; normal pages keep their original scopes.
+    private var scrollsFixedContent: Bool {
+        viewportHeight > 0 && fixedSegmentHeights.count == 3 && viewportHeight < fixedContentHeight + 32
+    }
+
+    private var fixedContent: some View {
+        VStack(spacing: 0) {
+            DashboardMeasuredSegment(segment: .batteryCare, onHeightChange: reportFixedHeight) {
+                BatteryCareControlsView(model: batteryCareModel)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            DashboardMeasuredSegment(segment: .header, onHeightChange: reportFixedHeight) {
+                header.modifier(DashboardHeaderSurface())
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            DashboardMeasuredSegment(segment: .headerDivider, onHeightChange: reportFixedHeight) {
+                Divider().hidden()
+            }
+        }
+        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func reportFixedHeight(_ segment: DashboardContentMeasurementSegment, _ height: CGFloat) {
+        if fixedSegmentHeights[segment] != height { fixedSegmentHeights[segment] = height }
+        onMeasuredSegmentHeight(segment, height)
     }
 
     private var header: some View {
@@ -763,16 +821,6 @@ struct DashboardView: View {
     private var audioContent: some View {
         AudioDashboardView(model: audioDashboardModel)
             .padding(18)
-            .task(id: dashboardIsPresented) {
-                if dashboardIsPresented {
-                    await audioDashboardModel.audioPageActivated()
-                } else {
-                    audioDashboardModel.audioPageDeactivated()
-                }
-            }
-            .onDisappear {
-                audioDashboardModel.audioPageDeactivated()
-            }
     }
 
     private var selectedTab: DashboardTab { tabSelectionState.selectedTab }
@@ -783,6 +831,7 @@ struct DashboardView: View {
             set: { newValue in
                 // Re-clicking the selected segment must not re-run page refreshes.
                 guard newValue != tabSelectionState.selectedTab else { return }
+                batteryCareModel.cancelPreview()
                 tabSelectionState.selectedTab = newValue
                 activesRefreshTrigger = Self.activesRefreshTrigger(
                     afterSelecting: newValue,
