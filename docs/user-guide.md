@@ -6,7 +6,7 @@ app and opens a compact dashboard from the menu bar.
 
 ## Requirements
 
-- macOS 13.0 or newer.
+- macOS 26.0 or newer on a Mac with Apple silicon.
 - A Mac that exposes the requested hardware metrics. Some temperature, fan,
   battery, GPU, and VRAM readings depend on hardware and system APIs.
 

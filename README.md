@@ -10,7 +10,7 @@
   <a href="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml"><img src="https://github.com/bigtomcat6/mac-activity/actions/workflows/docs-links.yml/badge.svg?branch=main" alt="Docs Links"></a>
   <a href="https://codecov.io/gh/bigtomcat6/mac-activity"><img src="https://codecov.io/gh/bigtomcat6/mac-activity/branch/main/graph/badge.svg" alt="codecov"></a>
   <a href="/LICENSE"><img src="https://img.shields.io/github/license/bigtomcat6/mac-activity" alt="License"></a>
-  <img src="https://img.shields.io/badge/macOS-13.0%2B-000000?logo=apple&logoColor=white" alt="macOS 13.0+">
+  <img src="https://img.shields.io/badge/macOS-26.0%2B-000000?logo=apple&logoColor=white" alt="macOS 26.0+">
 </p>
 
 <p align="center">
@@ -80,8 +80,8 @@ Implemented providers:
 
 ## Requirements
 
-- macOS 13.0+
-- Xcode 16 (recommended) with Swift 6 toolchain
+- macOS 26.0+ on Apple silicon (arm64)
+- Xcode 26 or newer with the Swift 6.2 toolchain
 - [XcodeGen](https://github.com/yonaskolb/XcodeGen) (only needed if you want to regenerate `MacActivity.xcodeproj` from `project.yml`)
 
 ## Getting started

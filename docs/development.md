@@ -24,8 +24,8 @@ automation, and documentation.
 
 ## Requirements
 
-- macOS 13.0 or newer.
-- Xcode 16 or newer with a Swift 6 toolchain.
+- macOS 26.0 or newer on a Mac with Apple silicon.
+- Xcode 26 or newer with the Swift 6.2 toolchain.
 - XcodeGen, when regenerating `MacActivity.xcodeproj` from `project.yml`.
 
 `Package.swift` declares Swift tools version 6.2 and depends on Sparkle from
